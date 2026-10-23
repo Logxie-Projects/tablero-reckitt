@@ -842,7 +842,7 @@ const chatLog = [];
 // sugerencias del chat armadas con los datos cargados (la página pública no trae placas fijas)
 function sugerencias(){
   const ab = viajes.filter(abierto), v = ab.find(x=>x.placa), mn = ab.find(x=>x.mn), pais = ab.find(x=>x.pais);
-  return [v && `¿Status de ${v.placa}?`, pais && `¿Qué va para ${pais.pais.charAt(0)+pais.pais.slice(1).toLowerCase()}?`, mn && `¿Cómo va la ${mn.mn.split(' ').slice(0,3).join(' ')}?`, '¿Qué retiros hay hoy?', '¿Qué falta por asignar?'].filter(Boolean);
+  return [v && `¿Status de ${v.placa}?`, pais && `¿Qué va para ${pais.pais.charAt(0)+pais.pais.slice(1).toLowerCase()}?`, mn && `¿Cómo va la ${mn.mn.split(' ').slice(0,3).join(' ')}?`, '¿Qué retiros hay hoy?', '¿Qué falta por asignar?', !window.MODO_CLIENTE && 'Lista de errores y acciones pendientes'].filter(Boolean);
 }
 function tarjetaViaje(v){
   return `<div class="trip"><b>${v.placa?`<span class="placa">${esc(v.placa)}</span>`:'Sin vehículo'}</b> ${sitTag(v)} ${pill(v.estado)}<br>
@@ -891,7 +891,38 @@ function verDeLista(i){
   burbuja(`<b>${i+1}.</b>` + tarjetaViaje(v), 'bot');
   chatLog.push({r:'u',t:String(i+1)},{r:'b',t:`Detalle de ${v.placa||v.id}`});
 }
+// pide el reporte de errores y acciones pendientes (solo equipo)
+const PIDE_REPORTE = /error|acci[oó]n|acciones|reporte|resumen|pendientes de los correos/i;
+function respuestaReporte(){
+  if (window.MODO_CLIENTE) return 'Esa información es interna del equipo de Entrapetrol.';
+  const E = errores(), porViaje = new Map();
+  E.forEach(x=>{ if(!porViaje.has(x.v.id)) porViaje.set(x.v.id, []); porViaje.get(x.v.id).push(x); });
+  const P = (window.BITACORA||[]).filter(b=>b.estadoAccion!=='Hecha')
+    .sort((a,b)=>['Alta','Media','Baja'].indexOf(a.prioridad)-['Alta','Media','Baja'].indexOf(b.prioridad));
+  const altasE = E.filter(x=>x.sev==='Alta').length, altasP = P.filter(b=>b.prioridad==='Alta').length;
+  const sev = s => `<span class="sev sev-${s==='Alta'?'Alta':'Media'}">${esc(String(s).toUpperCase())}</span>`;
+  const lista = (arr, f) => `<ol style="margin:6px 0 10px 18px;padding:0">${arr.map(x=>`<li style="margin:4px 0">${f(x)}</li>`).join('')}</ol>`;
+  return `<b>Errores en la hoja: ${E.length}</b> (${altasE} altos) en ${porViaje.size} viajes` +
+    (E.length ? lista([...porViaje.values()], L=>`<b>${esc(L[0].v.placa||L[0].v.booking||'Sin placa')}</b> <span class="sub">${esc(L[0].v.operacion)} ${esc(L[0].v.pais||'')}</span><br>${L.map(x=>`${sev(x.sev)} ${esc(x.campo)}: ${esc(x.msg)}`).join('<br>')}`) : '<br>') +
+    `<b>Acciones pendientes (LogxIA): ${P.length}</b> (${altasP} altas)` +
+    (P.length ? lista(P, b=>`${sev(b.prioridad)} <b>${esc(b.placa||b.booking||'General')}</b>: ${esc(b.accion)}`) : '<br>') +
+    `<div style="margin-top:6px"><button type="button" class="btn primary" onclick="enviarReporteCorreo()">✉ Enviar por correo</button></div>`;
+}
+// envía el mismo reporte por correo, a los destinatarios que escriba quien lo pide (solo con clave del equipo)
+async function enviarReporteCorreo(){
+  if (!CFG.SHEETS_API_URL || !window.CLAVE) return toast('El envío por correo funciona desde el tablero publicado');
+  const para = (prompt('¿A qué correo(s) lo envío? (separados por coma)', '') || '').split(/[,;\s]+/).map(s=>s.trim()).filter(s=>/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s));
+  if (!para.length) return;
+  if (!confirm(`Se enviará el reporte de errores y acciones pendientes a:\n${para.join('\n')}\n\n¿Confirmas?`)) return;
+  const b = burbuja('<span class="typing">Enviando…</span>', 'bot');
+  try {
+    const r = await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'enviarReporte', clave:window.CLAVE, para})});
+    const j = await r.json().catch(()=>({ok:true}));
+    b.innerHTML = j.ok ? `✅ Reporte enviado a ${para.map(esc).join(', ')}.` : `No se pudo enviar: ${esc(j.error||'error')}`;
+  } catch(e){ b.innerHTML = 'No se pudo enviar el correo. Intente de nuevo.'; }
+}
 function respuestaLocal(q){
+  if (PIDE_REPORTE.test(q)) return respuestaReporte();
   const encontrados = buscarViajes(q);
   if (encontrados.length > 1) return listaCorta(encontrados, 'Encontré');
   if (encontrados.length) return 'Encontré este viaje:' + tarjetaViaje(encontrados[0]);
@@ -923,7 +954,7 @@ async function preguntar(q){
   const b = burbuja('<span class="typing">Consultando…</span>', 'bot');
   // varios viajes encontrados: lista corta sin pasar por la IA
   const varios = buscarViajes(q);
-  if (varios.length > 1 || /\b(hoy|asignar|pendiente|falta)\b/i.test(q) && !varios.length) {
+  if (PIDE_REPORTE.test(q) || varios.length > 1 || /\b(hoy|asignar|pendiente|falta)\b/i.test(q) && !varios.length) {
     b.innerHTML = respuestaLocal(q);
     chatLog.push({r:'u',t:q},{r:'b',t:b.innerText});
     return;
