@@ -546,7 +546,8 @@ function validar(v){
   return e;
 }
 const SEV = {Alta:0, Media:1};
-const revisables = () => viajes.filter(v=>(!G.op || v.operacion===G.op) && !['Cerrado','Cancelado'].includes(situacion(v)));
+// la pestaña Errores muestra siempre IMPO y EXPO (igual que el reporte por correo), sin importar el filtro global
+const revisables = () => viajes.filter(v=>!['Cerrado','Cancelado'].includes(situacion(v)));
 const errores = () => revisables().flatMap(validar).sort((a,b)=> SEV[a.sev]-SEV[b.sev] || (primerEvento(a.v)||'').localeCompare(primerEvento(b.v)||''));
 let errSev = '';
 const nombreViaje = v => `${v.placa || 'Sin placa'} · ${v.operacion} ${v.pais||''}${v.booking?` · booking ${v.booking}`:''} · llenado ${fd(v.fechaCargue)}`;
@@ -568,7 +569,7 @@ ${L.map(x=>`   - [${x.sev.toUpperCase()}] ${x.campo}: ${x.msg}`).join('\n')}`).j
 function renderErrores(){
   const E = errores(), altas = E.filter(x=>x.sev==='Alta').length, nViajes = new Set(E.map(x=>x.v.id)).size;
   $('#nErr').textContent = E.length || '';
-  $('#errResumen').textContent = `${E.length} errores en ${nViajes} viajes · ${altas} prioridad alta · ${E.length-altas} media`;
+  $('#errResumen').textContent = `${E.length} errores en ${nViajes} viajes · ${altas} prioridad alta · ${E.length-altas} media` + (G.op ? ` · incluye IMPO y EXPO (el filtro ${G.op} no aplica aquí)` : '');
   $('#errFiltros').innerHTML = [['','Todos',E.length],['Alta','Alta',altas],['Media','Media',E.length-altas]]
     .map(([k,l,c])=>`<button class="chip ${errSev===k?'on':''}" data-sev="${k}">${l} · ${c}</button>`).join('');
   const vis = E.filter(x=>!errSev || x.sev===errSev);
