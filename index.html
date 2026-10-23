@@ -490,7 +490,6 @@ function validar(v){
   if (expo && !v.mn) add('Media','MN','Sin motonave');
   if (expo && !pend && !v.cierreDoc) add('Media','Cierre Doc','Sin fecha de cierre documental');
   if (v.fechaRetiro && v.fechaCargue && v.fechaRetiro > v.fechaCargue) add('Alta','Fechas',`Retiro (${fd(v.fechaRetiro)}) después del llenado (${fd(v.fechaCargue)})`);
-  if (expo && v.cierreDoc && v.fechaCargue && v.fechaCargue > v.cierreDoc) add('Alta','Cierre Doc',`Llenado (${fd(v.fechaCargue)}) después del cierre documental (${fd(v.cierreDoc)})`);
   if (v.etd && v.fechaCargue && v.fechaCargue >= v.etd) add('Alta','ETD',`Llenado (${fd(v.fechaCargue)}) igual o posterior al ETD (${fd(v.etd)})`);
   if (v.cierreDoc && v.etd && v.cierreDoc > v.etd) add('Media','Cierre Doc','Cierre documental después del ETD');
   if (v.eta && v.etd && v.eta < v.etd) add('Alta','ETA',`ETA (${fd(v.eta)}) antes del ETD (${fd(v.etd)})`);
