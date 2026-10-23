@@ -101,6 +101,10 @@ td.num,th.num{color:var(--muted);font-variant-numeric:tabular-nums;text-align:ri
 .sev{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;color:#fff}
 .sev-Alta{background:var(--bad)}.sev-Media{background:var(--warn)}
 body.cliente #nav [data-v="errores"], body.cliente .link[onclick^="abrir"], body.cliente .solo-interno{display:none!important}
+.accion{font-size:12px;line-height:1.35;max-width:280px;white-space:normal}
+.accion .pri{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:1px}
+.lx-item{border:1px solid var(--border);border-radius:10px;padding:10px;margin-top:8px;font-size:13px}
+.lx-item.hecha{opacity:.55}
 .tag-ev{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;color:#fff}
 .alert .tag{flex:none;font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;color:#fff}
 .feed{font-size:13px}
@@ -399,6 +403,25 @@ const enSituacion = (v, filtro) => !filtro || situacion(v)===filtro;
 const situacionesPresentes = () => [...SITUACIONES, ...new Set(viajes.map(situacion))].filter((s,i,a)=>a.indexOf(s)===i && (SITUACIONES.slice(0,2).includes(s) || viajes.some(v=>situacion(v)===s)));
 const primerEvento = v => v.fechaRetiro || v.fechaCargue;
 const sitTag = v => { const s = situacion(v); return `<span class="sit sit-${s.split(' ')[0]}">${esc(s.toUpperCase())}</span>`; };
+/* ---------- bitácora LogxIA: acciones a tomar que salen de los correos ---------- */
+const PRI = {Alta:'var(--bad)', Media:'var(--warn)', Baja:'var(--s-sin)'};
+// se cruza por booking o placa (estables) y, si no, por el id del viaje
+const accionesDe = v => (window.BITACORA||[]).filter(b =>
+  (b.booking && v.booking && String(b.booking)===String(v.booking)) || (b.placa && v.placa && b.placa===v.placa) || (!b.booking && !b.placa && b.viajeId===v.id))
+  .sort((a,b)=> (a.estadoAccion==='Hecha') - (b.estadoAccion==='Hecha') || ['Alta','Media','Baja'].indexOf(a.prioridad) - ['Alta','Media','Baja'].indexOf(b.prioridad));
+const accionPendiente = v => accionesDe(v).find(b=>b.estadoAccion!=='Hecha');
+const celdaAccion = v => { const a = accionPendiente(v); const n = accionesDe(v).filter(b=>b.estadoAccion!=='Hecha').length;
+  return a ? `<div class="accion"><span class="pri" style="background:${PRI[a.prioridad]||PRI.Media}"></span>${esc(a.accion)}${n>1?` <span class="sub">(+${n-1})</span>`:''}</div>` : '<span class="sub">—</span>'; };
+async function marcarHecha(id){
+  const b = (window.BITACORA||[]).find(x=>x.id===id); if (!b) return;
+  b.estadoAccion = 'Hecha'; b.resueltoEn = new Date().toISOString();
+  if (CFG.SHEETS_API_URL && window.CLAVE){
+    try { await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'resolver', clave:window.CLAVE, id, usuario:CFG.USUARIO})}); toast('Acción marcada como hecha'); }
+    catch(e){ toast('No se pudo guardar en la bitácora'); }
+  }
+  if (editId) abrir(editId);
+  render();
+}
 const pill = e => `<span class="pill" style="background:${colorEstado(e)}">${esc(e)}</span>`;
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2200); }
 
@@ -427,6 +450,8 @@ async function cargar(){
       historial = [...(j.historial || []), ...(guardado?.historial || [])];
       fusionarHistorial();
       window.MODO_CLIENTE = !j.interno;
+      window.BITACORA = j.bitacora || [];
+      window.CLAVE = clave;
       $('#connDot').classList.add('live'); $('#connTxt').textContent = `Hoja de Drive · ${j.hora || 'en línea'}`;
       return;
     }catch(e){ console.error(e); toast('No se pudo conectar con la hoja, intente recargar'); return false; }
@@ -614,6 +639,8 @@ function renderAlertas(){ const act = activos();
     if (v.observacion && /cita/i.test(v.observacion) && v.estado!=='Entregado' && d<=0) a.push({t:'Cita', c:'var(--s-tran)', p:0, m:`${v.placa}: ${esc(v.observacion)}`});
   });
   const nE = window.MODO_CLIENTE ? 0 : errores().filter(x=>x.sev==='Alta').length;
+  if (!window.MODO_CLIENTE) (window.BITACORA||[]).filter(b=>b.estadoAccion!=='Hecha' && b.prioridad==='Alta').forEach(b=>
+    a.push({t:'LogxIA', c:'var(--accent)', p:-3, m:`${esc(b.placa||b.booking||'')}: ${esc(b.accion)}`}));
   if (nE) a.push({t:'Datos', c:'var(--bad)', p:-2, m:`${nE} errores de prioridad alta en la hoja · <button class="link" onclick="document.querySelector('#nav [data-v=errores]').click()">ver errores</button>`});
   a.sort((x,y)=>x.p-y.p);
   $('#alertas').innerHTML = a.length ? a.slice(0,7).map(x=>`<div class="alert"><span class="tag" style="background:${x.c}">${x.t}</span><span>${x.m}</span></div>`).join('') : '<div class="sub">Sin alertas 🎉</div>';
@@ -655,12 +682,12 @@ function renderProximos(){ const act = viajes;
   vis.forEach(ev => { if (!filas.some(x=>x.v.id===ev.v.id)) filas.push(ev); });
   const dia = (f, extra) => !f ? '—' : `<span style="${f===HOY?'color:var(--accent);font-weight:600':''}">${f===HOY?'HOY · ':''}${fd(f)}</span>${extra?`<br><span class="sub">${esc(extra)}</span>`:''}`;
   const patio = v => v.patio ? (/^patio/i.test(v.patio) ? v.patio : `Patio ${v.patio}`) : 'Patio por definir';
-  $('#proximos').innerHTML = barra + (filas.length ? `<div class="tbl-wrap" style="border:0"><table><tr><th class="num">#</th><th>Viaje</th><th>Próxima actividad</th><th>Retiro contenedor</th><th>Llenado / Cargue</th><th>Placa</th><th>Destino · Motonave</th><th>ETD</th><th>Estado</th><th></th></tr>
+  $('#proximos').innerHTML = barra + (filas.length ? `<div class="tbl-wrap" style="border:0"><table><tr><th class="num">#</th><th>Viaje</th><th>Próxima actividad</th><th>Retiro contenedor</th><th>Llenado / Cargue</th><th>Placa</th><th>Destino · Motonave</th><th>ETD</th><th>Estado</th><th class="solo-interno">Acción a tomar (LogxIA)</th><th></th></tr>
     ${filas.map(({v,f,t,c}, n)=>`<tr class="${v.estado==='Cancelado'?'cancel':''}"><td class="num">${n+1}</td><td>${sitTag(v)}</td>
     <td><span class="tag-ev" style="background:${c}">${t}</span> ${dia(f)}${f<HOY?`<br><span class="sub" style="color:var(--warn);font-weight:600">En curso · hace ${-diffDias(f)} d</span>`:''}</td>
     <td>${v.fechaRetiro ? dia(v.fechaRetiro, patio(v)) : '—'}</td>
     <td>${dia(v.fechaCargue, v.operacion==='EXPO' ? 'Planta Reckitt' : (v.bodega||''))}</td>
-    <td>${tieneVehiculo(v)?`<span class="placa">${esc(v.placa)}</span>`:'<span class="missing">Sin asignar</span>'}</td><td>${esc(v.pais||'—')} · ${esc(v.mn||'—')}</td><td>${fd(v.etd)}</td><td>${pill(v.estado)}</td>
+    <td>${tieneVehiculo(v)?`<span class="placa">${esc(v.placa)}</span>`:'<span class="missing">Sin asignar</span>'}</td><td>${esc(v.pais||'—')} · ${esc(v.mn||'—')}</td><td>${fd(v.etd)}</td><td>${pill(v.estado)}</td><td class="solo-interno">${celdaAccion(v)}</td>
     <td><button class="link" onclick="abrir('${v.id}')">Actualizar</button></td></tr>`).join('')}</table></div>` : '<div class="sub">No hay viajes con estos filtros.</div>');
 }
 function renderFeed(){
@@ -736,7 +763,12 @@ function abrir(id){
   sitSel = situacion(v); pintarSit();
   pintarEstados();
   const h = historial.filter(x=>x.id===id).slice(-4).reverse();
-  $('#mHist').innerHTML = h.length ? '<b>Historial:</b><br>'+h.map(x=>`${new Date(x.fecha).toLocaleString('es-CO')} — ${x.estadoAnterior===x.estadoNuevo ? esc(x.estadoNuevo) : `${esc(x.estadoAnterior)} → ${esc(x.estadoNuevo)}`}${x.observacion?` · ${esc(x.observacion)}`:''}`).join('<br>') : '';
+  const lx = accionesDe(v);
+  const bloqueLx = lx.length ? '<b>Acciones LogxIA (de los correos):</b>' + lx.map(b=>`<div class="lx-item ${b.estadoAccion==='Hecha'?'hecha':''}">
+    <span class="sev sev-${b.prioridad==='Alta'?'Alta':'Media'}">${esc(String(b.prioridad||'').toUpperCase())}</span> <b>${esc(b.accion)}</b><br>
+    <span class="sub">${esc(b.resumen)} · ${esc(b.remitente)} · ${esc(String(b.fechaCorreo||'').slice(0,16).replace('T',' '))}</span><br>
+    ${b.estadoAccion==='Hecha' ? '<span class="sub">✔ Hecha</span>' : `<button type="button" class="link" onclick="marcarHecha('${b.id}')">Marcar como hecha</button>`}</div>`).join('') + '<br>' : '';
+  $('#mHist').innerHTML = bloqueLx + (h.length ? '<b>Historial:</b><br>'+h.map(x=>`${new Date(x.fecha).toLocaleString('es-CO')} — ${x.estadoAnterior===x.estadoNuevo ? esc(x.estadoNuevo) : `${esc(x.estadoAnterior)} → ${esc(x.estadoNuevo)}`}${x.observacion?` · ${esc(x.observacion)}`:''}`).join('<br>') : '');
   $('#ov').classList.add('open');
 }
 function pintarEstados(){
