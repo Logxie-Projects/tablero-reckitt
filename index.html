@@ -128,7 +128,7 @@ tr:hover td{background:var(--surface-2)}
 .op.EXPO{color:#2563eb;border-color:#93c5fd}.op.IMPO{color:#c2410c;border-color:#fdba74}
 .placa{font-family:ui-monospace,Consolas,monospace;font-weight:600;background:var(--surface-2);padding:2px 6px;border-radius:5px}
 .missing{color:var(--bad);font-weight:600;font-size:12px}
-.link{border:0;background:none;color:var(--accent);cursor:pointer;font-weight:600;padding:0}
+.link{border:0;background:none;color:var(--accent);cursor:pointer;font-weight:600;padding:0;white-space:nowrap}
 .vessels{grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
 .vessel h3{margin:0;font-size:15px}
 .vessel .meta{display:flex;gap:16px;margin:10px 0;font-size:12px;color:var(--muted);flex-wrap:wrap}
@@ -415,7 +415,11 @@ const celdaAccion = v => { const a = accionPendiente(v); const n = accionesDe(v)
 async function marcarHecha(id){
   const b = (window.BITACORA||[]).find(x=>x.id===id); if (!b) return;
   b.estadoAccion = 'Hecha'; b.resueltoEn = new Date().toISOString();
-  if (CFG.SHEETS_API_URL && window.CLAVE){
+  if (window.google?.script?.run && window.CLAVE){
+    // dentro de Apps Script: se guarda con google.script.run (fetch al /exec no sirve desde el iframe)
+    google.script.run.withSuccessHandler(()=>toast('Acción marcada como hecha'))
+      .withFailureHandler(()=>toast('No se pudo guardar en la bitácora')).resolverAccion(window.CLAVE, id, CFG.USUARIO);
+  } else if (CFG.SHEETS_API_URL && window.CLAVE){
     try { await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'resolver', clave:window.CLAVE, id, usuario:CFG.USUARIO})}); toast('Acción marcada como hecha'); }
     catch(e){ toast('No se pudo guardar en la bitácora'); }
   }
@@ -687,7 +691,7 @@ function renderProximos(){ const act = viajes;
     <td><span class="tag-ev" style="background:${c}">${t}</span> ${dia(f)}${f<HOY?`<br><span class="sub" style="color:var(--warn);font-weight:600">En curso · hace ${-diffDias(f)} d</span>`:''}</td>
     <td>${v.fechaRetiro ? dia(v.fechaRetiro, patio(v)) : '—'}</td>
     <td>${dia(v.fechaCargue, v.operacion==='EXPO' ? 'Planta Reckitt' : (v.bodega||''))}</td>
-    <td>${tieneVehiculo(v)?`<span class="placa">${esc(v.placa)}</span>`:'<span class="missing">Sin asignar</span>'}</td><td>${esc(v.pais||'—')} · ${esc(v.mn||'—')}</td><td>${fd(v.etd)}</td><td>${pill(v.estado)}</td><td class="solo-interno">${celdaAccion(v)}</td>
+    <td>${tieneVehiculo(v)?`<span class="placa">${esc(v.placa)}</span>`:'<span class="missing">Sin asignar</span>'}</td><td>${esc(v.pais||'—')}<br><span class="sub">${esc(v.mn||'—')}</span></td><td>${fd(v.etd)}</td><td>${pill(v.estado)}</td><td class="solo-interno">${celdaAccion(v)}</td>
     <td><button class="link" onclick="abrir('${v.id}')">Actualizar</button></td></tr>`).join('')}</table></div>` : '<div class="sub">No hay viajes con estos filtros.</div>');
 }
 function renderFeed(){
@@ -998,7 +1002,13 @@ function pedirClave(errada){
     <div class="mfoot"><button class="btn primary" style="width:100%">Entrar</button></div></form></div>`);
 }
 // la página publicada para el cliente (Reckitt) es de solo lectura
-cargar().then(ok => { if (ok === false) return; if (window.MODO_CLIENTE) document.body.classList.add('cliente'); render(); });
+cargar().then(ok => { if (ok === false) return; if (window.MODO_CLIENTE) document.body.classList.add('cliente'); render();
+  // enlace directo desde el correo (?viaje=FILA-9): abre la ventana de ese viaje para corregirlo
+  const vid = new URLSearchParams(location.search).get('viaje') || window.VIAJE_INICIAL;
+  if (vid && !window.MODO_CLIENTE && viajes.some(x=>x.id===vid)) abrir(vid);
+  const vista = new URLSearchParams(location.search).get('vista') || window.VISTA_INICIAL;
+  if (vista && !window.MODO_CLIENTE && !vid) document.querySelector('#nav [data-v="'+vista.replace(/[^a-z]/g,'')+'"]')?.click();
+});
 </script>
 </body>
 </html>
