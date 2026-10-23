@@ -686,12 +686,12 @@ function renderProximos(){ const act = viajes;
   vis.forEach(ev => { if (!filas.some(x=>x.v.id===ev.v.id)) filas.push(ev); });
   const dia = (f, extra) => !f ? '—' : `<span style="${f===HOY?'color:var(--accent);font-weight:600':''}">${f===HOY?'HOY · ':''}${fd(f)}</span>${extra?`<br><span class="sub">${esc(extra)}</span>`:''}`;
   const patio = v => v.patio ? (/^patio/i.test(v.patio) ? v.patio : `Patio ${v.patio}`) : 'Patio por definir';
-  $('#proximos').innerHTML = barra + (filas.length ? `<div class="tbl-wrap" style="border:0"><table><tr><th class="num">#</th><th>Viaje</th><th>Próxima actividad</th><th>Retiro contenedor</th><th>Llenado / Cargue</th><th>Placa</th><th>Destino · Motonave</th><th>ETD</th><th>Estado</th><th class="solo-interno">Acción a tomar (LogxIA)</th><th></th></tr>
+  $('#proximos').innerHTML = barra + (filas.length ? `<div class="tbl-wrap" style="border:0"><table><tr><th class="num">#</th><th>Viaje</th><th>Próxima actividad</th><th>Retiro contenedor</th><th>Llenado / Cargue</th><th>Placa</th><th>Destino · Booking · Motonave</th><th>ETD</th><th>Estado</th><th class="solo-interno">Acción a tomar (LogxIA)</th><th></th></tr>
     ${filas.map(({v,f,t,c}, n)=>`<tr class="${v.estado==='Cancelado'?'cancel':''}"><td class="num">${n+1}</td><td>${sitTag(v)}</td>
     <td><span class="tag-ev" style="background:${c}">${t}</span> ${dia(f)}${f<HOY?`<br><span class="sub" style="color:var(--warn);font-weight:600">En curso · hace ${-diffDias(f)} d</span>`:''}</td>
     <td>${v.fechaRetiro ? dia(v.fechaRetiro, patio(v)) : '—'}</td>
     <td>${dia(v.fechaCargue, v.operacion==='EXPO' ? 'Planta Reckitt' : (v.bodega||''))}</td>
-    <td>${tieneVehiculo(v)?`<span class="placa">${esc(v.placa)}</span>`:'<span class="missing">Sin asignar</span>'}</td><td>${esc(v.pais||'—')}<br><span class="sub">${esc(v.mn||'—')}</span></td><td>${fd(v.etd)}</td><td>${pill(v.estado)}</td><td class="solo-interno">${celdaAccion(v)}</td>
+    <td>${tieneVehiculo(v)?`<span class="placa">${esc(v.placa)}</span>`:'<span class="missing">Sin asignar</span>'}</td><td>${esc(v.pais||'—')}<br><span class="sub">${v.booking?'BK '+esc(v.booking):'Sin booking'}</span><br><span class="sub">${esc(v.mn||'—')}</span></td><td>${fd(v.etd)}</td><td>${pill(v.estado)}</td><td class="solo-interno">${celdaAccion(v)}</td>
     <td><button class="link" onclick="abrir('${v.id}')">Actualizar</button></td></tr>`).join('')}</table></div>` : '<div class="sub">No hay viajes con estos filtros.</div>');
 }
 function renderFeed(){
