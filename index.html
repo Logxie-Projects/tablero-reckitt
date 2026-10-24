@@ -420,7 +420,7 @@ const sitTag = v => { const s = situacion(v); return `<span class="sit sit-${s.s
 /* ---------- bitácora LogxIA: acciones a tomar que salen de los correos ---------- */
 const PRI = {Alta:'var(--bad)', Media:'var(--warn)', Baja:'var(--s-sin)'};
 // se cruza por booking o placa (estables) y, si no, por el id del viaje
-const accionesDe = v => (window.BITACORA||[]).filter(b =>
+const accionesDe = v => situacion(v)==='Cerrado' ? [] : (window.BITACORA||[]).filter(b =>
   (b.booking && v.booking && String(b.booking)===String(v.booking)) || (b.placa && v.placa && b.placa===v.placa) || (!b.booking && !b.placa && b.viajeId===v.id))
   .sort((a,b)=> (a.estadoAccion==='Hecha') - (b.estadoAccion==='Hecha') || ['Alta','Media','Baja'].indexOf(a.prioridad) - ['Alta','Media','Baja'].indexOf(b.prioridad));
 const accionPendiente = v => accionesDe(v).find(b=>b.estadoAccion!=='Hecha');
