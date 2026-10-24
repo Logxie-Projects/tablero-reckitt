@@ -94,7 +94,7 @@ header .chips{display:flex;flex-wrap:wrap;gap:6px}
 
 <script>
 const API = window.API_URL || 'https://script.google.com/macros/s/AKfycbz_st7NWwfY57QfMyTBLGxnufoIMgvlh3wKIwgi2PuzcrT409dFKI7iPsz3hOhUFKQ0/exec';
-const TOKEN = (new URLSearchParams(location.search).get('c') || '').trim();
+const TOKEN = (new URLSearchParams(location.search).get('t') || '').trim();
 const K = { estado: 'viaje_' + TOKEN, cola: 'cola_' + TOKEN, visto: 'visto_' + TOKEN };
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -108,7 +108,7 @@ const imgs = {};                    // archivo id -> data URL
 
 /* ---------- servidor ---------- */
 async function pedir(params) {
-  const r = await fetch(API + '?' + new URLSearchParams(Object.assign({ c: TOKEN, formato: 'json' }, params)));
+  const r = await fetch(API + '?' + new URLSearchParams(Object.assign({ t: TOKEN, formato: 'json' }, params)));
   return r.json();
 }
 async function postear(body) {
