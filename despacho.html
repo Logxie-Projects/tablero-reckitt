@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Despacho Conductores</title>
+<style>
+:root{
+  --bg:#f5f6f8; --surface:#fff; --surface-2:#f1f3f6; --line:#e3e6eb; --text:#1b1f27; --muted:#667085;
+  --accent:#d4006f; --accent-soft:#fde7f2; --ok:#16a34a; --ok-soft:#dcfce7; --warn:#c2410c; --warn-soft:#ffedd5; --bad:#dc2626; --bad-soft:#fee2e2;
+  --wa:#25d366;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1115; --surface:#171a21; --surface-2:#1f232c; --line:#2a2f3a; --text:#e7e9ee; --muted:#9aa3b2;
+    --accent-soft:#3a1028; --ok-soft:#0f2e1b; --warn-soft:#3a1f0d; --bad-soft:#3a1212;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1115; --surface:#171a21; --surface-2:#1f232c; --line:#2a2f3a; --text:#e7e9ee; --muted:#9aa3b2;
+  --accent-soft:#3a1028; --ok-soft:#0f2e1b; --warn-soft:#3a1f0d; --bad-soft:#3a1212;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+header{background:var(--surface);border-bottom:1px solid var(--line);padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:3}
+header h1{font-size:17px;margin:0}
+header h1 b{color:var(--accent)}
+header .hora{color:var(--muted);font-size:12px}
+header .der{margin-left:auto;display:flex;gap:8px}
+.b{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:7px 12px;font-weight:600;white-space:nowrap;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.b:hover{background:var(--surface-2)}
+.b-pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.b-pri:hover{background:#b8005f}
+.b-wa{background:var(--wa);border-color:var(--wa);color:#fff}
+.b-wa:hover{background:#1ebe5b}
+.b-mini{padding:4px 9px;font-size:13px}
+main{max-width:1200px;margin:0 auto;padding:16px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:14px;overflow-x:auto}
+.tabs button{border:0;background:none;padding:9px 14px;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap}
+.tabs button.on{color:var(--accent);border-bottom-color:var(--accent)}
+.tabs .num{background:var(--surface-2);border-radius:99px;padding:0 7px;margin-left:4px;font-size:12px}
+.alerta{background:var(--bad-soft);border:1px solid var(--bad);border-radius:12px;padding:10px 14px;margin-bottom:14px}
+.alerta h3{margin:0 0 6px;font-size:14px;color:var(--bad)}
+.alerta .it{display:flex;gap:8px;align-items:center;padding:4px 0;flex-wrap:wrap}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px}
+.card .top{display:flex;gap:8px;align-items:flex-start}
+.op{font-size:11px;font-weight:800;border-radius:5px;padding:2px 6px;background:var(--accent-soft);color:var(--accent)}
+.op.IMPO{background:#e0ecff;color:#1d4ed8}
+.card .bk{font-weight:800;font-size:15px}
+.card .sub{color:var(--muted);font-size:13px}
+.placa{font-family:ui-monospace,Consolas,monospace;font-weight:700;background:var(--surface-2);padding:1px 6px;border-radius:5px}
+.barra{height:8px;background:var(--surface-2);border-radius:99px;overflow:hidden}
+.barra i{display:block;height:100%;background:var(--ok)}
+.estado{display:flex;justify-content:space-between;gap:8px;font-size:13px}
+.estado b{color:var(--ok)}
+.tarde{color:var(--warn);font-weight:700}
+.nov{background:var(--bad-soft);color:var(--bad);border-radius:8px;padding:6px 8px;font-size:13px}
+.acc{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}
+table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--muted);background:var(--surface-2);font-weight:700}
+.tabla{overflow-x:auto}
+.vacio{color:var(--muted);text-align:center;padding:40px}
+input[type=search]{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:7px 10px;min-width:240px}
+/* ventanas */
+.velo{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:30px 12px}
+.ven{background:var(--surface);border-radius:14px;width:min(640px,100%);padding:18px;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+.ven h2{margin:0 0 12px;font-size:18px}
+.form{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.form label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--muted)}
+.form .full{grid-column:1/-1}
+.form input,.form select,.form textarea{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 10px;font-weight:400;font-size:14px}
+.form textarea{min-height:80px}
+.pie{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
+.archivos{display:flex;flex-direction:column;gap:4px;font-weight:400;color:var(--text)}
+.msg{white-space:pre-wrap;background:var(--surface-2);border-radius:10px;padding:12px;font-size:13px;border:1px solid var(--line)}
+.linea{list-style:none;margin:0;padding:0}
+.linea li{display:grid;grid-template-columns:110px 1fr;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.linea .h{color:var(--muted);font-size:12px}
+.linea .t-novedad{color:var(--bad);font-weight:700}
+.linea img{max-width:220px;max-height:160px;border-radius:8px;display:block;margin-top:6px;cursor:zoom-in}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 16px;border-radius:10px;z-index:30}
+.login{display:grid;place-items:center;min-height:80vh}
+.login form{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:26px;width:min(360px,92vw)}
+.login input{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;margin:10px 0;background:var(--surface)}
+@media (max-width:600px){.form{grid-template-columns:1fr} header .der{margin-left:0}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const API = window.API_URL || 'https://script.google.com/macros/s/AKfycbz_st7NWwfY57QfMyTBLGxnufoIMgvlh3wKIwgi2PuzcrT409dFKI7iPsz3hOhUFKQ0/exec';
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const ls = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) { } } };
+const qs = new URLSearchParams(location.search);
+let CLAVE = qs.get('clave') || ls.get('despacho_clave') || '';
+let USUARIO = ls.get('despacho_usuario') || '';
+let D = null, pestana = ls.get('despacho_tab') || 'curso', filtro = '';
+const fotos = {};
+
+async function pedir(params) {
+  const r = await fetch(API + '?' + new URLSearchParams(Object.assign({ vista: 'despacho', formato: 'json', clave: CLAVE }, params)));
+  return r.json();
+}
+async function postear(body) {
+  const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ clave: CLAVE, usuario: USUARIO }, body)) });
+  return r.json();
+}
+
+function login(error) {
+  $('#app').innerHTML = `<div class="login"><form onsubmit="entrar(event)"><h2 style="margin:0">Despacho de conductores</h2>
+    <p style="color:var(--muted);margin:4px 0 0">Entrapetrol · Reckitt</p>
+    <input name="usuario" placeholder="Su nombre" value="${esc(USUARIO)}" required>
+    <input name="clave" type="password" placeholder="Clave del equipo" required>
+    ${error ? '<div style="color:var(--bad)">Clave incorrecta</div>' : ''}
+    <button class="b b-pri" style="width:100%;justify-content:center">Entrar</button></form></div>`;
+}
+function entrar(e) {
+  e.preventDefault();
+  const f = e.target;
+  CLAVE = f.clave.value.trim(); USUARIO = f.usuario.value.trim();
+  ls.set('despacho_usuario', USUARIO);
+  cargar();
+}
+
+async function cargar(silencioso) {
+  if (!CLAVE) return login();
+  if (!D && !silencioso) $('#app').innerHTML = '<div class="vacio">Cargando…</div>';
+  try {
+    const d = await pedir({});
+    if (!d.ok) { if (d.error === 'clave') { CLAVE = ''; ls.set('despacho_clave', ''); return login(true); } throw new Error(d.error); }
+    ls.set('despacho_clave', CLAVE);
+    if (!USUARIO) { USUARIO = prompt('¿Su nombre? (queda registrado en cada asignación)') || 'Operaciones'; ls.set('despacho_usuario', USUARIO); }
+    D = d; pintar();
+  } catch (e) { if (!silencioso) toast('No se pudo cargar: ' + e.message); }
+}
+
+/* ---------- cálculo ---------- */
+const activa = a => a.estado === 'Activa';
+function eventosDe(token) { return D.eventos.filter(e => e.token === token).sort((x, y) => new Date(x.fechaCliente || x.fecha) - new Date(y.fechaCliente || y.fecha)); }
+function novedadesRecientes() {
+  const lim = Date.now() - 24 * 3600e3;
+  return D.eventos.filter(e => e.tipo === 'novedad' && new Date(e.fecha) > lim).sort((x, y) => new Date(y.fecha) - new Date(x.fecha));
+}
+function asignacionDe(v) {
+  return D.asignaciones.find(a => a.estado !== 'Anulada' && (a.viajeId === v.id || (String(a.booking) === String(v.booking) && a.placa === v.placa && v.placa)));
+}
+function hace(iso) {
+  const m = Math.round((Date.now() - new Date(iso)) / 60000);
+  if (isNaN(m)) return '';
+  if (m < 1) return 'ahora'; if (m < 60) return 'hace ' + m + ' min';
+  const h = Math.floor(m / 60); if (h < 24) return 'hace ' + h + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '');
+  return 'hace ' + Math.floor(h / 24) + ' d';
+}
+function fh(iso) {
+  const d = new Date(iso); if (isNaN(d)) return '';
+  return d.toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+}
+function citaTxt(s) {
+  if (!s) return '';
+  const d = new Date(s); if (isNaN(d) || !/T\d/.test(s)) return s;
+  return d.toLocaleString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' });
+}
+
+/* ---------- pantalla ---------- */
+function pintar() {
+  const curso = D.asignaciones.filter(activa);
+  const term = D.asignaciones.filter(a => !activa(a));
+  const libres = D.viajes.filter(v => !asignacionDe(v));
+  const nov = novedadesRecientes();
+  const f = filtro.toLowerCase();
+  const pasa = o => !f || JSON.stringify([o.booking, o.placa, o.conductor, o.operacion, o.contenedor]).toLowerCase().includes(f);
+  ls.set('despacho_tab', pestana);
+
+  $('#app').innerHTML = `
+  <header>
+    <h1>🚛 Despacho de conductores · <b>Reckitt</b></h1>
+    <span class="hora">datos de ${esc(D.hora)} · ${esc(USUARIO)}</span>
+    <div class="der">
+      <input type="search" placeholder="Buscar booking, placa, conductor" value="${esc(filtro)}" oninput="filtro=this.value;pintar();this.focus();this.setSelectionRange(this.value.length,this.value.length)">
+      <button class="b" onclick="cargar()">🔄</button>
+      <button class="b b-pri" onclick="formulario()">+ Nueva asignación</button>
+    </div>
+  </header>
+  <main>
+    ${nov.length ? `<div class="alerta"><h3>⚠️ Novedades de conductores (últimas 24 h)</h3>${nov.slice(0, 6).map(e => {
+      const a = D.asignaciones.find(x => x.token === e.token) || {};
+      return `<div class="it"><b>${esc(e.pasoTexto)}</b> · ${esc(e.conductor || '')} <span class="placa">${esc(e.placa)}</span> · ${esc(e.booking)}
+        ${e.texto ? `· “${esc(e.texto)}”` : ''} <span class="hora">${hace(e.fecha)}</span>
+        ${e.lat ? `<a class="b b-mini" target="_blank" href="https://maps.google.com/?q=${e.lat},${e.lng}">📍 Mapa</a>` : ''}
+        ${a.telefono ? `<a class="b b-mini b-wa" target="_blank" href="https://wa.me/${a.telefono}">💬</a>` : ''}
+        <button class="b b-mini" onclick="detalle('${e.token}')">Ver</button></div>`;
+    }).join('')}</div>` : ''}
+    <div class="tabs">
+      <button class="${pestana === 'curso' ? 'on' : ''}" onclick="pestana='curso';pintar()">En curso<span class="num">${curso.length}</span></button>
+      <button class="${pestana === 'libres' ? 'on' : ''}" onclick="pestana='libres';pintar()">Viajes sin asignar<span class="num">${libres.length}</span></button>
+      <button class="${pestana === 'term' ? 'on' : ''}" onclick="pestana='term';pintar()">Terminadas / anuladas<span class="num">${term.length}</span></button>
+    </div>
+    ${pestana === 'curso' ? tarjetas(curso.filter(pasa)) : pestana === 'term' ? tarjetas(term.filter(pasa).reverse()) : tablaLibres(libres.filter(pasa))}
+  </main>`;
+}
+
+function tarjetas(lista) {
+  if (!lista.length) return '<div class="vacio">No hay asignaciones aquí. Use “+ Nueva asignación” o la pestaña “Viajes sin asignar”.</div>';
+  return `<div class="grid">${lista.map(a => {
+    const n = a.hechos.length, t = a.pasos.length, ult = a.hechos[n - 1];
+    const sig = a.pasos[n];
+    const evs = eventosDe(a.token);
+    const ultNov = evs.filter(e => e.tipo === 'novedad').pop();
+    const quieto = activa(a) && n > 0 && n < t && (Date.now() - new Date(ult.fecha)) > 6 * 3600e3;
+    const sinAbrir = activa(a) && n === 0;
+    return `<div class="card">
+      <div class="top"><span class="op ${a.operacion}">${a.operacion}</span>
+        <div><div class="bk">Booking ${esc(a.booking)}</div>
+        <div class="sub"><span class="placa">${esc(a.placa || 'sin placa')}</span> · ${esc(a.conductor || 'sin conductor')}${a.contenedor ? ' · ' + esc(a.contenedor) : ''}</div></div>
+        ${a.estado !== 'Activa' ? `<span class="op" style="margin-left:auto">${esc(a.estado)}</span>` : ''}</div>
+      ${a.cita ? `<div class="sub">📅 ${esc(citaTxt(a.cita))}${a.lugarCita ? ' · ' + esc(a.lugarCita) : ''}</div>` : ''}
+      <div class="barra"><i style="width:${Math.round(100 * n / t)}%"></i></div>
+      <div class="estado"><span>${n ? `<b>${esc(a.pasos[n - 1].corto)}</b> · <span class="${quieto ? 'tarde' : ''}">${hace(ult.fecha)}</span>` : (sinAbrir ? '<span class="tarde">Aún no marca ningún paso</span>' : '')}</span><span>${n}/${t}</span></div>
+      ${sig && activa(a) ? `<div class="sub">Sigue: ${sig.icono} ${esc(sig.texto)}</div>` : ''}
+      ${ultNov ? `<div class="nov">⚠️ ${esc(ultNov.pasoTexto)}${ultNov.texto ? ': ' + esc(ultNov.texto) : ''} · ${hace(ultNov.fecha)}</div>` : ''}
+      <div class="acc">
+        <button class="b b-mini b-wa" onclick="whatsapp('${a.token}')">💬 WhatsApp</button>
+        <button class="b b-mini" onclick="formulario('${a.token}')">✏️ Cita / archivos</button>
+        <button class="b b-mini" onclick="detalle('${a.token}')">📋 Detalle</button>
+        ${activa(a) ? `<button class="b b-mini" onclick="cerrar('${a.token}','terminar')">✔ Terminar</button>
+          <button class="b b-mini" onclick="cerrar('${a.token}','anular')">⛔ Anular</button>` : ''}
+      </div></div>`;
+  }).join('')}</div>`;
+}
+
+function tablaLibres(lista) {
+  if (!lista.length) return '<div class="vacio">Todos los viajes abiertos de la hoja ya tienen conductor asignado en la app.</div>';
+  return `<div class="tabla"><table><thead><tr><th>Op.</th><th>Booking</th><th>Placa</th><th>Conductor</th><th>Retiro</th><th>Llenado</th><th>Patio / Puerto</th><th>Status</th><th></th></tr></thead><tbody>
+    ${lista.map(v => `<tr><td><span class="op ${v.operacion}">${esc(v.operacion)}</span></td><td><b>${esc(v.booking)}</b></td>
+      <td><span class="placa">${esc(v.placa || '—')}</span></td><td>${esc(v.conductor || '—')}</td><td>${esc(v.fechaRetiro)}</td><td>${esc(v.fechaCargue)}</td>
+      <td>${esc([v.patio, v.puerto].filter(Boolean).join(' / '))}</td><td>${esc(v.situacion)}</td>
+      <td><button class="b b-mini b-pri" onclick="formulario(null,'${esc(v.id)}')">Asignar</button></td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+/* ---------- asignar / editar ---------- */
+function telDe(conductor, placa) {
+  const n = s => String(s || '').trim().toLowerCase();
+  const d = D.directorio.find(x => conductor && n(x.conductor) === n(conductor)) || D.directorio.find(x => placa && n(x.placa) === n(placa));
+  return d ? d.telefono : '';
+}
+function formulario(token, viajeId) {
+  const a = token ? D.asignaciones.find(x => x.token === token) : null;
+  const v = viajeId ? D.viajes.find(x => x.id === viajeId) : null;
+  const o = a || (v ? { operacion: v.operacion, booking: v.booking, placa: v.placa, conductor: v.conductor, viajeId: v.id,
+    telefono: telDe(v.conductor, v.placa), lugarCita: v.operacion === 'EXPO' ? v.bodega || '' : v.puerto || '' } : { operacion: 'EXPO' });
+  ventana(`<h2>${a ? 'Actualizar asignación' : 'Nueva asignación'}</h2>
+    <form class="form" id="fa" onsubmit="guardarAsig(event, ${a ? `'${a.token}'` : 'null'})">
+      <input type="hidden" name="viajeId" value="${esc(o.viajeId || '')}">
+      <label>Operación<select name="operacion"><option ${o.operacion !== 'IMPO' ? 'selected' : ''}>EXPO</option><option ${o.operacion === 'IMPO' ? 'selected' : ''}>IMPO</option></select></label>
+      <label>Booking<input name="booking" required value="${esc(o.booking || '')}"></label>
+      <label>Placa<input name="placa" value="${esc(o.placa || '')}" onchange="autoTel()"></label>
+      <label>Conductor<input name="conductor" value="${esc(o.conductor || '')}" onchange="autoTel()"></label>
+      <label>WhatsApp del conductor<input name="telefono" inputmode="tel" placeholder="300 123 4567" value="${esc(o.telefono || '')}"></label>
+      <label>Contenedor<input name="contenedor" placeholder="MSKU1234567" value="${esc(o.contenedor || '')}"></label>
+      <label>Cita (fecha y hora)<input type="datetime-local" name="cita" value="${esc(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(o.cita || '') ? o.cita.slice(0, 16) : '')}"></label>
+      <label>Lugar de la cita<input name="lugarCita" placeholder="Patio / planta / puerto" value="${esc(o.lugarCita || '')}"></label>
+      <label class="full">Instrucciones para el conductor<textarea name="instrucciones" placeholder="Ej: presentarse con EPP, llevar documento de la carga, preguntar por…">${esc(o.instrucciones || '')}</textarea></label>
+      <label class="full">Imágenes y documentos (cita, orden de cargue, foto del sitio…)
+        ${a && a.archivos.length ? `<div class="archivos">${a.archivos.map(f => `<label style="flex-direction:row;font-weight:400;color:var(--text)"><input type="checkbox" name="quitar" value="${f.id}"> Quitar “${esc(f.nombre)}”</label>`).join('')}</div>` : ''}
+        <input type="file" name="archivos" multiple accept="image/*,application/pdf"></label>
+      <div class="pie full"><button type="button" class="b" onclick="cerrarVentana()">Cancelar</button>
+        <button class="b b-pri" id="bguardar">${a ? 'Guardar cambios' : 'Crear y preparar WhatsApp'}</button></div>
+    </form>`);
+}
+function autoTel() {
+  const f = $('#fa');
+  if (!f.telefono.value) f.telefono.value = telDe(f.conductor.value, f.placa.value);
+}
+function leerArchivo(file) {
+  return new Promise((ok, mal) => {
+    if (/^image\//.test(file.type) && file.size > 600e3) {   // fotos grandes: se reducen para que carguen rápido en el celular
+      const img = new Image();
+      img.onload = () => { const k = Math.min(1, 1600 / Math.max(img.width, img.height)); const c = document.createElement('canvas');
+        c.width = img.width * k; c.height = img.height * k; c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        ok({ nombre: file.name.replace(/\.\w+$/, '') + '.jpg', tipo: 'image/jpeg', base64: c.toDataURL('image/jpeg', 0.8) }); };
+      img.onerror = mal; img.src = URL.createObjectURL(file); return;
+    }
+    const r = new FileReader(); r.onload = () => ok({ nombre: file.name, tipo: file.type, base64: r.result }); r.onerror = mal; r.readAsDataURL(file);
+  });
+}
+async function guardarAsig(e, token) {
+  e.preventDefault();
+  const f = e.target, b = $('#bguardar');
+  b.disabled = true; b.textContent = 'Guardando…';
+  try {
+    const datos = { action: 'asignar', token: token || undefined };
+    ['operacion', 'booking', 'placa', 'conductor', 'telefono', 'contenedor', 'cita', 'lugarCita', 'instrucciones', 'viajeId'].forEach(k => datos[k] = f[k].value);
+    datos.archivosNuevos = await Promise.all([...f.archivos.files].map(leerArchivo));
+    datos.quitarArchivos = [...f.querySelectorAll('[name=quitar]:checked')].map(x => x.value);
+    const r = await postear(datos);
+    if (!r.ok) throw new Error(r.error);
+    await cargar(true);
+    whatsapp(r.token, !r.nueva);
+  } catch (err) { b.disabled = false; b.textContent = 'Reintentar'; toast('Error: ' + err.message); }
+}
+
+function mensaje(a, actualizacion) {
+  const cita = a.cita ? `📅 Cita: ${citaTxt(a.cita)}${a.lugarCita ? ' – ' + a.lugarCita : ''}` : '';
+  if (actualizacion) return [`🔔 *Actualización* booking ${a.booking} (${a.placa})`, cita, a.archivos.length ? '📎 Hay documentos o imágenes nuevos.' : '',
+    '', '👉 Revise aquí:', a.link].filter((x, i) => x || i === 3).join('\n');
+  return [`Hola${a.conductor ? ' ' + a.conductor.split(' ')[0] : ''} 👋`, 'Entrapetrol le asignó un viaje para Reckitt:',
+    `*${a.operacion === 'IMPO' ? 'IMPORTACIÓN' : 'EXPORTACIÓN'} · Booking ${a.booking}*`, a.placa ? `🚛 Placa ${a.placa}` : '', cita, '',
+    '👉 Abra este enlace y toque el botón verde en cada paso del viaje:', a.link, '',
+    'Guarde este mensaje: el mismo enlace sirve para todo el viaje.'].filter((x, i, arr) => x || arr[i - 1]).join('\n');
+}
+function whatsapp(token, actualizacion) {
+  const a = D.asignaciones.find(x => x.token === token);
+  if (actualizacion === undefined) actualizacion = a.hechos.length > 0 || Number(a.version) > 1;
+  const txt = mensaje(a, actualizacion);
+  const wa = 'https://wa.me/' + (a.telefono || '') + '?text=' + encodeURIComponent(txt);
+  ventana(`<h2>💬 Enviar por WhatsApp</h2>
+    <p style="margin:0 0 8px">${a.telefono ? `A <b>${esc(a.conductor || '')}</b> +${esc(a.telefono)}` : '<b style="color:var(--warn)">Sin número: WhatsApp le pedirá elegir el contacto.</b>'}</p>
+    <div class="msg">${esc(txt)}</div>
+    <label style="display:flex;gap:6px;margin-top:8px;font-size:13px"><input type="checkbox" ${actualizacion ? 'checked' : ''} onchange="whatsapp('${token}', this.checked)"> Mensaje de actualización (corto)</label>
+    <div class="pie"><button class="b" onclick="copiar(${JSON.stringify(a.link).replace(/"/g, '&quot;')})">🔗 Copiar enlace</button>
+      <button class="b" onclick="copiar(document.querySelector('.msg').textContent)">📋 Copiar mensaje</button>
+      <a class="b b-wa" target="_blank" href="${wa}" onclick="setTimeout(cerrarVentana,300)">💬 Abrir WhatsApp</a></div>`);
+}
+
+async function cerrar(token, accion) {
+  const a = D.asignaciones.find(x => x.token === token);
+  if (!confirm(`${accion === 'anular' ? '¿Anular' : '¿Dar por terminada'} la asignación del booking ${a.booking} (${a.placa})?${accion === 'anular' ? '\nEl enlace del conductor dejará de funcionar.' : ''}`)) return;
+  const r = await postear({ action: accion, token });
+  if (!r.ok) return toast('Error: ' + r.error);
+  toast(accion === 'anular' ? 'Anulada' : 'Terminada'); cargar(true);
+}
+
+/* ---------- detalle ---------- */
+function detalle(token) {
+  const a = D.asignaciones.find(x => x.token === token);
+  const evs = eventosDe(token);
+  ventana(`<h2><span class="op ${a.operacion}">${a.operacion}</span> Booking ${esc(a.booking)} · <span class="placa">${esc(a.placa)}</span></h2>
+    <p class="sub" style="margin:-6px 0 10px">${esc(a.conductor)} ${a.telefono ? '· +' + esc(a.telefono) : ''} · <a href="${esc(a.link)}" target="_blank">ver lo que ve el conductor</a></p>
+    <ul class="linea">${evs.map(e => `<li><span class="h">${fh(e.fechaCliente || e.fecha)}</span><div>
+      <div class="${e.tipo === 'novedad' ? 't-novedad' : ''}">${e.tipo === 'novedad' ? '⚠️ ' : e.tipo === 'paso' ? '✔ ' : ''}${esc(e.pasoTexto || e.tipo)}</div>
+      ${e.texto ? `<div>“${esc(e.texto)}”</div>` : ''}
+      ${e.lat ? `<a target="_blank" href="https://maps.google.com/?q=${e.lat},${e.lng}">📍 ubicación${e.precision ? ' (±' + e.precision + ' m)' : ''}</a>` : ''}
+      ${e.archivo ? `<img data-foto="${e.archivo}" alt="foto" onclick="window.open(this.src)">` : ''}
+    </div></li>`).join('') || '<li><span></span>Sin eventos todavía</li>'}</ul>
+    <div class="pie"><button class="b" onclick="cerrarVentana()">Cerrar</button></div>`);
+  document.querySelectorAll('[data-foto]').forEach(async img => {
+    const id = img.dataset.foto;
+    try {
+      if (!fotos[id]) { const d = await pedir({ archivo: id }); if (d.ok) fotos[id] = 'data:' + d.tipo + ';base64,' + d.base64; }
+      img.src = fotos[id];
+    } catch (e) { }
+  });
+}
+
+/* ---------- utilidades ---------- */
+function ventana(html) {
+  cerrarVentana();
+  const v = document.createElement('div'); v.className = 'velo'; v.id = 'velo';
+  v.innerHTML = `<div class="ven">${html}</div>`;
+  v.addEventListener('mousedown', e => { if (e.target === v) cerrarVentana(); });
+  document.body.appendChild(v);
+}
+function cerrarVentana() { const v = $('#velo'); if (v) v.remove(); }
+function copiar(t) { navigator.clipboard.writeText(t).then(() => toast('Copiado')); }
+let tt;
+function toast(m) { let t = $('#toast'); if (!t) { t = document.createElement('div'); t.id = 'toast'; t.className = 'toast'; document.body.appendChild(t); } t.textContent = m; t.style.display = ''; clearTimeout(tt); tt = setTimeout(() => t.style.display = 'none', 3000); }
+
+cargar();
+setInterval(() => { if (!document.hidden && !$('#velo') && document.activeElement.type !== 'search') cargar(true); }, 60000);
+</script>
+</body>
+</html>
