@@ -125,6 +125,8 @@ th{position:sticky;top:0;background:var(--surface-2);text-align:left;font-weight
 td{padding:10px;border-top:1px solid var(--border);white-space:nowrap;vertical-align:top}
 td.obs{white-space:normal;min-width:240px;max-width:340px;color:var(--muted)}
 tr:hover td{background:var(--surface-2)}
+.cond{display:flex;align-items:center;gap:4px;margin-top:4px;font-size:12px;font-weight:600;color:var(--text);white-space:nowrap}
+.cond .sub{white-space:nowrap}
 .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:600;color:#fff;white-space:nowrap}
 .op{font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px;border:1px solid var(--border)}
 .op.EXPO{color:#2563eb;border-color:#93c5fd}.op.IMPO{color:#c2410c;border-color:#fdba74}
@@ -441,6 +443,21 @@ async function marcarHecha(id){
   render();
 }
 const pill = e => `<span class="pill" style="background:${colorEstado(e)}">${esc(e)}</span>`;
+// último paso que marcó el conductor en la app de conductores (por viaje, o por booking + placa)
+function conductorDe(v){
+  const L = (window.CONDUCTORES||[]).filter(c => (c.viajeId && c.viajeId===v.id) || (c.booking && c.booking===String(v.booking||'') && c.placa && c.placa===v.placa));
+  return L.sort((a,b)=> String(b.fecha).localeCompare(String(a.fecha)))[0];
+}
+function haceTxt(iso){
+  const m = Math.round((Date.now() - new Date(iso)) / 60000);
+  if (isNaN(m)) return '';
+  if (m < 1) return 'ahora'; if (m < 60) return `hace ${m} min`;
+  const h = Math.floor(m/60); return h < 24 ? `hace ${h} h` : `hace ${Math.floor(h/24)} d`;
+}
+function celdaConductor(v){
+  const c = conductorDe(v); if (!c) return '';
+  return `<div class="cond" title="${esc(c.siguiente ? 'Sigue: ' + c.siguiente : 'Viaje terminado')}">${c.icono} ${esc(c.paso)}${c.fecha?` <span class="sub">· ${haceTxt(c.fecha)}</span>`:''} <span class="sub">· ${c.n}/${c.total}</span></div>`;
+}
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2200); }
 
 /* ---------- datos (Google Sheets o demo local) ---------- */
@@ -469,6 +486,7 @@ async function cargar(){
       fusionarHistorial();
       window.MODO_CLIENTE = !j.interno;
       window.BITACORA = j.bitacora || [];
+      window.CONDUCTORES = j.conductores || [];
       window.CLAVE = clave;
       $('#connDot').classList.add('live'); $('#connTxt').textContent = `Hoja de Drive · ${j.hora || 'en línea'}`;
       return;
@@ -729,7 +747,7 @@ function renderProximos(){ const act = viajes;
     <td><span class="tag-ev" style="background:${c}">${t}</span> ${dia(f)}${f<HOY?`<br><span class="sub" style="color:var(--warn);font-weight:600">En curso · hace ${-diffDias(f)} d</span>`:''}</td>
     <td>${v.fechaRetiro ? dia(v.fechaRetiro, patio(v)) : '—'}</td>
     <td>${dia(v.fechaCargue, v.operacion==='EXPO' ? 'Planta Reckitt' : (v.bodega||''))}</td>
-    <td>${tieneVehiculo(v)?`<span class="placa">${esc(v.placa)}</span>`:'<span class="missing">Sin asignar</span>'}</td><td>${esc(v.pais||'—')}<br><span class="sub">${v.booking?'BK '+esc(v.booking):'Sin booking'}</span><br><span class="sub">${esc(v.mn||'—')}</span></td><td>${fd(v.etd)}</td><td>${pill(v.estado)}</td><td class="solo-interno">${celdaAccion(v)}</td>
+    <td>${tieneVehiculo(v)?`<span class="placa">${esc(v.placa)}</span>`:'<span class="missing">Sin asignar</span>'}</td><td>${esc(v.pais||'—')}<br><span class="sub">${v.booking?'BK '+esc(v.booking):'Sin booking'}</span><br><span class="sub">${esc(v.mn||'—')}</span></td><td>${fd(v.etd)}</td><td>${pill(v.estado)}${celdaConductor(v)}</td><td class="solo-interno">${celdaAccion(v)}</td>
     <td><button class="link" onclick="abrir('${v.id}')">Actualizar</button></td></tr>`).join('')}</table></div>` : '<div class="sub">No hay viajes con estos filtros.</div>');
 }
 function renderFeed(){
@@ -761,7 +779,7 @@ function renderTabla(){
   <tbody>${rows.map((v, n)=>`<tr><td class="num">${n+1}</td><td><button class="link" onclick="abrir('${v.id}')">Actualizar</button></td>${COLS.map(([k])=>{
     const val = v[k];
     if (k==='situacion') return `<td>${sitTag(v)}</td>`;
-    if (k==='estado') return `<td>${pill(val)}</td>`;
+    if (k==='estado') return `<td>${pill(val)}${celdaConductor(v)}</td>`;
     if (k==='operacion') return `<td><span class="op ${val}">${val}</span></td>`;
     if (k==='placa') return `<td>${val?`<span class="placa">${esc(val)}</span>`:'<span class="missing">Sin asignar</span>'}</td>`;
     if (k==='observacion') return `<td class="obs">${esc(val)}</td>`;
@@ -887,7 +905,7 @@ function sugerencias(){
   return [v && `¿Status de ${v.placa}?`, pais && `¿Qué va para ${pais.pais.charAt(0)+pais.pais.slice(1).toLowerCase()}?`, mn && `¿Cómo va la ${mn.mn.split(' ').slice(0,3).join(' ')}?`, '¿Qué retiros hay hoy?', '¿Qué falta por asignar?', !window.MODO_CLIENTE && 'Lista de errores y acciones pendientes'].filter(Boolean);
 }
 function tarjetaViaje(v){
-  return `<div class="trip"><b>${v.placa?`<span class="placa">${esc(v.placa)}</span>`:'Sin vehículo'}</b> ${sitTag(v)} ${pill(v.estado)}<br>
+  return `<div class="trip"><b>${v.placa?`<span class="placa">${esc(v.placa)}</span>`:'Sin vehículo'}</b> ${sitTag(v)} ${pill(v.estado)}${celdaConductor(v) || '<br>'}
     ${v.operacion} → ${esc(v.pais||'—')} · ${esc(v.conductor||'sin conductor')}<br>
     ${v.fechaRetiro?`Retiro patio ${fd(v.fechaRetiro)} (${esc(v.patio||'por definir')}) · `:''}${v.operacion==='EXPO'?'Llenado':'Cargue'} ${fd(v.fechaCargue)}<br>
     ${v.mn?`MN ${esc(v.mn)} · ETD ${fd(v.etd)} · Cierre doc ${fd(v.cierreDoc)}<br>`:''}${v.booking?`Booking ${esc(v.booking)}<br>`:''}
