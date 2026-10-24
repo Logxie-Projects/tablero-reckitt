@@ -86,6 +86,17 @@ header .chips{display:flex;flex-wrap:wrap;gap:6px}
 .centro{text-align:center;padding:60px 20px;color:var(--muted)}
 .centro b{display:block;font-size:22px;color:var(--text);margin-bottom:8px}
 .oculto{display:none!important}
+.verif{border:2px solid var(--accent)}
+.verif p{margin:0 0 4px}
+.rechazo{color:var(--bad);font-weight:700}
+.fotosv{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:6px 0 10px}
+.fotosv button{min-height:150px;border-radius:16px;background:#eef2ff;color:#3730a3;border:2px dashed #a5b4fc;font-weight:800;font-size:16px;padding:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;overflow:hidden}
+.fotosv button.lista{border-style:solid;border-color:var(--ok);background:var(--ok-soft);color:var(--ok)}
+.fotosv img{width:100%;height:110px;object-fit:cover;border-radius:10px}
+.fotosv .ico{font-size:40px}
+.acepto{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--muted);background:var(--bg);border-radius:12px;padding:10px}
+.acepto input{width:26px;height:26px;flex:none;margin:0}
+.idok{margin-top:10px;font-size:15px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -132,7 +143,8 @@ async function cargar() {
 function aplicar(d) {
   // los pasos que siguen en la cola se muestran como hechos aunque el servidor todavía no los tenga
   S = { asignacion: d.asignacion, pasos: d.pasos, hechos: d.hechos, novedades: d.novedades,
-        telefonoOperaciones: d.telefonoOperaciones, minutosDeshacer: d.minutosDeshacer };
+        telefonoOperaciones: d.telefonoOperaciones, minutosDeshacer: d.minutosDeshacer,
+        identidad: d.identidad || 'No requerida', avisoDatos: d.avisoDatos || '' };
   guardar(K.estado, S);
   pintar();
 }
@@ -144,6 +156,11 @@ function hechosVistos() {
     if (x.action === 'deshacer') h.pop();
   });
   return h;
+}
+
+/** estado de la verificación de identidad contando lo que espera señal en la cola */
+function identidadVista() {
+  return cola.some(x => x.action === 'verificar') ? 'Por revisar' : S.identidad;
 }
 
 function fallo(msg, reintentar) {
@@ -208,6 +225,8 @@ function pintar() {
   const ultimo = h[i - 1];
   const puedeDeshacer = ultimo && (Date.now() - new Date(ultimo.fecha)) < S.minutosDeshacer * 60000;
   const tel = S.telefonoOperaciones;
+  const idEstado = identidadVista();
+  const falta = sig && a.estado !== 'Anulada' && (idEstado === 'Sin verificar' || idEstado === 'Rechazada');
 
   $('#app').innerHTML = `
   <header>
@@ -222,8 +241,13 @@ function pintar() {
     <div class="progreso"><span>${i >= total ? 'Viaje terminado' : `Paso ${i + 1} de ${total}`}</span><small>${i} de ${total} listos</small></div>
     <div class="barra"><i style="width:${Math.round(100 * i / total)}%"></i></div>
 
-    ${sig ? `<button class="siguiente" onclick="confirmar(${i})"><span class="ico">${sig.icono}</span><span>${esc(sig.texto)}<span class="toca">👆 Toque aquí cuando esté listo</span></span></button>`
+    ${falta ? `<div class="card verif"><h2>🪪 Antes de seguir</h2>
+        ${idEstado === 'Rechazada' ? '<p class="rechazo">Operaciones no pudo confirmar su identidad. Tómese las fotos otra vez, con buena luz.</p>' : ''}
+        <p>Verifique que es usted: <b>una selfie</b> y <b>una foto de su cédula o licencia</b>.</p>
+        <button class="siguiente" onclick="verificar()"><span class="ico">📸</span><span>Verificar mi identidad<span class="toca">👆 Toque aquí</span></span></button></div>`
+    : sig ? `<button class="siguiente" onclick="confirmar(${i})"><span class="ico">${sig.icono}</span><span>${esc(sig.texto)}<span class="toca">👆 Toque aquí cuando esté listo</span></span></button>`
           : `<div class="listo"><b>🏁 ¡Viaje terminado!</b>Gracias. Operaciones ya fue avisado.</div>`}
+    ${idEstado === 'Por revisar' ? '<div class="idok">🪪 Identidad enviada · operaciones la está revisando</div>' : idEstado === 'Aprobada' ? '<div class="idok">🪪 Identidad verificada ✔</div>' : ''}
     ${ultimo ? `<div class="ultimo">✔ ${esc(pasos[i - 1].corto)} · ${hora(ultimo.fecha)}${ultimo.pendiente ? ' (sin enviar)' : ''}
       ${puedeDeshacer ? `<button onclick="deshacer()">Me equivoqué</button>` : ''}</div>` : ''}
 
@@ -310,7 +334,7 @@ function bloqueFoto(texto) {
   return `<button class="btn-foto" id="bfoto" onclick="tomarFoto()">📷 ${esc(texto)}</button><img id="prev" class="prev oculto" alt="">`;
 }
 function tomarFoto() {
-  const inp = $('#archivo'); inp.value = '';
+  const inp = $('#archivo'); inp.value = ''; inp.setAttribute('capture', 'environment');
   inp.onchange = async () => {
     const f = inp.files[0]; if (!f) return;
     try {
@@ -360,6 +384,40 @@ function deshacer() {
   hoja(`<h3>¿Deshacer el último paso?</h3><p class="grande"><span>↩️</span>${esc(p.texto)}</p>
     <button class="btn-si" style="background:var(--bad)" onclick="cerrarHoja();encolar({action:'deshacer'})">Sí, deshacer</button>
     <button class="btn-no" onclick="cerrarHoja()">No, está bien</button>`);
+}
+
+/* ---------- verificación de identidad: selfie + documento ---------- */
+const fotosV = {};
+function verificar() {
+  ubicar(); delete fotosV.selfie; delete fotosV.documento;
+  hoja(`<p class="grande"><span>🪪</span>Verificar mi identidad</p>
+    <div class="fotosv">
+      <button id="v-selfie" onclick="tomarV('selfie')"><span class="ico">🤳</span>1. Tomarme una selfie</button>
+      <button id="v-documento" onclick="tomarV('documento')"><span class="ico">🪪</span>2. Foto de mi cédula o licencia</button>
+    </div>
+    <label class="acepto"><input type="checkbox" id="acepto" onchange="listoV()"><span>${esc(S.avisoDatos)}</span></label>
+    <button class="btn-si" id="bsi" disabled onclick="enviarV()">Enviar y empezar</button>
+    <button class="btn-no" onclick="cerrarHoja()">Ahora no</button>`);
+}
+function tomarV(slot) {
+  const inp = $('#archivo'); inp.value = '';
+  inp.setAttribute('capture', slot === 'selfie' ? 'user' : 'environment');   // la selfie con la cámara de adelante
+  inp.onchange = async () => {
+    const f = inp.files[0]; if (!f) return;
+    try {
+      fotosV[slot] = await comprimir(f);
+      const b = $('#v-' + slot);
+      if (b) { b.classList.add('lista'); b.innerHTML = `<img src="${fotosV[slot].base64}" alt="">✔ ${slot === 'selfie' ? 'Selfie' : 'Documento'} (cambiar)`; }
+      listoV();
+    } catch (e) { toast('No se pudo leer la foto', true); }
+  };
+  inp.click();
+}
+function listoV() { const b = $('#bsi'); if (b) b.disabled = !(fotosV.selfie && fotosV.documento && $('#acepto').checked); }
+function enviarV() {
+  const item = Object.assign({ action: 'verificar', selfie: fotosV.selfie, documento: fotosV.documento, acepta: true }, pos || {});
+  cerrarHoja(); encolar(item);
+  toast('✅ Identidad enviada. Ya puede empezar');
 }
 
 let tipoNovedad = '';

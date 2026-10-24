@@ -86,6 +86,14 @@ input[type=search]{border:1px solid var(--line);background:var(--surface);border
 .login{display:grid;place-items:center;min-height:80vh}
 .login form{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:26px;width:min(360px,92vw)}
 .login input{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;margin:10px 0;background:var(--surface)}
+.ident{font-size:13px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ident .por{color:var(--warn);font-weight:700}
+.ident .si{color:var(--ok);font-weight:700}
+.ident .no{color:var(--bad);font-weight:700}
+.comparar{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.comparar figure{margin:0;background:var(--surface-2);border-radius:10px;padding:8px;text-align:center}
+.comparar img{width:100%;height:320px;object-fit:contain;border-radius:8px;background:#000;cursor:zoom-in}
+.comparar figcaption{font-size:12px;color:var(--muted);margin-top:4px;font-weight:700}
 @media (max-width:600px){.form{grid-template-columns:1fr} header .der{margin-left:0}}
 </style>
 </head>
@@ -172,6 +180,7 @@ function pintar() {
   const term = D.asignaciones.filter(a => !activa(a));
   const libres = D.viajes.filter(v => !asignacionDe(v));
   const nov = novedadesRecientes();
+  const porRevisar = D.asignaciones.filter(a => a.verificacion && a.verificacion.estado === 'Por revisar' && a.estado !== 'Anulada');
   const f = filtro.toLowerCase();
   const pasa = o => !f || JSON.stringify([o.booking, o.placa, o.conductor, o.operacion, o.contenedor]).toLowerCase().includes(f);
   ls.set('despacho_tab', pestana);
@@ -195,6 +204,9 @@ function pintar() {
         ${a.telefono ? `<a class="b b-mini b-wa" target="_blank" href="https://wa.me/${a.telefono}">💬</a>` : ''}
         <button class="b b-mini" onclick="detalle('${e.token}')">Ver</button></div>`;
     }).join('')}</div>` : ''}
+    ${porRevisar.length ? `<div class="alerta" style="background:var(--warn-soft);border-color:var(--warn)"><h3 style="color:var(--warn)">🪪 Identidades por revisar</h3>${porRevisar.map(a =>
+      `<div class="it"><b>${esc(a.conductor || 'Conductor')}</b> <span class="placa">${esc(a.placa)}</span> · ${esc(a.booking)} <span class="hora">${hace(a.verificacion.fecha)}</span>
+        <button class="b b-mini" onclick="revisar('${a.token}')">Comparar fotos</button></div>`).join('')}</div>` : ''}
     <div class="tabs">
       <button class="${pestana === 'curso' ? 'on' : ''}" onclick="pestana='curso';pintar()">En curso<span class="num">${curso.length}</span></button>
       <button class="${pestana === 'libres' ? 'on' : ''}" onclick="pestana='libres';pintar()">Viajes sin asignar<span class="num">${libres.length}</span></button>
@@ -222,6 +234,7 @@ function tarjetas(lista) {
       <div class="barra"><i style="width:${Math.round(100 * n / t)}%"></i></div>
       <div class="estado"><span>${n ? `<b>${esc(a.pasos[n - 1].corto)}</b> · <span class="${quieto ? 'tarde' : ''}">${hace(ult.fecha)}</span>` : (sinAbrir ? '<span class="tarde">Aún no marca ningún paso</span>' : '')}</span><span>${n}/${t}</span></div>
       ${sig && activa(a) ? `<div class="sub">Sigue: ${sig.icono} ${esc(sig.texto)}</div>` : ''}
+      ${identidadHtml(a)}
       ${ultNov ? `<div class="nov">⚠️ ${esc(ultNov.pasoTexto)}${ultNov.texto ? ': ' + esc(ultNov.texto) : ''} · ${hace(ultNov.fecha)}</div>` : ''}
       <div class="acc">
         <button class="b b-mini b-wa" onclick="whatsapp('${a.token}')">💬 WhatsApp</button>
@@ -336,6 +349,47 @@ async function cerrar(token, accion) {
   toast(accion === 'anular' ? 'Anulada' : 'Terminada'); cargar(true);
 }
 
+/* ---------- identidad ---------- */
+function identidadHtml(a) {
+  const v = a.verificacion;
+  if (!v) return activa(a) ? '<div class="ident">🪪 <span class="por">Identidad sin verificar</span></div>' : '';
+  const cls = { 'Por revisar': 'por', 'Aprobada': 'si', 'Rechazada': 'no' }[v.estado] || '';
+  const txt = { 'Por revisar': 'Identidad por revisar', 'Aprobada': 'Identidad verificada ✔', 'Rechazada': 'Identidad rechazada: debe repetirla' }[v.estado];
+  return `<div class="ident">🪪 <span class="${cls}">${esc(txt)}</span>${v.revisadoPor ? ` · ${esc(v.revisadoPor)}` : ''}
+    <button class="b b-mini" onclick="revisar('${a.token}')">${v.estado === 'Por revisar' ? 'Comparar fotos' : 'Ver fotos'}</button></div>`;
+}
+function revisar(token) {
+  const a = D.asignaciones.find(x => x.token === token), v = a.verificacion;
+  ventana(`<h2>🪪 ¿Es la misma persona?</h2>
+    <p class="sub" style="margin:-6px 0 10px">${esc(a.conductor)} · <span class="placa">${esc(a.placa)}</span> · booking ${esc(a.booking)} · enviado ${fh(v.fecha)}
+      ${v.lat ? ` · <a target="_blank" href="https://maps.google.com/?q=${v.lat},${v.lng}">📍 dónde</a>` : ''}</p>
+    <div class="comparar">
+      <figure><img data-foto="${v.selfie}" alt="selfie" onclick="window.open(this.src)"><figcaption>SELFIE</figcaption></figure>
+      <figure><img data-foto="${v.documento}" alt="documento" onclick="window.open(this.src)"><figcaption>CÉDULA / LICENCIA</figcaption></figure>
+    </div>
+    <p class="sub">Revise que la cara coincida y que el nombre del documento sea <b>${esc(a.conductor || 'el del conductor asignado')}</b>.</p>
+    <div class="pie"><button class="b" onclick="cerrarVentana()">Cerrar</button>
+      <button class="b" style="color:var(--bad)" onclick="decidir('${token}', false)">✖ No coincide</button>
+      <button class="b b-pri" style="background:var(--ok);border-color:var(--ok)" onclick="decidir('${token}', true)">✔ Coincide</button></div>`);
+  cargarFotos();
+}
+async function decidir(token, aprobado) {
+  const r = await postear({ action: 'revisarIdentidad', token, aprobado });
+  if (!r.ok) return toast('Error: ' + r.error);
+  cerrarVentana(); toast(aprobado ? 'Identidad aprobada' : 'Rechazada: el conductor deberá repetirla');
+  if (!aprobado) { const a = D.asignaciones.find(x => x.token === token); if (a.telefono) window.open('https://wa.me/' + a.telefono + '?text=' + encodeURIComponent('Hola, no pudimos confirmar su identidad. Por favor abra de nuevo el enlace del viaje y tómese otra vez la selfie y la foto del documento, con buena luz: ' + a.link)); }
+  cargar(true);
+}
+function cargarFotos() {
+  document.querySelectorAll('[data-foto]').forEach(async img => {
+    const id = img.dataset.foto;
+    try {
+      if (!fotos[id]) { const d = await pedir({ archivo: id }); if (d.ok) fotos[id] = 'data:' + d.tipo + ';base64,' + d.base64; }
+      img.src = fotos[id];
+    } catch (e) { }
+  });
+}
+
 /* ---------- detalle ---------- */
 function detalle(token) {
   const a = D.asignaciones.find(x => x.token === token);
@@ -349,13 +403,7 @@ function detalle(token) {
       ${e.archivo ? `<img data-foto="${e.archivo}" alt="foto" onclick="window.open(this.src)">` : ''}
     </div></li>`).join('') || '<li><span></span>Sin eventos todavía</li>'}</ul>
     <div class="pie"><button class="b" onclick="cerrarVentana()">Cerrar</button></div>`);
-  document.querySelectorAll('[data-foto]').forEach(async img => {
-    const id = img.dataset.foto;
-    try {
-      if (!fotos[id]) { const d = await pedir({ archivo: id }); if (d.ok) fotos[id] = 'data:' + d.tipo + ';base64,' + d.base64; }
-      img.src = fotos[id];
-    } catch (e) { }
-  });
+  cargarFotos();
 }
 
 /* ---------- utilidades ---------- */
