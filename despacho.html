@@ -24,6 +24,8 @@
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
 button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer}
+a{color:var(--accent)}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) a:not(.b){color:#ff7ab8} }
 header{background:var(--surface);border-bottom:1px solid var(--line);padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:3}
 header h1{font-size:17px;margin:0}
 header h1 b{color:var(--accent)}
@@ -123,7 +125,7 @@ function login(error) {
   $('#app').innerHTML = `<div class="login"><form onsubmit="entrar(event)"><h2 style="margin:0">Despacho de conductores</h2>
     <p style="color:var(--muted);margin:4px 0 0">Entrapetrol · Reckitt</p>
     <input name="usuario" placeholder="Su nombre" value="${esc(USUARIO)}" required>
-    <input name="clave" type="password" placeholder="Clave del equipo" required>
+    <input name="clave" type="password" placeholder="Clave del equipo" value="${esc(CLAVE)}" required>
     ${error ? '<div style="color:var(--bad)">Clave incorrecta</div>' : ''}
     <button class="b b-pri" style="width:100%;justify-content:center">Entrar</button></form></div>`;
 }
@@ -142,7 +144,7 @@ async function cargar(silencioso) {
     const d = await pedir({});
     if (!d.ok) { if (d.error === 'clave') { CLAVE = ''; ls.set('despacho_clave', ''); return login(true); } throw new Error(d.error); }
     ls.set('despacho_clave', CLAVE);
-    if (!USUARIO) { USUARIO = prompt('¿Su nombre? (queda registrado en cada asignación)') || 'Operaciones'; ls.set('despacho_usuario', USUARIO); }
+    if (!USUARIO) return login();   // falta el nombre: se pide en el formulario (prompt() no funciona en todos los navegadores)
     D = d; pintar();
   } catch (e) { if (!silencioso) toast('No se pudo cargar: ' + e.message); }
 }
