@@ -539,6 +539,14 @@ function renderGbar(){
 
 /* ---------- control de calidad de datos ---------- */
 // Reglas que se reportan al equipo para que corrijan la hoja. Misma lógica en apps-script/Code.gs (erroresDe_).
+// viaje CERRADO que no llegó a puerto: se reprogramó o la misma placa y booking siguen en una fila posterior (igual que reemplazado_ en Code.gs)
+const minus = s => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
+function reemplazado(v){
+  if (/reprogram|cambio de c?programac/.test(minus(v.observacion))) return true;
+  if (!v.booking || !v.placa || /^(sin info|pend)/.test(minus(v.booking))) return false;
+  const clave = x => minus(x.booking)+'|'+minus(x.placa);
+  return viajes.some(x => x!==v && x.operacion===v.operacion && clave(x)===clave(v) && (x.fila||0) > (v.fila||0));
+}
 function validar(v){
   const e = [], add = (sev, campo, msg) => e.push({v, sev, campo, msg});
   const expo = v.operacion==='EXPO', impo = v.operacion==='IMPO', sit = situacion(v), pend = sit==='Pendiente confirmación';
@@ -548,7 +556,7 @@ function validar(v){
     : {status:'STATUS OPERACIONES', cargue:'Fecha de cargue llenado', retiro:'Fecha de cargue contenedor', patio:'PATIO', booking:'Booking', mn:'MN', cierre:'Cierre Doc', obs:'OBSERVACION STATUS'};
   // EXPO cierra con la tirilla de entrega en puerto; IMPO con la tirilla de devolución del vacío
   if (sit==='Cerrado'){
-    if (seg && (v.fechaCargue||'') >= window.SEG_INICIO){
+    if (seg && (v.fechaCargue||'') >= window.SEG_INICIO && !reemplazado(v)){
       if (expo && !v.tirillaEntrega) add('Alta','Tirilla de entrega','Viaje CERRADO sin tirilla de entrega en puerto');
       if (impo && !v.tirillaDevolucion) add('Alta','Tirilla de devolución','Viaje CERRADO sin tirilla de devolución del vacío');
     }
