@@ -561,7 +561,7 @@ function validar(v){
   const expo = v.operacion==='EXPO', impo = v.operacion==='IMPO', sit = situacion(v), pend = sit==='Pendiente confirmación';
   const seg = !!window.SEG_INICIO;
   // nombres de las columnas en la pestaña que corrige el equipo (Seguimiento EXPO / IMPO)
-  const C = seg ? {status:'STATUS', cargue: impo?'Fecha de descargue en planta':'Fecha de llenado', retiro:'Fecha de retiro', patio:'Patio de retiro', booking:'Booking / BL', mn:'Motonave', cierre:'Cierre documental', obs:'Observación'}
+  const C = seg ? {status:'STATUS', cargue: impo?'Fecha entrega en bodega':'Fecha de llenado', retiro:'Fecha de retiro', patio:'Patio de retiro', booking:'Booking / BL', mn:'Motonave', cierre:'Cierre documental', obs:'Observación'}
     : {status:'STATUS OPERACIONES', cargue:'Fecha de cargue llenado', retiro:'Fecha de cargue contenedor', patio:'PATIO', booking:'Booking', mn:'MN', cierre:'Cierre Doc', obs:'OBSERVACION STATUS'};
   // EXPO cierra con la tirilla de entrega en puerto; IMPO con la tirilla de devolución del vacío
   if (sit==='Cerrado'){
@@ -572,7 +572,7 @@ function validar(v){
     return e;
   }
   if (sit==='Sin status') add('Media',C.status,'Sin status (ABIERTO / CERRADO / CANCELADA)');
-  if (!v.fechaCargue) add('Alta',C.cargue, impo?'Sin fecha de descargue en planta':'Sin fecha de llenado / cargue');
+  if (!v.fechaCargue) add('Alta',C.cargue, impo?'Sin fecha de entrega en bodega':'Sin fecha de llenado / cargue');
   if (expo && !v.fechaRetiro) add('Alta',C.retiro,'Sin fecha de retiro del contenedor');
   if (expo && !v.patio && !pend) add('Alta',C.patio,'Patio de retiro sin definir');
   if (!tieneVehiculo(v) && !pend){ const d = diffDias(primerEvento(v)||HOY); add(d<=2?'Alta':'Media','Placa',`Sin vehículo asignado${d<0?' (fecha vencida)':d===0?' (es hoy)':` (faltan ${d} d)`}`); }
@@ -592,6 +592,10 @@ function validar(v){
     if (v.fechaEntregaPuerto && !v.tirillaEntrega) add('Media','Tirilla de entrega','Entregado en puerto sin tirilla de entrega');
   }
   if (seg && impo && !pend){
+    // lo que Reckitt pregunta de cada importación (igual que erroresDe_ en Code.gs)
+    [['pedido','Pedido','Sin número de pedido'],['contenedor','Contenedor','Sin número de contenedor'],['unidad','Unidad','Sin tipo de contenedor (20 o 40)'],
+     ['puerto','Origen','Sin origen (puerto de llegada)'],['destino','Destino','Sin destino'],['bodega','Bodega','Sin bodega de entrega'],
+     ['fechaLevante','Fecha entrega documentos','Sin fecha de entrega de documentos']].forEach(([k,campo,msg])=>{ if(!v[k]) add('Media',campo,msg); });
     if (v.fechaRetiro && v.eta && v.fechaRetiro < v.eta) add('Alta','Fecha de retiro',`Retiro del lleno (${fd(v.fechaRetiro)}) antes de la ETA (${fd(v.eta)})`);
     const descargado = v.fechaCargue && v.fechaCargue <= HOY;
     if (!v.fechaDevolucion){
@@ -849,6 +853,7 @@ function renderTabla(){
     if (k==='placa') return `<td>${val?`<span class="placa">${esc(val)}</span>`:'<span class="missing">Sin asignar</span>'}</td>`;
     if (k==='observacion') return `<td class="obs">${esc(val)}</td>`;
     if (k==='cierreOp') return `<td>${celdaCierre(v)}</td>`;
+    if (k==='pais') return `<td>${esc(v.pais||v.destino||'—')}</td>`;
     if (fechas.includes(k)) return `<td>${fd(val)}</td>`;
     return `<td>${esc(val||'—')}</td>`; }).join('')}</tr>`).join('')}</tbody>`;
   if (!rows.length) $('#tbl').innerHTML += `<tr><td colspan="${COLS.length+2}" class="sub" style="text-align:center;padding:24px">Sin resultados</td></tr>`;
@@ -880,10 +885,12 @@ function abrir(id){
   $('#mSub').textContent = `${v.id} · ${v.fechaRetiro?`Retiro en patio ${fd(v.fechaRetiro)} · Llenado planta ${fd(v.fechaCargue)}`:`Cargue ${fd(v.fechaCargue)}`} · Última actualización ${new Date(v.actualizado).toLocaleString('es-CO')}`;
   const fx = x => x ? fd(x) : '';
   const det = v.operacion==='IMPO'
-    ? [['Empresa',v.empresa],['Solicitante',v.solicitante],['Pedido',v.pedido],['BL / Booking',v.booking],['Contenedor',v.contenedor],['Motonave',v.mn],['Puerto',v.puerto],['ETA',fx(v.eta)],
-       ['Levante',fx(v.fechaLevante)],['Cita retiro en puerto',fx(v.citaRetiro)],['Descargue en planta',fx(v.fechaCargue)],
-       ['Ciudad de devolución',v.ciudadDevolucion],['Fecha límite devolución',fx(v.fechaLimite)],['Días de demora',demora(v)===null?'':String(demora(v))],
-       ['Cita de devolución',fx(v.citaDevolucion)],['Patio de devolución',v.patio],['Devolución',fx(v.fechaDevolucion)],['Tirilla de devolución',v.tirillaDevolucion]]
+    // primero lo que Reckitt pregunta de cada importación
+    ? [['Pedido',v.pedido],['Contenedor',v.contenedor],['Tipo',v.unidad],['Origen',v.puerto],['Destino',v.destino],['Bodega',v.bodega],
+       ['Entrega documentos',fx(v.fechaLevante)],['Retiro contenedor',fx(v.fechaRetiro)],['Entrega en bodega',fx(v.fechaCargue)],
+       ['Devolución del vacío',fx(v.fechaDevolucion)],['Patio entrega del vacío',v.patio],['Tirilla de devolución',v.tirillaDevolucion],
+       ['Fecha límite devolución',fx(v.fechaLimite)],['Días de demora',demora(v)===null?'':String(demora(v))],['Cita de devolución',fx(v.citaDevolucion)],
+       ['Ciudad de devolución',v.ciudadDevolucion],['Empresa',v.empresa],['Solicitante',v.solicitante],['BL / Booking',v.booking],['Motonave',v.mn],['ETA',fx(v.eta)],['Cita retiro en puerto',fx(v.citaRetiro)]]
     : [['Empresa',v.empresa],['Solicitante',v.solicitante],['Motonave',v.mn],['Booking',v.booking],['FWD',v.fwd],['ETD',fx(v.etd)],['ETA',fx(v.eta)],['Puerto / Patio',[v.puerto,v.patio].filter(Boolean).join(' / ')],
        ['Contenedor',v.contenedor],['Sello',v.sello],['Cierre documental',fx(v.cierreDoc)],['Cita de ingreso',[fx(v.citaIngreso),v.estadoCita].filter(Boolean).join(' · ')],
        ['Entrega en puerto',fx(v.fechaEntregaPuerto)],['Tirilla de entrega',v.tirillaEntrega]];
