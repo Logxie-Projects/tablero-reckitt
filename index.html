@@ -159,6 +159,12 @@ tr:hover td{background:var(--surface-2)}
 .states button.on{border-color:var(--accent);background:var(--accent-soft)}
 .det{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 16px;font-size:12px;background:var(--surface-2);padding:12px;border-radius:10px;margin-top:12px}
 .det span{color:var(--muted);display:block}
+.prop{width:100%;border-collapse:collapse;font-size:13px}
+.prop td,.prop th{padding:7px 6px;border-top:1px solid var(--border);vertical-align:top;text-align:left}
+.prop th{font-size:11px;color:var(--muted);font-weight:600;border-top:0}
+.prop .nuevo{color:var(--ok);font-weight:600}
+.prop .antes{color:var(--muted);text-decoration:line-through}
+.prop tr.grupo td{background:var(--surface-2);font-weight:600}
 .mfoot{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;flex-wrap:wrap;align-items:center}
 .mgrupo{border:1px solid var(--border);border-radius:10px;padding:6px 12px 12px;margin:12px 0 0;min-width:0}
 .mgrupo legend{font-size:12px;font-weight:600;color:var(--muted);padding:0 6px}
@@ -247,6 +253,7 @@ tr:hover td{background:var(--surface-2)}
     <div class="spacer"></div>
     <div class="conn"><span class="dot" id="connDot"></span><span id="connTxt">Modo demo</span></div>
     <button class="btn" id="btnTheme" title="Cambiar tema">◐</button>
+    <button class="btn solo-interno" id="btnCorreos" title="Datos que LogxIA encontró en los correos, para revisar y aprobar">✉ Llenar datos desde correos</button>
     <button class="btn" id="btnCsv">Exportar CSV</button>
   </div>
 </header>
@@ -334,6 +341,16 @@ tr:hover td{background:var(--surface-2)}
   </section>
 </main>
 
+<div class="ov" id="ovProp">
+  <div class="modal" role="dialog" aria-modal="true" style="width:min(860px,100%)">
+    <h3>Llenar datos desde correos</h3>
+    <div class="sub">LogxIA encontró estos datos en los correos y hoy faltan o son distintos en la base. Revise cada uno: solo lo que apruebe se guarda en la base y queda en el Historial con su nombre.</div>
+    <div id="propLista" style="margin-top:12px"></div>
+    <div class="mfoot"><label class="sub" style="margin-right:auto;display:flex;gap:6px;align-items:center"><input type="checkbox" id="propTodos"> Seleccionar todos</label>
+      <input id="propUsuario" placeholder="Su nombre" style="width:180px">
+      <button class="btn" id="propCerrar">Cerrar</button><button class="btn" id="propRechazar">Rechazar seleccionados</button><button class="btn primary" id="propAprobar">Aprobar seleccionados</button></div>
+  </div>
+</div>
 <div class="ov" id="ov">
   <div class="modal" role="dialog" aria-modal="true">
     <h3 id="mTitle"></h3>
@@ -1089,6 +1106,62 @@ $('#mSave').onclick = () => {
   cerrar();
 };
 $('#mForm').addEventListener('input', () => marcarCambios());
+
+/* ---------- llenar datos desde correos (con revisión y aprobación) ---------- */
+let PROP = [];
+async function abrirPropuestas(){
+  if (!CFG.SHEETS_API_URL || !window.CLAVE) return toast('Funciona desde el tablero publicado');
+  $('#propLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">Buscando datos en los correos…</div>';
+  try { $('#propUsuario').value = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
+  $('#propTodos').checked = false;
+  $('#ovProp').classList.add('open');
+  try {
+    const r = await fetch(CFG.SHEETS_API_URL + '?formato=json&que=propuestas&clave=' + encodeURIComponent(window.CLAVE));
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'error');
+    PROP = j.propuestas || [];
+  } catch(e) { $('#propLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">No se pudieron traer los datos. Intente de nuevo.</div>'; return; }
+  pintarPropuestas();
+}
+function pintarPropuestas(){
+  if (!PROP.length) { $('#propLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">No hay datos nuevos de los correos por revisar. ✔</div>'; return; }
+  let previo = '';
+  $('#propLista').innerHTML = `<div class="tbl-wrap"><table class="prop"><tr><th></th><th>Dato</th><th>En la base hoy</th><th>Del correo</th><th>Evidencia</th></tr>${PROP.map((p, i) => {
+    const g = p.viajeId !== previo ? `<tr class="grupo"><td colspan="5">${esc(p.operacion)} · ${esc(p.placa || 'Sin placa')} · ${esc(p.ref)} <span class="sub">(${esc(p.viajeId)})</span></td></tr>` : '';
+    previo = p.viajeId;
+    const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
+    return g + `<tr><td><input type="checkbox" data-i="${i}"></td><td>${esc(p.etiqueta)}</td><td>${p.actual ? `<span class="antes">${esc(fx(p.actual))}</span>` : '<span class="sub">vacío</span>'}</td>
+      <td class="nuevo">${esc(fx(p.valor))}</td><td class="sub">${esc(p.evidencia)}${p.fecha ? ' · ' + esc(String(p.fecha).slice(0,10)) : ''}</td></tr>`;
+  }).join('')}</table></div><p class="sub" style="margin-top:6px">${PROP.length} dato${PROP.length===1?'':'s'} por revisar · lo rechazado no vuelve a aparecer.</p>`;
+}
+async function decidirPropuestas(aprobar){
+  const sel = [...$('#propLista').querySelectorAll('input[data-i]:checked')].map(x => PROP[+x.dataset.i]);
+  if (!sel.length) return toast('Seleccione al menos un dato');
+  const usuario = $('#propUsuario').value.trim();
+  if (!usuario) { $('#propUsuario').focus(); return toast('Escriba su nombre'); }
+  try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
+  const datos = sel.map(({clave, viajeId, campo, valor, evidencia, origen}) => ({clave, viajeId, campo, valor, evidencia, origen}));
+  $('#propAprobar').disabled = $('#propRechazar').disabled = true;
+  try {
+    const r = await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({action:'decidir', clave:window.CLAVE, usuario, aprobar: aprobar ? datos : [], rechazar: aprobar ? [] : datos})});
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'error');
+    toast(aprobar ? `${j.aprobadas} dato${j.aprobadas===1?'':'s'} guardado${j.aprobadas===1?'':'s'} en la base` : `${j.rechazadas} rechazado${j.rechazadas===1?'':'s'}`);
+    const usados = new Set(sel.map(p => p.clave));
+    PROP = PROP.filter(p => !usados.has(p.clave));
+    if (aprobar) sel.forEach(p => { const v = viajes.find(x => x.id === p.viajeId); if (v) v[p.campo] = p.valor; });
+    $('#propTodos').checked = false;
+    pintarPropuestas(); render();
+  } catch(e) { toast('No se pudo guardar: ' + e.message); }
+  $('#propAprobar').disabled = $('#propRechazar').disabled = false;
+}
+$('#btnCorreos').onclick = abrirPropuestas;
+$('#propCerrar').onclick = () => $('#ovProp').classList.remove('open');
+$('#ovProp').onclick = e => { if (e.target.id === 'ovProp') $('#ovProp').classList.remove('open'); };
+$('#propTodos').onchange = e => $('#propLista').querySelectorAll('input[data-i]').forEach(x => { x.checked = e.target.checked; });
+$('#propAprobar').onclick = () => decidirPropuestas(true);
+$('#propRechazar').onclick = () => decidirPropuestas(false);
 
 /* ---------- navegación y eventos ---------- */
 $('#nav').onclick = e => { const b=e.target.closest('button'); if(!b) return;
