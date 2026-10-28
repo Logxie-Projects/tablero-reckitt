@@ -441,14 +441,16 @@ function normalizar(v, i){
   if (v.situacion !== undefined) v.situacion = normSituacion(v.situacion);
   if (!v.fechaRetiro && v.operacion==='EXPO' && v.fechaCargue) v.fechaRetiro = addDias(v.fechaCargue, -1);
   v.fechaRetiro = v.fechaRetiro || '';
+  // sede de la operación: las IMPO que van a Bogotá son de la operación Bogotá; lo demás sale o llega a Cali
+  v.sede = /bogot/i.test(String(v.destino||'').normalize('NFD')) ? 'Bogotá' : 'Cali';
   return v;
 }
-// Filtros globales (operación, situación, empresa, solicitante y FWD): aplican a todas las vistas y se recuerdan en este navegador
-let G = {op:'', sit:'Abierto', emp:'', sol:'', fwd:''};
+// Filtros globales (operación, situación, sede, empresa, solicitante y FWD): aplican a todas las vistas y se recuerdan en este navegador
+let G = {op:'', sit:'Abierto', sede:'', emp:'', sol:'', fwd:''};
 try { Object.assign(G, JSON.parse(localStorage.getItem('rkt-filtros')) || {}); } catch(e){}
 G.sit = {Abiertos:'Abierto', Cerrados:'Cerrado'}[G.sit] || G.sit;
 // listas desplegables: campo del viaje y texto cuando está vacío
-const FILTROS_LISTA = [['emp','empresa','Empresa','Sin empresa'], ['sol','solicitante','Solicitante','Sin solicitante'], ['fwd','fwd','FWD / agente','Sin FWD']];
+const FILTROS_LISTA = [['sede','sede','Sede','Sin sede'], ['emp','empresa','Empresa','Sin empresa'], ['sol','solicitante','Solicitante','Sin solicitante'], ['fwd','fwd','FWD / agente','Sin FWD']];
 const valorFiltro = (v, campo, vacio) => String(v[campo]||'').trim() || vacio;
 const enListas = v => FILTROS_LISTA.every(([k, campo, , vacio]) => !G[k] || valorFiltro(v, campo, vacio)===G[k]);
 const enGlobal = v => (!G.op || v.operacion===G.op) && enSituacion(v, G.sit) && enListas(v);
