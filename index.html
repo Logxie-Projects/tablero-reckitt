@@ -970,7 +970,7 @@ function paradas(v){
   return [
     ['Origen', 'Cali', v.fechaRetiro && v.fechaRetiro<=HOY ? v.fechaRetiro : '', ['Planta Reckitt']],
     ['Patio', v.patio||'Patio', v.fechaRetiro && v.fechaRetiro<=HOY ? v.fechaRetiro : '', [v.fechaRetiro&&`Retiro ${fd(v.fechaRetiro)}`]],
-    ['Llenado', 'Reckitt', v.fechaCargue && v.fechaCargue<=HOY ? v.fechaCargue : '', [v.fechaCargue&&`Llenado ${fd(v.fechaCargue)}`, v.sello&&`Sello ${v.sello}`]],
+    ['Llenado', 'Reckitt', v.fechaCargue && (v.fechaCargue<HOY || dijoEntregado(v) || v.tirillaEntrega) ? v.fechaCargue : '', [v.fechaCargue&&`Llenado ${fd(v.fechaCargue)}`, v.sello&&`Sello ${v.sello}`]],
     ['Puerto', v.puerto||'Puerto', hecho(v.fechaEntregaPuerto, v.tirillaEntrega || dijoEntregado(v)), [v.fechaEntregaPuerto ? `Entregado ${fd(v.fechaEntregaPuerto)}` : (v.tirillaEntrega || dijoEntregado(v)) ? 'Entregado' : v.citaIngreso&&`Cita ${fd(v.citaIngreso)}`, v.cierreDoc&&`Cierre ${fd(v.cierreDoc)}`, v.tirillaEntrega&&'✔ tirilla']],
     ['Motonave', v.mn||'—', v.etd && v.etd<=HOY ? v.etd : '', [v.etd&&`ETD ${fd(v.etd)}`]],
     ['Destino', v.pais||'—', v.eta && v.eta<=HOY ? v.eta : '', [v.eta&&`ETA ${fd(v.eta)}`]],
@@ -988,8 +988,10 @@ function rutaPedido(v){
   const primera = P.find(p=>p[2]), lead = primera ? dif(primera[2], (P[n-1]&&n===P.length) ? P[n-1][2] : HOY) : null;
   // n = paradas cumplidas: el viaje va hacia la parada n
   const hacia = {Puerto:'En camino a puerto', Bodega:'En camino a bodega', Vacío:'Vacío por devolver', 'Retiro lleno':'Por retirar en puerto', Llenado:'En llenado', Patio:'Por retirar el vacío'};
-  const sit = situacion(v), ahora = n>=P.length ? 'Completo' : n===0 ? 'Por iniciar'
-    : (v.operacion==='EXPO' && P[n][0]==='Motonave') ? 'Entregado en puerto · esperando zarpe'
+  const sinTirilla = v.operacion==='EXPO' ? !v.tirillaEntrega : !v.tirillaDevolucion;
+  const sit = situacion(v), ahora = n>=P.length ? (v.operacion==='IMPO' ? (sinTirilla ? 'Vacío devuelto · falta tirilla' : 'Vacío devuelto ✔') : 'Llegó a destino')
+    : n===0 ? 'Por iniciar'
+    : (v.operacion==='EXPO' && P[n][0]==='Motonave') ? (sinTirilla ? 'Entregado en puerto · falta tirilla' : 'Entregado en puerto · esperando zarpe')
     : (hacia[P[n][0]] || 'Hacia '+P[n][0].toLowerCase())+' · '+P[n][1];
   const col = sit==='Cerrado' ? 'var(--ok)' : n===0 ? 'var(--muted)' : 'var(--accent)';
   const ref = v.operacion==='IMPO' ? (v.pedido ? 'Pedido '+v.pedido : v.id) : (v.booking ? 'Booking '+v.booking : v.id);
