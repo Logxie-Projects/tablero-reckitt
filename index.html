@@ -187,6 +187,40 @@ tr:hover td{background:var(--surface-2)}
   .fgrid,.det{grid-template-columns:1fr 1fr}.states{grid-template-columns:repeat(2,1fr)}
   .hbar{grid-template-columns:90px 1fr 30px}
 }
+
+/* ---- Modo lean: ruta del pedido ---- */
+.ruta{margin-top:12px;border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;background:var(--surface)}
+.ruta .cab{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.ruta .tg{font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600}
+.ruta .cuerpo{display:grid;grid-template-columns:150px minmax(0,1fr);gap:14px;align-items:start}
+.ruta .cont{border:1.5px solid var(--text);border-radius:4px;padding:5px 4px;text-align:center;flex:1}
+.ruta .cabina{width:24px;height:28px;border:1.5px solid var(--text);border-radius:4px 8px 4px 4px;background:var(--surface-2)}
+.ruta .ruedas{display:flex;justify-content:space-between;padding:0 10px;margin-top:-4px}
+.ruta .ruedas i{width:8px;height:8px;border-radius:50%;background:var(--text);display:block}
+.ruta .cond{display:flex;align-items:center;gap:8px;margin-top:10px;background:var(--surface-2);border-radius:8px;padding:6px 8px}
+.ruta .ini{width:26px;height:26px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex:none}
+.ruta .linea{position:relative;display:flex;gap:6px}
+.ruta .linea:before{content:'';position:absolute;top:6px;left:7%;right:7%;height:2px;background:var(--border)}
+.ruta .linea .hecho{position:absolute;top:6px;left:7%;height:2px;background:var(--ok)}
+.ruta .par{flex:1;min-width:0;text-align:center;position:relative}
+.ruta .pt{width:14px;height:14px;border-radius:50%;margin:0 auto;position:relative;z-index:1;border:2px solid var(--border);background:var(--surface)}
+.ruta .par.ok .pt{background:var(--ok);border-color:var(--ok)}
+.ruta .par.ya .pt{background:var(--accent);border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+.ruta .caja{border:1px solid var(--border);border-radius:8px;padding:5px;margin-top:8px;font-size:11px;line-height:1.35;color:var(--muted)}
+.ruta .par.ya .caja{border-color:var(--accent)}
+.ruta .caja b{display:block;color:var(--text);font-size:12px;font-weight:600;overflow-wrap:anywhere}
+.ruta .camion{position:absolute;top:-20px;left:50%;transform:translateX(-50%);font-size:15px}
+.ruta .esp{display:flex;gap:6px;margin-top:4px}
+.ruta .esp span{flex:1;text-align:center;font-size:10px;color:var(--warn)}
+.ruta .pie{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;border-top:1px solid var(--border);padding-top:8px;font-size:12px;color:var(--muted)}
+.mini{display:inline-flex;align-items:center;gap:2px;vertical-align:middle}
+.mini i{width:7px;height:7px;border-radius:50%;border:1.5px solid var(--border);display:block}
+.mini i.ok{background:var(--ok);border-color:var(--ok)} .mini i.ya{background:var(--accent);border-color:var(--accent)}
+@media (max-width:640px){.ruta .cuerpo{grid-template-columns:1fr}.ruta .linea{flex-direction:column}.ruta .linea:before,.ruta .linea .hecho,.ruta .esp{display:none}.ruta .par{display:flex;gap:8px;text-align:left;align-items:flex-start}.ruta .pt{margin:4px 0 0}.ruta .caja{margin-top:0;flex:1}.ruta .camion{display:none}}
+.modos{display:inline-flex;border:1px solid var(--border);border-radius:99px;overflow:hidden;margin:8px 0}
+.modos button{border:0;background:var(--surface);padding:5px 12px;font-size:12px;cursor:pointer;color:var(--muted)}
+.modos button.on{background:var(--accent);color:#fff;font-weight:600}
+#leanLista .ruta{margin-top:10px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -255,6 +289,8 @@ tr:hover td{background:var(--surface-2)}
       <input id="q" placeholder="Buscar placa, conductor, booking, motonave…">
       <div class="chips" id="fEstados"></div>
     </div>
+    <div class="modos" data-modos="lista"><button type="button" data-modo="lean">Modo lean</button><button type="button" data-modo="tabla">Modo tabla</button></div>
+    <div id="leanLista"></div>
     <div class="tbl-wrap"><table id="tbl"></table></div>
     <p class="sub" style="margin-top:8px">Haz clic en <b>Actualizar</b> para cambiar el estado, asignar vehículo o registrar una novedad.</p>
   </section>
@@ -293,6 +329,8 @@ tr:hover td{background:var(--surface-2)}
   <div class="modal" role="dialog" aria-modal="true">
     <h3 id="mTitle"></h3>
     <div class="sub" id="mSub"></div>
+    <div class="modos" data-modos="ventana"><button type="button" data-modo="lean">Modo lean</button><button type="button" data-modo="tabla">Modo tabla</button></div>
+    <div id="mRuta"></div>
     <div class="det" id="mDet"></div>
     <div class="full" style="margin-top:16px"><label>Nuevo estado</label><div class="states" id="mStates"></div></div>
     <div class="fgrid">
@@ -816,7 +854,7 @@ function renderFeed(){
 
 /* ---------- tabla de viajes ---------- */
 const COLS = [
-  ['situacion','Viaje'],['estado','Estado'],['fechaRetiro','Retiro patio'],['fechaCargue','Llenado / Cargue'],['operacion','Op.'],['empresa','Empresa'],['solicitante','Solicitante'],['placa','Placa'],['conductor','Conductor'],['pais','Destino'],
+  ['situacion','Viaje'],['avance','Avance'],['estado','Estado'],['fechaRetiro','Retiro patio'],['fechaCargue','Llenado / Cargue'],['operacion','Op.'],['empresa','Empresa'],['solicitante','Solicitante'],['placa','Placa'],['conductor','Conductor'],['pais','Destino'],
   ['unidad','Unidad'],['bodega','Bodega'],['mn','Motonave (MN)'],['cierreDoc','Cierre doc'],['etd','ETD'],['eta','ETA'],
   ['booking','Booking'],['contenedor','Contenedor'],['cierreOp','Cita puerto / Devolución'],['fwd','FWD'],['puerto','Puerto'],['patio','Patio'],['observacion','Observación']
 ];
@@ -839,10 +877,26 @@ function renderChips(){
     const n = k ? visibles().filter(v=>v.estado===k).length : visibles().length;
     return `<button class="chip ${filtroEstado===k?'on':''}" data-e="${k}">${k||'Todos'} · ${n}</button>`;}).join('');
 }
+// Modo lean (ruta del pedido) o Modo tabla, por separado en la lista de viajes y en la ventana; se recuerda en este navegador
+const MODOS = {lista:'tabla', ventana:'lean'};
+try { Object.assign(MODOS, JSON.parse(localStorage.getItem('rkt-modos')) || {}); } catch(e){}
+function pintarModos(){
+  document.querySelectorAll('[data-modos]').forEach(g => g.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.modo===MODOS[g.dataset.modos])));
+  $('#mRuta').style.display = MODOS.ventana==='lean' ? '' : 'none';
+  $('#mDet').style.display = MODOS.ventana==='tabla' ? '' : 'none';
+  $('#leanLista').style.display = MODOS.lista==='lean' ? '' : 'none';
+  document.querySelector('.tbl-wrap').style.display = MODOS.lista==='tabla' ? '' : 'none';
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-modo]'); if (!b) return;
+  MODOS[b.closest('[data-modos]').dataset.modos] = b.dataset.modo;
+  try { localStorage.setItem('rkt-modos', JSON.stringify(MODOS)); } catch(e){}
+  pintarModos(); if (MODOS.lista==='lean') renderTabla(); });
 function renderTabla(){
   const q = $('#q').value.toLowerCase();
   let rows = visibles().filter(v=> (!filtroEstado || v.estado===filtroEstado) && (!q || Object.values(v).join(' ').toLowerCase().includes(q)));
   rows.sort((a,b)=> String(a[orden.k]||'~').localeCompare(String(b[orden.k]||'~')) * (orden.asc?1:-1));
+  pintarModos();
+  if (MODOS.lista==='lean') { $('#leanLista').innerHTML = rows.length ? rows.map(v=>`<div onclick="abrir('${v.id}')">${rutaPedido(v)}</div>`).join('') : '<div class="sub" style="padding:24px;text-align:center">Sin resultados</div>'; return; }
   const fechas = ['fechaRetiro','fechaCargue','cierreDoc','etd','eta'];
   $('#tbl').innerHTML = `<thead><tr><th class="num">#</th><th></th>${COLS.map(([k,l])=>`<th data-k="${k}">${l}${orden.k===k?(orden.asc?' ▲':' ▼'):''}</th>`).join('')}</tr></thead>
   <tbody>${rows.map((v, n)=>`<tr><td class="num">${n+1}</td><td><button class="link" onclick="abrir('${v.id}')">Actualizar</button></td>${COLS.map(([k])=>{
@@ -852,6 +906,7 @@ function renderTabla(){
     if (k==='operacion') return `<td><span class="op ${val}">${val}</span></td>`;
     if (k==='placa') return `<td>${val?`<span class="placa">${esc(val)}</span>`:'<span class="missing">Sin asignar</span>'}</td>`;
     if (k==='observacion') return `<td class="obs">${esc(val)}</td>`;
+    if (k==='avance') return `<td>${miniAvance(v)}</td>`;
     if (k==='cierreOp') return `<td>${celdaCierre(v)}</td>`;
     if (k==='pais') return `<td>${esc(v.pais||v.destino||'—')}</td>`;
     if (fechas.includes(k)) return `<td>${fd(val)}</td>`;
@@ -879,9 +934,59 @@ function renderMotonaves(){
 }
 
 /* ---------- modal de actualización ---------- */
+
+/* ---------- Modo lean: ruta del pedido ---------- */
+// paradas según la operación: [etiqueta, lugar, fecha que la cumple, detalle]
+function paradas(v){
+  if (v.operacion==='IMPO') return [
+    ['Origen', v.puerto||'Puerto', v.fechaLevante || (v.eta && v.eta<=HOY ? v.eta : ''), [v.eta&&`ETA ${fd(v.eta)}`, v.fechaLevante&&`Docs ${fd(v.fechaLevante)}`]],
+    ['Retiro lleno', v.puerto ? 'Puerto '+v.puerto : 'Puerto', v.fechaRetiro, [v.citaRetiro&&`Cita ${fd(v.citaRetiro)}`, v.fechaRetiro&&`Retiro ${fd(v.fechaRetiro)}`]],
+    ['Bodega', v.bodega||'Bodega', v.fechaCargue && v.fechaCargue<=HOY ? v.fechaCargue : '', [v.fechaCargue&&`Entrega ${fd(v.fechaCargue)}`, v.destino]],
+    ['Vacío', v.patio||'Patio', v.fechaDevolucion, [v.fechaDevolucion ? `Devuelto ${fd(v.fechaDevolucion)}` : v.citaDevolucion&&`Cita ${fd(v.citaDevolucion)}`, v.fechaLimite&&`Límite ${fd(v.fechaLimite)}`, v.tirillaDevolucion&&'✔ tirilla']],
+  ];
+  return [
+    ['Origen', 'Cali', v.fechaRetiro && v.fechaRetiro<=HOY ? v.fechaRetiro : '', ['Planta Reckitt']],
+    ['Patio', v.patio||'Patio', v.fechaRetiro && v.fechaRetiro<=HOY ? v.fechaRetiro : '', [v.fechaRetiro&&`Retiro ${fd(v.fechaRetiro)}`]],
+    ['Llenado', 'Reckitt', v.fechaCargue && v.fechaCargue<=HOY ? v.fechaCargue : '', [v.fechaCargue&&`Llenado ${fd(v.fechaCargue)}`, v.sello&&`Sello ${v.sello}`]],
+    ['Puerto', v.puerto||'Puerto', v.fechaEntregaPuerto, [v.fechaEntregaPuerto ? `Entregado ${fd(v.fechaEntregaPuerto)}` : v.citaIngreso&&`Cita ${fd(v.citaIngreso)}`, v.cierreDoc&&`Cierre ${fd(v.cierreDoc)}`, v.tirillaEntrega&&'✔ tirilla']],
+    ['Motonave', v.mn||'—', v.etd && v.etd<=HOY ? v.etd : '', [v.etd&&`ETD ${fd(v.etd)}`]],
+    ['Destino', v.pais||'—', v.eta && v.eta<=HOY ? v.eta : '', [v.eta&&`ETA ${fd(v.eta)}`]],
+  ];
+}
+// cumplidas en orden: una parada cuenta si ella y todas las anteriores tienen fecha cumplida
+function avance(v){ const P = paradas(v); let n = 0; while (n < P.length && P[n][2]) n++; return {P, n}; }
+function miniAvance(v){ const {P,n} = avance(v); return `<span class="mini" title="${esc(n<P.length ? 'En: '+P[n][0] : 'Completo')}">${P.map((_,i)=>`<i class="${i<n?'ok':i===n?'ya':''}"></i>`).join('')}</span>`; }
+function rutaPedido(v){
+  const {P, n} = avance(v);
+  const ini = s => String(s||'').split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]).join('').toUpperCase() || '—';
+  const dif = (a,b) => Math.round((new Date(b+'T12:00')-new Date(a+'T12:00'))/864e5);
+  const esperas = P.slice(1).map((p,i)=> P[i][2] && p[2] ? dif(P[i][2], p[2]) : null);
+  const primera = P.find(p=>p[2]), lead = primera ? dif(primera[2], (P[n-1]&&n===P.length) ? P[n-1][2] : HOY) : null;
+  const sit = situacion(v), ahora = n>=P.length ? 'Completo' : n===0 ? 'Por iniciar' : 'En '+P[n][0].toLowerCase()+' · '+P[n][1];
+  const col = sit==='Cerrado' ? 'var(--ok)' : n===0 ? 'var(--muted)' : 'var(--accent)';
+  const ref = v.operacion==='IMPO' ? (v.pedido ? 'Pedido '+v.pedido : v.id) : (v.booking ? 'Booking '+v.booking : v.id);
+  return `<div class="ruta">
+    <div class="cab"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
+      <span class="op ${v.operacion}">${v.operacion}</span><b>${esc(v.empresa||'Empresa sin definir')} · ${esc(ref)}</b>
+      <span class="sub">${esc([v.solicitante && 'Solicita '+v.solicitante, v.fwd].filter(Boolean).join(' · '))}</span></div>
+      <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span></div>
+    <div class="cuerpo"><div>
+      <div style="display:flex;align-items:flex-end;gap:2px"><div class="cont"><b style="font-size:12px">${esc(v.contenedor||'Contenedor —')}</b><div class="sub">${esc(v.unidad||'')}</div></div><div class="cabina"></div></div>
+      <div class="ruedas"><i></i><i></i><i></i><i></i></div>
+      <div class="cond"><div class="ini">${esc(ini(v.conductor))}</div><div style="min-width:0"><b style="font-size:12px;display:block">${esc(v.conductor||'Sin conductor')}</b><span class="sub">${esc(v.placa||'Sin placa')}</span></div></div>
+    </div><div>
+      <div class="linea"><div class="hecho" style="width:${P.length>1 ? Math.min(86, 86*Math.max(0,n-1)/(P.length-1)) : 0}%"></div>
+        ${P.map(([et, lugar, , det], i)=>`<div class="par ${i<n?'ok':i===n?'ya':''}"><div class="pt"></div>${i===n?'<span class="camion">🚚</span>':''}
+          <div class="caja">${et}<b>${esc(lugar)}</b>${det.filter(Boolean).map(esc).join('<br>')}</div></div>`).join('')}</div>
+      <div class="esp"><span></span>${esperas.map(d=> `<span>${d===null?'':d+' d'}</span>`).join('')}</div>
+      <div class="pie">${lead!==null?`<span>Lead time ${lead} d</span>`:''}${v.operacion==='IMPO' && demora(v) ? `<span style="color:var(--bad)">${demora(v)} d de demora del vacío</span>`:''}<span>${sitTag(v)}</span><span>${esc(v.id)}</span></div>
+    </div></div></div>`;
+}
+
 function abrir(id){
   const v = viajes.find(x=>x.id===id); editId = id; estadoSel = v.estado;
   $('#mTitle').textContent = `${v.placa || 'Sin vehículo'} · ${v.operacion} ${v.pais||''}`;
+  $('#mRuta').innerHTML = rutaPedido(v); pintarModos();
   $('#mSub').textContent = `${v.id} · ${v.fechaRetiro?`Retiro en patio ${fd(v.fechaRetiro)} · Llenado planta ${fd(v.fechaCargue)}`:`Cargue ${fd(v.fechaCargue)}`} · Última actualización ${new Date(v.actualizado).toLocaleString('es-CO')}`;
   const fx = x => x ? fd(x) : '';
   const det = v.operacion==='IMPO'
