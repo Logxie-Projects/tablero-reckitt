@@ -160,7 +160,9 @@ tr:hover td{background:var(--surface-2)}
 .det{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 16px;font-size:12px;background:var(--surface-2);padding:12px;border-radius:10px;margin-top:12px}
 .det span{color:var(--muted);display:block}
 .prop{width:100%;border-collapse:collapse;font-size:13px}
-.prop td,.prop th{padding:7px 6px;border-top:1px solid var(--border);vertical-align:top;text-align:left}
+.prop{table-layout:fixed}
+.prop td,.prop th{padding:7px 6px;border-top:1px solid var(--border);vertical-align:top;text-align:left;white-space:normal;overflow-wrap:anywhere}
+.prop col.c-sel{width:28px} .prop col.c-dato{width:16%} .prop col.c-hoy{width:18%} .prop col.c-correo{width:20%}
 .prop th{font-size:11px;color:var(--muted);font-weight:600;border-top:0}
 .prop .nuevo{color:var(--ok);font-weight:600}
 .prop .antes{color:var(--muted);text-decoration:line-through}
@@ -1127,7 +1129,7 @@ async function abrirPropuestas(){
 function pintarPropuestas(){
   if (!PROP.length) { $('#propLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">No hay datos nuevos de los correos por revisar. ✔</div>'; return; }
   let previo = '';
-  $('#propLista').innerHTML = `<div class="tbl-wrap"><table class="prop"><tr><th></th><th>Dato</th><th>En la base hoy</th><th>Del correo</th><th>Evidencia</th></tr>${PROP.map((p, i) => {
+  $('#propLista').innerHTML = `<div class="tbl-wrap"><table class="prop"><colgroup><col class="c-sel"><col class="c-dato"><col class="c-hoy"><col class="c-correo"><col></colgroup><tr><th></th><th>Dato</th><th>En la base hoy</th><th>Del correo</th><th>Evidencia</th></tr>${PROP.map((p, i) => {
     const g = p.viajeId !== previo ? `<tr class="grupo"><td colspan="5">${esc(p.operacion)} · ${esc(p.placa || 'Sin placa')} · ${esc(p.ref)} <span class="sub">(${esc(p.viajeId)})</span></td></tr>` : '';
     previo = p.viajeId;
     const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
