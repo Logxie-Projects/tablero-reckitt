@@ -957,18 +957,21 @@ function renderMotonaves(){
 
 /* ---------- Modo lean: ruta del pedido ---------- */
 // paradas según la operación: [etiqueta, lugar, fecha que la cumple, detalle]
+// el equipo anota la entrega en la observación o en la tirilla aunque no llene la fecha
+const dijoEntregado = v => /descargad|entregad/i.test(v.observacion||'');
 function paradas(v){
+  const hecho = (fecha, otraSenal) => fecha || (otraSenal ? 'sí' : '');
   if (v.operacion==='IMPO') return [
     ['Origen', v.puerto||'Puerto', v.fechaLevante || (v.eta && v.eta<=HOY ? v.eta : ''), [v.eta&&`ETA ${fd(v.eta)}`, v.fechaLevante&&`Docs ${fd(v.fechaLevante)}`]],
     ['Retiro lleno', v.puerto ? 'Puerto '+v.puerto : 'Puerto', v.fechaRetiro, [v.citaRetiro&&`Cita ${fd(v.citaRetiro)}`, v.fechaRetiro&&`Retiro ${fd(v.fechaRetiro)}`]],
     ['Bodega', v.bodega||'Bodega', v.fechaCargue && v.fechaCargue<=HOY ? v.fechaCargue : '', [v.fechaCargue&&`Entrega ${fd(v.fechaCargue)}`, v.destino]],
-    ['Vacío', v.patio||'Patio', v.fechaDevolucion, [v.fechaDevolucion ? `Devuelto ${fd(v.fechaDevolucion)}` : v.citaDevolucion&&`Cita ${fd(v.citaDevolucion)}`, v.fechaLimite&&`Límite ${fd(v.fechaLimite)}`, v.tirillaDevolucion&&'✔ tirilla']],
+    ['Vacío', v.patio||'Patio', hecho(v.fechaDevolucion, v.tirillaDevolucion), [v.fechaDevolucion ? `Devuelto ${fd(v.fechaDevolucion)}` : v.citaDevolucion&&`Cita ${fd(v.citaDevolucion)}`, v.fechaLimite&&`Límite ${fd(v.fechaLimite)}`, v.tirillaDevolucion&&'✔ tirilla']],
   ];
   return [
     ['Origen', 'Cali', v.fechaRetiro && v.fechaRetiro<=HOY ? v.fechaRetiro : '', ['Planta Reckitt']],
     ['Patio', v.patio||'Patio', v.fechaRetiro && v.fechaRetiro<=HOY ? v.fechaRetiro : '', [v.fechaRetiro&&`Retiro ${fd(v.fechaRetiro)}`]],
     ['Llenado', 'Reckitt', v.fechaCargue && v.fechaCargue<=HOY ? v.fechaCargue : '', [v.fechaCargue&&`Llenado ${fd(v.fechaCargue)}`, v.sello&&`Sello ${v.sello}`]],
-    ['Puerto', v.puerto||'Puerto', v.fechaEntregaPuerto, [v.fechaEntregaPuerto ? `Entregado ${fd(v.fechaEntregaPuerto)}` : v.citaIngreso&&`Cita ${fd(v.citaIngreso)}`, v.cierreDoc&&`Cierre ${fd(v.cierreDoc)}`, v.tirillaEntrega&&'✔ tirilla']],
+    ['Puerto', v.puerto||'Puerto', hecho(v.fechaEntregaPuerto, v.tirillaEntrega || dijoEntregado(v)), [v.fechaEntregaPuerto ? `Entregado ${fd(v.fechaEntregaPuerto)}` : (v.tirillaEntrega || dijoEntregado(v)) ? 'Entregado' : v.citaIngreso&&`Cita ${fd(v.citaIngreso)}`, v.cierreDoc&&`Cierre ${fd(v.cierreDoc)}`, v.tirillaEntrega&&'✔ tirilla']],
     ['Motonave', v.mn||'—', v.etd && v.etd<=HOY ? v.etd : '', [v.etd&&`ETD ${fd(v.etd)}`]],
     ['Destino', v.pais||'—', v.eta && v.eta<=HOY ? v.eta : '', [v.eta&&`ETA ${fd(v.eta)}`]],
   ];
@@ -979,10 +982,15 @@ function miniAvance(v){ const {P,n} = avance(v); return `<span class="mini" titl
 function rutaPedido(v){
   const {P, n} = avance(v);
   const ini = s => String(s||'').split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]).join('').toUpperCase() || '—';
-  const dif = (a,b) => Math.round((new Date(b+'T12:00')-new Date(a+'T12:00'))/864e5);
+  const iso = x => /^\d{4}-\d{2}-\d{2}$/.test(x||'');
+  const dif = (a,b) => iso(a) && iso(b) ? Math.round((new Date(b+'T12:00')-new Date(a+'T12:00'))/864e5) : null;
   const esperas = P.slice(1).map((p,i)=> P[i][2] && p[2] ? dif(P[i][2], p[2]) : null);
   const primera = P.find(p=>p[2]), lead = primera ? dif(primera[2], (P[n-1]&&n===P.length) ? P[n-1][2] : HOY) : null;
-  const sit = situacion(v), ahora = n>=P.length ? 'Completo' : n===0 ? 'Por iniciar' : 'En '+P[n][0].toLowerCase()+' · '+P[n][1];
+  // n = paradas cumplidas: el viaje va hacia la parada n
+  const hacia = {Puerto:'En camino a puerto', Bodega:'En camino a bodega', Vacío:'Vacío por devolver', 'Retiro lleno':'Por retirar en puerto', Llenado:'En llenado', Patio:'Por retirar el vacío'};
+  const sit = situacion(v), ahora = n>=P.length ? 'Completo' : n===0 ? 'Por iniciar'
+    : (v.operacion==='EXPO' && P[n][0]==='Motonave') ? 'Entregado en puerto · esperando zarpe'
+    : (hacia[P[n][0]] || 'Hacia '+P[n][0].toLowerCase())+' · '+P[n][1];
   const col = sit==='Cerrado' ? 'var(--ok)' : n===0 ? 'var(--muted)' : 'var(--accent)';
   const ref = v.operacion==='IMPO' ? (v.pedido ? 'Pedido '+v.pedido : v.id) : (v.booking ? 'Booking '+v.booking : v.id);
   return `<div class="ruta">
@@ -990,6 +998,7 @@ function rutaPedido(v){
       <span class="op ${v.operacion}">${v.operacion}</span><b>${esc(v.empresa||'Empresa sin definir')} · ${esc(ref)}</b>
       <span class="sub">${esc([v.solicitante && 'Solicita '+v.solicitante, v.fwd].filter(Boolean).join(' · '))}</span></div>
       <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span></div>
+    ${v.observacion ? `<div class="sub" style="margin:-4px 0 10px">💬 ${esc(v.observacion)}</div>` : ''}
     <div class="cuerpo"><div>
       <div style="display:flex;align-items:flex-end;gap:2px"><div class="cont"><b style="font-size:12px">${esc(v.contenedor||'—')}</b><div class="sub">${esc(v.unidad||'')}</div></div><div class="cabina"></div></div>
       <div class="ruedas"><i></i><i></i><i></i><i></i></div>
