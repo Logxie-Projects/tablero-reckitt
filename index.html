@@ -159,7 +159,14 @@ tr:hover td{background:var(--surface-2)}
 .states button.on{border-color:var(--accent);background:var(--accent-soft)}
 .det{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 16px;font-size:12px;background:var(--surface-2);padding:12px;border-radius:10px;margin-top:12px}
 .det span{color:var(--muted);display:block}
-.mfoot{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.mfoot{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;flex-wrap:wrap;align-items:center}
+.mgrupo{border:1px solid var(--border);border-radius:10px;padding:6px 12px 12px;margin:12px 0 0;min-width:0}
+.mgrupo legend{font-size:12px;font-weight:600;color:var(--muted);padding:0 6px}
+.fgrid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 12px}
+.fgrid3 label{display:block;font-size:11px;color:var(--muted);margin-bottom:3px;font-weight:500}
+.fgrid3 input,.fgrid3 select,.mfoot input{width:100%;border:1px solid var(--border);background:var(--surface);padding:7px 8px;border-radius:8px;min-width:0}
+.fgrid3 .cambio{border-color:var(--accent);background:var(--accent-soft)}
+@media (max-width:640px){.fgrid3{grid-template-columns:1fr 1fr}}
 .hist{margin-top:14px;font-size:12px;color:var(--muted)}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--text);color:var(--surface);padding:10px 16px;border-radius:10px;font-weight:500;transition:transform .25s;z-index:60}
 .toast.show{transform:translateX(-50%) translateY(0)}
@@ -209,7 +216,7 @@ tr:hover td{background:var(--surface-2)}
 .ruta .caja{border:1px solid var(--border);border-radius:8px;padding:5px;margin-top:8px;font-size:11px;line-height:1.35;color:var(--muted)}
 .ruta .par.ya .caja{border-color:var(--accent)}
 .ruta .caja b{display:block;color:var(--text);font-size:12px;font-weight:600;overflow-wrap:anywhere}
-.ruta .camion{position:absolute;top:-20px;left:50%;transform:translateX(-50%);font-size:15px}
+.ruta .camion{position:absolute;top:-20px;left:50%;transform:translateX(-50%) scaleX(-1);font-size:15px}
 .ruta .esp{display:flex;gap:6px;margin-top:4px}
 .ruta .esp span{flex:1;text-align:center;font-size:10px;color:var(--warn)}
 .ruta .pie{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;border-top:1px solid var(--border);padding-top:8px;font-size:12px;color:var(--muted)}
@@ -333,22 +340,10 @@ tr:hover td{background:var(--surface-2)}
     <div class="sub" id="mSub"></div>
     <div class="det" id="mDet"></div>
     <div class="full" style="margin-top:16px"><label>Nuevo estado</label><div class="states" id="mStates"></div></div>
-    <div class="fgrid">
-      <div><label>Placa</label><input id="mPlaca" placeholder="ABC123"></div>
-      <div><label>Conductor</label><input id="mCond" placeholder="Nombre del conductor"></div>
-    </div>
-    <div class="fgrid" id="mFechas" style="margin-top:0">
-      <div><label>Retiro de contenedor en patio</label><input type="date" id="mRetiro">
-        <div class="seg" id="mSeg"><button type="button" data-r="-1">Día anterior</button><button type="button" data-r="0">Mismo día del llenado</button></div></div>
-      <div><label>Llenado en planta Reckitt</label><input type="date" id="mLlenado"></div>
-    </div>
-    <div class="fgrid" style="margin-top:0">
-      <div><label>Patio (retiro de contenedor)</label><input id="mPatio" list="patios" placeholder="Seleccione o escriba el patio"><datalist id="patios"></datalist></div>
-      <div><label>Viaje</label><div class="seg" id="mSit" style="margin-top:0;flex-wrap:wrap"></div></div>
-    </div>
-    <div class="full"><label>Observación / novedad</label><textarea id="mObs" placeholder="Ej: Cita de descargue 9 am, en fila en patio…"></textarea></div>
+    <div id="mForm"></div>
+    <datalist id="dlPatio"></datalist><datalist id="dlCond"></datalist><datalist id="dlPlaca"></datalist><datalist id="dlFwd"></datalist>
     <div class="hist" id="mHist"></div>
-    <div class="mfoot"><button class="btn" id="mCancel">Cancelar</button><button class="btn primary" id="mSave">Guardar actualización</button></div>
+    <div class="mfoot"><span class="sub" id="mNCambios" style="margin-right:auto"></span><input id="mUsuario" placeholder="Su nombre (queda en el historial)" style="width:230px"><button class="btn" id="mCancel">Cancelar</button><button class="btn primary" id="mSave">Guardar en la base</button></div>
   </div>
 </div>
 <aside class="chat" id="chat" aria-label="Chat LogxIA">
@@ -553,16 +548,20 @@ function fusionarHistorial(){
 }
 function persistirLocal(){ try{ localStorage.setItem(LS_KEY, JSON.stringify({viajes, historial})); }catch(e){} }
 
-async function guardarCambio(id, cambios){
+// estado (Asignado, En tránsito…) es del tablero; el resto se escribe en la pestaña Seguimiento EXPO / IMPO de la base
+async function guardarCambio(id, cambios, usuario){
   const v = viajes.find(x=>x.id===id);
   const anterior = v.estado;
   Object.assign(v, cambios, {actualizado: new Date().toISOString()});
-  historial.push({fecha:v.actualizado, id, placa:v.placa, estadoAnterior:anterior, estadoNuevo:v.estado, observacion:cambios.observacion||'', usuario:CFG.USUARIO||''});
-  if (CFG.SHEETS_API_URL && CFG.ESCRIBE_HOJA){
+  historial.push({fecha:v.actualizado, id, placa:v.placa, estadoAnterior:anterior, estadoNuevo:v.estado, observacion:cambios.observacion||'', usuario:usuario||CFG.USUARIO||''});
+  const enBase = {...cambios}; delete enBase.estado;
+  if (CFG.SHEETS_API_URL && window.CLAVE && Object.keys(enBase).length){
+    render();
     try{
-      await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'update', id, cambios, usuario:CFG.USUARIO})});
-      toast('Actualizado en Google Sheets');
-    }catch(e){ toast('Error al guardar en Sheets'); }
+      const r = await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'update', clave:window.CLAVE, id, cambios:enBase, usuario})});
+      const j = await r.json();
+      toast(j.ok ? (j.cambios ? `Guardado en la base: ${j.cambios} dato${j.cambios===1?'':'s'}` : 'Sin cambios en la base') : 'No se guardó: ' + (j.error||'error'));
+    }catch(e){ toast('No se pudo guardar en la base, intente de nuevo'); }
   } else { persistirLocal(); toast('Estado actualizado'); }
   render();
 }
@@ -1001,13 +1000,9 @@ function abrir(id){
        ['Contenedor',v.contenedor],['Sello',v.sello],['Cierre documental',fx(v.cierreDoc)],['Cita de ingreso',[fx(v.citaIngreso),v.estadoCita].filter(Boolean).join(' · ')],
        ['Entrega en puerto',fx(v.fechaEntregaPuerto)],['Tirilla de entrega',v.tirillaEntrega]];
   $('#mDet').innerHTML = det.map(([l,x])=>`<div><span>${l}</span>${esc(x||'—')}</div>`).join('');
-  $('#mPlaca').value = v.placa; $('#mCond').value = v.conductor; $('#mObs').value = v.observacion;
-  $('#mFechas').classList.toggle('hidden', v.operacion!=='EXPO');
-  $('#mRetiro').value = v.fechaRetiro; $('#mLlenado').value = v.fechaCargue;
-  $('#mPatio').value = v.patio || '';
-  $('#patios').innerHTML = [...new Set(['Intermodal','Simaritima','Patio Colombia','Aguadulce', ...viajes.map(x=>x.patio).filter(Boolean)])].map(x=>`<option value="${esc(x)}">`).join('');
-  pintarSeg();
-  sitSel = situacion(v); pintarSit();
+  $('#mDet').classList.add('hidden');
+  pintarForm(v);
+  try { $('#mUsuario').value = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
   pintarEstados();
   const h = historial.filter(x=>x.id===id).slice(-4).reverse();
   const lx = accionesDe(v);
@@ -1021,36 +1016,79 @@ function abrir(id){
 function pintarEstados(){
   $('#mStates').innerHTML = ESTADOS.map(e=>`<button type="button" class="${estadoSel===e.k?'on':''}" data-e="${e.k}"><i style="background:${e.c}"></i>${e.k}</button>`).join('');
 }
-// Retiro en patio: normalmente el día anterior al llenado, a veces el mismo día
-function pintarSeg(){
-  const r = $('#mRetiro').value, l = $('#mLlenado').value;
-  $('#mSeg').querySelectorAll('button').forEach(b=> b.classList.toggle('on', !!(r && l) && r===addDias(l, +b.dataset.r)));
+// Campos que se editan en la ventana del viaje: los mismos de las pestañas Seguimiento EXPO / IMPO (ver SEGUIMIENTO en Code.gs)
+const EMPRESAS = ['Reckitt Benckiser','Reckitt Health','Reckitt Hygiene','Mead Johnson'];
+const CAMPOS_VIAJE = [['situacion','STATUS','sit'],['empresa','Empresa','lista',EMPRESAS],['solicitante','Solicitante'],['booking','Booking / BL'],['pedido','Pedido'],['do','DO'],
+  ['contenedor','Contenedor'],['unidad','Unidad','lista',['1X20','1X40']],['conductor','Conductor','dl','dlCond'],['placa','Placa','dl','dlPlaca'],['fwd','FWD','dl','dlFwd']];
+const CAMPOS_ETAPA = {
+  EXPO: [['Retiro del vacío', [['patio','Patio de retiro','dl','dlPatio'],['fechaRetiro','Fecha de retiro','fecha']]],
+    ['Llenado en planta', [['fechaCargue','Fecha de llenado','fecha'],['sello','Sello'],['vgm','VGM']]],
+    ['Puerto', [['puerto','Puerto'],['mn','Motonave'],['cierreDoc','Cierre documental','fecha'],['citaIngreso','Cita de ingreso','fecha'],['estadoCita','Estado de la cita','lista',['Solicitada','Confirmada','Entregado']]]],
+    ['Cierre', [['fechaEntregaPuerto','Fecha de entrega en puerto','fecha'],['tirillaEntrega','Tirilla de entrega']]],
+    ['Destino', [['pais','País'],['etd','ETD','fecha'],['eta','ETA','fecha']]]],
+  IMPO: [['Llegada', [['mn','Motonave'],['puerto','Origen'],['eta','ETA','fecha'],['fechaLevante','Fecha entrega documentos','fecha']]],
+    ['Retiro del lleno', [['citaRetiro','Cita de retiro en puerto','fecha'],['fechaRetiro','Fecha de retiro','fecha']]],
+    ['Entrega en bodega', [['fechaCargue','Fecha entrega en bodega','fecha'],['destino','Destino'],['bodega','Bodega']]],
+    ['Devolución del vacío', [['ciudadDevolucion','Ciudad de devolución','lista',['Buenaventura','Cartagena','Cali']],['citaDevolucion','Cita de devolución','fecha'],
+      ['patio','Patio de devolución','dl','dlPatio'],['fechaDevolucion','Fecha de devolución','fecha'],['tirillaDevolucion','Tirilla de devolución']]]]
+};
+// valor de un campo tal como lo muestra el formulario (placa y conductor en mayúsculas)
+const valorCampo = (v, k) => { const x = k==='situacion' ? situacion(v) : String(v[k] ?? ''); return ['placa','conductor'].includes(k) ? x.toUpperCase() : x; };
+function pintarForm(v){
+  const campo = ([k, l, t, x]) => {
+    const val = valorCampo(v, k);
+    const opc = vals => [...new Set([...vals, val].filter(Boolean))].map(s=>`<option ${s===val?'selected':''}>${esc(s)}</option>`).join('');
+    const ctl = t==='fecha' ? `<input type="date" data-k="${k}" value="${esc(val)}">`
+      : t==='sit' ? `<select data-k="${k}">${opc(SITUACIONES)}</select>`
+      : t==='lista' ? `<select data-k="${k}"><option value=""></option>${opc(x)}</select>`
+      : `<input data-k="${k}" value="${esc(val)}"${t==='dl' ? ` list="${x}"` : ''}>`;
+    return `<div><label>${l}</label>${ctl}</div>`;
+  };
+  const grupo = (titulo, cs) => `<fieldset class="mgrupo"><legend>${titulo}</legend><div class="fgrid3">${cs.map(campo).join('')}</div></fieldset>`;
+  const calc = v.operacion==='IMPO' ? `<p class="sub" style="margin:8px 2px 0">Fecha límite de devolución <b>${fd(v.fechaLimite)}</b>${demora(v) ? ` · <b style="color:var(--bad)">${demora(v)} d de demora</b>` : ''} · se calculan solas con la ciudad y la entrega en bodega.</p>` : '';
+  $('#mForm').innerHTML = grupo('Viaje', CAMPOS_VIAJE) + CAMPOS_ETAPA[v.operacion].map(([t, cs]) => grupo(t, cs)).join('') + calc +
+    `<div class="full" style="margin-top:12px"><label>Observación / novedad</label><textarea data-k="observacion" placeholder="Ej: Cita de descargue 9 am, en fila en patio…">${esc(v.observacion||'')}</textarea></div>`;
+  const lista = (id, k) => { $('#'+id).innerHTML = [...new Set(viajes.map(x=>x[k]).filter(Boolean))].sort().map(x=>`<option value="${esc(x)}">`).join(''); };
+  lista('dlPatio','patio'); lista('dlCond','conductor'); lista('dlPlaca','placa'); lista('dlFwd','fwd');
+  marcarCambios();
 }
-$('#mSeg').onclick = e => { const b=e.target.closest('button'); if(!b || !$('#mLlenado').value) return; $('#mRetiro').value = addDias($('#mLlenado').value, +b.dataset.r); pintarSeg(); };
-$('#mRetiro').oninput = pintarSeg;
-$('#mLlenado').oninput = pintarSeg;
+// datos del formulario distintos a los del viaje
+function cambiosForm(v){
+  const c = {};
+  $('#mForm').querySelectorAll('[data-k]').forEach(el => {
+    const k = el.dataset.k; let val = el.value.trim();
+    if (['placa','conductor'].includes(k)) val = val.toUpperCase();
+    if (val !== valorCampo(v, k)) c[k] = val;
+  });
+  return c;
+}
+function marcarCambios(){
+  const v = viajes.find(x=>x.id===editId); if (!v) return;
+  const c = cambiosForm(v), n = Object.keys(c).length;
+  $('#mForm').querySelectorAll('[data-k]').forEach(el => el.classList.toggle('cambio', el.dataset.k in c));
+  $('#mNCambios').textContent = n ? `${n} dato${n===1?'':'s'} por guardar` : '';
+}
 function cerrar(){ $('#ov').classList.remove('open'); editId=null; }
 $('#mStates').onclick = e => { const b=e.target.closest('button'); if(!b) return; estadoSel=b.dataset.e; pintarEstados();
-  if (estadoSel==='Entregado') { sitSel = 'Cerrado'; pintarSit(); }
-  if (estadoSel==='Cancelado') { sitSel = 'Cancelado'; pintarSit(); } };
-let sitSel = 'Abierto';
-function pintarSit(){ $('#mSit').innerHTML = SITUACIONES.map(s=>`<button type="button" data-s="${s}" class="${s===sitSel?'on':''}">${s}</button>`).join(''); }
-$('#mSit').onclick = e => { const b=e.target.closest('button'); if(!b) return; sitSel=b.dataset.s; pintarSit(); };
+  const sit = $('#mForm [data-k=situacion]');
+  if (sit && estadoSel==='Entregado') sit.value = 'Cerrado';
+  if (sit && estadoSel==='Cancelado') sit.value = 'Cancelado';
+  marcarCambios(); };
 $('#mCancel').onclick = cerrar;
 $('#ov').onclick = e => { if (e.target.id==='ov') cerrar(); };
 document.addEventListener('keydown', e => { if (e.key==='Escape') cerrar(); });
 $('#mSave').onclick = () => {
-  const placa = $('#mPlaca').value.trim().toUpperCase();
+  const v = viajes.find(x=>x.id===editId);
+  const cambios = cambiosForm(v), usuario = $('#mUsuario').value.trim();
+  if (Object.keys(cambios).length && !usuario) { $('#mUsuario').focus(); return toast('Escriba su nombre para guardar en la base'); }
+  try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
   let estado = estadoSel;
-  if (placa && estado==='Sin asignar') estado = 'Asignado';
-  const cambios = {estado, placa, conductor:$('#mCond').value.trim().toUpperCase(), observacion:$('#mObs').value.trim(), patio:$('#mPatio').value.trim(), situacion:sitSel};
-  if (viajes.find(x=>x.id===editId).operacion==='EXPO'){
-    if ($('#mLlenado').value) cambios.fechaCargue = $('#mLlenado').value;
-    if ($('#mRetiro').value) cambios.fechaRetiro = $('#mRetiro').value;
-  }
-  guardarCambio(editId, cambios);
+  if ((cambios.placa || v.placa) && estado==='Sin asignar') estado = 'Asignado';
+  if (estado !== v.estado) cambios.estado = estado;
+  if (Object.keys(cambios).length) guardarCambio(editId, cambios, usuario);
   cerrar();
 };
+$('#mForm').addEventListener('input', () => marcarCambios());
 
 /* ---------- navegación y eventos ---------- */
 $('#nav').onclick = e => { const b=e.target.closest('button'); if(!b) return;
