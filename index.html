@@ -569,13 +569,14 @@ function fusionarHistorial(){
 }
 function persistirLocal(){ try{ localStorage.setItem(LS_KEY, JSON.stringify({viajes, historial})); }catch(e){} }
 
-// estado (Asignado, En tránsito…) es del tablero; el resto se escribe en la pestaña Seguimiento EXPO / IMPO de la base
+// todo, también el estado (Asignado, En tránsito…), se escribe en la pestaña Seguimiento EXPO / IMPO de la base
 async function guardarCambio(id, cambios, usuario){
   const v = viajes.find(x=>x.id===id);
   const anterior = v.estado;
   Object.assign(v, cambios, {actualizado: new Date().toISOString()});
+  if (cambios.estado) v.estadoAuto = false;
   historial.push({fecha:v.actualizado, id, placa:v.placa, estadoAnterior:anterior, estadoNuevo:v.estado, observacion:cambios.observacion||'', usuario:usuario||CFG.USUARIO||''});
-  const enBase = {...cambios}; delete enBase.estado;
+  const enBase = {...cambios};
   if (CFG.SHEETS_API_URL && window.CLAVE && Object.keys(enBase).length){
     render();
     try{
@@ -979,7 +980,14 @@ function paradas(v){
   ];
 }
 // cumplidas en orden: una parada cuenta si ella y todas las anteriores tienen fecha cumplida
-function avance(v){ const P = paradas(v); let n = 0; while (n < P.length && P[n][2]) n++; return {P, n}; }
+// el estado que el equipo marcó en la ventana del viaje adelanta la ruta aunque falten las fechas
+const PARADAS_ESTADO = {
+  EXPO: {'Retiro en patio':1, 'En llenado':2, 'En tránsito':3, 'En puerto/patio':4, 'Entregado':4},
+  IMPO: {'Retiro en patio':1, 'En tránsito':2, 'En puerto/patio':3, 'Entregado':3},
+};
+function avance(v){ const P = paradas(v); let n = 0; while (n < P.length && P[n][2]) n++;
+  if (!v.estadoAuto) n = Math.max(n, (PARADAS_ESTADO[v.operacion]||{})[v.estado] || 0);
+  return {P, n}; }
 function miniAvance(v){ const {P,n} = avance(v); return `<span class="mini" title="${esc(n<P.length ? 'En: '+P[n][0] : 'Completo')}">${P.map((_,i)=>`<i class="${i<n?'ok':i===n?'ya':''}"></i>`).join('')}</span>`; }
 function rutaPedido(v){
   const {P, n} = avance(v);
@@ -1112,11 +1120,11 @@ document.addEventListener('keydown', e => { if (e.key==='Escape') cerrar(); });
 $('#mSave').onclick = () => {
   const v = viajes.find(x=>x.id===editId);
   const cambios = cambiosForm(v), usuario = $('#mUsuario').value.trim();
-  if (Object.keys(cambios).length && !usuario) { $('#mUsuario').focus(); return toast('Escriba su nombre para guardar en la base'); }
-  try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
   let estado = estadoSel;
   if ((cambios.placa || v.placa) && estado==='Sin asignar') estado = 'Asignado';
   if (estado !== v.estado) cambios.estado = estado;
+  if (Object.keys(cambios).length && !usuario) { $('#mUsuario').focus(); return toast('Escriba su nombre para guardar en la base'); }
+  try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
   if (Object.keys(cambios).length) guardarCambio(editId, cambios, usuario);
   cerrar();
 };
