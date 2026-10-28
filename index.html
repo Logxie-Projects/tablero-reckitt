@@ -1110,7 +1110,8 @@ $('#mForm').addEventListener('input', () => marcarCambios());
 /* ---------- llenar datos desde correos (con revisión y aprobación) ---------- */
 let PROP = [];
 async function abrirPropuestas(){
-  if (!CFG.SHEETS_API_URL || !window.CLAVE) return toast('Funciona desde el tablero publicado');
+  if (!CFG.SHEETS_API_URL) return toast('Funciona desde el tablero publicado');
+  if (!window.CLAVE) return toast('Espere a que carguen los datos e intente de nuevo');
   $('#propLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">Buscando datos en los correos…</div>';
   try { $('#propUsuario').value = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
   $('#propTodos').checked = false;
