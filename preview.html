@@ -217,6 +217,10 @@ tr:hover td{background:var(--surface-2)}
 .mini i{width:7px;height:7px;border-radius:50%;border:1.5px solid var(--border);display:block}
 .mini i.ok{background:var(--ok);border-color:var(--ok)} .mini i.ya{background:var(--accent);border-color:var(--accent)}
 @media (max-width:640px){.ruta .cuerpo{grid-template-columns:1fr}.ruta .linea{flex-direction:column}.ruta .linea:before,.ruta .linea .hecho,.ruta .esp{display:none}.ruta .par{display:flex;gap:8px;text-align:left;align-items:flex-start}.ruta .pt{margin:4px 0 0}.ruta .caja{margin-top:0;flex:1}.ruta .camion{display:none}}
+.modos{display:inline-flex;border:1px solid var(--border);border-radius:99px;overflow:hidden;margin:8px 0}
+.modos button{border:0;background:var(--surface);padding:5px 12px;font-size:12px;cursor:pointer;color:var(--muted)}
+.modos button.on{background:var(--accent);color:#fff;font-weight:600}
+#leanLista .ruta{margin-top:10px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -285,6 +289,8 @@ tr:hover td{background:var(--surface-2)}
       <input id="q" placeholder="Buscar placa, conductor, booking, motonave…">
       <div class="chips" id="fEstados"></div>
     </div>
+    <div class="modos" data-modos="lista"><button type="button" data-modo="lean">Modo lean</button><button type="button" data-modo="tabla">Modo tabla</button></div>
+    <div id="leanLista"></div>
     <div class="tbl-wrap"><table id="tbl"></table></div>
     <p class="sub" style="margin-top:8px">Haz clic en <b>Actualizar</b> para cambiar el estado, asignar vehículo o registrar una novedad.</p>
   </section>
@@ -323,6 +329,7 @@ tr:hover td{background:var(--surface-2)}
   <div class="modal" role="dialog" aria-modal="true">
     <h3 id="mTitle"></h3>
     <div class="sub" id="mSub"></div>
+    <div class="modos" data-modos="ventana"><button type="button" data-modo="lean">Modo lean</button><button type="button" data-modo="tabla">Modo tabla</button></div>
     <div id="mRuta"></div>
     <div class="det" id="mDet"></div>
     <div class="full" style="margin-top:16px"><label>Nuevo estado</label><div class="states" id="mStates"></div></div>
@@ -870,10 +877,26 @@ function renderChips(){
     const n = k ? visibles().filter(v=>v.estado===k).length : visibles().length;
     return `<button class="chip ${filtroEstado===k?'on':''}" data-e="${k}">${k||'Todos'} · ${n}</button>`;}).join('');
 }
+// Modo lean (ruta del pedido) o Modo tabla, por separado en la lista de viajes y en la ventana; se recuerda en este navegador
+const MODOS = {lista:'tabla', ventana:'lean'};
+try { Object.assign(MODOS, JSON.parse(localStorage.getItem('rkt-modos')) || {}); } catch(e){}
+function pintarModos(){
+  document.querySelectorAll('[data-modos]').forEach(g => g.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.modo===MODOS[g.dataset.modos])));
+  $('#mRuta').style.display = MODOS.ventana==='lean' ? '' : 'none';
+  $('#mDet').style.display = MODOS.ventana==='tabla' ? '' : 'none';
+  $('#leanLista').style.display = MODOS.lista==='lean' ? '' : 'none';
+  document.querySelector('.tbl-wrap').style.display = MODOS.lista==='tabla' ? '' : 'none';
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-modo]'); if (!b) return;
+  MODOS[b.closest('[data-modos]').dataset.modos] = b.dataset.modo;
+  try { localStorage.setItem('rkt-modos', JSON.stringify(MODOS)); } catch(e){}
+  pintarModos(); if (MODOS.lista==='lean') renderTabla(); });
 function renderTabla(){
   const q = $('#q').value.toLowerCase();
   let rows = visibles().filter(v=> (!filtroEstado || v.estado===filtroEstado) && (!q || Object.values(v).join(' ').toLowerCase().includes(q)));
   rows.sort((a,b)=> String(a[orden.k]||'~').localeCompare(String(b[orden.k]||'~')) * (orden.asc?1:-1));
+  pintarModos();
+  if (MODOS.lista==='lean') { $('#leanLista').innerHTML = rows.length ? rows.map(v=>`<div onclick="abrir('${v.id}')">${rutaPedido(v)}</div>`).join('') : '<div class="sub" style="padding:24px;text-align:center">Sin resultados</div>'; return; }
   const fechas = ['fechaRetiro','fechaCargue','cierreDoc','etd','eta'];
   $('#tbl').innerHTML = `<thead><tr><th class="num">#</th><th></th>${COLS.map(([k,l])=>`<th data-k="${k}">${l}${orden.k===k?(orden.asc?' ▲':' ▼'):''}</th>`).join('')}</tr></thead>
   <tbody>${rows.map((v, n)=>`<tr><td class="num">${n+1}</td><td><button class="link" onclick="abrir('${v.id}')">Actualizar</button></td>${COLS.map(([k])=>{
@@ -963,7 +986,7 @@ function rutaPedido(v){
 function abrir(id){
   const v = viajes.find(x=>x.id===id); editId = id; estadoSel = v.estado;
   $('#mTitle').textContent = `${v.placa || 'Sin vehículo'} · ${v.operacion} ${v.pais||''}`;
-  $('#mRuta').innerHTML = rutaPedido(v);
+  $('#mRuta').innerHTML = rutaPedido(v); pintarModos();
   $('#mSub').textContent = `${v.id} · ${v.fechaRetiro?`Retiro en patio ${fd(v.fechaRetiro)} · Llenado planta ${fd(v.fechaCargue)}`:`Cargue ${fd(v.fechaCargue)}`} · Última actualización ${new Date(v.actualizado).toLocaleString('es-CO')}`;
   const fx = x => x ? fd(x) : '';
   const det = v.operacion==='IMPO'
