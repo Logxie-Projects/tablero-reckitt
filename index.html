@@ -973,7 +973,7 @@ function rutaPedido(v){
       <span class="sub">${esc([v.solicitante && 'Solicita '+v.solicitante, v.fwd].filter(Boolean).join(' · '))}</span></div>
       <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span></div>
     <div class="cuerpo"><div>
-      <div style="display:flex;align-items:flex-end;gap:2px"><div class="cont"><b style="font-size:12px">${esc(v.contenedor||'Contenedor —')}</b><div class="sub">${esc(v.unidad||'')}</div></div><div class="cabina"></div></div>
+      <div style="display:flex;align-items:flex-end;gap:2px"><div class="cont"><b style="font-size:12px">${esc(v.contenedor||'—')}</b><div class="sub">${esc(v.unidad||'')}</div></div><div class="cabina"></div></div>
       <div class="ruedas"><i></i><i></i><i></i><i></i></div>
       <div class="cond"><div class="ini">${esc(ini(v.conductor))}</div><div style="min-width:0"><b style="font-size:12px;display:block">${esc(v.conductor||'Sin conductor')}</b><span class="sub">${esc(v.placa||'Sin placa')}</span></div></div>
     </div><div>
