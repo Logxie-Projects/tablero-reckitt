@@ -55,7 +55,7 @@ main{max-width:1400px;margin:0 auto;padding:20px 24px 48px}
 h2{font-size:15px;margin:0 0 12px;font-weight:600}
 .sub{color:var(--muted);font-size:12px;font-weight:400}
 .grid{display:grid;gap:16px}
-.kpis{grid-template-columns:repeat(7,1fr)}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);min-width:0}
 .kpi .lbl{color:var(--muted);font-size:12px;font-weight:500}
 .kpi .val{font-size:28px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums}
@@ -176,6 +176,13 @@ tr:hover td{background:var(--surface-2)}
 .fgrid3 .cambio{border-color:var(--accent);background:var(--accent-soft)}
 @media (max-width:640px){.fgrid3{grid-template-columns:1fr 1fr}}
 .hist{margin-top:14px;font-size:12px;color:var(--muted)}
+.plan{margin-top:12px;font-size:12px;overflow-x:auto}
+.plan td{white-space:nowrap}
+.plan table{width:100%;border-collapse:collapse}
+.plan th,.plan td{padding:6px 8px;border-top:1px solid var(--border);text-align:left}
+.plan th{font-size:11px;color:var(--muted);font-weight:600;border-top:0}
+.plan tr.total td{font-weight:600;background:var(--surface-2)}
+.tarde{color:var(--bad)}.antes{color:var(--ok)}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--text);color:var(--surface);padding:10px 16px;border-radius:10px;font-weight:500;transition:transform .25s;z-index:60}
 .toast.show{transform:translateX(-50%) translateY(0)}
 .chat{position:fixed;top:0;right:0;height:100vh;width:min(400px,100vw);background:var(--surface);border-left:1px solid var(--border);box-shadow:-8px 0 24px rgba(0,0,0,.12);z-index:40;display:flex;flex-direction:column;transform:translateX(105%);transition:transform .25s}
@@ -206,6 +213,7 @@ tr:hover td{background:var(--surface-2)}
 /* ---- Modo lean: ruta del pedido ---- */
 .ruta{margin-top:12px;border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;background:var(--surface)}
 .ruta .cab{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.tg{font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600;white-space:nowrap}
 .ruta .tg{font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600}
 .ruta .cuerpo{display:grid;grid-template-columns:150px minmax(0,1fr);gap:14px;align-items:start}
 .ruta .cont{border:1.5px solid var(--text);border-radius:4px;padding:5px 4px;text-align:center;flex:1}
@@ -358,6 +366,7 @@ tr:hover td{background:var(--surface-2)}
     <h3 id="mTitle"></h3>
     <div class="sub" id="mSub"></div>
     <div class="det" id="mDet"></div>
+    <div class="plan" id="mPlan"></div>
     <div class="full" style="margin-top:16px"><label>Nuevo estado</label><div class="states" id="mStates"></div></div>
     <div id="mForm"></div>
     <datalist id="dlPatio"></datalist><datalist id="dlCond"></datalist><datalist id="dlPlaca"></datalist><datalist id="dlFwd"></datalist>
@@ -768,8 +777,26 @@ function renderKpis(){ const act = activos();
     {l:'Sin vehículo (próx. 72 h)', v:pendVentana, h:pendVentana? 'requieren asignación urgente':'todo cubierto', bad:pendVentana>0},
     {l:'En ruta ahora', v:enRuta, h:`${entregados} entregados · ${novedades} novedades`},
     {l:'Cierres doc. próx. 7 días', v:cierres, h:'viajes con cierre documental próximo'},
+    leadKpi(), cobroKpi(),
   ];
   $('#kpis').innerHTML = k.map(x=>`<div class="card kpi ${x.hl?'hl':''}"><div class="lbl">${x.l}</div><div class="val" style="${x.bad?'color:var(--bad)':''}">${x.v}</div><div class="hint">${x.h}</div>${x.m!==undefined?`<div class="meter"><i style="width:${x.m}%"></i></div>`:''}</div>`).join('');
+}
+
+// viajes cerrados sin facturar (y su valor) y extracostos que esperan la aprobación de Reckitt
+function cobroKpi(){
+  const C = visibles().map(v=>[v, cobro(v)]);
+  const porFact = C.filter(([,c])=>c.fact==='Pendiente por facturar'), extra = C.filter(([,c])=>c.aprob==='Pendiente');
+  const suma = L => pesos(L.reduce((s,[,c])=>s+c.total,0));
+  return {l:'Pendiente por facturar', v: porFact.length, h:`${porFact.length ? suma(porFact)+' · ' : ''}${C.filter(([,c])=>c.fact==='Facturado').length} facturados<br>${extra.length} extracosto${extra.length===1?'':'s'} por aprobar${extra.length?' · '+pesos(extra.reduce((s,[,c])=>s+c.extra,0)):''}`, bad: extra.length>0};
+}
+// lead time promedio de los viajes completos (con los filtros) frente al plan, y hitos cumplidos a tiempo
+function leadKpi(){
+  const L = visibles().map(leadTime).filter(x=>x.real!==null);
+  const prom = a => a.length ? Math.round(a.reduce((s,x)=>s+x,0)/a.length*10)/10 : null;
+  const real = prom(L.map(x=>x.real)), plan = prom(L.filter(x=>x.plan!==null).map(x=>x.plan));
+  const H = visibles().flatMap(v=>hitos(v)).filter(x=>x[1] && x[2]), ok = H.filter(x=>x[2]<=x[1]).length;
+  const pct = H.length ? Math.round(ok/H.length*100) : null;
+  return {l:'Lead time promedio', v: real===null ? '—' : real+' d', h:`${plan!==null?`plan ${plan} d · `:''}${L.length} viajes completos<br>${pct===null?'sin hitos cumplidos':`${pct}% hitos a tiempo`}`, m: pct===null?undefined:pct, bad: real!==null && plan!==null && real>plan};
 }
 
 /* ---------- gráficas ---------- */
@@ -876,12 +903,63 @@ function renderFeed(){
 
 /* ---------- tabla de viajes ---------- */
 const COLS = [
-  ['situacion','Viaje'],['avance','Avance'],['estado','Estado'],['fechaRetiro','Retiro patio'],['fechaCargue','Llenado / Cargue'],['operacion','Op.'],['empresa','Empresa'],['solicitante','Solicitante'],['placa','Placa'],['conductor','Conductor'],['pais','Destino'],
+  ['situacion','Viaje'],['avance','Avance'],['lead','Lead time'],['cobro','Precio · facturación'],['estado','Estado'],['fechaRetiro','Retiro patio'],['fechaCargue','Llenado / Cargue'],['operacion','Op.'],['empresa','Empresa'],['solicitante','Solicitante'],['placa','Placa'],['conductor','Conductor'],['pais','Destino'],
   ['unidad','Unidad'],['bodega','Bodega'],['mn','Motonave (MN)'],['cierreDoc','Cierre doc'],['etd','ETD'],['eta','ETA'],
   ['booking','Booking'],['contenedor','Contenedor'],['cierreOp','Cita puerto / Devolución'],['fwd','FWD'],['puerto','Puerto'],['patio','Patio'],['observacion','Observación']
 ];
 // días de demora del vacío IMPO: desde la fecha límite hasta la devolución (o hoy si no se ha devuelto)
 const demora = v => v.fechaLimite ? Math.max(0, diffDias(v.fechaDevolucion || HOY) - diffDias(v.fechaLimite)) : null;
+// cobro del viaje: tarifa + extracostos aprobados por Reckitt; sin dato de facturación, el viaje cerrado queda pendiente por facturar
+const pesos = n => n ? '$' + Number(n).toLocaleString('es-CO') : '—';
+function cobro(v){
+  const tarifa = Number(v.tarifa) || 0, extra = Number(v.extracostos) || 0;
+  const aprob = extra ? (v.aprobacionExtra || 'Pendiente') : '';
+  const fact = v.facturacion || (situacion(v)==='Cerrado' ? 'Pendiente por facturar' : situacion(v)==='Cancelado' ? '' : 'En curso');
+  return {tarifa, extra, aprob, fact, total: tarifa + (aprob==='Aprobado' ? extra : 0)};
+}
+const COLOR_COBRO = {'Aprobado':'var(--ok)', 'Facturado':'var(--ok)', 'Rechazado':'var(--bad)', 'Pendiente':'var(--warn)', 'Pendiente por facturar':'var(--warn)'};
+const tagCobro = (s, pre='') => s ? `<span class="tg" style="background:color-mix(in srgb, ${COLOR_COBRO[s]||'var(--muted)'} 15%, transparent);color:${COLOR_COBRO[s]||'var(--muted)'}">${esc(pre+s)}</span>` : '';
+function celdaCobro(v){
+  const c = cobro(v);
+  return `${c.tarifa ? `<b>${pesos(c.tarifa)}</b>` : '<span class="sub">Sin tarifa</span>'}${c.extra ? `<br><span class="sub">+ ${pesos(c.extra)} extra${v.conceptoExtra?' · '+esc(v.conceptoExtra):''}</span> ${tagCobro(c.aprob)}` : ''}${c.fact ? '<br>'+tagCobro(c.fact)+(v.numFactura?` <span class="sub">${esc(v.numFactura)}</span>`:'') : ''}`;
+}
+function resumenCobro(v){
+  const c = cobro(v);
+  return `<div class="sub" style="margin-top:8px">💲 Tarifa <b>${pesos(c.tarifa)}</b>${c.extra ? ` · Extracostos <b>${pesos(c.extra)}</b> ${tagCobro(c.aprob)}` : ''} · Total a facturar <b>${pesos(c.total)}</b> ${tagCobro(c.fact)}${v.numFactura?` · Factura ${esc(v.numFactura)}`:''}</div>`;
+}
+// hitos del viaje con la fecha original (plan, la primera que se le puso) y la ejecutada (real: la fecha ya pasó o se cumplió)
+// [hito, plan, real]; sin plan guardado vale la cita o la fecha de hoy en la base
+function hitos(v){
+  const H = v.operacion==='IMPO'
+    ? [['Entrega documentos', v.planLevante, v.fechaLevante], ['Retiro en puerto', v.planRetiro || v.citaRetiro, v.fechaRetiro],
+       ['Entrega en bodega', v.planCargue, v.fechaCargue], ['Devolución del vacío', v.planDevolucion || v.citaDevolucion, v.fechaDevolucion]]
+    : [['Retiro del vacío', v.planRetiro, v.fechaRetiro], ['Llenado en planta', v.planCargue, v.fechaCargue],
+       ['Entrega en puerto', v.planEntregaPuerto || v.citaIngreso, v.fechaEntregaPuerto]];
+  return H.map(([l, plan, f]) => [l, plan || f || '', f && f <= HOY ? f : '']);
+}
+const dDias = (a, b) => a && b ? diffDias(b) - diffDias(a) : null;
+// lead time total: del primer al último hito; real = completo, o "en curso" contando hasta hoy
+function leadTime(v){
+  const H = hitos(v), u = H.length - 1;
+  const plan = dDias(H[0][1], H[u][1]);
+  const ini = H[0][2] || H.find(x=>x[2])?.[2] || '';
+  const fin = H[u][2];
+  return {plan, real: ini && fin ? dDias(ini, fin) : null, enCurso: ini && !fin && v.estado!=='Cancelado' ? dDias(ini, HOY) : null};
+}
+const desv = d => d===null ? '' : d>0 ? `<span class="tarde">+${d} d</span>` : d<0 ? `<span class="antes">${d} d</span>` : '<span class="antes">a tiempo</span>';
+function celdaLead(v){
+  const L = leadTime(v);
+  if (L.real!==null) return `<b>${L.real} d</b>${L.plan!==null?` <span class="sub">plan ${L.plan} d</span> ${desv(L.real-L.plan)}`:''}`;
+  if (L.enCurso!==null) return `<span class="sub">en curso ${L.enCurso} d${L.plan!==null?` · plan ${L.plan} d`:''}</span>`;
+  return L.plan!==null ? `<span class="sub">plan ${L.plan} d</span>` : '<span class="sub">—</span>';
+}
+function tablaPlan(v){
+  const H = hitos(v), L = leadTime(v);
+  return `<table><tr><th>Hito</th><th>Fecha original (plan)</th><th>Fecha ejecutada (real)</th><th>Desviación</th></tr>
+    ${H.map(([l, plan, real]) => `<tr><td>${l}</td><td>${fd(plan)}</td><td>${real ? fd(real) : '<span class="sub">pendiente</span>'}</td><td>${real ? desv(dDias(plan, real)) : ''}</td></tr>`).join('')}
+    <tr class="total"><td>Lead time total</td><td>${L.plan===null?'—':L.plan+' d'}</td><td>${L.real!==null ? L.real+' d' : L.enCurso!==null ? `en curso · ${L.enCurso} d` : '—'}</td><td>${L.real!==null && L.plan!==null ? desv(L.real-L.plan) : ''}</td></tr></table>
+    <div class="sub" style="margin-top:4px">La fecha original es la primera que tuvo cada hito; si se reprograma, cambia solo la real.</div>`;
+}
 // EXPO: cita de ingreso a puerto y tirilla de entrega; IMPO: fecha límite de devolución, demora y tirilla
 function celdaCierre(v){
   const ok = t => t ? ' <span class="sub" style="color:var(--ok)">✔ tirilla</span>' : '';
@@ -930,6 +1008,8 @@ function renderTabla(){
     if (k==='placa') return `<td>${val?`<span class="placa">${esc(val)}</span>`:'<span class="missing">Sin asignar</span>'}</td>`;
     if (k==='observacion') return `<td class="obs">${esc(val)}</td>`;
     if (k==='avance') return `<td>${miniAvance(v)}</td>`;
+    if (k==='lead') return `<td style="white-space:nowrap">${celdaLead(v)}</td>`;
+    if (k==='cobro') return `<td style="white-space:nowrap">${celdaCobro(v)}</td>`;
     if (k==='cierreOp') return `<td>${celdaCierre(v)}</td>`;
     if (k==='pais') return `<td>${esc(v.pais||v.destino||'—')}</td>`;
     if (fechas.includes(k)) return `<td>${fd(val)}</td>`;
@@ -995,7 +1075,6 @@ function rutaPedido(v){
   const iso = x => /^\d{4}-\d{2}-\d{2}$/.test(x||'');
   const dif = (a,b) => iso(a) && iso(b) ? Math.round((new Date(b+'T12:00')-new Date(a+'T12:00'))/864e5) : null;
   const esperas = P.slice(1).map((p,i)=> P[i][2] && p[2] ? dif(P[i][2], p[2]) : null);
-  const primera = P.find(p=>p[2]), lead = primera ? dif(primera[2], (P[n-1]&&n===P.length) ? P[n-1][2] : HOY) : null;
   // n = paradas cumplidas: el viaje va hacia la parada n
   const hacia = {Puerto:'En camino a puerto', Bodega:'En camino a bodega', Vacío:'Vacío por devolver', 'Retiro lleno':'Por retirar en puerto', Llenado:'En llenado', Patio:'Por retirar el vacío'};
   const sinTirilla = v.operacion==='EXPO' ? !v.tirillaEntrega : !v.tirillaDevolucion;
@@ -1020,7 +1099,7 @@ function rutaPedido(v){
         ${P.map(([et, lugar, , det], i)=>`<div class="par ${i<n?'ok':i===n?'ya':''}"><div class="pt"></div>${i===n?'<span class="camion">🚚</span>':''}
           <div class="caja">${et}<b>${esc(lugar)}</b>${det.filter(Boolean).map(esc).join('<br>')}</div></div>`).join('')}</div>
       <div class="esp"><span></span>${esperas.map(d=> `<span>${d===null?'':d+' d'}</span>`).join('')}</div>
-      <div class="pie">${lead!==null?`<span>Lead time ${lead} d</span>`:''}${v.operacion==='IMPO' && demora(v) ? `<span style="color:var(--bad)">${demora(v)} d de demora del vacío</span>`:''}<span>${sitTag(v)}</span><span>${esc(v.id)}</span></div>
+      <div class="pie"><span>Lead time ${celdaLead(v)}</span>${(c => c.tarifa || c.extra || v.facturacion ? `<span>${pesos(c.total)} ${tagCobro(c.aprob, 'Extra ')} ${tagCobro(c.fact)}</span>` : '')(cobro(v))}${v.operacion==='IMPO' && demora(v) ? `<span style="color:var(--bad)">${demora(v)} d de demora del vacío</span>`:''}<span>${sitTag(v)}</span><span>${esc(v.id)}</span></div>
     </div></div></div>`;
 }
 
@@ -1041,6 +1120,7 @@ function abrir(id){
        ['Entrega en puerto',fx(v.fechaEntregaPuerto)],['Tirilla de entrega',v.tirillaEntrega]];
   $('#mDet').innerHTML = det.map(([l,x])=>`<div><span>${l}</span>${esc(x||'—')}</div>`).join('');
   $('#mDet').classList.add('hidden');
+  $('#mPlan').innerHTML = tablaPlan(v) + resumenCobro(v);
   pintarForm(v);
   try { $('#mUsuario').value = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
   pintarEstados();
@@ -1065,12 +1145,16 @@ const CAMPOS_ETAPA = {
     ['Llenado en planta', [['fechaCargue','Fecha de llenado','fecha'],['sello','Sello'],['vgm','VGM']]],
     ['Puerto', [['puerto','Puerto'],['mn','Motonave'],['cierreDoc','Cierre documental','fecha'],['citaIngreso','Cita de ingreso','fecha'],['estadoCita','Estado de la cita','lista',['Solicitada','Confirmada','Entregado']]]],
     ['Cierre', [['fechaEntregaPuerto','Fecha de entrega en puerto','fecha'],['tirillaEntrega','Tirilla de entrega']]],
-    ['Destino', [['pais','País'],['etd','ETD','fecha'],['eta','ETA','fecha']]]],
+    ['Destino', [['pais','País'],['etd','ETD','fecha'],['eta','ETA','fecha']]],
+    ['Costos y facturación', [['tarifa','Tarifa','num'],['extracostos','Extracostos','num'],['conceptoExtra','Concepto extracostos'],
+      ['aprobacionExtra','Aprobación extracostos','lista',['Pendiente','Aprobado','Rechazado']],['facturacion','Facturación','lista',['Pendiente por facturar','Facturado']],['numFactura','N° factura']]]],
   IMPO: [['Llegada', [['mn','Motonave'],['puerto','Origen'],['eta','ETA','fecha'],['fechaLevante','Fecha entrega documentos','fecha']]],
     ['Retiro del lleno', [['citaRetiro','Cita de retiro en puerto','fecha'],['fechaRetiro','Fecha de retiro','fecha']]],
     ['Entrega en bodega', [['fechaCargue','Fecha entrega en bodega','fecha'],['destino','Destino'],['bodega','Bodega']]],
     ['Devolución del vacío', [['ciudadDevolucion','Ciudad de devolución','lista',['Buenaventura','Cartagena','Cali']],['citaDevolucion','Cita de devolución','fecha'],
-      ['patio','Patio de devolución','dl','dlPatio'],['fechaDevolucion','Fecha de devolución','fecha'],['tirillaDevolucion','Tirilla de devolución']]]]
+      ['patio','Patio de devolución','dl','dlPatio'],['fechaDevolucion','Fecha de devolución','fecha'],['tirillaDevolucion','Tirilla de devolución']]],
+    ['Costos y facturación', [['tarifa','Tarifa','num'],['extracostos','Extracostos','num'],['conceptoExtra','Concepto extracostos'],
+      ['aprobacionExtra','Aprobación extracostos','lista',['Pendiente','Aprobado','Rechazado']],['facturacion','Facturación','lista',['Pendiente por facturar','Facturado']],['numFactura','N° factura']]]]
 };
 // valor de un campo tal como lo muestra el formulario (placa y conductor en mayúsculas)
 const valorCampo = (v, k) => { const x = k==='situacion' ? situacion(v) : String(v[k] ?? ''); return ['placa','conductor'].includes(k) ? x.toUpperCase() : x; };
@@ -1081,6 +1165,7 @@ function pintarForm(v){
     const ctl = t==='fecha' ? `<input type="date" data-k="${k}" value="${esc(val)}">`
       : t==='sit' ? `<select data-k="${k}">${opc(SITUACIONES)}</select>`
       : t==='lista' ? `<select data-k="${k}"><option value=""></option>${opc(x)}</select>`
+      : t==='num' ? `<input data-k="${k}" data-num inputmode="numeric" value="${esc(val)}" placeholder="$">`
       : `<input data-k="${k}" value="${esc(val)}"${t==='dl' ? ` list="${x}"` : ''}>`;
     return `<div><label>${l}</label>${ctl}</div>`;
   };
@@ -1098,6 +1183,7 @@ function cambiosForm(v){
   $('#mForm').querySelectorAll('[data-k]').forEach(el => {
     const k = el.dataset.k; let val = el.value.trim();
     if (['placa','conductor'].includes(k)) val = val.toUpperCase();
+    if ('num' in el.dataset) val = val.replace(/[^\d]/g, '');
     if (val !== valorCampo(v, k)) c[k] = val;
   });
   return c;
