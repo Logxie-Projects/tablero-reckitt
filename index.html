@@ -234,6 +234,11 @@ tr:hover td{background:var(--surface-2)}
 .ruta .resumen .gran b{font-size:13px;white-space:nowrap}
 .ruta .resumen .gran small{font-size:11px;font-weight:600;margin-left:4px}
 .ruta .resumen .nota{margin-top:4px;font-size:11px}
+.tag-nuevo{display:inline-block;background:#16a34a;color:#fff;font-size:10px;font-weight:800;letter-spacing:.06em;padding:2px 8px;border-radius:999px;margin-right:6px;vertical-align:middle;animation:latido 1.6s ease-in-out infinite}
+@keyframes latido{0%,100%{box-shadow:0 0 0 0 rgba(22,163,74,.45)}50%{box-shadow:0 0 0 5px rgba(22,163,74,0)}}
+@media (prefers-reduced-motion:reduce){.tag-nuevo{animation:none}}
+.nuevo-aviso{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-top:12px;padding:10px 12px;border-radius:10px;background:color-mix(in srgb,#16a34a 12%,transparent);border:1px solid color-mix(in srgb,#16a34a 40%,transparent);font-size:13px}
+.nuevo-aviso.hidden{display:none}
 .ruta .subv{margin-top:10px;width:100%;display:flex;align-items:center;justify-content:center;gap:6px;border:1px dashed var(--border);background:transparent;border-radius:8px;padding:6px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer}
 .ruta .subv span{font-size:16px;line-height:1}
 .ruta .subv:hover{border-color:var(--accent);color:var(--accent)}
@@ -417,6 +422,7 @@ tr:hover td{background:var(--surface-2)}
     <h3 id="mTitle"></h3>
     <div class="sub" id="mSub"></div>
     <div class="det" id="mDet"></div>
+    <div class="nuevo-aviso hidden" id="mNuevo"><span><b>Viaje nuevo:</b> nadie del equipo lo ha tomado todavía. Cualquier cambio que guarde, o el botón, deja constancia de que lo vio.</span><button type="button" class="btn primary" id="mTomar">Lo tomo</button></div>
     <div class="plan" id="mPlan"></div>
     <div class="full" style="margin-top:16px"><label>Nuevo estado</label><div class="states" id="mStates"></div></div>
     <div id="mForm"></div>
@@ -635,6 +641,7 @@ async function guardarCambio(id, cambios, usuario){
   const anterior = v.estado;
   Object.assign(v, cambios, {actualizado: new Date().toISOString()});
   if (cambios.estado) v.estadoAuto = false;
+  if (!v.vistoPor && hayControlVisto()) v.vistoPor = usuario || 'equipo';
   historial.push({fecha:v.actualizado, id, placa:v.placa, estadoAnterior:anterior, estadoNuevo:v.estado, observacion:cambios.observacion||'', usuario:usuario||CFG.USUARIO||''});
   const enBase = {...cambios};
   if (CFG.SHEETS_API_URL && window.CLAVE && Object.keys(enBase).length){
@@ -1068,7 +1075,7 @@ function renderLean(){
   [...$('#v-tablero').children].forEach(el => el.classList.toggle('hidden', lean ? el.id !== 'leanTablero' : el.id === 'leanTablero'));
   if (!lean) return;
   // los que están en curso primero; dentro de cada grupo, por la primera fecha del viaje
-  const L = visibles().filter(v => v.estado !== 'Cancelado').sort((a,b) => (situacion(a)!=='Abierto') - (situacion(b)!=='Abierto') || (primerEvento(a)||'9').localeCompare(primerEvento(b)||'9'));
+  const L = visibles().filter(v => v.estado !== 'Cancelado').sort((a,b) => esNuevo(b) - esNuevo(a) || (situacion(a)!=='Abierto') - (situacion(b)!=='Abierto') || (primerEvento(a)||'9').localeCompare(primerEvento(b)||'9'));
   const clic = !window.MODO_CLIENTE;
   $('#leanTablero').innerHTML = L.length ? L.map(v => rutaPedido(v).replace('<div class="ruta">', clic ? `<div class="ruta clic" onclick="abrir('${v.id}')">` : '<div class="ruta">')).join('')
     : '<div class="card sub" style="text-align:center;padding:24px">No hay viajes con estos filtros.</div>';
@@ -1080,12 +1087,12 @@ document.addEventListener('click', e => { const b = e.target.closest('[data-modo
 function renderTabla(){
   const q = $('#q').value.toLowerCase();
   let rows = visibles().filter(v=> (!filtroEstado || v.estado===filtroEstado) && (!q || Object.values(v).join(' ').toLowerCase().includes(q)));
-  rows.sort((a,b)=> String(a[orden.k]||'~').localeCompare(String(b[orden.k]||'~')) * (orden.asc?1:-1));
+  rows.sort((a,b)=> esNuevo(b) - esNuevo(a) || String(a[orden.k]||'~').localeCompare(String(b[orden.k]||'~')) * (orden.asc?1:-1));
   const fechas = ['fechaRetiro','fechaCargue','cierreDoc','etd','eta'];
   $('#tbl').innerHTML = `<thead><tr><th class="num">#</th><th></th>${COLS.map(([k,l])=>`<th data-k="${k}">${l}${orden.k===k?(orden.asc?' ▲':' ▼'):''}</th>`).join('')}</tr></thead>
   <tbody>${rows.map((v, n)=>`<tr><td class="num">${n+1}</td><td><button class="link" onclick="abrir('${v.id}')">Actualizar</button></td>${COLS.map(([k])=>{
     const val = v[k];
-    if (k==='situacion') return `<td>${sitTag(v)}</td>`;
+    if (k==='situacion') return `<td>${tagNuevo(v)}${sitTag(v)}</td>`;
     if (k==='estado') return `<td>${pill(val)}${celdaConductor(v)}</td>`;
     if (k==='operacion') return `<td><span class="op ${val}">${val}</span></td>`;
     if (k==='placa') return `<td>${val?`<span class="placa">${esc(val)}</span>`:'<span class="missing">Sin asignar</span>'}</td>`;
@@ -1238,7 +1245,7 @@ function rutaPedido(v){
   const ref = v.operacion==='IMPO' ? (v.pedido ? 'Pedido '+v.pedido : v.id) : (v.booking ? 'Booking '+v.booking : v.id);
   return `<div class="ruta"><div class="dos"><div class="izq">
     <div class="cab"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
-      <span class="op ${v.operacion}">${v.operacion}</span><b>${esc(v.empresa||'Empresa sin definir')} · ${esc(ref)}</b>
+      ${tagNuevo(v)}<span class="op ${v.operacion}">${v.operacion}</span><b>${esc(v.empresa||'Empresa sin definir')} · ${esc(ref)}</b>
       <span class="sub">${esc([v.solicitante && 'Solicita '+v.solicitante, v.fwd].filter(Boolean).join(' · '))}</span></div>
       <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span></div>
     ${v.observacion ? `<div class="sub" style="margin:-4px 0 10px">💬 ${esc(v.observacion)}</div>` : ''}
@@ -1276,6 +1283,7 @@ function abrir(id){
   $('#mDet').innerHTML = det.map(([l,x])=>`<div><span>${l}</span>${esc(x||'—')}</div>`).join('');
   $('#mDet').classList.add('hidden');
   $('#mPlan').innerHTML = v.padre ? resumenCobro(v) : tablaPlan(v) + resumenCobro(v);
+  $('#mNuevo').classList.toggle('hidden', !esNuevo(v));
   if (v.padre) $('#mSub').textContent = `Subviaje de ${v.padre} · ${[v.motivoSub, v.patioSub && 'patio '+v.patioSub].filter(Boolean).join(' · ') || 'sin motivo'}`;
   pintarForm(v);
   try { $('#mUsuario').value = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
@@ -1462,6 +1470,20 @@ $('#ovProp').onclick = e => { if (e.target.id === 'ovProp') $('#ovProp').classLi
 $('#propTodos').onchange = e => $('#propLista').querySelectorAll('input[data-i]').forEach(x => { x.checked = e.target.checked; });
 $('#propAprobar').onclick = () => decidirPropuestas(true);
 $('#propRechazar').onclick = () => decidirPropuestas(false);
+
+/* ---------- viajes nuevos: arriba y con letrero verde hasta la primera acción del equipo ---------- */
+// "Visto por" vacío = nadie lo ha tomado; solo cuenta cuando la base ya tiene la columna (algún viaje la trae llena)
+const hayControlVisto = () => viajes.some(v => v.vistoPor);
+const esNuevo = v => !window.MODO_CLIENTE && !v.padre && !v.vistoPor && hayControlVisto() && !['Cerrado','Cancelado'].includes(situacion(v));
+const tagNuevo = v => esNuevo(v) ? '<span class="tag-nuevo" title="Nadie del equipo lo ha tomado todavía">NUEVO</span>' : '';
+$('#mTomar').onclick = () => {
+  const usuario = $('#mUsuario').value.trim();
+  if (!usuario) { $('#mUsuario').focus(); return toast('Escriba su nombre para tomar el viaje'); }
+  try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
+  const ahora = new Date(), f = `${ahora.getFullYear()}-${String(ahora.getMonth()+1).padStart(2,'0')}-${String(ahora.getDate()).padStart(2,'0')} ${String(ahora.getHours()).padStart(2,'0')}:${String(ahora.getMinutes()).padStart(2,'0')}`;
+  guardarCambio(editId, {vistoPor: `${usuario} · ${f}`}, usuario);
+  cerrar();
+};
 
 /* ---------- subviajes ---------- */
 let subPadreId = null;
