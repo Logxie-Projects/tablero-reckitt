@@ -234,6 +234,14 @@ tr:hover td{background:var(--surface-2)}
 .ruta .resumen .gran b{font-size:13px;white-space:nowrap}
 .ruta .resumen .gran small{font-size:11px;font-weight:600;margin-left:4px}
 .ruta .resumen .nota{margin-top:4px;font-size:11px}
+.ruta .subv{margin-top:10px;width:100%;display:flex;align-items:center;justify-content:center;gap:6px;border:1px dashed var(--border);background:transparent;border-radius:8px;padding:6px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer}
+.ruta .subv span{font-size:16px;line-height:1}
+.ruta .subv:hover{border-color:var(--accent);color:var(--accent)}
+.ruta .hijo{display:grid;grid-template-columns:auto minmax(0,1.6fr) repeat(3,minmax(0,1fr)) auto;gap:12px;align-items:center;margin-top:10px;padding:8px 10px;border:1px solid var(--border);border-left:3px solid #6366f1;border-radius:0 8px 8px 0;font-size:12px;background:var(--surface)}
+.ruta .hijo.clic{cursor:pointer}.ruta .hijo.clic:hover{border-color:#6366f1}
+.ruta .hijo-tg{font-size:11px;font-weight:600;color:#4f46e5;background:color-mix(in srgb,#6366f1 12%,transparent);padding:2px 8px;border-radius:999px;white-space:nowrap}
+.ruta .hijo-ruta b{display:block}.ruta .hijo-f{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:900px){.ruta .hijo{grid-template-columns:1fr 1fr}.ruta .hijo-tg{justify-self:start}}
 .ruta .pie{align-items:baseline}
 .ruta .pie .tramo b,.ruta .pie .lt b{color:var(--text)}
 .ruta .pie .lt{margin-left:auto}
@@ -390,6 +398,20 @@ tr:hover td{background:var(--surface-2)}
       <button class="btn" id="propCerrar">Cerrar</button><button class="btn" id="propRechazar">Rechazar seleccionados</button><button class="btn primary" id="propAprobar">Aprobar seleccionados</button></div>
   </div>
 </div>
+<div class="ov" id="ovSub">
+  <div class="modal" role="dialog" aria-modal="true" style="width:min(520px,100%)">
+    <h3>Nuevo subviaje</h3>
+    <div class="sub" id="subPadre"></div>
+    <div class="fgrid3" style="grid-template-columns:1fr 1fr;margin-top:12px">
+      <div><label>Motivo</label><select id="subMotivo"></select></div>
+      <div><label>Patio intermedio</label><input id="subPatio" list="dlPatio" placeholder="Patio donde se descarga"></div>
+      <div><label>Fecha descargue en patio</label><input type="date" id="subFecha"></div>
+      <div><label>Su nombre</label><input id="subUsuario" placeholder="Queda en el historial"></div>
+    </div>
+    <p class="sub" style="margin-top:10px">El subviaje queda ligado a este viaje con su propio vehículo y sus costos (descargue, cargue, urbano, parqueadero), que se suman al total del viaje.</p>
+    <div class="mfoot"><button class="btn" id="subCancelar">Cancelar</button><button class="btn primary" id="subCrear">Crear subviaje</button></div>
+  </div>
+</div>
 <div class="ov" id="ov">
   <div class="modal" role="dialog" aria-modal="true">
     <h3 id="mTitle"></h3>
@@ -490,7 +512,7 @@ G.sit = {Abiertos:'Abierto', Cerrados:'Cerrado'}[G.sit] || G.sit;
 // listas desplegables: campo del viaje y texto cuando está vacío
 const FILTROS_LISTA = [['sede','sede','Sede','Sin sede'], ['emp','empresa','Empresa','Sin empresa'], ['sol','solicitante','Solicitante','Sin solicitante'], ['fwd','fwd','FWD / agente','Sin FWD']];
 const valorFiltro = (v, campo, vacio) => String(v[campo]||'').trim() || vacio;
-const enListas = v => FILTROS_LISTA.every(([k, campo, , vacio]) => !G[k] || valorFiltro(v, campo, vacio)===G[k]);
+const enListas = v => !v.padre && FILTROS_LISTA.every(([k, campo, , vacio]) => !G[k] || valorFiltro(v, campo, vacio)===G[k]);
 const enGlobal = v => (!G.op || v.operacion===G.op) && enSituacion(v, G.sit) && enListas(v);
 const visibles = () => viajes.filter(enGlobal);
 // Los viajes cancelados no cuentan en indicadores, alertas ni programación
@@ -1119,6 +1141,21 @@ function leadFactura(v){
   if (!fin) return null;
   return v.fechaFactura ? {dias: dDias(fin, v.fechaFactura), hecho: true} : {dias: dDias(fin, HOY), hecho: false};
 }
+const hijosDe = v => viajes.filter(x => x.padre === v.id && situacion(x) !== 'Cancelado');
+const costoViaje = v => { const c = cobro(v); return c.tarifa + (c.aprob==='Rechazado' ? 0 : c.extra); };
+function tarjetaHijo(s, padre){
+  const destino = padre.operacion==='EXPO' ? (padre.puerto ? 'Puerto '+padre.puerto : 'Puerto') : (padre.bodega || padre.destino || 'Bodega');
+  const hecho = s.fechaUrbano && s.fechaUrbano <= HOY;
+  const clic = window.MODO_CLIENTE ? '' : ` onclick="event.stopPropagation();abrir('${s.id}')"`;
+  return `<div class="hijo${clic ? ' clic' : ''}"${clic}>
+    <span class="hijo-tg">↳ Subviaje</span>
+    <div class="hijo-ruta"><b>${esc(s.motivoSub || 'Sin motivo')}</b><span class="sub">${esc(s.patioSub || 'Patio por definir')} → ${esc(destino)}</span></div>
+    <div class="hijo-f"><span class="sub">Descargue</span> ${fd(s.fechaDescargueSub)}</div>
+    <div class="hijo-f"><span class="sub">Urbano</span> ${s.fechaUrbano ? fd(s.fechaUrbano) : '—'}${hecho ? ' ✓' : ''}</div>
+    <div class="hijo-f"><span class="sub">${esc(s.conductor || 'Sin conductor')}</span> ${s.placa ? `<span class="placa">${esc(s.placa)}</span>` : '<span class="missing">Sin placa</span>'}</div>
+    <div class="hijo-f" style="text-align:right"><b>${pesos(costoViaje(s))}</b></div>
+  </div>`;
+}
 function finTransporte(v, P, n){
   const fin = v.operacion==='EXPO' ? n > P.findIndex(p=>p[0]==='Puerto') : n >= P.length;
   if (!fin || v.estado==='Cancelado') return '';
@@ -1142,13 +1179,15 @@ function tiemposOperacion(v){
 function panelFactura(v, P, n){
   const c = cobro(v);
   // total del viaje sin extracostos rechazados; lo aprobado para facturar aparte mientras Reckitt no aprueba los extras
-  const totalViaje = c.tarifa + (c.aprob==='Rechazado' ? 0 : c.extra);
+  const hijos = hijosDe(v), costoHijos = hijos.reduce((a, s) => a + costoViaje(s), 0);
+  const totalViaje = c.tarifa + (c.aprob==='Rechazado' ? 0 : c.extra) + costoHijos;
   // siempre las mismas líneas: Fletes, Citas, Standby y Otros (los demás conceptos de extracostos sumados)
   const grupo = k => /^cita/i.test(k) ? 'cita' : /stand\s*-?by/i.test(k) ? 'standby' : 'otros';
   const sum = {cita:0, standby:0, otros:0}, otros = [];
   itemsExtra(v).forEach(([k, x]) => { sum[grupo(k)] += x; if (grupo(k)==='otros' && x) otros.push(k); });
   const gastos = lnR('Fletes', pesos(c.tarifa)) + lnR('Citas', pesos(sum.cita)) + lnR('Standby', pesos(sum.standby))
     + lnR(otros.length ? `<span title="${esc(otros.join(', '))}">Otros</span>` : 'Otros', pesos(sum.otros))
+    + (hijos.length ? lnR(`<span title="${esc(hijos.flatMap(s => itemsExtra(s).map(([k, x]) => k+' '+pesos(x))).join(', '))}">Subviaje${hijos.length>1?'s':''}</span>`, pesos(costoHijos)) : '')
     + granR('Total', pesos(totalViaje))
     + (c.extra ? `<div class="nota">${lnR('Extracostos', `<span style="color:${COLOR_COBRO[c.aprob]};font-weight:600">● ${c.aprob==='Pendiente' ? 'Por aprobar' : c.aprob}</span>`)}${c.aprob!=='Aprobado' ? lnR('Aprobado para facturar', pesos(c.total)) : ''}</div>` : '');
   const fin = finTransporte(v, P, n), lf = fin ? leadFactura(v) : null;
@@ -1181,11 +1220,13 @@ function rutaPedido(v){
       <div style="display:flex;align-items:flex-end;gap:2px"><div class="cont"><b style="font-size:12px">${esc(v.contenedor||'—')}</b><div class="sub">${esc(v.unidad||'')}</div></div><div class="cabina"></div></div>
       <div class="ruedas"><i></i><i></i><i></i><i></i></div>
       <div class="cond"><div class="ini">${esc(ini(v.conductor))}</div><div style="min-width:0"><b style="font-size:12px;display:block">${esc(v.conductor||'Sin conductor')}</b><span class="sub">${esc(v.placa||'Sin placa')}</span></div></div>
+      ${window.MODO_CLIENTE ? '' : `<button type="button" class="subv" onclick="event.stopPropagation();nuevoSubviaje('${v.id}')"><span>+</span> Subviaje</button>`}
     </div><div>
       <div class="linea"><div class="hecho" style="width:${P.length>1 ? Math.min(86, 86*Math.max(0,n-1)/(P.length-1)) : 0}%"></div>
         ${P.map(([et, lugar, , det], i)=>`<div class="par ${i<n?'ok':i===n?'ya':''}"><div class="pt"></div>${i===n?'<span class="camion">🚚</span>':''}
           <div class="caja">${et}<b>${esc(lugar)}</b>${det.filter(Boolean).map(esc).join('<br>')}</div></div>`).join('')}</div>
       <div class="esp"><span></span>${esperas.map(d=> `<span>${d===null?'':d+' d'}</span>`).join('')}</div>
+      ${hijosDe(v).map(s => tarjetaHijo(s, v)).join('')}
       <div class="pie">${tiemposOperacion(v)}${v.operacion==='IMPO' && demora(v) ? `<span style="color:var(--bad)">${demora(v)} d de demora del vacío</span>`:''}</div>
     </div></div></div>
     <div class="der">${panelFactura(v, P, n)}</div></div></div>`;
@@ -1208,7 +1249,8 @@ function abrir(id){
        ['Entrega en puerto',fx(v.fechaEntregaPuerto)],['Tirilla de entrega',v.tirillaEntrega]];
   $('#mDet').innerHTML = det.map(([l,x])=>`<div><span>${l}</span>${esc(x||'—')}</div>`).join('');
   $('#mDet').classList.add('hidden');
-  $('#mPlan').innerHTML = tablaPlan(v) + resumenCobro(v);
+  $('#mPlan').innerHTML = v.padre ? resumenCobro(v) : tablaPlan(v) + resumenCobro(v);
+  if (v.padre) $('#mSub').textContent = `Subviaje de ${v.padre} · ${[v.motivoSub, v.patioSub && 'patio '+v.patioSub].filter(Boolean).join(' · ') || 'sin motivo'}`;
   pintarForm(v);
   try { $('#mUsuario').value = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
   pintarEstados();
@@ -1256,25 +1298,33 @@ function pintarForm(v){
       : t==='num' ? `<input data-k="${k}" data-num inputmode="numeric" value="${esc(val)}" placeholder="$">`
       : `<input data-k="${k}" value="${esc(val)}"${t==='dl' ? ` list="${x}"` : ''}>`;
     if (t==='extras') return `<div style="grid-column:1/-1"><label>${l} <span class="sub">(concepto y valor; el total se suma solo)</span></label>
-      <div id="mExtras">${itemsExtra(v).map(filaExtra).join('')}</div>
+      <div id="mExtras">${(itemsExtra(v).length || !v.padre ? itemsExtra(v) : CONCEPTOS_SUB.map(k=>[k,0])).map(filaExtra).join('')}</div>
       <button type="button" class="link" id="addExtra">+ Agregar extracosto</button>
       <input type="hidden" data-k="conceptoExtra" value="${esc(val)}"><input type="hidden" data-k="extracostos" value="${esc(valorCampo(v,'extracostos'))}"></div>`;
     return `<div><label>${l}</label>${ctl}</div>`;
   };
   const grupo = (titulo, cs) => `<fieldset class="mgrupo"><legend>${titulo}</legend><div class="fgrid3">${cs.map(campo).join('')}</div></fieldset>`;
   const calc = v.operacion==='IMPO' ? `<p class="sub" style="margin:8px 2px 0">Fecha límite de devolución <b>${fd(v.fechaLimite)}</b>${demora(v) ? ` · <b style="color:var(--bad)">${demora(v)} d de demora</b>` : ''} · se calculan solas con la ciudad y la entrega en bodega.</p>` : '';
-  $('#mForm').innerHTML = grupo('Viaje', CAMPOS_VIAJE) + CAMPOS_ETAPA[v.operacion].map(([t, cs]) => grupo(t, cs)).join('') + calc +
+  $('#mForm').innerHTML = (v.padre ? CAMPOS_SUB.map(([t, cs]) => grupo(t, cs)).join('') : grupo('Viaje', CAMPOS_VIAJE) + CAMPOS_ETAPA[v.operacion].map(([t, cs]) => grupo(t, cs)).join('') + calc) +
     `<div class="full" style="margin-top:12px"><label>Observación / novedad</label><textarea data-k="observacion" placeholder="Ej: Cita de descargue 9 am, en fila en patio…">${esc(v.observacion||'')}</textarea></div>`;
   const lista = (id, k) => { $('#'+id).innerHTML = [...new Set(viajes.map(x=>x[k]).filter(Boolean))].sort().map(x=>`<option value="${esc(x)}">`).join(''); };
   $('#dlExtra').innerHTML = [...new Set([...CONCEPTOS_EXTRA, ...viajes.flatMap(x=>itemsExtra(x).map(i=>i[0]))])].map(x=>`<option value="${esc(x)}">`).join('');
   lista('dlPatio','patio'); lista('dlCond','conductor'); lista('dlPlaca','placa'); lista('dlFwd','fwd');
   marcarCambios();
 }
-const CONCEPTOS_EXTRA = ['Cita','Standby','Cargue','Descargue','Pernocta','Escolta','Almacenaje','Movimiento de contenedor'];
+const CONCEPTOS_EXTRA = ['Cita','Standby','Cargue','Descargue','Urbano','Parqueadero','Pernocta','Escolta','Almacenaje','Movimiento de contenedor'];
+// subviaje (viaje hijo): descargue en un patio intermedio y urbano al destino final; mismos costos de siempre
+const MOTIVOS_SUBVIAJE = ['Paro','Demora en cita','Cierre de vía','Instrucción del cliente','Otro'];
+const CONCEPTOS_SUB = ['Descargue','Cargue','Urbano','Parqueadero'];
+const CAMPOS_SUB = [
+  ['Subviaje', [['motivoSub','Motivo','lista',MOTIVOS_SUBVIAJE],['patioSub','Patio intermedio','dl','dlPatio'],['fechaDescargueSub','Fecha descargue en patio','fecha'],['fechaUrbano','Fecha urbano (entrega final)','fecha']]],
+  ['Vehículo del urbano', [['situacion','STATUS','sit'],['conductor','Conductor','dl','dlCond'],['placa','Placa','dl','dlPlaca']]],
+  ['Costos y facturación', [['conceptoExtra','Costos del subviaje','extras'],['aprobacionExtra','Aprobación','lista',['Pendiente','Aprobado','Rechazado']],
+    ['facturacion','Facturación','lista',['Pendiente por facturar','Facturado']],['numFactura','N° factura'],['fechaFactura','Fecha factura','fecha']]]];
 const filaExtra = ([k, x] = ['', 0]) => `<div class="exrow"><input class="exc" list="dlExtra" placeholder="Concepto" value="${esc(k)}"><input class="exv" inputmode="numeric" placeholder="$" value="${x||''}"><button type="button" class="link" data-del title="Quitar">✕</button></div>`;
 // lo que se escribe en las filas pasa a "Concepto extracostos" (Cita: 60000; …) y la suma a Extracostos
 function syncExtras(){
-  const filas = [...document.querySelectorAll('#mExtras .exrow')].map(r => [r.querySelector('.exc').value.trim(), r.querySelector('.exv').value.replace(/[^\d]/g,'')]).filter(([k, x]) => k || x);
+  const filas = [...document.querySelectorAll('#mExtras .exrow')].map(r => [r.querySelector('.exc').value.trim(), r.querySelector('.exv').value.replace(/[^\d]/g,'')]).filter(([, x]) => x);
   const c = document.querySelector('#mForm [data-k=conceptoExtra]'), t = document.querySelector('#mForm [data-k=extracostos]');
   if (!c) return;
   c.value = filas.map(([k, x]) => `${k || 'Extracosto'}: ${x || 0}`).join('; ');
@@ -1386,6 +1436,39 @@ $('#ovProp').onclick = e => { if (e.target.id === 'ovProp') $('#ovProp').classLi
 $('#propTodos').onchange = e => $('#propLista').querySelectorAll('input[data-i]').forEach(x => { x.checked = e.target.checked; });
 $('#propAprobar').onclick = () => decidirPropuestas(true);
 $('#propRechazar').onclick = () => decidirPropuestas(false);
+
+/* ---------- subviajes ---------- */
+let subPadreId = null;
+function nuevoSubviaje(id){
+  const v = viajes.find(x=>x.id===id); if (!v) return;
+  subPadreId = id;
+  $('#subPadre').textContent = `${v.operacion} · ${v.booking || v.pedido || v.id} · ${v.placa || 'sin placa'}`;
+  $('#subMotivo').innerHTML = MOTIVOS_SUBVIAJE.map(m=>`<option>${esc(m)}</option>`).join('');
+  $('#subPatio').value = ''; $('#subFecha').value = HOY;
+  try { $('#subUsuario').value = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
+  $('#dlPatio').innerHTML = [...new Set(viajes.map(x=>x.patio).concat(viajes.map(x=>x.patioSub)).filter(Boolean))].sort().map(x=>`<option value="${esc(x)}">`).join('');
+  $('#ovSub').classList.add('open');
+}
+$('#subCancelar').onclick = () => $('#ovSub').classList.remove('open');
+$('#ovSub').onclick = e => { if (e.target.id==='ovSub') $('#ovSub').classList.remove('open'); };
+$('#subCrear').onclick = async () => {
+  const usuario = $('#subUsuario').value.trim();
+  if (!usuario) { $('#subUsuario').focus(); return toast('Escriba su nombre'); }
+  if (!CFG.SHEETS_API_URL || !window.CLAVE) return toast('Funciona desde el tablero publicado');
+  try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
+  $('#subCrear').disabled = true;
+  try {
+    const r = await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({action:'subviaje', clave:window.CLAVE, id:subPadreId, usuario, campos:{motivoSub:$('#subMotivo').value, patioSub:$('#subPatio').value.trim(), fechaDescargueSub:$('#subFecha').value}})});
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'error');
+    $('#ovSub').classList.remove('open');
+    toast('Subviaje creado: complete el vehículo y los costos');
+    await cargar(); render();
+    if (j.id && viajes.some(x=>x.id===j.id)) abrir(j.id);
+  } catch(e) { toast('No se pudo crear el subviaje: ' + e.message); }
+  $('#subCrear').disabled = false;
+};
 
 /* ---------- navegación y eventos ---------- */
 $('#nav').onclick = e => { const b=e.target.closest('button'); if(!b) return;
