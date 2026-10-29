@@ -217,17 +217,25 @@ tr:hover td{background:var(--surface-2)}
 .ruta .tg{font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600}
 .ruta .cuerpo{display:grid;grid-template-columns:150px minmax(0,1fr);gap:14px;align-items:start}
 /* tarjeta lean: operación a la izquierda, facturación (etiqueta + resúmenes) a la derecha */
-.ruta .dos{display:grid;grid-template-columns:minmax(0,1fr) 230px;gap:14px}
-.ruta .der{border-left:1px solid var(--border);padding-left:14px}
-.ruta .der .fin{text-align:right;min-height:22px;margin-bottom:10px}
-.ruta .resumen{font-size:12px}
-.ruta .resumen h4{margin:0 0 6px;font-size:12px}
-.ruta .resumen h4+div{margin-bottom:12px}
-.ruta .resumen .ln{display:flex;justify-content:space-between;gap:8px;line-height:1.6}
-.ruta .resumen .ln span:first-child{color:var(--muted)}
-.ruta .resumen .ln.tot{border-top:1px solid var(--border);margin-top:2px;font-weight:600}
-.ruta .resumen .ln.tot span:first-child{color:var(--text)}
-@media (max-width:1100px){.ruta .dos{grid-template-columns:1fr}.ruta .der{border-left:0;padding-left:0;border-top:1px solid var(--border);padding-top:10px}.ruta .der .fin{text-align:left}.ruta .resumen{display:grid;grid-template-columns:1fr 1fr;gap:16px}}
+.ruta .dos{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:16px}
+/* panel de facturación: tarjeta gris propia, cifras alineadas a la derecha */
+.ruta .der{background:var(--surface-2);border-radius:10px;padding:12px 14px;min-width:0;align-self:start;font-size:12px}
+.ruta .der .fin{display:flex;flex-direction:column;gap:6px;padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid var(--border)}
+.ruta .der .fin .hecho{font-size:11px;font-weight:600;color:var(--ok)}
+.ruta .der .est{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px}
+.ruta .der .est:before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor}
+.ruta .resumen{display:flex;flex-direction:column;gap:14px}
+.ruta .resumen h4{margin:0 0 4px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.ruta .resumen .ln{display:flex;justify-content:space-between;align-items:baseline;gap:10px;line-height:1.7;font-variant-numeric:tabular-nums}
+.ruta .resumen .ln span:first-child{color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ruta .resumen .ln span:last-child{white-space:nowrap;text-align:right}
+.ruta .resumen .gran{display:flex;justify-content:space-between;align-items:baseline;gap:10px;border-top:1px solid var(--border);margin-top:4px;padding-top:6px;font-variant-numeric:tabular-nums}
+.ruta .resumen .gran span{font-weight:600}
+.ruta .resumen .gran b{font-size:15px;white-space:nowrap}
+.ruta .resumen .gran small{font-size:11px;font-weight:600;margin-left:4px}
+.ruta .resumen .nota{margin-top:4px;font-size:11px}
+@media (max-width:1100px){.ruta .dos{grid-template-columns:1fr}.ruta .resumen{display:grid;grid-template-columns:1fr 1fr;gap:20px}}
+@media (max-width:640px){.ruta .resumen{grid-template-columns:1fr}}
 .exrow{display:grid;grid-template-columns:minmax(0,1fr) 130px auto;gap:6px;margin-bottom:6px}
 .ruta .cont{border:1.5px solid var(--text);border-radius:4px;padding:5px 4px;text-align:center;flex:1}
 .ruta .cabina{width:24px;height:28px;border:1.5px solid var(--text);border-radius:4px 8px 4px 4px;background:var(--surface-2)}
@@ -1097,7 +1105,8 @@ function miniAvance(v){ const {P,n} = avance(v); return `<span class="mini" titl
 function finTransporte(v, P, n){
   const fin = v.operacion==='EXPO' ? n > P.findIndex(p=>p[0]==='Puerto') : n >= P.length;
   if (!fin || v.estado==='Cancelado') return '';
-  return tagCobro(v.facturacion==='Facturado' ? 'Facturado' : 'Pendiente por facturar', 'Transporte finalizado · ').replace('Pendiente por facturar', 'Pendiente facturar');
+  const s = v.facturacion==='Facturado' ? 'Facturado' : 'Pendiente por facturar', col = COLOR_COBRO[s];
+  return `<div class="fin"><span class="hecho">✓ Transporte finalizado</span><span class="est" style="background:color-mix(in srgb, ${col} 14%, transparent);color:${col}">${s}${v.numFactura?' · '+esc(v.numFactura):''}</span></div>`;
 }
 // panel derecho de la tarjeta lean: tiempos de cada tramo (real, o plan si no ha pasado) y gastos del viaje
 function resumenRuta(v){
@@ -1105,16 +1114,19 @@ function resumenRuta(v){
   const ln = (a, b, cls='') => `<div class="ln ${cls}"><span>${a}</span><span>${b}</span></div>`;
   const tramos = H.slice(1).map((x, i) => {
     const real = H[i][2] && x[2] ? dDias(H[i][2], x[2]) : null, plan = dDias(H[i][1], x[1]);
-    return ln('→ '+esc(x[0]), real!==null ? `${real} d${plan!==null && real!==plan ? ` <span class="${real>plan?'tarde':'antes'}">(plan ${plan})</span>` : ''}` : plan!==null ? `<span class="sub">plan ${plan} d</span>` : '—');
+    return ln(esc(x[0]), real!==null ? `${real} d${plan!==null && real!==plan ? ` <span class="${real>plan?'tarde':'antes'}">(plan ${plan})</span>` : ''}` : plan!==null ? `<span class="sub">plan ${plan} d</span>` : '—');
   }).join('');
-  const lead = L.real!==null ? `${L.real} d ${L.plan!==null ? desv(L.real-L.plan) : ''}` : L.enCurso!==null ? `en curso ${L.enCurso} d` : L.plan!==null ? `plan ${L.plan} d` : '—';
+  const gran = (a, b, extra='') => `<div class="gran"><span>${a}</span><span><b>${b}</b>${extra ? `<small>${extra}</small>` : ''}</span></div>`;
+  const lead = L.real!==null ? gran('Lead time total', L.real+' d', L.plan!==null ? desv(L.real-L.plan) : '')
+    : L.enCurso!==null ? gran('Lead time', L.enCurso+' d', '<span class="sub">en curso</span>')
+    : gran('Lead time', L.plan!==null ? L.plan+' d' : '—', L.plan!==null ? '<span class="sub">plan</span>' : '');
   // total del viaje sin extracostos rechazados; lo aprobado para facturar aparte mientras Reckitt no aprueba los extras
   const totalViaje = c.tarifa + (c.aprob==='Rechazado' ? 0 : c.extra);
   const gastos = ln('Flete', pesos(c.tarifa)) + itemsExtra(v).map(([k, x]) => ln(esc(k), pesos(x))).join('')
-    + ln('Total', pesos(totalViaje), 'tot')
-    + (c.extra ? `<div style="text-align:right;margin-top:4px">${tagCobro(c.aprob, 'Extracostos: ')}${c.aprob!=='Aprobado' ? `<div class="sub">Aprobado para facturar ${pesos(c.total)}</div>` : ''}</div>` : '');
-  return `<div class="resumen"><div><h4>Resumen de tiempos</h4><div>${tramos}${ln('Lead time total', lead, 'tot')}</div></div>
-    <div><h4>Resumen de gastos</h4><div>${gastos}</div></div></div>`;
+    + gran('Total', pesos(totalViaje))
+    + (c.extra ? `<div class="nota">${ln('Extracostos', `<span style="color:${COLOR_COBRO[c.aprob]};font-weight:600">● ${c.aprob==='Pendiente' ? 'Por aprobar' : c.aprob}</span>`)}${c.aprob!=='Aprobado' ? ln('Aprobado para facturar', pesos(c.total)) : ''}</div>` : '');
+  return `<div class="resumen"><div><h4>Resumen de tiempos</h4>${tramos}${lead}</div>
+    <div><h4>Resumen de gastos</h4>${gastos}</div></div>`;
 }
 function rutaPedido(v){
   const {P, n} = avance(v);
