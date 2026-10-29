@@ -786,8 +786,8 @@ function renderKpis(){ const act = activos();
 function cobroKpi(){
   const C = visibles().map(v=>[v, cobro(v)]);
   const porFact = C.filter(([,c])=>c.fact==='Pendiente por facturar'), extra = C.filter(([,c])=>c.aprob==='Pendiente');
-  const suma = L => pesos(L.reduce((s,[,c])=>s+c.total,0));
-  return {l:'Pendiente por facturar', v: porFact.length, h:`${porFact.length ? suma(porFact)+' · ' : ''}${C.filter(([,c])=>c.fact==='Facturado').length} facturados<br>${extra.length} extracosto${extra.length===1?'':'s'} por aprobar${extra.length?' · '+pesos(extra.reduce((s,[,c])=>s+c.extra,0)):''}`, bad: extra.length>0};
+  const suma = porFact.reduce((s,[,c])=>s+c.total,0);
+  return {l:'Pendiente por facturar', v: porFact.length, h:`${suma ? pesos(suma)+' · ' : ''}${C.filter(([,c])=>c.fact==='Facturado').length} facturados<br>${extra.length} extracosto${extra.length===1?'':'s'} por aprobar${extra.length?' · '+pesos(extra.reduce((s,[,c])=>s+c.extra,0)):''}`, bad: extra.length>0};
 }
 // lead time promedio de los viajes completos (con los filtros) frente al plan, y hitos cumplidos a tiempo
 function leadKpi(){
