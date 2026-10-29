@@ -1554,11 +1554,11 @@ function pintarBarrido(){
       if (c.tipo==='Orden de retiro' && c.enBase && !c.enBase.fechaLevante) avisos.push('falta la fecha de entrega de documentos');
       estado = `<span style="color:var(--ok);font-weight:600">✓ ${esc(c.viajeId)}</span>${avisos.map(a=>`<br><span style="color:var(--warn)">⚠ ${esc(a)}</span>`).join('')}`;
     } else if (c.tipo==='Nueva exportación' || c.tipo==='Comodato') {
-      estado = '<span class="sub">Revisar a mano</span>';
+      estado = c.tipo==='Nueva exportación' ? '<span style="color:var(--bad);font-weight:600">Booking no está en la base</span><br><span class="sub">Crear la exportación en la hoja</span>' : '<span class="sub">Revisar a mano</span>';
     } else {
       estado = `<span style="color:var(--bad);font-weight:600">No está en la base</span><br><button class="btn primary" style="margin-top:4px;padding:3px 10px" data-crear="${i}">Crear viaje</button>`;
     }
-    const datos = [c.do && 'DO '+c.do, c.pedido && 'PO '+c.pedido, c.contenedor].filter(Boolean).map(esc).join(' · ');
+    const datos = [c.booking && 'BK '+c.booking, c.rbhy, c.do && 'DO '+c.do, c.pedido && 'PO '+c.pedido, c.contenedor].filter(Boolean).map(esc).join(' · ');
     const desc = [c.lugar, c.fechaDescargue && fd(c.fechaDescargue), c.hora, c.puerto && (c.puerto+(c.terminal?' ('+c.terminal+')':'')), c.devolucion && 'devol. '+c.devolucion].filter(Boolean).map(esc).join(' · ');
     return `<tr><td class="sub" style="white-space:nowrap">${esc(c.fecha.slice(5,16).replace('T',' '))}</td><td><b>${esc(c.tipo)}</b><br><span class="sub">${esc(c.firma || c.remitente.replace(/<.*>/,''))}</span></td>
       <td>${datos || '—'}<br><span class="sub" title="${esc(c.asunto)}">${esc(c.asunto.slice(0,70))}${c.asunto.length>70?'…':''}</span></td><td>${desc || '—'}</td><td>${estado}</td></tr>`;
