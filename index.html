@@ -678,6 +678,15 @@ function reemplazado(v){
 }
 function validar(v){
   const e = [], add = (sev, campo, msg) => e.push({v, sev, campo, msg});
+  if (v.padre) {
+    // subviaje (regla 4, igual que el reporte por correo): vehículo, destino final y fecha del urbano mientras esté abierto
+    if (!['Cerrado','Cancelado'].includes(situacion(v))) {
+      if (!v.placa) add('Media','Placa','Subviaje sin vehículo asignado');
+      if (!v.bodega || v.bodega === v.patioSub) add('Media','Bodega','Subviaje sin destino final');
+      if (!v.fechaUrbano) add('Media','Fecha urbano','Subviaje sin fecha del urbano');
+    }
+    return e;
+  }
   const expo = v.operacion==='EXPO', impo = v.operacion==='IMPO', sit = situacion(v), pend = sit==='Pendiente confirmación';
   const seg = !!window.SEG_INICIO;
   // nombres de las columnas en la pestaña que corrige el equipo (Seguimiento EXPO / IMPO)
@@ -729,6 +738,17 @@ function validar(v){
       }
     } else if (!v.tirillaDevolucion) add('Media','Tirilla de devolución','Vacío devuelto sin tirilla de devolución');
   }
+  // reglas de detección (REGLAS-DETECCION.md): devolución del vacío dudosa y patio intermedio sin subviaje
+  const hijos = hijosDe(v), mismo = (a, b) => sinTilde(String(a||'')).toLowerCase().trim() === sinTilde(String(b||'')).toLowerCase().trim();
+  if (impo && v.fechaDevolucion) {
+    if (v.fechaDevolucion === v.fechaCargue && v.patio && mismo(v.patio, v.bodega)) add('Alta','Fecha de devolución',`Devolución del vacío dudosa: mismo día y mismo lugar de la entrega (${v.bodega}). ¿El contenedor quedó almacenado lleno? Confirmar o crear subviaje`);
+    else if (v.fechaDevolucion === v.fechaCargue) add('Media','Fecha de devolución',`Vacío devuelto el mismo día de la entrega en ${v.bodega||'bodega'}: confirmar que no quedó almacenado lleno`);
+    const urbano = hijos.map(x=>x.fechaUrbano||'').filter(Boolean).sort().pop();
+    if (hijos.length && (!urbano || v.fechaDevolucion < urbano)) add('Alta','Fecha de devolución','Vacío marcado como devuelto antes del urbano del subviaje');
+  }
+  // en EXPO "en patio" es el retiro normal del vacío: allí solo cuentan paro, bloqueo o almacenamiento
+  const intermedio = impo ? /almacenamient|\ben patio\b|\bpatio\b.*\bse (entrega|descarga)\b|\bparo\b|bloqueo|sin cita|problemas en bodega/ : /almacenamient|\bparo\b|bloqueo/;
+  if (!hijos.length && intermedio.test(sinTilde(v.observacion||'').toLowerCase())) add('Media','Subviaje','La observación indica patio intermedio, paro o almacenamiento: crear subviaje si el contenedor no va directo al destino final');
   // fechas que ya pasaron sin que se actualice el estado
   if (!v.estadoAuto && v.fechaRetiro && v.fechaRetiro < HOY && ['Sin asignar','Asignado'].includes(v.estado)) add('Alta','Estado',`El retiro era el ${fd(v.fechaRetiro)} y el estado sigue en "${v.estado}"`);
   if (!v.estadoAuto && v.fechaCargue && v.fechaCargue < HOY && ['Sin asignar','Asignado','Retiro en patio'].includes(v.estado)) add('Alta','Estado',`El llenado era el ${fd(v.fechaCargue)} y el estado sigue en "${v.estado}"`);
