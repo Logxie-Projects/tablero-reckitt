@@ -1144,7 +1144,8 @@ function leadFactura(v){
 const hijosDe = v => viajes.filter(x => x.padre === v.id && situacion(x) !== 'Cancelado');
 const costoViaje = v => { const c = cobro(v); return c.tarifa + (c.aprob==='Rechazado' ? 0 : c.extra); };
 function tarjetaHijo(s, padre){
-  const destino = padre.operacion==='EXPO' ? (padre.puerto ? 'Puerto '+padre.puerto : 'Puerto') : (padre.bodega || padre.destino || 'Bodega');
+  // el subviaje guarda su destino final en Bodega; si no lo tiene, el del viaje padre
+  const destino = s.bodega && s.bodega !== s.patioSub ? s.bodega : padre.operacion==='EXPO' ? (padre.puerto ? 'Puerto '+padre.puerto : 'Puerto') : (padre.bodega || padre.destino || 'Bodega');
   const hecho = s.fechaUrbano && s.fechaUrbano <= HOY;
   const clic = window.MODO_CLIENTE ? '' : ` onclick="event.stopPropagation();abrir('${s.id}')"`;
   return `<div class="hijo${clic ? ' clic' : ''}"${clic}>
@@ -1317,7 +1318,7 @@ const CONCEPTOS_EXTRA = ['Cita','Standby','Cargue','Descargue','Urbano','Parquea
 const MOTIVOS_SUBVIAJE = ['Paro','Demora en cita','Cierre de vía','Instrucción del cliente','Otro'];
 const CONCEPTOS_SUB = ['Descargue','Cargue','Urbano','Parqueadero'];
 const CAMPOS_SUB = [
-  ['Subviaje', [['motivoSub','Motivo','lista',MOTIVOS_SUBVIAJE],['patioSub','Patio intermedio','dl','dlPatio'],['fechaDescargueSub','Fecha descargue en patio','fecha'],['fechaUrbano','Fecha urbano (entrega final)','fecha']]],
+  ['Subviaje', [['motivoSub','Motivo','lista',MOTIVOS_SUBVIAJE],['patioSub','Patio intermedio','dl','dlPatio'],['bodega','Destino final'],['fechaDescargueSub','Fecha descargue en patio','fecha'],['fechaUrbano','Fecha urbano (entrega final)','fecha']]],
   ['Vehículo del urbano', [['situacion','STATUS','sit'],['conductor','Conductor','dl','dlCond'],['placa','Placa','dl','dlPlaca']]],
   ['Costos y facturación', [['conceptoExtra','Costos del subviaje','extras'],['aprobacionExtra','Aprobación','lista',['Pendiente','Aprobado','Rechazado']],
     ['facturacion','Facturación','lista',['Pendiente por facturar','Facturado']],['numFactura','N° factura'],['fechaFactura','Fecha factura','fecha']]]];
