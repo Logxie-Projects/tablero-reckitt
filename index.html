@@ -226,12 +226,12 @@ tr:hover td{background:var(--surface-2)}
 .ruta .der .est:before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor}
 .ruta .resumen{display:flex;flex-direction:column;gap:14px}
 .ruta .resumen h4{margin:0 0 4px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-.ruta .resumen .ln{display:flex;justify-content:space-between;align-items:baseline;gap:10px;line-height:1.7;font-variant-numeric:tabular-nums}
+.ruta .resumen .ln{display:flex;justify-content:space-between;align-items:baseline;gap:10px;line-height:1.7;font-size:11px;font-variant-numeric:tabular-nums}
 .ruta .resumen .ln span:first-child{color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ruta .resumen .ln span:last-child{white-space:nowrap;text-align:right}
 .ruta .resumen .gran{display:flex;justify-content:space-between;align-items:baseline;gap:10px;border-top:1px solid var(--border);margin-top:4px;padding-top:6px;font-variant-numeric:tabular-nums}
 .ruta .resumen .gran span{font-weight:600}
-.ruta .resumen .gran b{font-size:15px;white-space:nowrap}
+.ruta .resumen .gran b{font-size:13px;white-space:nowrap}
 .ruta .resumen .gran small{font-size:11px;font-weight:600;margin-left:4px}
 .ruta .resumen .nota{margin-top:4px;font-size:11px}
 .ruta .pie{align-items:baseline}
@@ -1143,7 +1143,12 @@ function panelFactura(v, P, n){
   const c = cobro(v);
   // total del viaje sin extracostos rechazados; lo aprobado para facturar aparte mientras Reckitt no aprueba los extras
   const totalViaje = c.tarifa + (c.aprob==='Rechazado' ? 0 : c.extra);
-  const gastos = lnR('Flete', pesos(c.tarifa)) + itemsExtra(v).map(([k, x]) => lnR(esc(k), pesos(x))).join('')
+  // siempre las mismas líneas: Fletes, Citas, Standby y Otros (los demás conceptos de extracostos sumados)
+  const grupo = k => /^cita/i.test(k) ? 'cita' : /stand\s*-?by/i.test(k) ? 'standby' : 'otros';
+  const sum = {cita:0, standby:0, otros:0}, otros = [];
+  itemsExtra(v).forEach(([k, x]) => { sum[grupo(k)] += x; if (grupo(k)==='otros' && x) otros.push(k); });
+  const gastos = lnR('Fletes', pesos(c.tarifa)) + lnR('Citas', pesos(sum.cita)) + lnR('Standby', pesos(sum.standby))
+    + lnR(otros.length ? `<span title="${esc(otros.join(', '))}">Otros</span>` : 'Otros', pesos(sum.otros))
     + granR('Total', pesos(totalViaje))
     + (c.extra ? `<div class="nota">${lnR('Extracostos', `<span style="color:${COLOR_COBRO[c.aprob]};font-weight:600">● ${c.aprob==='Pendiente' ? 'Por aprobar' : c.aprob}</span>`)}${c.aprob!=='Aprobado' ? lnR('Aprobado para facturar', pesos(c.total)) : ''}</div>` : '');
   const fin = finTransporte(v, P, n), lf = fin ? leadFactura(v) : null;
