@@ -1393,8 +1393,8 @@ function marcarCambios(){
 }
 function cerrar(){ $('#ov').classList.remove('open'); editId=null; }
 $('#mStates').onclick = e => { const b=e.target.closest('button'); if(!b) return; estadoSel=b.dataset.e; pintarEstados();
+  // el viaje solo se cierra a mano (STATUS = Cerrado, lo hace facturación); marcar "Entregado" no lo cierra
   const sit = $('#mForm [data-k=situacion]');
-  if (sit && estadoSel==='Entregado') sit.value = 'Cerrado';
   if (sit && estadoSel==='Cancelado') sit.value = 'Cancelado';
   marcarCambios(); };
 $('#mCancel').onclick = cerrar;
@@ -1413,10 +1413,8 @@ $('#mSave').onclick = () => {
 };
 $('#mForm').addEventListener('input', e => { if (e.target.closest('#mExtras')) syncExtras();
   const ff = $('#mForm [data-k=fechaFactura]');
-  if (e.target.dataset.k==='facturacion' && e.target.value==='Facturado') {
-    if (ff && !ff.value) ff.value = HOY;
-    const sit = $('#mForm [data-k=situacion]'); if (sit) sit.value = 'Cerrado';
-  }
+  // marcar Facturado propone la fecha de factura; cerrar el viaje (STATUS) lo hace facturación a mano
+  if (e.target.dataset.k==='facturacion' && e.target.value==='Facturado' && ff && !ff.value) ff.value = HOY;
   marcarCambios(); });
 $('#mForm').addEventListener('click', e => {
   if (e.target.id==='addExtra') { $('#mExtras').insertAdjacentHTML('beforeend', filaExtra()); $('#mExtras .exrow:last-child .exc').focus(); }
@@ -1544,33 +1542,80 @@ async function abrirBarrido(){
   } catch(e) { $('#barridoLista').innerHTML = `<div class="sub" style="padding:20px;text-align:center">No se pudo leer el buzón: ${esc(e.message)}.</div>`; return; }
   pintarBarrido();
 }
+// datos del correo que faltan o cambian en el viaje: {campo: valor} para "Actualizar viaje"
+function cambiosDeCorreo(c){
+  const b = c.enBase || {}, ch = {};
+  if (b.operacion === 'IMPO') {
+    if (c.fechaDescargue && c.fechaDescargue !== b.fechaCargue) ch.fechaCargue = c.fechaDescargue;
+    if (c.tipo === 'Orden de retiro' && !b.fechaLevante) ch.fechaLevante = c.fecha.slice(0,10);
+    const bod = bodegaDeCorreo(c.lugar);
+    if (bod && !b.bodega) ch.bodega = bod;
+    if (c.contenedor && !b.contenedor) ch.contenedor = c.contenedor;
+    if (c.do && !b.do) ch.do = c.do;
+    if (c.devolucion === 'CLO' && !b.ciudadDevolucion) ch.ciudadDevolucion = 'Cali';
+  }
+  return ch;
+}
+const NOMBRES_CAMPO = {fechaCargue:'entrega en bodega', fechaLevante:'entrega de documentos', bodega:'bodega', contenedor:'contenedor', do:'DO', ciudadDevolucion:'ciudad de devolución'};
+const bodegaDeCorreo = lugar => lugar ? ((BODEGAS_CORREO.find(([re]) => re.test(lugar)) || [null, lugar])[1]) : '';
+const fmtCambio = (k, x) => /^fecha/.test(k) ? fd(x) : x;
 function pintarBarrido(){
   if (!BARRIDO.length) { $('#barridoLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">No hay correos del ciclo de operación en los últimos 2 días.</div>'; return; }
+  const btn = (txt, act, i, primario) => `<button class="btn${primario?' primary':''}" style="margin:4px 4px 0 0;padding:3px 10px" data-act="${act}" data-i="${i}">${txt}</button>`;
   const fila = (c, i) => {
-    let estado;
+    let estado = '', botones = '';
     if (c.viajeId) {
-      const avisos = [];
-      if (c.fechaDescargue && c.enBase && c.enBase.fechaCargue && c.fechaDescargue !== c.enBase.fechaCargue) avisos.push(`fecha distinta: base ${fd(c.enBase.fechaCargue)}, correo ${fd(c.fechaDescargue)}`);
-      if (c.tipo==='Orden de retiro' && c.enBase && !c.enBase.fechaLevante) avisos.push('falta la fecha de entrega de documentos');
-      estado = `<span style="color:var(--ok);font-weight:600">✓ ${esc(c.viajeId)}</span>${avisos.map(a=>`<br><span style="color:var(--warn)">⚠ ${esc(a)}</span>`).join('')}`;
-    } else if (c.tipo==='Nueva exportación' || c.tipo==='Comodato') {
-      estado = c.tipo==='Nueva exportación' ? '<span style="color:var(--bad);font-weight:600">Booking no está en la base</span><br><span class="sub">Crear la exportación en la hoja</span>' : '<span class="sub">Revisar a mano</span>';
+      const ch = cambiosDeCorreo(c), n = Object.keys(ch).length;
+      estado = `<span style="color:var(--ok);font-weight:600">✓ ${esc(c.viajeId)}</span>` +
+        (n ? '<br>' + Object.entries(ch).map(([k, x]) => `<span style="color:var(--warn)">⚠ ${esc(NOMBRES_CAMPO[k]||k)}: ${esc(fmtCambio(k, x))}${k==='fechaCargue' && c.enBase.fechaCargue ? ` (base ${esc(fd(c.enBase.fechaCargue))})` : ''}</span>`).join('<br>') : '<br><span class="sub">al día</span>');
+      botones = (n ? btn(`Actualizar viaje (${n})`, 'aplicar', i, true) : '') + btn('Abrir viaje', 'abrir', i);
+    } else if (c.tipo === 'Comodato') {
+      estado = '<span class="sub">Dato de devolución</span>';
     } else {
-      estado = `<span style="color:var(--bad);font-weight:600">No está en la base</span><br><button class="btn primary" style="margin-top:4px;padding:3px 10px" data-crear="${i}">Crear viaje</button>`;
+      estado = `<span style="color:var(--bad);font-weight:600">${c.tipo==='Nueva exportación' ? 'Booking' : 'Pedido'} no está en la base</span>`;
+      botones = btn(c.tipo==='Nueva exportación' ? 'Crear exportación' : 'Crear importación', 'crear', i, true);
     }
-    const datos = [c.booking && 'BK '+c.booking, c.rbhy, c.do && 'DO '+c.do, c.pedido && 'PO '+c.pedido, c.contenedor].filter(Boolean).map(esc).join(' · ');
+    botones += btn('Ver correo', 'ver', i);
+    const datos = [c.booking && 'BK '+c.booking, c.rbhy, c.pais, c.do && 'DO '+c.do, c.pedido && 'PO '+c.pedido, c.contenedor].filter(Boolean).map(esc).join(' · ');
     const desc = [c.lugar, c.fechaDescargue && fd(c.fechaDescargue), c.hora, c.puerto && (c.puerto+(c.terminal?' ('+c.terminal+')':'')), c.devolucion && 'devol. '+c.devolucion].filter(Boolean).map(esc).join(' · ');
     return `<tr><td class="sub" style="white-space:nowrap">${esc(c.fecha.slice(5,16).replace('T',' '))}</td><td><b>${esc(c.tipo)}</b><br><span class="sub">${esc(c.firma || c.remitente.replace(/<.*>/,''))}</span></td>
-      <td>${datos || '—'}<br><span class="sub" title="${esc(c.asunto)}">${esc(c.asunto.slice(0,70))}${c.asunto.length>70?'…':''}</span></td><td>${desc || '—'}</td><td>${estado}</td></tr>`;
+      <td>${datos || '—'}<br><span class="sub" title="${esc(c.asunto)}">${esc(c.asunto.slice(0,70))}${c.asunto.length>70?'…':''}</span></td><td>${desc || '—'}</td><td>${estado}<div>${botones}</div></td></tr>`;
   };
-  $('#barridoLista').innerHTML = `<div class="tbl-wrap"><table class="prop"><tr><th>Llegó</th><th>Tipo</th><th>DO · Pedido · Contenedor</th><th>Descargue / retiro</th><th>En la base</th></tr>${BARRIDO.map(fila).join('')}</table></div>
-    <p class="sub" style="margin-top:6px">${BARRIDO.length} correo${BARRIDO.length===1?'':'s'} · ${BARRIDO.filter(c=>!c.viajeId && c.tipo!=='Nueva exportación' && c.tipo!=='Comodato').length} sin viaje en la base.</p>`;
+  const pend = BARRIDO.filter(c => !c.viajeId && c.tipo !== 'Comodato').length, cambios = BARRIDO.filter(c => c.viajeId && Object.keys(cambiosDeCorreo(c)).length).length;
+  $('#barridoLista').innerHTML = `<div class="tbl-wrap"><table class="prop"><tr><th>Llegó</th><th>Tipo</th><th>Booking · DO · Pedido · Contenedor</th><th>Descargue / retiro</th><th>En la base · qué hacer</th></tr>${BARRIDO.map(fila).join('')}</table></div>
+    <p class="sub" style="margin-top:6px">${BARRIDO.length} correo${BARRIDO.length===1?'':'s'} · ${pend} sin viaje en la base · ${cambios} con datos por actualizar. Lo que cree o actualice queda en el Historial con su nombre.</p>`;
+}
+async function aplicarDesdeCorreo(c){
+  const usuario = $('#barridoUsuario').value.trim();
+  if (!usuario) { $('#barridoUsuario').focus(); return toast('Escriba su nombre para actualizar el viaje'); }
+  try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
+  const ch = cambiosDeCorreo(c);
+  await guardarCambio(c.viajeId, ch, usuario + ' (desde correo ' + c.tipo + ')');
+  Object.assign(c.enBase, ch); pintarBarrido();
+}
+async function crearExpoDesdeCorreo(c){
+  const usuario = $('#barridoUsuario').value.trim();
+  if (!usuario) { $('#barridoUsuario').focus(); return toast('Escriba su nombre para crear la exportación'); }
+  try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
+  const pais = c.pais ? c.pais.charAt(0) + c.pais.slice(1).toLowerCase() : '';
+  const campos = {situacion:'Abierto', estado:'Sin asignar', booking:c.booking, pais, do:c.do,
+    empresa: c.rbhy ? 'Reckitt Hygiene' : c.empresa, solicitante: /jhonier/i.test(c.firma + c.remitente) ? 'Jhonier Gómez' : '',
+    observacion: `Correo ${c.fecha.slice(0,10)}: nueva exportación ${[pais, c.rbhy, c.booking && 'BK '+c.booking].filter(Boolean).join(' · ')}`};
+  try {
+    const r = await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({action:'nuevo', clave:window.CLAVE, operacion:'EXPO', campos, usuario: usuario + ' (desde correo)'})});
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'error');
+    c.viajeId = j.id; c.enBase = {operacion:'EXPO'}; pintarBarrido();
+    toast(`Exportación ${j.id} creada: queda arriba como NUEVO; complete patio, fechas y vehículo`);
+    await cargar(); render();
+  } catch(e) { toast('No se pudo crear la exportación: ' + e.message); }
 }
 async function crearDesdeCorreo(c){
   const usuario = $('#barridoUsuario').value.trim();
   if (!usuario) { $('#barridoUsuario').focus(); return toast('Escriba su nombre para crear el viaje'); }
   try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
-  const bodega = (BODEGAS_CORREO.find(([re]) => re.test(c.lugar||'')) || [null, c.lugar ? c.lugar.replace(/\b\w/g, x=>x).trim() : ''])[1];
+  const bodega = bodegaDeCorreo(c.lugar);
   const puerto = /buenaventura/i.test(c.puerto) ? 'Buenaventura' : /cartagena/i.test(c.puerto) ? 'Cartagena' : '';
   const campos = {situacion:'Abierto', estado:'Sin asignar', pedido:c.pedido, do:c.do, contenedor:c.contenedor, puerto, bodega,
     destino: /cortijo|agecolda/i.test(bodega) ? 'Yumbo' : '', fechaCargue:c.fechaDescargue, ciudadDevolucion: c.devolucion==='CLO' ? 'Cali' : '',
@@ -1589,7 +1634,17 @@ async function crearDesdeCorreo(c){
 }
 $('#btnBarrido').onclick = abrirBarrido;
 $('#barridoCerrar').onclick = () => $('#ovBarrido').classList.remove('open');
-$('#ovBarrido').onclick = e => { if (e.target.id==='ovBarrido') $('#ovBarrido').classList.remove('open'); const b = e.target.closest('[data-crear]'); if (b) { b.disabled = true; crearDesdeCorreo(BARRIDO[+b.dataset.crear]); } };
+$('#ovBarrido').onclick = e => {
+  if (e.target.id==='ovBarrido') return $('#ovBarrido').classList.remove('open');
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const c = BARRIDO[+b.dataset.i];
+  if (b.dataset.act === 'ver') return window.open(`https://mail.google.com/mail/?authuser=calidad@stentrapetrol.com#all/${c.msgId}`, '_blank');
+  if (b.dataset.act === 'abrir') { $('#ovBarrido').classList.remove('open'); return abrir(c.viajeId); }
+  b.disabled = true;
+  if (b.dataset.act === 'aplicar') aplicarDesdeCorreo(c).finally(() => { b.disabled = false; });
+  else if (c.tipo === 'Nueva exportación') crearExpoDesdeCorreo(c);
+  else crearDesdeCorreo(c);
+};
 
 /* ---------- navegación y eventos ---------- */
 $('#nav').onclick = e => { const b=e.target.closest('button'); if(!b) return;
