@@ -234,6 +234,13 @@ tr:hover td{background:var(--surface-2)}
 .ruta .resumen .gran b{font-size:15px;white-space:nowrap}
 .ruta .resumen .gran small{font-size:11px;font-weight:600;margin-left:4px}
 .ruta .resumen .nota{margin-top:4px;font-size:11px}
+.ruta .pie{align-items:baseline}
+.ruta .pie .tramo b,.ruta .pie .lt b{color:var(--text)}
+.ruta .pie .lt{margin-left:auto;font-weight:600;color:var(--text)}
+.ruta .pie .lt b{font-size:14px}
+.ruta .der .pieF{border-top:1px solid var(--border);margin-top:12px;padding-top:10px}
+.ruta .der .pieF h4{margin:0 0 2px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.ruta .der .pieF b{font-size:18px;font-variant-numeric:tabular-nums}
 @media (max-width:1100px){.ruta .dos{grid-template-columns:1fr}.ruta .resumen{display:grid;grid-template-columns:1fr 1fr;gap:20px}}
 @media (max-width:640px){.ruta .resumen{grid-template-columns:1fr}}
 .exrow{display:grid;grid-template-columns:minmax(0,1fr) 130px auto;gap:6px;margin-bottom:6px}
@@ -808,7 +815,8 @@ function cobroKpi(){
   const C = visibles().map(v=>[v, cobro(v)]);
   const porFact = C.filter(([,c])=>c.fact==='Pendiente por facturar'), extra = C.filter(([,c])=>c.aprob==='Pendiente');
   const suma = porFact.reduce((s,[,c])=>s+c.total,0);
-  return {l:'Pendiente por facturar', v: porFact.length, h:`${suma ? pesos(suma)+' · ' : ''}${C.filter(([,c])=>c.fact==='Facturado').length} facturados<br>${extra.length} extracosto${extra.length===1?'':'s'} por aprobar${extra.length?' · '+pesos(extra.reduce((s,[,c])=>s+c.extra,0)):''}`, bad: extra.length>0};
+  const lf = visibles().map(leadFactura).filter(x=>x && x.hecho), promF = lf.length ? Math.round(lf.reduce((s,x)=>s+x.dias,0)/lf.length*10)/10 : null;
+  return {l:'Pendiente por facturar', v: porFact.length, h:`${suma ? pesos(suma)+' · ' : ''}${promF!==null ? `facturan en ${promF} d · ` : ''}${C.filter(([,c])=>c.fact==='Facturado').length} facturados<br>${extra.length} extracosto${extra.length===1?'':'s'} por aprobar${extra.length?' · '+pesos(extra.reduce((s,[,c])=>s+c.extra,0)):''}`, bad: extra.length>0};
 }
 // lead time promedio de los viajes completos (con los filtros) frente al plan, y hitos cumplidos a tiempo
 function leadKpi(){
@@ -1102,31 +1110,45 @@ function avance(v){ const P = paradas(v); let n = 0; while (n < P.length && P[n]
   return {P, n}; }
 function miniAvance(v){ const {P,n} = avance(v); return `<span class="mini" title="${esc(n<P.length ? 'En: '+P[n][0] : 'Completo')}">${P.map((_,i)=>`<i class="${i<n?'ok':i===n?'ya':''}"></i>`).join('')}</span>`; }
 // el transporte termina con la entrega en puerto (EXPO) o la devolución del vacío (IMPO); de ahí en adelante cuenta la facturación
+// lead time de facturación: desde que termina el transporte (entrega en puerto EXPO / devolución del vacío IMPO) hasta la factura;
+// sin factura, los días que lleva esperando
+const fechaFinTransporte = v => { const f = v.operacion==='EXPO' ? v.fechaEntregaPuerto : v.fechaDevolucion; return f && f <= HOY ? f : ''; };
+function leadFactura(v){
+  const fin = fechaFinTransporte(v);
+  if (!fin) return null;
+  return v.fechaFactura ? {dias: dDias(fin, v.fechaFactura), hecho: true} : {dias: dDias(fin, HOY), hecho: false};
+}
 function finTransporte(v, P, n){
   const fin = v.operacion==='EXPO' ? n > P.findIndex(p=>p[0]==='Puerto') : n >= P.length;
   if (!fin || v.estado==='Cancelado') return '';
   const s = v.facturacion==='Facturado' ? 'Facturado' : 'Pendiente por facturar', col = COLOR_COBRO[s];
-  return `<div class="fin"><span class="hecho">✓ Transporte finalizado</span><span class="est" style="background:color-mix(in srgb, ${col} 14%, transparent);color:${col}">${s}${v.numFactura?' · '+esc(v.numFactura):''}</span></div>`;
+  return `<div class="fin"><span class="hecho">✓ Transporte finalizado${fechaFinTransporte(v) ? ' '+fd(fechaFinTransporte(v)) : ''}</span><span class="est" style="background:color-mix(in srgb, ${col} 14%, transparent);color:${col}">${s}${v.numFactura?' · '+esc(v.numFactura):''}</span></div>`;
 }
-// panel derecho de la tarjeta lean: tiempos de cada tramo (real, o plan si no ha pasado) y gastos del viaje
-function resumenRuta(v){
-  const H = hitos(v), L = leadTime(v), c = cobro(v);
-  const ln = (a, b, cls='') => `<div class="ln ${cls}"><span>${a}</span><span>${b}</span></div>`;
+const lnR = (a, b) => `<div class="ln"><span>${a}</span><span>${b}</span></div>`;
+const granR = (a, b, extra='') => `<div class="gran"><span>${a}</span><span><b>${b}</b>${extra ? `<small>${extra}</small>` : ''}</span></div>`;
+// pie de la tarjeta (operación): días de cada tramo frente al plan y lead time de la operación
+function tiemposOperacion(v){
+  const H = hitos(v), L = leadTime(v);
   const tramos = H.slice(1).map((x, i) => {
     const real = H[i][2] && x[2] ? dDias(H[i][2], x[2]) : null, plan = dDias(H[i][1], x[1]);
-    return ln(esc(x[0]), real!==null ? `${real} d${plan!==null && real!==plan ? ` <span class="${real>plan?'tarde':'antes'}">(plan ${plan})</span>` : ''}` : plan!==null ? `<span class="sub">plan ${plan} d</span>` : '—');
+    const val = real!==null ? `<b>${real} d</b>${plan!==null && real!==plan ? ` <span class="${real>plan?'tarde':'antes'}">plan ${plan}</span>` : ''}` : plan!==null ? `<span class="sub">plan ${plan} d</span>` : '—';
+    return `<span class="tramo">${esc(x[0])} ${val}</span>`;
   }).join('');
-  const gran = (a, b, extra='') => `<div class="gran"><span>${a}</span><span><b>${b}</b>${extra ? `<small>${extra}</small>` : ''}</span></div>`;
-  const lead = L.real!==null ? gran('Lead time total', L.real+' d', L.plan!==null ? desv(L.real-L.plan) : '')
-    : L.enCurso!==null ? gran('Lead time', L.enCurso+' d', '<span class="sub">en curso</span>')
-    : gran('Lead time', L.plan!==null ? L.plan+' d' : '—', L.plan!==null ? '<span class="sub">plan</span>' : '');
+  const lead = L.real!==null ? `<b>${L.real} d</b> ${L.plan!==null ? desv(L.real-L.plan) : ''}` : L.enCurso!==null ? `<b>${L.enCurso} d</b> <span class="sub">en curso</span>` : L.plan!==null ? `<span class="sub">plan ${L.plan} d</span>` : '—';
+  return `${tramos}<span class="lt">Lead time operación ${lead}</span>`;
+}
+// panel derecho (facturación): gastos y, abajo, el lead time de facturación
+function panelFactura(v, P, n){
+  const c = cobro(v);
   // total del viaje sin extracostos rechazados; lo aprobado para facturar aparte mientras Reckitt no aprueba los extras
   const totalViaje = c.tarifa + (c.aprob==='Rechazado' ? 0 : c.extra);
-  const gastos = ln('Flete', pesos(c.tarifa)) + itemsExtra(v).map(([k, x]) => ln(esc(k), pesos(x))).join('')
-    + gran('Total', pesos(totalViaje))
-    + (c.extra ? `<div class="nota">${ln('Extracostos', `<span style="color:${COLOR_COBRO[c.aprob]};font-weight:600">● ${c.aprob==='Pendiente' ? 'Por aprobar' : c.aprob}</span>`)}${c.aprob!=='Aprobado' ? ln('Aprobado para facturar', pesos(c.total)) : ''}</div>` : '');
-  return `<div class="resumen"><div><h4>Resumen de tiempos</h4>${tramos}${lead}</div>
-    <div><h4>Resumen de gastos</h4>${gastos}</div></div>`;
+  const gastos = lnR('Flete', pesos(c.tarifa)) + itemsExtra(v).map(([k, x]) => lnR(esc(k), pesos(x))).join('')
+    + granR('Total', pesos(totalViaje))
+    + (c.extra ? `<div class="nota">${lnR('Extracostos', `<span style="color:${COLOR_COBRO[c.aprob]};font-weight:600">● ${c.aprob==='Pendiente' ? 'Por aprobar' : c.aprob}</span>`)}${c.aprob!=='Aprobado' ? lnR('Aprobado para facturar', pesos(c.total)) : ''}</div>` : '');
+  const fin = finTransporte(v, P, n), lf = fin ? leadFactura(v) : null;
+  const leadF = !fin ? '' : `<div class="pieF"><h4>Lead time facturación</h4>${!lf ? `<span class="sub">Falta la fecha de ${v.operacion==='EXPO' ? 'entrega en puerto' : 'devolución del vacío'}</span>`
+    : `<b style="${!lf.hecho && lf.dias>5 ? 'color:var(--bad)' : ''}">${lf.dias} d</b> <span class="sub">${lf.hecho ? 'facturado'+(v.fechaFactura ? ' '+fd(v.fechaFactura) : '') : 'sin facturar'}</span>`}</div>`;
+  return `${fin}<div class="resumen"><div><h4>Resumen de gastos</h4>${gastos}</div></div>${leadF}`;
 }
 function rutaPedido(v){
   const {P, n} = avance(v);
@@ -1158,9 +1180,9 @@ function rutaPedido(v){
         ${P.map(([et, lugar, , det], i)=>`<div class="par ${i<n?'ok':i===n?'ya':''}"><div class="pt"></div>${i===n?'<span class="camion">🚚</span>':''}
           <div class="caja">${et}<b>${esc(lugar)}</b>${det.filter(Boolean).map(esc).join('<br>')}</div></div>`).join('')}</div>
       <div class="esp"><span></span>${esperas.map(d=> `<span>${d===null?'':d+' d'}</span>`).join('')}</div>
-      <div class="pie">${v.operacion==='IMPO' && demora(v) ? `<span style="color:var(--bad)">${demora(v)} d de demora del vacío</span>`:''}<span>${sitTag(v)}</span><span>${esc(v.id)}</span></div>
+      <div class="pie">${tiemposOperacion(v)}${v.operacion==='IMPO' && demora(v) ? `<span style="color:var(--bad)">${demora(v)} d de demora del vacío</span>`:''}</div>
     </div></div></div>
-    <div class="der"><div class="fin">${finTransporte(v, P, n)}</div>${resumenRuta(v)}</div></div></div>`;
+    <div class="der">${panelFactura(v, P, n)}</div></div></div>`;
 }
 
 function abrir(id){
@@ -1207,14 +1229,14 @@ const CAMPOS_ETAPA = {
     ['Cierre', [['fechaEntregaPuerto','Fecha de entrega en puerto','fecha'],['tirillaEntrega','Tirilla de entrega']]],
     ['Destino', [['pais','País'],['etd','ETD','fecha'],['eta','ETA','fecha']]],
     ['Costos y facturación', [['tarifa','Flete (tarifa)','num'],['conceptoExtra','Extracostos','extras'],
-      ['aprobacionExtra','Aprobación extracostos','lista',['Pendiente','Aprobado','Rechazado']],['facturacion','Facturación','lista',['Pendiente por facturar','Facturado']],['numFactura','N° factura']]]],
+      ['aprobacionExtra','Aprobación extracostos','lista',['Pendiente','Aprobado','Rechazado']],['facturacion','Facturación','lista',['Pendiente por facturar','Facturado']],['numFactura','N° factura'],['fechaFactura','Fecha factura','fecha']]]],
   IMPO: [['Llegada', [['mn','Motonave'],['puerto','Origen'],['eta','ETA','fecha'],['fechaLevante','Fecha entrega documentos','fecha']]],
     ['Retiro del lleno', [['citaRetiro','Cita de retiro en puerto','fecha'],['fechaRetiro','Fecha de retiro','fecha']]],
     ['Entrega en bodega', [['fechaCargue','Fecha entrega en bodega','fecha'],['destino','Destino'],['bodega','Bodega']]],
     ['Devolución del vacío', [['ciudadDevolucion','Ciudad de devolución','lista',['Buenaventura','Cartagena','Cali']],['citaDevolucion','Cita de devolución','fecha'],
       ['patio','Patio de devolución','dl','dlPatio'],['fechaDevolucion','Fecha de devolución','fecha'],['tirillaDevolucion','Tirilla de devolución']]],
     ['Costos y facturación', [['tarifa','Flete (tarifa)','num'],['conceptoExtra','Extracostos','extras'],
-      ['aprobacionExtra','Aprobación extracostos','lista',['Pendiente','Aprobado','Rechazado']],['facturacion','Facturación','lista',['Pendiente por facturar','Facturado']],['numFactura','N° factura']]]]
+      ['aprobacionExtra','Aprobación extracostos','lista',['Pendiente','Aprobado','Rechazado']],['facturacion','Facturación','lista',['Pendiente por facturar','Facturado']],['numFactura','N° factura'],['fechaFactura','Fecha factura','fecha']]]]
 };
 // valor de un campo tal como lo muestra el formulario (placa y conductor en mayúsculas)
 const valorCampo = (v, k) => { const x = k==='situacion' ? situacion(v) : String(v[k] ?? ''); return ['placa','conductor'].includes(k) ? x.toUpperCase() : x; };
@@ -1290,7 +1312,13 @@ $('#mSave').onclick = () => {
   if (Object.keys(cambios).length) guardarCambio(editId, cambios, usuario);
   cerrar();
 };
-$('#mForm').addEventListener('input', e => { if (e.target.closest('#mExtras')) syncExtras(); marcarCambios(); });
+$('#mForm').addEventListener('input', e => { if (e.target.closest('#mExtras')) syncExtras();
+  const ff = $('#mForm [data-k=fechaFactura]');
+  if (e.target.dataset.k==='facturacion' && e.target.value==='Facturado') {
+    if (ff && !ff.value) ff.value = HOY;
+    const sit = $('#mForm [data-k=situacion]'); if (sit) sit.value = 'Cerrado';
+  }
+  marcarCambios(); });
 $('#mForm').addEventListener('click', e => {
   if (e.target.id==='addExtra') { $('#mExtras').insertAdjacentHTML('beforeend', filaExtra()); $('#mExtras .exrow:last-child .exc').focus(); }
   else if (e.target.closest('[data-del]')) { e.target.closest('.exrow').remove(); syncExtras(); marcarCambios(); }
