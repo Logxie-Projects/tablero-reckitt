@@ -236,11 +236,12 @@ tr:hover td{background:var(--surface-2)}
 .ruta .resumen .nota{margin-top:4px;font-size:11px}
 .ruta .pie{align-items:baseline}
 .ruta .pie .tramo b,.ruta .pie .lt b{color:var(--text)}
-.ruta .pie .lt{margin-left:auto;font-weight:600;color:var(--text)}
-.ruta .pie .lt b{font-size:14px}
+.ruta .pie .lt{margin-left:auto}
 .ruta .der .pieF{border-top:1px solid var(--border);margin-top:12px;padding-top:10px}
-.ruta .der .pieF h4{margin:0 0 2px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-.ruta .der .pieF b{font-size:18px;font-variant-numeric:tabular-nums}
+/* lead time de operación y de facturación con la misma letra */
+.ruta .pie .lt,.ruta .der .pieF h4{font-size:12px;font-weight:600;color:var(--text);letter-spacing:0;text-transform:none}
+.ruta .der .pieF h4{margin:0 0 2px}
+.ruta .pie .lt b,.ruta .der .pieF b{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums}
 @media (max-width:1100px){.ruta .dos{grid-template-columns:1fr}.ruta .resumen{display:grid;grid-template-columns:1fr 1fr;gap:20px}}
 @media (max-width:640px){.ruta .resumen{grid-template-columns:1fr}}
 .exrow{display:grid;grid-template-columns:minmax(0,1fr) 130px auto;gap:6px;margin-bottom:6px}
