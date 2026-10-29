@@ -1069,6 +1069,12 @@ function avance(v){ const P = paradas(v); let n = 0; while (n < P.length && P[n]
   if (!v.estadoAuto) n = Math.max(n, (PARADAS_ESTADO[v.operacion]||{})[v.estado] || 0);
   return {P, n}; }
 function miniAvance(v){ const {P,n} = avance(v); return `<span class="mini" title="${esc(n<P.length ? 'En: '+P[n][0] : 'Completo')}">${P.map((_,i)=>`<i class="${i<n?'ok':i===n?'ya':''}"></i>`).join('')}</span>`; }
+// el transporte termina con la entrega en puerto (EXPO) o la devolución del vacío (IMPO); de ahí en adelante cuenta la facturación
+function finTransporte(v, P, n){
+  const fin = v.operacion==='EXPO' ? n > P.findIndex(p=>p[0]==='Puerto') : n >= P.length;
+  if (!fin || v.estado==='Cancelado') return '';
+  return tagCobro(v.facturacion==='Facturado' ? 'Facturado' : 'Pendiente por facturar', 'Transporte finalizado · ').replace('Pendiente por facturar', 'Pendiente facturar');
+}
 function rutaPedido(v){
   const {P, n} = avance(v);
   const ini = s => String(s||'').split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]).join('').toUpperCase() || '—';
@@ -1088,7 +1094,7 @@ function rutaPedido(v){
     <div class="cab"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
       <span class="op ${v.operacion}">${v.operacion}</span><b>${esc(v.empresa||'Empresa sin definir')} · ${esc(ref)}</b>
       <span class="sub">${esc([v.solicitante && 'Solicita '+v.solicitante, v.fwd].filter(Boolean).join(' · '))}</span></div>
-      <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span></div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span>${finTransporte(v, P, n)}</div></div>
     ${v.observacion ? `<div class="sub" style="margin:-4px 0 10px">💬 ${esc(v.observacion)}</div>` : ''}
     <div class="cuerpo"><div>
       <div style="display:flex;align-items:flex-end;gap:2px"><div class="cont"><b style="font-size:12px">${esc(v.contenedor||'—')}</b><div class="sub">${esc(v.unidad||'')}</div></div><div class="cabina"></div></div>
