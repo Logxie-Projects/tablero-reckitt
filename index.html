@@ -215,7 +215,16 @@ tr:hover td{background:var(--surface-2)}
 .ruta .cab{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
 .tg{font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600;white-space:nowrap}
 .ruta .tg{font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600}
-.ruta .cuerpo{display:grid;grid-template-columns:150px minmax(0,1fr);gap:14px;align-items:start}
+.ruta .cuerpo{display:grid;grid-template-columns:150px minmax(0,1fr) 230px;gap:14px;align-items:start}
+.ruta .resumen{border-left:1px solid var(--border);padding-left:14px;font-size:12px}
+.ruta .resumen h4{margin:0 0 6px;font-size:12px}
+.ruta .resumen h4+div{margin-bottom:12px}
+.ruta .resumen .ln{display:flex;justify-content:space-between;gap:8px;line-height:1.6}
+.ruta .resumen .ln span:first-child{color:var(--muted)}
+.ruta .resumen .ln.tot{border-top:1px solid var(--border);margin-top:2px;font-weight:600}
+.ruta .resumen .ln.tot span:first-child{color:var(--text)}
+@media (max-width:1100px){.ruta .cuerpo{grid-template-columns:150px minmax(0,1fr)}.ruta .resumen{grid-column:1/-1;border-left:0;padding-left:0;border-top:1px solid var(--border);padding-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:16px}}
+.exrow{display:grid;grid-template-columns:minmax(0,1fr) 130px auto;gap:6px;margin-bottom:6px}
 .ruta .cont{border:1.5px solid var(--text);border-radius:4px;padding:5px 4px;text-align:center;flex:1}
 .ruta .cabina{width:24px;height:28px;border:1.5px solid var(--text);border-radius:4px 8px 4px 4px;background:var(--surface-2)}
 .ruta .ruedas{display:flex;justify-content:space-between;padding:0 10px;margin-top:-4px}
@@ -369,7 +378,7 @@ tr:hover td{background:var(--surface-2)}
     <div class="plan" id="mPlan"></div>
     <div class="full" style="margin-top:16px"><label>Nuevo estado</label><div class="states" id="mStates"></div></div>
     <div id="mForm"></div>
-    <datalist id="dlPatio"></datalist><datalist id="dlCond"></datalist><datalist id="dlPlaca"></datalist><datalist id="dlFwd"></datalist>
+    <datalist id="dlExtra"></datalist><datalist id="dlPatio"></datalist><datalist id="dlCond"></datalist><datalist id="dlPlaca"></datalist><datalist id="dlFwd"></datalist>
     <div class="hist" id="mHist"></div>
     <div class="mfoot"><span class="sub" id="mNCambios" style="margin-right:auto"></span><input id="mUsuario" placeholder="Su nombre (queda en el historial)" style="width:230px"><button class="btn" id="mCancel">Cancelar</button><button class="btn primary" id="mSave">Guardar en la base</button></div>
   </div>
@@ -911,8 +920,19 @@ const COLS = [
 const demora = v => v.fechaLimite ? Math.max(0, diffDias(v.fechaDevolucion || HOY) - diffDias(v.fechaLimite)) : null;
 // cobro del viaje: tarifa + extracostos aprobados por Reckitt; sin dato de facturación, el viaje cerrado queda pendiente por facturar
 const pesos = n => n ? '$' + Number(n).toLocaleString('es-CO') : '—';
+// "Concepto extracostos" guarda cada extracosto como "Cita: 60000; Standby: 560000"
+function itemsExtra(v){
+  const L = String(v.conceptoExtra||'').split(';').map(s=>s.trim()).filter(Boolean).map(s=>{
+    const m = s.match(/^(.*?)[:=]\s*\$?\s*([\d.,]+)$/);
+    return m ? [m[1].trim(), Number(m[2].replace(/[.,]/g,''))||0] : [s, 0];
+  });
+  // dato viejo: un concepto sin valor y el total en Extracostos
+  if (L.length===1 && !L[0][1] && Number(v.extracostos)) L[0][1] = Number(v.extracostos);
+  if (!L.length && Number(v.extracostos)) L.push(['Extracostos', Number(v.extracostos)]);
+  return L;
+}
 function cobro(v){
-  const tarifa = Number(v.tarifa) || 0, extra = Number(v.extracostos) || 0;
+  const tarifa = Number(v.tarifa) || 0, extra = Number(v.extracostos) || itemsExtra(v).reduce((s,x)=>s+x[1],0);
   const aprob = extra ? (v.aprobacionExtra || 'Pendiente') : '';
   const fact = v.facturacion || (situacion(v)==='Cerrado' ? 'Pendiente por facturar' : situacion(v)==='Cancelado' ? '' : 'En curso');
   return {tarifa, extra, aprob, fact, total: tarifa + (aprob==='Aprobado' ? extra : 0)};
@@ -1075,6 +1095,23 @@ function finTransporte(v, P, n){
   if (!fin || v.estado==='Cancelado') return '';
   return tagCobro(v.facturacion==='Facturado' ? 'Facturado' : 'Pendiente por facturar', 'Transporte finalizado · ').replace('Pendiente por facturar', 'Pendiente facturar');
 }
+// panel derecho de la tarjeta lean: tiempos de cada tramo (real, o plan si no ha pasado) y gastos del viaje
+function resumenRuta(v){
+  const H = hitos(v), L = leadTime(v), c = cobro(v);
+  const ln = (a, b, cls='') => `<div class="ln ${cls}"><span>${a}</span><span>${b}</span></div>`;
+  const tramos = H.slice(1).map((x, i) => {
+    const real = H[i][2] && x[2] ? dDias(H[i][2], x[2]) : null, plan = dDias(H[i][1], x[1]);
+    return ln('→ '+esc(x[0]), real!==null ? `${real} d${plan!==null && real!==plan ? ` <span class="${real>plan?'tarde':'antes'}">(plan ${plan})</span>` : ''}` : plan!==null ? `<span class="sub">plan ${plan} d</span>` : '—');
+  }).join('');
+  const lead = L.real!==null ? `${L.real} d ${L.plan!==null ? desv(L.real-L.plan) : ''}` : L.enCurso!==null ? `en curso ${L.enCurso} d` : L.plan!==null ? `plan ${L.plan} d` : '—';
+  // total del viaje sin extracostos rechazados; lo aprobado para facturar aparte mientras Reckitt no aprueba los extras
+  const totalViaje = c.tarifa + (c.aprob==='Rechazado' ? 0 : c.extra);
+  const gastos = ln('Flete', pesos(c.tarifa)) + itemsExtra(v).map(([k, x]) => ln(esc(k), pesos(x))).join('')
+    + ln('Total', pesos(totalViaje), 'tot')
+    + (c.extra ? `<div style="text-align:right;margin-top:4px">${tagCobro(c.aprob, 'Extracostos: ')}${c.aprob!=='Aprobado' ? `<div class="sub">Aprobado para facturar ${pesos(c.total)}</div>` : ''}</div>` : '');
+  return `<div class="resumen"><div><h4>Resumen de tiempos</h4><div>${tramos}${ln('Lead time total', lead, 'tot')}</div></div>
+    <div><h4>Resumen de gastos</h4><div>${gastos}</div></div></div>`;
+}
 function rutaPedido(v){
   const {P, n} = avance(v);
   const ini = s => String(s||'').split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]).join('').toUpperCase() || '—';
@@ -1105,8 +1142,8 @@ function rutaPedido(v){
         ${P.map(([et, lugar, , det], i)=>`<div class="par ${i<n?'ok':i===n?'ya':''}"><div class="pt"></div>${i===n?'<span class="camion">🚚</span>':''}
           <div class="caja">${et}<b>${esc(lugar)}</b>${det.filter(Boolean).map(esc).join('<br>')}</div></div>`).join('')}</div>
       <div class="esp"><span></span>${esperas.map(d=> `<span>${d===null?'':d+' d'}</span>`).join('')}</div>
-      <div class="pie"><span>Lead time ${celdaLead(v)}</span>${(c => c.tarifa || c.extra || v.facturacion ? `<span>${pesos(c.total)} ${tagCobro(c.aprob, 'Extra ')} ${tagCobro(c.fact)}</span>` : '')(cobro(v))}${v.operacion==='IMPO' && demora(v) ? `<span style="color:var(--bad)">${demora(v)} d de demora del vacío</span>`:''}<span>${sitTag(v)}</span><span>${esc(v.id)}</span></div>
-    </div></div></div>`;
+      <div class="pie">${v.operacion==='IMPO' && demora(v) ? `<span style="color:var(--bad)">${demora(v)} d de demora del vacío</span>`:''}<span>${sitTag(v)}</span><span>${esc(v.id)}</span></div>
+    </div>${resumenRuta(v)}</div></div>`;
 }
 
 function abrir(id){
@@ -1152,14 +1189,14 @@ const CAMPOS_ETAPA = {
     ['Puerto', [['puerto','Puerto'],['mn','Motonave'],['cierreDoc','Cierre documental','fecha'],['citaIngreso','Cita de ingreso','fecha'],['estadoCita','Estado de la cita','lista',['Solicitada','Confirmada','Entregado']]]],
     ['Cierre', [['fechaEntregaPuerto','Fecha de entrega en puerto','fecha'],['tirillaEntrega','Tirilla de entrega']]],
     ['Destino', [['pais','País'],['etd','ETD','fecha'],['eta','ETA','fecha']]],
-    ['Costos y facturación', [['tarifa','Tarifa','num'],['extracostos','Extracostos','num'],['conceptoExtra','Concepto extracostos'],
+    ['Costos y facturación', [['tarifa','Flete (tarifa)','num'],['conceptoExtra','Extracostos','extras'],
       ['aprobacionExtra','Aprobación extracostos','lista',['Pendiente','Aprobado','Rechazado']],['facturacion','Facturación','lista',['Pendiente por facturar','Facturado']],['numFactura','N° factura']]]],
   IMPO: [['Llegada', [['mn','Motonave'],['puerto','Origen'],['eta','ETA','fecha'],['fechaLevante','Fecha entrega documentos','fecha']]],
     ['Retiro del lleno', [['citaRetiro','Cita de retiro en puerto','fecha'],['fechaRetiro','Fecha de retiro','fecha']]],
     ['Entrega en bodega', [['fechaCargue','Fecha entrega en bodega','fecha'],['destino','Destino'],['bodega','Bodega']]],
     ['Devolución del vacío', [['ciudadDevolucion','Ciudad de devolución','lista',['Buenaventura','Cartagena','Cali']],['citaDevolucion','Cita de devolución','fecha'],
       ['patio','Patio de devolución','dl','dlPatio'],['fechaDevolucion','Fecha de devolución','fecha'],['tirillaDevolucion','Tirilla de devolución']]],
-    ['Costos y facturación', [['tarifa','Tarifa','num'],['extracostos','Extracostos','num'],['conceptoExtra','Concepto extracostos'],
+    ['Costos y facturación', [['tarifa','Flete (tarifa)','num'],['conceptoExtra','Extracostos','extras'],
       ['aprobacionExtra','Aprobación extracostos','lista',['Pendiente','Aprobado','Rechazado']],['facturacion','Facturación','lista',['Pendiente por facturar','Facturado']],['numFactura','N° factura']]]]
 };
 // valor de un campo tal como lo muestra el formulario (placa y conductor en mayúsculas)
@@ -1173,6 +1210,10 @@ function pintarForm(v){
       : t==='lista' ? `<select data-k="${k}"><option value=""></option>${opc(x)}</select>`
       : t==='num' ? `<input data-k="${k}" data-num inputmode="numeric" value="${esc(val)}" placeholder="$">`
       : `<input data-k="${k}" value="${esc(val)}"${t==='dl' ? ` list="${x}"` : ''}>`;
+    if (t==='extras') return `<div style="grid-column:1/-1"><label>${l} <span class="sub">(concepto y valor; el total se suma solo)</span></label>
+      <div id="mExtras">${itemsExtra(v).map(filaExtra).join('')}</div>
+      <button type="button" class="link" id="addExtra">+ Agregar extracosto</button>
+      <input type="hidden" data-k="conceptoExtra" value="${esc(val)}"><input type="hidden" data-k="extracostos" value="${esc(valorCampo(v,'extracostos'))}"></div>`;
     return `<div><label>${l}</label>${ctl}</div>`;
   };
   const grupo = (titulo, cs) => `<fieldset class="mgrupo"><legend>${titulo}</legend><div class="fgrid3">${cs.map(campo).join('')}</div></fieldset>`;
@@ -1180,8 +1221,20 @@ function pintarForm(v){
   $('#mForm').innerHTML = grupo('Viaje', CAMPOS_VIAJE) + CAMPOS_ETAPA[v.operacion].map(([t, cs]) => grupo(t, cs)).join('') + calc +
     `<div class="full" style="margin-top:12px"><label>Observación / novedad</label><textarea data-k="observacion" placeholder="Ej: Cita de descargue 9 am, en fila en patio…">${esc(v.observacion||'')}</textarea></div>`;
   const lista = (id, k) => { $('#'+id).innerHTML = [...new Set(viajes.map(x=>x[k]).filter(Boolean))].sort().map(x=>`<option value="${esc(x)}">`).join(''); };
+  $('#dlExtra').innerHTML = [...new Set([...CONCEPTOS_EXTRA, ...viajes.flatMap(x=>itemsExtra(x).map(i=>i[0]))])].map(x=>`<option value="${esc(x)}">`).join('');
   lista('dlPatio','patio'); lista('dlCond','conductor'); lista('dlPlaca','placa'); lista('dlFwd','fwd');
   marcarCambios();
+}
+const CONCEPTOS_EXTRA = ['Cita','Standby','Cargue','Descargue','Pernocta','Escolta','Almacenaje','Movimiento de contenedor'];
+const filaExtra = ([k, x] = ['', 0]) => `<div class="exrow"><input class="exc" list="dlExtra" placeholder="Concepto" value="${esc(k)}"><input class="exv" inputmode="numeric" placeholder="$" value="${x||''}"><button type="button" class="link" data-del title="Quitar">✕</button></div>`;
+// lo que se escribe en las filas pasa a "Concepto extracostos" (Cita: 60000; …) y la suma a Extracostos
+function syncExtras(){
+  const filas = [...document.querySelectorAll('#mExtras .exrow')].map(r => [r.querySelector('.exc').value.trim(), r.querySelector('.exv').value.replace(/[^\d]/g,'')]).filter(([k, x]) => k || x);
+  const c = document.querySelector('#mForm [data-k=conceptoExtra]'), t = document.querySelector('#mForm [data-k=extracostos]');
+  if (!c) return;
+  c.value = filas.map(([k, x]) => `${k || 'Extracosto'}: ${x || 0}`).join('; ');
+  const s = filas.reduce((a, [, x]) => a + (Number(x)||0), 0);
+  t.value = s ? String(s) : '';
 }
 // datos del formulario distintos a los del viaje
 function cambiosForm(v){
@@ -1220,7 +1273,11 @@ $('#mSave').onclick = () => {
   if (Object.keys(cambios).length) guardarCambio(editId, cambios, usuario);
   cerrar();
 };
-$('#mForm').addEventListener('input', () => marcarCambios());
+$('#mForm').addEventListener('input', e => { if (e.target.closest('#mExtras')) syncExtras(); marcarCambios(); });
+$('#mForm').addEventListener('click', e => {
+  if (e.target.id==='addExtra') { $('#mExtras').insertAdjacentHTML('beforeend', filaExtra()); $('#mExtras .exrow:last-child .exc').focus(); }
+  else if (e.target.closest('[data-del]')) { e.target.closest('.exrow').remove(); syncExtras(); marcarCambios(); }
+});
 
 /* ---------- llenar datos desde correos (con revisión y aprobación) ---------- */
 let PROP = [];
