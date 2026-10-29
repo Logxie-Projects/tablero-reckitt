@@ -397,7 +397,7 @@ tr:hover td{background:var(--surface-2)}
 <div class="ov" id="ovBarrido">
   <div class="modal" role="dialog" aria-modal="true" style="width:min(980px,100%)">
     <h3>Correos de los últimos 2 días</h3>
-    <div class="sub">Lectura directa del buzón de calidad@ con las reglas de detección (sin LogxIA): instrucciones, órdenes de retiro, levantes y nuevas exportaciones, y si ya están en la base. No cambia nada hasta que usted cree un viaje.</div>
+    <div class="sub">Lectura directa del buzón de calidad@ con las reglas de detección (sin LogxIA). Por cada correo: si el viaje ya está en la base puede abrirlo o, si el correo trae datos que faltan o cambiaron, "Actualizar viaje"; si no está, "Crear importación" o "Crear exportación". Nada cambia sin su clic y su nombre, y nunca se cierra un viaje (eso lo hace facturación).</div>
     <div id="barridoLista" style="margin-top:12px"></div>
     <div class="mfoot"><input id="barridoUsuario" placeholder="Su nombre (para crear viajes)" style="width:220px;margin-right:auto"><button class="btn" id="barridoCerrar">Cerrar</button></div>
   </div>
@@ -1546,7 +1546,9 @@ async function abrirBarrido(){
 function cambiosDeCorreo(c){
   const b = c.enBase || {}, ch = {};
   if (b.operacion === 'IMPO') {
-    if (c.fechaDescargue && c.fechaDescargue !== b.fechaCargue) ch.fechaCargue = c.fechaDescargue;
+    // con subviaje, la fecha del correo es la del urbano (se ve en el subviaje), no la entrega del viaje padre
+    const padre = viajes.find(x => x.id === c.viajeId), conSub = padre && hijosDe(padre).length;
+    if (c.fechaDescargue && c.fechaDescargue !== b.fechaCargue && !conSub) ch.fechaCargue = c.fechaDescargue;
     if (c.tipo === 'Orden de retiro' && !b.fechaLevante) ch.fechaLevante = c.fecha.slice(0,10);
     const bod = bodegaDeCorreo(c.lugar);
     if (bod && !b.bodega) ch.bodega = bod;
