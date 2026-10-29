@@ -305,6 +305,7 @@ tr:hover td{background:var(--surface-2)}
     <div class="spacer"></div>
     <div class="conn"><span class="dot" id="connDot"></span><span id="connTxt">Modo demo</span></div>
     <button class="btn" id="btnTheme" title="Cambiar tema">◐</button>
+    <button class="btn solo-interno" id="btnBarrido" title="Lee ya mismo el buzón de calidad@ (últimos 2 días) y muestra qué correos de Reckitt y sus agentes no están en la base">⟳ Buscar correos ahora</button>
     <button class="btn solo-interno" id="btnCorreos" title="Datos que LogxIA encontró en los correos, para revisar y aprobar">✉ Llenar datos desde correos</button>
     <button class="btn" id="btnCsv">Exportar CSV</button>
   </div>
@@ -393,6 +394,14 @@ tr:hover td{background:var(--surface-2)}
   </section>
 </main>
 
+<div class="ov" id="ovBarrido">
+  <div class="modal" role="dialog" aria-modal="true" style="width:min(980px,100%)">
+    <h3>Correos de los últimos 2 días</h3>
+    <div class="sub">Lectura directa del buzón de calidad@ con las reglas de detección (sin LogxIA): instrucciones, órdenes de retiro, levantes y nuevas exportaciones, y si ya están en la base. No cambia nada hasta que usted cree un viaje.</div>
+    <div id="barridoLista" style="margin-top:12px"></div>
+    <div class="mfoot"><input id="barridoUsuario" placeholder="Su nombre (para crear viajes)" style="width:220px;margin-right:auto"><button class="btn" id="barridoCerrar">Cerrar</button></div>
+  </div>
+</div>
 <div class="ov" id="ovProp">
   <div class="modal" role="dialog" aria-modal="true" style="width:min(860px,100%)">
     <h3>Llenar datos desde correos</h3>
@@ -1517,6 +1526,70 @@ $('#subCrear').onclick = async () => {
   } catch(e) { toast('No se pudo crear el subviaje: ' + e.message); }
   $('#subCrear').disabled = false;
 };
+
+/* ---------- buscar correos ahora: lectura directa del buzón de calidad@ (reglas fijas) ---------- */
+let BARRIDO = [];
+const BODEGAS_CORREO = [[/cortijo/i, 'DHL Cortijo'], [/agecolda/i, 'Agecolda'], [/solistica/i, 'Solistica']];
+async function abrirBarrido(){
+  if (!CFG.SHEETS_API_URL || !window.CLAVE) return toast('Funciona desde el tablero publicado');
+  $('#barridoLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">Leyendo el buzón de calidad@…</div>';
+  try { $('#barridoUsuario').value = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
+  $('#ovBarrido').classList.add('open');
+  try {
+    const r = await fetch(CFG.SHEETS_API_URL + '?formato=json&que=correos&dias=2&clave=' + encodeURIComponent(window.CLAVE));
+    const t = await r.text();
+    let j; try { j = JSON.parse(t); } catch(e) { throw new Error('el servidor aún no tiene permiso para leer el buzón de calidad@'); }
+    if (!j.ok) throw new Error(j.error || 'error');
+    BARRIDO = j.correos || [];
+  } catch(e) { $('#barridoLista').innerHTML = `<div class="sub" style="padding:20px;text-align:center">No se pudo leer el buzón: ${esc(e.message)}.</div>`; return; }
+  pintarBarrido();
+}
+function pintarBarrido(){
+  if (!BARRIDO.length) { $('#barridoLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">No hay correos del ciclo de operación en los últimos 2 días.</div>'; return; }
+  const fila = (c, i) => {
+    let estado;
+    if (c.viajeId) {
+      const avisos = [];
+      if (c.fechaDescargue && c.enBase && c.enBase.fechaCargue && c.fechaDescargue !== c.enBase.fechaCargue) avisos.push(`fecha distinta: base ${fd(c.enBase.fechaCargue)}, correo ${fd(c.fechaDescargue)}`);
+      if (c.tipo==='Orden de retiro' && c.enBase && !c.enBase.fechaLevante) avisos.push('falta la fecha de entrega de documentos');
+      estado = `<span style="color:var(--ok);font-weight:600">✓ ${esc(c.viajeId)}</span>${avisos.map(a=>`<br><span style="color:var(--warn)">⚠ ${esc(a)}</span>`).join('')}`;
+    } else if (c.tipo==='Nueva exportación' || c.tipo==='Comodato') {
+      estado = '<span class="sub">Revisar a mano</span>';
+    } else {
+      estado = `<span style="color:var(--bad);font-weight:600">No está en la base</span><br><button class="btn primary" style="margin-top:4px;padding:3px 10px" data-crear="${i}">Crear viaje</button>`;
+    }
+    const datos = [c.do && 'DO '+c.do, c.pedido && 'PO '+c.pedido, c.contenedor].filter(Boolean).map(esc).join(' · ');
+    const desc = [c.lugar, c.fechaDescargue && fd(c.fechaDescargue), c.hora, c.puerto && (c.puerto+(c.terminal?' ('+c.terminal+')':'')), c.devolucion && 'devol. '+c.devolucion].filter(Boolean).map(esc).join(' · ');
+    return `<tr><td class="sub" style="white-space:nowrap">${esc(c.fecha.slice(5,16).replace('T',' '))}</td><td><b>${esc(c.tipo)}</b><br><span class="sub">${esc(c.firma || c.remitente.replace(/<.*>/,''))}</span></td>
+      <td>${datos || '—'}<br><span class="sub" title="${esc(c.asunto)}">${esc(c.asunto.slice(0,70))}${c.asunto.length>70?'…':''}</span></td><td>${desc || '—'}</td><td>${estado}</td></tr>`;
+  };
+  $('#barridoLista').innerHTML = `<div class="tbl-wrap"><table class="prop"><tr><th>Llegó</th><th>Tipo</th><th>DO · Pedido · Contenedor</th><th>Descargue / retiro</th><th>En la base</th></tr>${BARRIDO.map(fila).join('')}</table></div>
+    <p class="sub" style="margin-top:6px">${BARRIDO.length} correo${BARRIDO.length===1?'':'s'} · ${BARRIDO.filter(c=>!c.viajeId && c.tipo!=='Nueva exportación' && c.tipo!=='Comodato').length} sin viaje en la base.</p>`;
+}
+async function crearDesdeCorreo(c){
+  const usuario = $('#barridoUsuario').value.trim();
+  if (!usuario) { $('#barridoUsuario').focus(); return toast('Escriba su nombre para crear el viaje'); }
+  try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
+  const bodega = (BODEGAS_CORREO.find(([re]) => re.test(c.lugar||'')) || [null, c.lugar ? c.lugar.replace(/\b\w/g, x=>x).trim() : ''])[1];
+  const puerto = /buenaventura/i.test(c.puerto) ? 'Buenaventura' : /cartagena/i.test(c.puerto) ? 'Cartagena' : '';
+  const campos = {situacion:'Abierto', estado:'Sin asignar', pedido:c.pedido, do:c.do, contenedor:c.contenedor, puerto, bodega,
+    destino: /cortijo|agecolda/i.test(bodega) ? 'Yumbo' : '', fechaCargue:c.fechaDescargue, ciudadDevolucion: c.devolucion==='CLO' ? 'Cali' : '',
+    empresa:c.empresa, solicitante: /diana/i.test(c.firma) ? 'Diana Carolina Toro' : '',
+    fechaLevante: c.tipo==='Orden de retiro' ? c.fecha.slice(0,10) : '',
+    observacion: `Correo ${c.tipo} ${c.fecha.slice(0,10)}: ${[c.lugar, c.fechaDescargue && fd(c.fechaDescargue), c.hora, c.terminal && 'terminal '+c.terminal, c.devolucion && 'devolución '+c.devolucion].filter(Boolean).join(' · ')}`};
+  try {
+    const r = await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({action:'nuevo', clave:window.CLAVE, operacion:'IMPO', campos, usuario: usuario + ' (desde correo)'})});
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'error');
+    c.viajeId = j.id; pintarBarrido();
+    toast(`Viaje ${j.id} creado: queda arriba como NUEVO hasta que alguien lo tome`);
+    await cargar(); render();
+  } catch(e) { toast('No se pudo crear el viaje: ' + e.message); }
+}
+$('#btnBarrido').onclick = abrirBarrido;
+$('#barridoCerrar').onclick = () => $('#ovBarrido').classList.remove('open');
+$('#ovBarrido').onclick = e => { if (e.target.id==='ovBarrido') $('#ovBarrido').classList.remove('open'); const b = e.target.closest('[data-crear]'); if (b) { b.disabled = true; crearDesdeCorreo(BARRIDO[+b.dataset.crear]); } };
 
 /* ---------- navegación y eventos ---------- */
 $('#nav').onclick = e => { const b=e.target.closest('button'); if(!b) return;
