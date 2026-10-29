@@ -215,15 +215,19 @@ tr:hover td{background:var(--surface-2)}
 .ruta .cab{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
 .tg{font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600;white-space:nowrap}
 .ruta .tg{font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600}
-.ruta .cuerpo{display:grid;grid-template-columns:150px minmax(0,1fr) 230px;gap:14px;align-items:start}
-.ruta .resumen{border-left:1px solid var(--border);padding-left:14px;font-size:12px}
+.ruta .cuerpo{display:grid;grid-template-columns:150px minmax(0,1fr);gap:14px;align-items:start}
+/* tarjeta lean: operación a la izquierda, facturación (etiqueta + resúmenes) a la derecha */
+.ruta .dos{display:grid;grid-template-columns:minmax(0,1fr) 230px;gap:14px}
+.ruta .der{border-left:1px solid var(--border);padding-left:14px}
+.ruta .der .fin{text-align:right;min-height:22px;margin-bottom:10px}
+.ruta .resumen{font-size:12px}
 .ruta .resumen h4{margin:0 0 6px;font-size:12px}
 .ruta .resumen h4+div{margin-bottom:12px}
 .ruta .resumen .ln{display:flex;justify-content:space-between;gap:8px;line-height:1.6}
 .ruta .resumen .ln span:first-child{color:var(--muted)}
 .ruta .resumen .ln.tot{border-top:1px solid var(--border);margin-top:2px;font-weight:600}
 .ruta .resumen .ln.tot span:first-child{color:var(--text)}
-@media (max-width:1100px){.ruta .cuerpo{grid-template-columns:150px minmax(0,1fr)}.ruta .resumen{grid-column:1/-1;border-left:0;padding-left:0;border-top:1px solid var(--border);padding-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:16px}}
+@media (max-width:1100px){.ruta .dos{grid-template-columns:1fr}.ruta .der{border-left:0;padding-left:0;border-top:1px solid var(--border);padding-top:10px}.ruta .der .fin{text-align:left}.ruta .resumen{display:grid;grid-template-columns:1fr 1fr;gap:16px}}
 .exrow{display:grid;grid-template-columns:minmax(0,1fr) 130px auto;gap:6px;margin-bottom:6px}
 .ruta .cont{border:1.5px solid var(--text);border-radius:4px;padding:5px 4px;text-align:center;flex:1}
 .ruta .cabina{width:24px;height:28px;border:1.5px solid var(--text);border-radius:4px 8px 4px 4px;background:var(--surface-2)}
@@ -1127,11 +1131,11 @@ function rutaPedido(v){
     : (hacia[P[n][0]] || 'Hacia '+P[n][0].toLowerCase())+' · '+P[n][1];
   const col = sit==='Cerrado' ? 'var(--ok)' : n===0 ? 'var(--muted)' : 'var(--accent)';
   const ref = v.operacion==='IMPO' ? (v.pedido ? 'Pedido '+v.pedido : v.id) : (v.booking ? 'Booking '+v.booking : v.id);
-  return `<div class="ruta">
+  return `<div class="ruta"><div class="dos"><div class="izq">
     <div class="cab"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
       <span class="op ${v.operacion}">${v.operacion}</span><b>${esc(v.empresa||'Empresa sin definir')} · ${esc(ref)}</b>
       <span class="sub">${esc([v.solicitante && 'Solicita '+v.solicitante, v.fwd].filter(Boolean).join(' · '))}</span></div>
-      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span>${finTransporte(v, P, n)}</div></div>
+      <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span></div>
     ${v.observacion ? `<div class="sub" style="margin:-4px 0 10px">💬 ${esc(v.observacion)}</div>` : ''}
     <div class="cuerpo"><div>
       <div style="display:flex;align-items:flex-end;gap:2px"><div class="cont"><b style="font-size:12px">${esc(v.contenedor||'—')}</b><div class="sub">${esc(v.unidad||'')}</div></div><div class="cabina"></div></div>
@@ -1143,7 +1147,8 @@ function rutaPedido(v){
           <div class="caja">${et}<b>${esc(lugar)}</b>${det.filter(Boolean).map(esc).join('<br>')}</div></div>`).join('')}</div>
       <div class="esp"><span></span>${esperas.map(d=> `<span>${d===null?'':d+' d'}</span>`).join('')}</div>
       <div class="pie">${v.operacion==='IMPO' && demora(v) ? `<span style="color:var(--bad)">${demora(v)} d de demora del vacío</span>`:''}<span>${sitTag(v)}</span><span>${esc(v.id)}</span></div>
-    </div>${resumenRuta(v)}</div></div>`;
+    </div></div></div>
+    <div class="der"><div class="fin">${finTransporte(v, P, n)}</div>${resumenRuta(v)}</div></div></div>`;
 }
 
 function abrir(id){
