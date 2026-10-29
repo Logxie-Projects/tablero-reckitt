@@ -506,11 +506,11 @@ function normalizar(v, i){
   return v;
 }
 // Filtros globales (operación, situación, sede, empresa, solicitante y FWD): aplican a todas las vistas y se recuerdan en este navegador
-let G = {op:'', sit:'Abierto', sede:'', emp:'', sol:'', fwd:''};
+let G = {op:'', sit:'Abierto', sede:'', emp:'', sol:'', fwd:'', ped:'', bk:''};
 try { Object.assign(G, JSON.parse(localStorage.getItem('rkt-filtros')) || {}); } catch(e){}
 G.sit = {Abiertos:'Abierto', Cerrados:'Cerrado'}[G.sit] || G.sit;
 // listas desplegables: campo del viaje y texto cuando está vacío
-const FILTROS_LISTA = [['sede','sede','Sede','Sin sede'], ['emp','empresa','Empresa','Sin empresa'], ['sol','solicitante','Solicitante','Sin solicitante'], ['fwd','fwd','FWD / agente','Sin FWD']];
+const FILTROS_LISTA = [['sede','sede','Sede','Sin sede'], ['emp','empresa','Empresa','Sin empresa'], ['sol','solicitante','Solicitante','Sin solicitante'], ['fwd','fwd','FWD / agente','Sin FWD'], ['ped','pedido','Pedido','Sin pedido'], ['bk','booking','Booking / BL','Sin booking']];
 const valorFiltro = (v, campo, vacio) => String(v[campo]||'').trim() || vacio;
 const enListas = v => !v.padre && FILTROS_LISTA.every(([k, campo, , vacio]) => !G[k] || valorFiltro(v, campo, vacio)===G[k]);
 const enGlobal = v => (!G.op || v.operacion===G.op) && enSituacion(v, G.sit) && enListas(v);
