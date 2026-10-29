@@ -1393,7 +1393,7 @@ function marcarCambios(){
 }
 function cerrar(){ $('#ov').classList.remove('open'); editId=null; }
 $('#mStates').onclick = e => { const b=e.target.closest('button'); if(!b) return; estadoSel=b.dataset.e; pintarEstados();
-  // el viaje solo se cierra a mano (STATUS = Cerrado, lo hace facturación); marcar "Entregado" no lo cierra
+  // el viaje solo se cierra a mano (STATUS = Cerrado) o al registrar N° y fecha de factura; marcar "Entregado" no lo cierra
   const sit = $('#mForm [data-k=situacion]');
   if (sit && estadoSel==='Cancelado') sit.value = 'Cancelado';
   marcarCambios(); };
@@ -1415,6 +1415,12 @@ $('#mForm').addEventListener('input', e => { if (e.target.closest('#mExtras')) s
   const ff = $('#mForm [data-k=fechaFactura]');
   // marcar Facturado propone la fecha de factura; cerrar el viaje (STATUS) lo hace facturación a mano
   if (e.target.dataset.k==='facturacion' && e.target.value==='Facturado' && ff && !ff.value) ff.value = HOY;
+  // con N° de factura y fecha de factura el viaje queda cerrado (lo registra facturación); el servidor aplica la misma regla
+  const nf = $('#mForm [data-k=numFactura]'), sit = $('#mForm [data-k=situacion]'), fac = $('#mForm [data-k=facturacion]');
+  if (nf && ff && nf.value.trim() && ff.value && ['numFactura','fechaFactura'].includes(e.target.dataset.k)) {
+    if (sit && sit.value !== 'Cancelado') sit.value = 'Cerrado';
+    if (fac) fac.value = 'Facturado';
+  }
   marcarCambios(); });
 $('#mForm').addEventListener('click', e => {
   if (e.target.id==='addExtra') { $('#mExtras').insertAdjacentHTML('beforeend', filaExtra()); $('#mExtras .exrow:last-child .exc').focus(); }
