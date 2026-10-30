@@ -1037,7 +1037,10 @@ function itemsExtra(v){
 function cobro(v){
   const tarifa = Number(v.tarifa) || 0, extra = Number(v.extracostos) || itemsExtra(v).reduce((s,x)=>s+x[1],0);
   const aprob = extra ? (v.aprobacionExtra || 'Pendiente') : '';
-  const fact = v.facturacion || (situacion(v)==='Cerrado' ? 'Pendiente por facturar' : situacion(v)==='Cancelado' ? '' : 'En curso');
+  // igual que la tarjeta: pendiente por facturar = transporte finalizado (EXPO entregado en puerto, IMPO vacío devuelto) y aún sin
+  // "En autorización" ni "Facturado". Un cerrado sin transporte finalizado (reprogramado) no se factura.
+  const fact = ['Facturado','En autorización'].includes(v.facturacion) ? v.facturacion
+    : (situacion(v)==='Cancelado' || v.estado==='Cancelado') ? '' : transporteFinalizado(v) ? 'Pendiente por facturar' : 'En curso';
   return {tarifa, extra, aprob, fact, total: tarifa + (aprob==='Aprobado' ? extra : 0)};
 }
 const COLOR_COBRO = {'Aprobado':'var(--ok)', 'Facturado':'var(--ok)', 'Rechazado':'var(--bad)', 'Pendiente':'var(--warn)', 'Pendiente por facturar':'var(--warn)', 'En autorización':'var(--accent)'};
@@ -1220,10 +1223,14 @@ function tarjetaHijo(s, padre){
     <div class="hijo-f" style="text-align:right"><b>${pesos(costoViaje(s))}</b></div>
   </div>`;
 }
+// transporte finalizado: EXPO pasó la parada Puerto; IMPO cumplió todas las paradas (vacío devuelto, con el urbano si hay subviaje)
+function transporteFinalizado(v, P, n){
+  if (!P) ({P, n} = avance(v));
+  return v.estado!=='Cancelado' && (v.operacion==='EXPO' ? n > P.findIndex(p=>p[0]==='Puerto') : n >= P.length);
+}
 function finTransporte(v, P, n){
-  const fin = v.operacion==='EXPO' ? n > P.findIndex(p=>p[0]==='Puerto') : n >= P.length;
-  if (!fin || v.estado==='Cancelado') return '';
-  const s = ['Facturado','En autorización'].includes(v.facturacion) ? v.facturacion : 'Pendiente por facturar', col = COLOR_COBRO[s];
+  if (!transporteFinalizado(v, P, n) || situacion(v)==='Cancelado') return '';
+  const s = cobro(v).fact, col = COLOR_COBRO[s];
   return `<div class="fin"><span class="hecho">✓ Transporte finalizado${fechaFinTransporte(v) ? ' '+fd(fechaFinTransporte(v)) : ''}</span><span class="est" style="background:color-mix(in srgb, ${col} 14%, transparent);color:${col}">${s}${v.numFactura?' · '+esc(v.numFactura):''}</span></div>`;
 }
 const lnR = (a, b) => `<div class="ln"><span>${a}</span><span>${b}</span></div>`;
