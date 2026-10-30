@@ -695,7 +695,7 @@ function chipsGlobales(){
   return sel('op', 'IMPO/EXPO', [['', 'ambas', n('', G.sit)], ['IMPO', 'IMPO', n('IMPO', G.sit)], ['EXPO', 'EXPO', n('EXPO', G.sit)]])
     + sel('sit', 'STATUS', [...situacionesPresentes().map(s=>[s, PLURAL[s]||s, n(G.op, s)]), ['', 'Todos', n(G.op, '')]])
     + `<span class="sub">|</span><input type="search" class="gsel gbus ${G.q.trim()?'on':''}" data-gq aria-label="Buscar en los viajes" placeholder="🔍 Buscar: placa, contenedor, RBHY, DO…" value="${esc(G.q)}">
-    <select class="gsel ${G.fact?'on':''}" data-gsel="fact" aria-label="Facturación"><option value="">Facturación: todos</option>${[...FACTURACION, 'En curso'].map(x=>`<option ${G.fact===x?'selected':''}>${esc(x)}</option>`).join('')}</select>
+    <select class="gsel ${G.fact?'on':''}" data-gsel="fact" aria-label="Facturación"><option value="">Facturación: todos</option>${ETAPAS_FACTURACION.map(x=>`<option ${G.fact===x?'selected':''}>${esc(x)}</option>`).join('')}</select>
     ${FILTROS_LISTA.map(([k, campo, titulo, vacio]) => {
       const vals = [...new Set(viajes.map(v=>valorFiltro(v, campo, vacio)))].sort((a,b)=> (a===vacio)-(b===vacio) || a.localeCompare(b));
       return `<select class="gsel ${G[k]?'on':''}" data-gsel="${k}" aria-label="${titulo}"><option value="">${titulo}: todos</option>${vals.map(x=>`<option value="${esc(x)}" ${G[k]===x?'selected':''}>${esc(x)}</option>`).join('')}</select>`; }).join('')}`;
@@ -905,7 +905,7 @@ function renderKpis(){ const act = activos();
 // viajes cerrados sin facturar (y su valor) y extracostos que esperan la aprobación de Reckitt
 function cobroKpi(){
   const C = visibles().map(v=>[v, cobro(v)]);
-  const porFact = C.filter(([,c])=>c.fact==='Pendiente por facturar' || c.fact==='En autorización'), extra = C.filter(([,c])=>c.aprob==='Pendiente');
+  const porFact = C.filter(([,c])=>c.fact==='Pendiente por facturar' || c.fact==='En aprobación Reckitt'), extra = C.filter(([,c])=>c.aprob==='Pendiente');
   const suma = porFact.reduce((s,[,c])=>s+c.total,0);
   const lf = visibles().map(leadFactura).filter(x=>x && x.hecho), promF = lf.length ? Math.round(lf.reduce((s,x)=>s+x.dias,0)/lf.length*10)/10 : null;
   return {l:'Pendiente por facturar', v: porFact.length, h:`${suma ? pesos(suma)+' · ' : ''}${promF!==null ? `facturan en ${promF} d · ` : ''}${C.filter(([,c])=>c.fact==='Facturado').length} facturados<br>${extra.length} extracosto${extra.length===1?'':'s'} por aprobar${extra.length?' · '+pesos(extra.reduce((s,[,c])=>s+c.extra,0)):''}`, bad: extra.length>0};
@@ -1046,13 +1046,17 @@ function itemsExtra(v){
 function cobro(v){
   const tarifa = Number(v.tarifa) || 0, extra = Number(v.extracostos) || itemsExtra(v).reduce((s,x)=>s+x[1],0);
   const aprob = extra ? (v.aprobacionExtra || 'Pendiente') : '';
-  // igual que la tarjeta: pendiente por facturar = transporte finalizado (EXPO entregado en puerto, IMPO vacío devuelto) y aún sin
-  // "En autorización" ni "Facturado". Un cerrado sin transporte finalizado (reprogramado) no se factura.
-  const fact = ['Facturado','En autorización'].includes(v.facturacion) ? v.facturacion
-    : (situacion(v)==='Cancelado' || v.estado==='Cancelado') ? '' : transporteFinalizado(v) ? 'Pendiente por facturar' : 'En curso';
+  // etapa de facturación (igual en filtro, indicador, chat y tarjeta):
+  //  Aún no facturable → el transporte no ha terminado · Pendiente por facturar → terminó y facturación no ha hecho nada ·
+  //  En aprobación Reckitt → facturación envió la relación y Reckitt debe aprobar · Facturado → con N° y fecha de factura ·
+  //  Sin servicio → cerrado sin que el transporte terminara (reprogramado o anulado)
+  const marcada = etapaFacturacion(v.facturacion);
+  const fact = ['Facturado','En aprobación Reckitt'].includes(marcada) ? marcada
+    : (situacion(v)==='Cancelado' || v.estado==='Cancelado') ? '' : transporteFinalizado(v) ? 'Pendiente por facturar'
+    : situacion(v)==='Cerrado' ? 'Sin servicio' : 'Aún no facturable';
   return {tarifa, extra, aprob, fact, total: tarifa + (aprob==='Aprobado' ? extra : 0)};
 }
-const COLOR_COBRO = {'Aprobado':'var(--ok)', 'Facturado':'var(--ok)', 'Rechazado':'var(--bad)', 'Pendiente':'var(--warn)', 'Pendiente por facturar':'var(--warn)', 'En autorización':'var(--accent)'};
+const COLOR_COBRO = {'Aprobado':'var(--ok)', 'Facturado':'var(--ok)', 'Rechazado':'var(--bad)', 'Pendiente':'var(--warn)', 'Pendiente por facturar':'var(--warn)', 'En aprobación Reckitt':'var(--accent)', 'Aún no facturable':'var(--muted)', 'Sin servicio':'var(--muted)'};
 const tagCobro = (s, pre='') => s ? `<span class="tg" style="background:color-mix(in srgb, ${COLOR_COBRO[s]||'var(--muted)'} 15%, transparent);color:${COLOR_COBRO[s]||'var(--muted)'}">${esc(pre+s)}</span>` : '';
 function celdaCobro(v){
   const c = cobro(v);
@@ -1235,7 +1239,8 @@ function tarjetaHijo(s, padre){
 // transporte finalizado: EXPO pasó la parada Puerto; IMPO cumplió todas las paradas (vacío devuelto, con el urbano si hay subviaje)
 function transporteFinalizado(v, P, n){
   if (!P) ({P, n} = avance(v));
-  return v.estado!=='Cancelado' && (v.operacion==='EXPO' ? n > P.findIndex(p=>p[0]==='Puerto') : n >= P.length);
+  // hace falta la fecha (EXPO entrega en puerto, IMPO devolución del vacío): el Estado escrito a mano no basta
+  return v.estado!=='Cancelado' && !!fechaFinTransporte(v) && (v.operacion==='EXPO' ? n > P.findIndex(p=>p[0]==='Puerto') : n >= P.length);
 }
 function finTransporte(v, P, n){
   if (!transporteFinalizado(v, P, n) || situacion(v)==='Cancelado') return '';
@@ -1357,8 +1362,11 @@ function pintarEstados(){
 const EMPRESAS = ['Reckitt Benckiser','Reckitt Health','Reckitt Hygiene','Mead Johnson'];
 const CAMPOS_VIAJE = [['situacion','STATUS','sit'],['empresa','Empresa','lista',EMPRESAS],['solicitante','Solicitante'],['booking','Booking / BL'],['pedido','Pedido'],['do','DO'],
   ['contenedor','Contenedor'],['unidad','Unidad','lista',['1X20','1X40']],['conductor','Conductor','dl','dlCond'],['placa','Placa','dl','dlPlaca'],['fwd','FWD','dl','dlFwd']];
-// "En autorización": facturación envió la relación a Reckitt y espera el visto bueno para facturar
-const FACTURACION = ['Pendiente por facturar','En autorización','Facturado'];
+// lo que facturación marca en el viaje ("En aprobación Reckitt": envió la relación y Reckitt debe aprobar); el resto lo calcula cobro()
+const FACTURACION = ['Pendiente por facturar','En aprobación Reckitt','Facturado'];
+const ETAPAS_FACTURACION = ['Aún no facturable','Pendiente por facturar','En aprobación Reckitt','Facturado','Sin servicio'];
+// nombre anterior de la etapa
+const etapaFacturacion = x => x === 'En autorización' ? 'En aprobación Reckitt' : (x || '');
 const CAMPOS_ETAPA = {
   EXPO: [['Retiro del vacío', [['patio','Patio de retiro','dl','dlPatio'],['fechaRetiro','Fecha de retiro','fecha']]],
     ['Llenado en planta', [['fechaCargue','Fecha de llenado','fecha'],['sello','Sello'],['vgm','VGM']]],
@@ -1885,7 +1893,7 @@ function cambiosDeTexto(q, v){
     ch.numFactura = m[1].toUpperCase(); ch.fechaFactura = fechaDeTexto(q) || HOY;
     notas.push('Con N° y fecha de factura el viaje queda <b>Cerrado y Facturado</b>.');
   }
-  if (/\ben autorizacion\b/.test(t)) ch.facturacion = 'En autorización';
+  if (/\ben (autorizacion|aprobacion)\b/.test(t)) ch.facturacion = 'En aprobación Reckitt';
   if ((m = q.match(/\b(?:observaci[oó]n|novedad|nota)\s*:\s*(.+)$/i))) ch.observacion = m[1].trim();
   if (/\bnovedad\b/.test(t)) ch.estado = 'Novedad';
   // lo que ya está igual no se propone
@@ -1897,7 +1905,7 @@ const etiquetaCampo = (v, k) => ({estado:'Estado', observacion:'Observación', e
 // frase de cambio (no pregunta): una fecha de la operación o un dato del viaje
 const esPregunta = q => /[¿?]/.test(q) || /^\s*(status|estado|como|donde|cual|cuales|que|quien|cuando)\b/.test(minus(q));
 const pideCambio = q => !esPregunta(q) && (REGLAS_FECHA_CHAT.some(([, re]) => re.test(minus(q)))
-  || /\b(placa\s+[a-z]{3}|conductor|rbhy|obd|tarifa|flete|factura|novedad|observacion\s*:|nota\s*:|en autorizacion)\b/.test(minus(q)));
+  || /\b(placa\s+[a-z]{3}|conductor|rbhy|obd|tarifa|flete|factura|novedad|observacion\s*:|nota\s*:|en autorizacion|en aprobacion)\b/.test(minus(q)));
 let CHAT_PEND = null;   // frase de cambio que espera saber de qué viaje es, o varios viajes para elegir
 function proponerCambio(v, q){
   const {ch, notas} = cambiosDeTexto(q, v);
@@ -1933,7 +1941,9 @@ function filtroDeTexto(q){
   if (!/\b(filtra|filtrar|filtre|muestra|muestrame|mostrar|lista|listar|ver|cuales|cuantos|busca|buscar)\b/.test(t)) return null;
   const f = {};
   if (/\b(pendientes?|falta|faltan)\b.*\bfactur|\bsin facturar\b|\bpor facturar\b/.test(t)) f.fact = 'Pendiente por facturar';
-  else if (/\ben autorizacion\b/.test(t)) f.fact = 'En autorización';
+  else if (/\ben (autorizacion|aprobacion)\b/.test(t)) f.fact = 'En aprobación Reckitt';
+  else if (/\b(no facturable|aun no)\b/.test(t)) f.fact = 'Aún no facturable';
+  else if (/\bsin servicio\b/.test(t)) f.fact = 'Sin servicio';
   else if (/\bfacturad[oa]s\b/.test(t)) f.fact = 'Facturado';
   if (/\bexpo(rtacion(es)?)?\b/.test(t)) f.op = 'EXPO'; else if (/\bimpo(rtacion(es)?)?\b/.test(t)) f.op = 'IMPO';
   if (/\bcerrados\b/.test(t)) f.sit = 'Cerrado'; else if (/\babiertos\b/.test(t)) f.sit = 'Abierto';
