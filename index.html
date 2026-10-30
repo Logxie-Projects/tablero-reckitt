@@ -557,23 +557,39 @@ function enTexto(v){
 const enListas = v => !v.padre && FILTROS_LISTA.every(([k, campo, , vacio]) => !G[k] || valorFiltro(v, campo, vacio)===G[k]) && enTexto(v) && (!G.fact || cobro(v).fact===G.fact);
 // con algo escrito en el buscador se busca en todos los viajes, abiertos y cerrados
 // con texto en el buscador, o con un filtro de Facturación o de Foco, se mira en todos los viajes (abiertos y cerrados)
-const enGlobal = v => (!G.op || v.operacion===G.op) && (G.q.trim() || G.fact || G.foco || enSituacion(v, G.sit)) && enListas(v) && (!G.foco || focoDe(v)===G.foco);
+const enGlobal = v => (!G.op || v.operacion===G.op) && (G.q.trim() || G.fact || G.foco || enSituacion(v, G.sit)) && enListas(v)
+  && (!G.foco || (G.foco===FOCO_OPS ? pendientesOps(v).length > 0 : focoDe(v)===G.foco));
 /* ---------- foco del equipo operativo: en qué está cada viaje y qué le falta ---------- */
 // cada viaje cae en un solo grupo, en el orden de la operación
 const FOCOS = ['Por asignar vehículo','Por iniciar','En tránsito','En bodega de paso','Terminado · faltan datos','Listo para facturar','En facturación','Sin servicio'];
+// vista de conjunto (no es un grupo): todos los viajes, en cualquier etapa, a los que operaciones les debe algo
+const FOCO_OPS = '⚠ Con pendientes de operaciones';
 const terminoTransporte = v => v.operacion==='EXPO' ? ['Entregado en puerto','Zarpó'].includes(v.estado) : v.estado==='Vacío devuelto';
-// lo que le falta a un viaje cuyo transporte terminó, para cerrarlo bien y poder facturarlo
-function pendientesDe(v){
+// lo que operaciones le debe a un viaje (en cualquier etapa): cierre del transporte, subviaje, causa de reprogramación y los errores de la hoja
+function pendientesOps(v){
+  if (situacion(v)==='Cancelado' || v.estado==='Cancelado' || cobro(v).fact==='Sin servicio') return [];
   const f = [];
-  if (v.operacion==='EXPO') { if (!v.fechaEntregaPuerto) f.push('fecha de entrega en puerto'); if (!v.tirillaEntrega) f.push('tirilla de entrega'); if (!v.rbhy || !v.obd) f.push('RBHY / OBD'); }
-  else { if (!v.fechaDevolucion) f.push('fecha de devolución'); if (!v.tirillaDevolucion) f.push('tirilla de devolución'); }
+  if (terminoTransporte(v)) {
+    if (v.operacion==='EXPO') { if (!v.fechaEntregaPuerto) f.push('fecha de entrega en puerto'); if (!v.tirillaEntrega) f.push('tirilla de entrega'); }
+    else { if (!v.fechaDevolucion) f.push('fecha de devolución'); if (!v.tirillaDevolucion) f.push('tirilla de devolución'); }
+  }
   const hijos = hijosDe(v);
-  if (hijos.some(s => !s.placa || !s.fechaUrbano || !s.bodega)) f.push('datos del subviaje');
+  if (hijos.some(x => !x.placa || !x.fechaUrbano || !x.bodega)) f.push('datos del subviaje');
   if (!hijos.length && validar(v).some(e => e.campo==='Subviaje')) f.push('revisar si lleva subviaje');
   if (desviosPlan(v).some(d => d.causa==='Sin causa')) f.push('causa de la reprogramación');
+  // los errores de la pestaña Errores (sin repetir lo anterior)
+  validar(v).forEach(e => { const t = e.campo.toLowerCase(); if (e.campo!=='Subviaje' && !f.some(x => x.includes(t) || t.includes(x))) f.push(t); });
+  return [...new Set(f)];
+}
+// lo que le falta para facturar un viaje terminado (lo completa facturación o el cliente)
+function pendientesFact(v){
+  if (!terminoTransporte(v) || ['En aprobación Reckitt','Facturado','Sin servicio'].includes(cobro(v).fact)) return [];
+  const f = [];
+  if (v.operacion==='EXPO' && (!v.rbhy || !v.obd)) f.push('RBHY / OBD');
   if (!Number(v.tarifa)) f.push('tarifa');
   return f;
 }
+const pendientesDe = v => [...pendientesOps(v), ...pendientesFact(v)];
 function focoDe(v){
   if (situacion(v)==='Cancelado' || v.estado==='Cancelado') return '';
   const fact = cobro(v).fact;
@@ -730,7 +746,8 @@ function chipsGlobales(){
   return sel('op', 'IMPO/EXPO', [['', 'ambas', n('', G.sit)], ['IMPO', 'IMPO', n('IMPO', G.sit)], ['EXPO', 'EXPO', n('EXPO', G.sit)]])
     + sel('sit', 'STATUS', [...situacionesPresentes().map(s=>[s, PLURAL[s]||s, n(G.op, s)]), ['', 'Todos', n(G.op, '')]])
     + `<span class="sub">|</span><input type="search" class="gsel gbus ${G.q.trim()?'on':''}" data-gq aria-label="Buscar en los viajes" placeholder="🔍 Buscar: placa, contenedor, RBHY, DO…" value="${esc(G.q)}">
-    <select class="gsel ${G.foco?'on':''}" data-gsel="foco" aria-label="Foco del equipo" title="En qué está cada viaje y qué le falta"><option value="">🎯 Foco: todos</option>${FOCOS.map(x=>{ const n = viajes.filter(v=>!v.padre && (!G.op || v.operacion===G.op) && focoDe(v)===x).length; return `<option value="${esc(x)}" ${G.foco===x?'selected':''}>${esc(x)} · ${n}</option>`; }).join('')}</select>
+    <select class="gsel ${G.foco?'on':''}" data-gsel="foco" aria-label="Foco del equipo" title="En qué está cada viaje y qué le falta"><option value="">🎯 Foco: todos</option>${(() => { const base = viajes.filter(v=>!v.padre && (!G.op || v.operacion===G.op)); const op = (x, n) => `<option value="${esc(x)}" ${G.foco===x?'selected':''}>${esc(x)} · ${n}</option>`;
+      return op(FOCO_OPS, base.filter(v=>pendientesOps(v).length).length) + '<option disabled>──────────</option>' + FOCOS.map(x => op(x, base.filter(v=>focoDe(v)===x).length)).join(''); })()}</select>
     <select class="gsel ${G.fact?'on':''}" data-gsel="fact" aria-label="Facturación"><option value="">Facturación: todos</option>${ETAPAS_FACTURACION.map(x=>`<option ${G.fact===x?'selected':''}>${esc(x)}</option>`).join('')}</select>
     ${FILTROS_LISTA.map(([k, campo, titulo, vacio]) => {
       const vals = [...new Set(viajes.map(v=>valorFiltro(v, campo, vacio)))].sort((a,b)=> (a===vacio)-(b===vacio) || a.localeCompare(b));
@@ -1399,7 +1416,7 @@ function rutaPedido(v){
     <div class="cab"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
       ${tagNuevo(v)}<span class="op ${v.operacion}">${v.operacion}</span><b>${esc(v.empresa||'Empresa sin definir')} · ${esc(ref)}</b>
       <span class="sub">${esc([v.solicitante && 'Solicita '+v.solicitante, v.fwd].filter(Boolean).join(' · '))}</span></div>
-      <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span>${!window.MODO_CLIENTE && focoDe(v)==='Terminado · faltan datos' ? `<span class="tg" style="background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)" title="Para cerrarlo y facturarlo">Falta: ${esc(pendientesDe(v).join(' · '))}</span>` : ''}</div>
+      <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span>${!window.MODO_CLIENTE && pendientesOps(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)" title="Lo que operaciones debe completar">Falta (operaciones): ${esc(pendientesOps(v).join(' · '))}</span>` : ''}${!window.MODO_CLIENTE && pendientesFact(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--muted) 15%, transparent);color:var(--muted)" title="Para poder facturarlo">Falta (facturación): ${esc(pendientesFact(v).join(' · '))}</span>` : ''}</div>
     ${v.observacion ? `<div class="sub" style="margin:-4px 0 10px">💬 ${esc(v.observacion)}</div>` : ''}
     <div class="cuerpo"><div>
       <div style="display:flex;align-items:flex-end;gap:2px"><div class="cont"><b style="font-size:12px">${esc(v.contenedor||'—')}</b><div class="sub">${esc(v.unidad||'')}</div></div><div class="cabina"></div></div>
@@ -2059,6 +2076,7 @@ function filtroDeTexto(q){
   if (!/\b(filtra|filtrar|filtre|muestra|muestrame|mostrar|lista|listar|ver|cuales|cuantos|busca|buscar)\b/.test(t)) return null;
   const f = {};
   if (/\blistos? para facturar\b/.test(t)) f.foco = 'Listo para facturar';
+  else if (/\bpendientes? de operaci|\bfalta.*\boperaci|\bdebe operaci/.test(t)) f.foco = FOCO_OPS;
   else if (/\b(faltan datos|les falta|terminados?|finalizados?)\b/.test(t)) f.foco = 'Terminado · faltan datos';
   else if (/\ben transito\b|\ben ruta\b|\ben curso\b/.test(t)) f.foco = 'En tránsito';
   else if (/\bbodega de paso\b|\bsubviajes?\b/.test(t)) f.foco = 'En bodega de paso';
