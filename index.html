@@ -531,11 +531,11 @@ function normalizar(v, i){
   v.sede = /bogot/i.test(String(v.destino||'').normalize('NFD')) ? 'Bogotá' : 'Cali';
   return v;
 }
-// Filtros globales (operación, situación, sede, empresa, solicitante y FWD): aplican a todas las vistas y se recuerdan en este navegador
-let G = {op:'', sit:'Abierto', sede:'', emp:'', sol:'', fwd:'', ped:'', bk:'', fact:''};
-try { Object.assign(G, JSON.parse(localStorage.getItem('rkt-filtros')) || {}); } catch(e){}
-G.sit = {Abiertos:'Abierto', Cerrados:'Cerrado'}[G.sit] || G.sit;
-G.q = '';   // la búsqueda escrita no se recuerda entre visitas
+// Filtros globales: aplican a todas las vistas. Al abrir o recargar el tablero arrancan siempre limpios
+// (viajes abiertos de IMPO y EXPO) para no esconder nada; no se recuerdan entre visitas.
+const FILTROS_INICIO = {op:'', sit:'Abierto', emp:'', sol:'', fwd:'', ped:'', bk:'', fact:'', q:''};
+let G = {...FILTROS_INICIO};
+try { localStorage.removeItem('rkt-filtros'); } catch(e){}
 // listas desplegables: campo del viaje y texto cuando está vacío
 const FILTROS_LISTA = [['emp','empresa','Empresa','Sin empresa'], ['sol','solicitante','Solicitante','Sin solicitante'], ['fwd','fwd','FWD / agente','Sin FWD'], ['ped','pedido','Pedido','Sin pedido'], ['bk','booking','Booking / BL','Sin booking']];
 const valorFiltro = (v, campo, vacio) => String(v[campo]||'').trim() || vacio;
@@ -705,8 +705,7 @@ const nuevosOcultos = () => viajes.filter(v => esNuevo(v) && !enGlobal(v));
 const avisoNuevos = () => { const n = nuevosOcultos().length;
   return n ? `<button type="button" class="chip on" style="background:var(--ok);border-color:var(--ok)" onclick="verNuevos()" title="${esc(nuevosOcultos().map(v=>v.id).join(', '))}">${n} viaje${n>1?'s':''} NUEVO oculto${n>1?'s':''} por los filtros · ver</button>` : ''; };
 function verNuevos(){
-  Object.assign(G, {op:'', sit:'Abierto', emp:'', sol:'', fwd:'', ped:'', bk:'', fact:'', q:''});
-  try { const g = {...G}; delete g.q; localStorage.setItem('rkt-filtros', JSON.stringify(g)); } catch(e){}
+  Object.assign(G, FILTROS_INICIO);
   render();
 }
 function renderGbar(){
@@ -1725,10 +1724,8 @@ document.addEventListener('input', e => {
   }, 250);
 });
 document.addEventListener('change', e => { const s=e.target.closest('[data-gsel]'); if(!s) return; G[s.dataset.gsel] = s.value;
-  try { localStorage.setItem('rkt-filtros', JSON.stringify(G)); } catch(e){}
   render(); });
 document.addEventListener('click', e => { const b=e.target.closest('[data-g]'); if(!b) return; G[b.dataset.g] = b.dataset.val;
-  try { localStorage.setItem('rkt-filtros', JSON.stringify(G)); } catch(e){}
   render(); });
 window.addEventListener('resize', ()=> document.documentElement.style.setProperty('--hh', document.querySelector('header').offsetHeight + 'px'));
 $('#fEstados').onclick = e => { const b=e.target.closest('.chip'); if(!b) return; filtroEstado=b.dataset.e; renderChips(); renderTabla(); };
@@ -1932,7 +1929,7 @@ function elegirChat(i){
 // filtros por chat: facturación, abiertos/cerrados, IMPO/EXPO, texto libre o quitar filtros
 function filtroDeTexto(q){
   const t = minus(q);
-  if (/\b(quita|quitar|limpia|limpiar|borra|borrar)\b.*\bfiltros?\b|\btodos los viajes\b/.test(t)) return {G: {op:'', sit:'Abierto', sede:'', emp:'', sol:'', fwd:'', ped:'', bk:'', q:'', fact:''}, txt:'Quité los filtros: se ven los viajes abiertos.'};
+  if (/\b(quita|quitar|limpia|limpiar|borra|borrar)\b.*\bfiltros?\b|\btodos los viajes\b/.test(t)) return {G: {...FILTROS_INICIO}, txt:'Quité los filtros: se ven los viajes abiertos.'};
   if (!/\b(filtra|filtrar|filtre|muestra|muestrame|mostrar|lista|listar|ver|cuales|cuantos|busca|buscar)\b/.test(t)) return null;
   const f = {};
   if (/\b(pendientes?|falta|faltan)\b.*\bfactur|\bsin facturar\b|\bpor facturar\b/.test(t)) f.fact = 'Pendiente por facturar';
@@ -1950,7 +1947,6 @@ function filtroDeTexto(q){
 function aplicarFiltroChat(r){
   Object.assign(G, r.G);
   if (G.fact && !('sit' in r.G)) G.sit = '';
-  try { const g = {...G}; delete g.q; localStorage.setItem('rkt-filtros', JSON.stringify(g)); } catch(e){}
   render();
   if (r.txt) return r.txt;
   const L = viajes.filter(enGlobal);
