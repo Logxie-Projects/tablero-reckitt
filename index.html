@@ -51,6 +51,10 @@ nav button.on{background:var(--accent-soft);color:var(--accent)}
 .btn{border:1px solid var(--border);background:var(--surface);padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:500}
 .btn:hover{background:var(--surface-2)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+/* botones de correos: a la vista, con el color del tablero */
+.btn.correo{border-color:var(--accent);color:var(--accent);font-weight:600;background:color-mix(in srgb, var(--accent) 8%, var(--surface))}
+.btn.correo:hover{background:color-mix(in srgb, var(--accent) 16%, var(--surface))}
+.btn.primary:hover{filter:brightness(1.08);background:var(--accent)}
 main{max-width:1400px;margin:0 auto;padding:20px 24px 48px}
 h2{font-size:15px;margin:0 0 12px;font-weight:600}
 .sub{color:var(--muted);font-size:12px;font-weight:400}
@@ -306,8 +310,8 @@ tr:hover td{background:var(--surface-2)}
     <div class="spacer"></div>
     <div class="conn"><span class="dot" id="connDot"></span><span id="connTxt">Modo demo</span></div>
     <button class="btn" id="btnTheme" title="Cambiar tema">◐</button>
-    <button class="btn solo-interno" id="btnBarrido" title="Lee ya mismo el buzón de calidad@ (últimos 2 días) y muestra qué correos de Reckitt y sus agentes no están en la base">⟳ Buscar correos ahora</button>
-    <button class="btn solo-interno" id="btnCorreos" title="Datos que LogxIA encontró en los correos, para revisar y aprobar">✉ Llenar datos desde correos</button>
+    <button class="btn primary solo-interno" id="btnBarrido" title="Lee ya mismo el buzón de calidad@ (últimos 2 días) y muestra qué correos de Reckitt y sus agentes no están en la base">⟳ Buscar correos ahora</button>
+    <button class="btn correo solo-interno" id="btnCorreos" title="Datos que LogxIA encontró en los correos, para revisar y aprobar">✉ Llenar datos desde correos<span class="badge" id="nProp"></span></button>
     <button class="btn" id="btnCsv">Exportar CSV</button>
   </div>
 </header>
@@ -1464,6 +1468,7 @@ async function abrirPropuestas(){
   pintarPropuestas();
 }
 function pintarPropuestas(){
+  $('#nProp').textContent = PROP.length || '';
   if (!PROP.length) { $('#propLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">No hay datos nuevos de los correos por revisar. ✔</div>'; return; }
   let previo = '';
   $('#propLista').innerHTML = `<div class="tbl-wrap"><table class="prop"><colgroup><col class="c-sel"><col class="c-dato"><col class="c-hoy"><col class="c-correo"><col></colgroup><tr><th></th><th>Dato</th><th>En la base hoy</th><th>Del correo</th><th>Evidencia</th></tr>${PROP.map((p, i) => {
@@ -1885,6 +1890,10 @@ function pedirClave(errada){
 // la página publicada para el cliente (Reckitt) es de solo lectura
 cargar().then(ok => { if (ok === false) return; if (window.MODO_CLIENTE) document.body.classList.add('cliente'); render();
   // enlace directo desde el correo (?viaje=FILA-9): abre la ventana de ese viaje para corregirlo
+  // cuántos datos de LogxIA esperan revisión: número en el botón "Llenar datos desde correos"
+  if (!window.MODO_CLIENTE && CFG.SHEETS_API_URL && window.CLAVE)
+    fetch(CFG.SHEETS_API_URL + '?formato=json&que=propuestas&clave=' + encodeURIComponent(window.CLAVE)).then(r => r.json())
+      .then(j => { if (j.ok) $('#nProp').textContent = (j.propuestas || []).length || ''; }).catch(() => {});
   const vid = new URLSearchParams(location.search).get('viaje') || window.VIAJE_INICIAL;
   if (vid && !window.MODO_CLIENTE && viajes.some(x=>x.id===vid)) abrir(vid);
   const vista = new URLSearchParams(location.search).get('vista') || window.VISTA_INICIAL;
