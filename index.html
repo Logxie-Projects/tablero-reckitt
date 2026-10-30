@@ -537,7 +537,7 @@ try { Object.assign(G, JSON.parse(localStorage.getItem('rkt-filtros')) || {}); }
 G.sit = {Abiertos:'Abierto', Cerrados:'Cerrado'}[G.sit] || G.sit;
 G.q = '';   // la búsqueda escrita no se recuerda entre visitas
 // listas desplegables: campo del viaje y texto cuando está vacío
-const FILTROS_LISTA = [['sede','sede','Sede','Sin sede'], ['emp','empresa','Empresa','Sin empresa'], ['sol','solicitante','Solicitante','Sin solicitante'], ['fwd','fwd','FWD / agente','Sin FWD'], ['ped','pedido','Pedido','Sin pedido'], ['bk','booking','Booking / BL','Sin booking']];
+const FILTROS_LISTA = [['emp','empresa','Empresa','Sin empresa'], ['sol','solicitante','Solicitante','Sin solicitante'], ['fwd','fwd','FWD / agente','Sin FWD'], ['ped','pedido','Pedido','Sin pedido'], ['bk','booking','Booking / BL','Sin booking']];
 const valorFiltro = (v, campo, vacio) => String(v[campo]||'').trim() || vacio;
 // buscador libre: cada palabra debe aparecer en algún dato del viaje o de sus subviajes (placa, contenedor, RBHY, observación…);
 // sin tildes ni mayúsculas, y los códigos se comparan sin guiones ni espacios (TLLU769774-2 = TLLU7697742)
@@ -690,10 +690,11 @@ async function guardarCambio(id, cambios, usuario){
 const porOp = () => viajes.filter(v=>(!G.op || v.operacion===G.op) && enListas(v));
 function chipsGlobales(){
   const n = (op, sit) => viajes.filter(v=>(!op || v.operacion===op) && enSituacion(v, sit) && enListas(v)).length;
-  const chip = (k, val, txt, cnt) => `<button class="chip ${G[k]===val?'on':''}" data-g="${k}" data-val="${val}">${txt} · ${cnt}</button>`;
-  return `<div class="chips">${['','EXPO','IMPO'].map(o=>chip('op', o, o||'IMPO + EXPO', n(o, G.sit))).join('')}</div>
-    <span class="sub">|</span><div class="chips">${[...situacionesPresentes(), ''].map(s=>chip('sit', s, s ? (PLURAL[s]||s) : 'Todos', n(G.op, s))).join('')}</div>
-    <span class="sub">|</span><input type="search" class="gsel gbus ${G.q.trim()?'on':''}" data-gq aria-label="Buscar en los viajes" placeholder="🔍 Buscar: placa, contenedor, RBHY, DO…" value="${esc(G.q)}">
+  // IMPO/EXPO y STATUS: listas desplegables con el número de viajes de cada opción
+  const sel = (k, titulo, ops) => `<select class="gsel ${G[k]?'on':''}" data-gsel="${k}" aria-label="${titulo}">${ops.map(([val, txt, cnt])=>`<option value="${esc(val)}" ${G[k]===val?'selected':''}>${titulo}: ${esc(txt)} · ${cnt}</option>`).join('')}</select>`;
+  return sel('op', 'IMPO/EXPO', [['', 'ambas', n('', G.sit)], ['IMPO', 'IMPO', n('IMPO', G.sit)], ['EXPO', 'EXPO', n('EXPO', G.sit)]])
+    + sel('sit', 'STATUS', [...situacionesPresentes().map(s=>[s, PLURAL[s]||s, n(G.op, s)]), ['', 'Todos', n(G.op, '')]])
+    + `<span class="sub">|</span><input type="search" class="gsel gbus ${G.q.trim()?'on':''}" data-gq aria-label="Buscar en los viajes" placeholder="🔍 Buscar: placa, contenedor, RBHY, DO…" value="${esc(G.q)}">
     <select class="gsel ${G.fact?'on':''}" data-gsel="fact" aria-label="Facturación"><option value="">Facturación: todos</option>${[...FACTURACION, 'En curso'].map(x=>`<option ${G.fact===x?'selected':''}>${esc(x)}</option>`).join('')}</select>
     ${FILTROS_LISTA.map(([k, campo, titulo, vacio]) => {
       const vals = [...new Set(viajes.map(v=>valorFiltro(v, campo, vacio)))].sort((a,b)=> (a===vacio)-(b===vacio) || a.localeCompare(b));
