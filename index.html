@@ -753,12 +753,12 @@ function chipsGlobales(){
       const vals = [...new Set(viajes.map(v=>valorFiltro(v, campo, vacio)))].sort((a,b)=> (a===vacio)-(b===vacio) || a.localeCompare(b));
       return `<select class="gsel ${G[k]?'on':''}" data-gsel="${k}" aria-label="${titulo}"><option value="">${titulo}: todos</option>${vals.map(x=>`<option value="${esc(x)}" ${G[k]===x?'selected':''}>${esc(x)}</option>`).join('')}</select>`; }).join('')}`;
 }
-// viajes NUEVO que los filtros dejan por fuera: aviso con botón para verlos (el tablero recuerda los filtros entre visitas)
-const nuevosOcultos = () => viajes.filter(v => esNuevo(v) && !enGlobal(v));
+// viajes NUEVO de la operación elegida (IMPO/EXPO) que los demás filtros dejan por fuera: aviso con botón para verlos
+const nuevosOcultos = () => viajes.filter(v => esNuevo(v) && (!G.op || v.operacion===G.op) && !enGlobal(v));
 const avisoNuevos = () => { const n = nuevosOcultos().length;
   return n ? `<button type="button" class="chip on" style="background:var(--ok);border-color:var(--ok)" onclick="verNuevos()" title="${esc(nuevosOcultos().map(v=>v.id).join(', '))}">${n} viaje${n>1?'s':''} NUEVO oculto${n>1?'s':''} por los filtros · ver</button>` : ''; };
 function verNuevos(){
-  Object.assign(G, FILTROS_INICIO);
+  Object.assign(G, {...FILTROS_INICIO, op: G.op});   // se mantiene IMPO/EXPO
   render();
 }
 function renderGbar(){
