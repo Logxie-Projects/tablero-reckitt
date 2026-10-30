@@ -700,10 +700,19 @@ function chipsGlobales(){
       const vals = [...new Set(viajes.map(v=>valorFiltro(v, campo, vacio)))].sort((a,b)=> (a===vacio)-(b===vacio) || a.localeCompare(b));
       return `<select class="gsel ${G[k]?'on':''}" data-gsel="${k}" aria-label="${titulo}"><option value="">${titulo}: todos</option>${vals.map(x=>`<option value="${esc(x)}" ${G[k]===x?'selected':''}>${esc(x)}</option>`).join('')}</select>`; }).join('')}`;
 }
+// viajes NUEVO que los filtros dejan por fuera: aviso con botón para verlos (el tablero recuerda los filtros entre visitas)
+const nuevosOcultos = () => viajes.filter(v => esNuevo(v) && !enGlobal(v));
+const avisoNuevos = () => { const n = nuevosOcultos().length;
+  return n ? `<button type="button" class="chip on" style="background:var(--ok);border-color:var(--ok)" onclick="verNuevos()" title="${esc(nuevosOcultos().map(v=>v.id).join(', '))}">${n} viaje${n>1?'s':''} NUEVO oculto${n>1?'s':''} por los filtros · ver</button>` : ''; };
+function verNuevos(){
+  Object.assign(G, {op:'', sit:'Abierto', emp:'', sol:'', fwd:'', ped:'', bk:'', fact:'', q:''});
+  try { const g = {...G}; delete g.q; localStorage.setItem('rkt-filtros', JSON.stringify(g)); } catch(e){}
+  render();
+}
 function renderGbar(){
   document.documentElement.style.setProperty('--hh', document.querySelector('header').offsetHeight + 'px');
   $('#gbar').innerHTML = `<div class="modos" role="group" aria-label="Vista del tablero">${[['tabla','Modo tabla'],['lean','Modo lean']].map(([k,t])=>`<button type="button" data-modo="${k}" class="${MODO===k?'on':''}">${t}</button>`).join('')}</div>
-    <b>Filtros</b>${chipsGlobales()}<span class="sub" style="margin-left:auto">Aplican a Tablero, Viajes y Motonaves</span>`;
+    <b>Filtros</b>${chipsGlobales()}${avisoNuevos()}<span class="sub" style="margin-left:auto">Aplican a Tablero, Viajes y Motonaves</span>`;
   $('#gViajes').innerHTML = chipsGlobales();
 }
 
