@@ -539,7 +539,7 @@ function normalizar(v, i){
 }
 // Filtros globales: aplican a todas las vistas. Al abrir o recargar el tablero arrancan siempre limpios
 // (viajes abiertos de IMPO y EXPO) para no esconder nada; no se recuerdan entre visitas.
-const FILTROS_INICIO = {op:'', sit:'Abierto', emp:'', sol:'', fwd:'', ped:'', bk:'', fact:'', q:''};
+const FILTROS_INICIO = {op:'', sit:'Abierto', emp:'', sol:'', fwd:'', ped:'', bk:'', fact:'', foco:'', q:''};
 let G = {...FILTROS_INICIO};
 try { localStorage.removeItem('rkt-filtros'); } catch(e){}
 // listas desplegables: campo del viaje y texto cuando está vacío
@@ -556,7 +556,35 @@ function enTexto(v){
 }
 const enListas = v => !v.padre && FILTROS_LISTA.every(([k, campo, , vacio]) => !G[k] || valorFiltro(v, campo, vacio)===G[k]) && enTexto(v) && (!G.fact || cobro(v).fact===G.fact);
 // con algo escrito en el buscador se busca en todos los viajes, abiertos y cerrados
-const enGlobal = v => (!G.op || v.operacion===G.op) && (G.q.trim() || enSituacion(v, G.sit)) && enListas(v);
+// con texto en el buscador, o con un filtro de Facturación o de Foco, se mira en todos los viajes (abiertos y cerrados)
+const enGlobal = v => (!G.op || v.operacion===G.op) && (G.q.trim() || G.fact || G.foco || enSituacion(v, G.sit)) && enListas(v) && (!G.foco || focoDe(v)===G.foco);
+/* ---------- foco del equipo operativo: en qué está cada viaje y qué le falta ---------- */
+// cada viaje cae en un solo grupo, en el orden de la operación
+const FOCOS = ['Por asignar vehículo','Por iniciar','En tránsito','En bodega de paso','Terminado · faltan datos','Listo para facturar','En facturación','Sin servicio'];
+const terminoTransporte = v => v.operacion==='EXPO' ? ['Entregado en puerto','Zarpó'].includes(v.estado) : v.estado==='Vacío devuelto';
+// lo que le falta a un viaje cuyo transporte terminó, para cerrarlo bien y poder facturarlo
+function pendientesDe(v){
+  const f = [];
+  if (v.operacion==='EXPO') { if (!v.fechaEntregaPuerto) f.push('fecha de entrega en puerto'); if (!v.tirillaEntrega) f.push('tirilla de entrega'); if (!v.rbhy || !v.obd) f.push('RBHY / OBD'); }
+  else { if (!v.fechaDevolucion) f.push('fecha de devolución'); if (!v.tirillaDevolucion) f.push('tirilla de devolución'); }
+  const hijos = hijosDe(v);
+  if (hijos.some(s => !s.placa || !s.fechaUrbano || !s.bodega)) f.push('datos del subviaje');
+  if (!hijos.length && validar(v).some(e => e.campo==='Subviaje')) f.push('revisar si lleva subviaje');
+  if (desviosPlan(v).some(d => d.causa==='Sin causa')) f.push('causa de la reprogramación');
+  if (!Number(v.tarifa)) f.push('tarifa');
+  return f;
+}
+function focoDe(v){
+  if (situacion(v)==='Cancelado' || v.estado==='Cancelado') return '';
+  const fact = cobro(v).fact;
+  if (fact==='Sin servicio') return 'Sin servicio';
+  if (['En aprobación Reckitt','Facturado'].includes(fact)) return 'En facturación';
+  if (v.estado==='En bodega de paso') return 'En bodega de paso';
+  if (terminoTransporte(v)) return pendientesDe(v).length ? 'Terminado · faltan datos' : 'Listo para facturar';
+  if (v.estado==='Sin asignar') return 'Por asignar vehículo';
+  if (v.estado==='Asignado') return 'Por iniciar';
+  return 'En tránsito';
+}
 const visibles = () => viajes.filter(enGlobal);
 // Los viajes cancelados no cuentan en indicadores, alertas ni programación
 const activos = () => visibles().filter(v=>v.estado!=='Cancelado');
@@ -702,6 +730,7 @@ function chipsGlobales(){
   return sel('op', 'IMPO/EXPO', [['', 'ambas', n('', G.sit)], ['IMPO', 'IMPO', n('IMPO', G.sit)], ['EXPO', 'EXPO', n('EXPO', G.sit)]])
     + sel('sit', 'STATUS', [...situacionesPresentes().map(s=>[s, PLURAL[s]||s, n(G.op, s)]), ['', 'Todos', n(G.op, '')]])
     + `<span class="sub">|</span><input type="search" class="gsel gbus ${G.q.trim()?'on':''}" data-gq aria-label="Buscar en los viajes" placeholder="🔍 Buscar: placa, contenedor, RBHY, DO…" value="${esc(G.q)}">
+    <select class="gsel ${G.foco?'on':''}" data-gsel="foco" aria-label="Foco del equipo" title="En qué está cada viaje y qué le falta"><option value="">🎯 Foco: todos</option>${FOCOS.map(x=>{ const n = viajes.filter(v=>!v.padre && (!G.op || v.operacion===G.op) && focoDe(v)===x).length; return `<option value="${esc(x)}" ${G.foco===x?'selected':''}>${esc(x)} · ${n}</option>`; }).join('')}</select>
     <select class="gsel ${G.fact?'on':''}" data-gsel="fact" aria-label="Facturación"><option value="">Facturación: todos</option>${ETAPAS_FACTURACION.map(x=>`<option ${G.fact===x?'selected':''}>${esc(x)}</option>`).join('')}</select>
     ${FILTROS_LISTA.map(([k, campo, titulo, vacio]) => {
       const vals = [...new Set(viajes.map(v=>valorFiltro(v, campo, vacio)))].sort((a,b)=> (a===vacio)-(b===vacio) || a.localeCompare(b));
@@ -1370,7 +1399,7 @@ function rutaPedido(v){
     <div class="cab"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
       ${tagNuevo(v)}<span class="op ${v.operacion}">${v.operacion}</span><b>${esc(v.empresa||'Empresa sin definir')} · ${esc(ref)}</b>
       <span class="sub">${esc([v.solicitante && 'Solicita '+v.solicitante, v.fwd].filter(Boolean).join(' · '))}</span></div>
-      <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span></div>
+      <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span>${!window.MODO_CLIENTE && focoDe(v)==='Terminado · faltan datos' ? `<span class="tg" style="background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)" title="Para cerrarlo y facturarlo">Falta: ${esc(pendientesDe(v).join(' · '))}</span>` : ''}</div>
     ${v.observacion ? `<div class="sub" style="margin:-4px 0 10px">💬 ${esc(v.observacion)}</div>` : ''}
     <div class="cuerpo"><div>
       <div style="display:flex;align-items:flex-end;gap:2px"><div class="cont"><b style="font-size:12px">${esc(v.contenedor||'—')}</b><div class="sub">${esc(v.unidad||'')}</div></div><div class="cabina"></div></div>
@@ -2029,7 +2058,13 @@ function filtroDeTexto(q){
   if (/\b(quita|quitar|limpia|limpiar|borra|borrar)\b.*\bfiltros?\b|\btodos los viajes\b/.test(t)) return {G: {...FILTROS_INICIO}, txt:'Quité los filtros: se ven los viajes abiertos.'};
   if (!/\b(filtra|filtrar|filtre|muestra|muestrame|mostrar|lista|listar|ver|cuales|cuantos|busca|buscar)\b/.test(t)) return null;
   const f = {};
-  if (/\b(pendientes?|falta|faltan)\b.*\bfactur|\bsin facturar\b|\bpor facturar\b/.test(t)) f.fact = 'Pendiente por facturar';
+  if (/\blistos? para facturar\b/.test(t)) f.foco = 'Listo para facturar';
+  else if (/\b(faltan datos|les falta|terminados?|finalizados?)\b/.test(t)) f.foco = 'Terminado · faltan datos';
+  else if (/\ben transito\b|\ben ruta\b|\ben curso\b/.test(t)) f.foco = 'En tránsito';
+  else if (/\bbodega de paso\b|\bsubviajes?\b/.test(t)) f.foco = 'En bodega de paso';
+  else if (/\bpor asignar\b|\bsin vehiculo\b/.test(t)) f.foco = 'Por asignar vehículo';
+  else if (/\bpor iniciar\b/.test(t)) f.foco = 'Por iniciar';
+  else if (/\b(pendientes?|falta|faltan)\b.*\bfactur|\bsin facturar\b|\bpor facturar\b/.test(t)) f.fact = 'Pendiente por facturar';
   else if (/\ben (autorizacion|aprobacion)\b/.test(t)) f.fact = 'En aprobación Reckitt';
   else if (/\b(no facturable|aun no)\b/.test(t)) f.fact = 'Aún no facturable';
   else if (/\bsin servicio\b/.test(t)) f.fact = 'Sin servicio';
@@ -2050,7 +2085,7 @@ function aplicarFiltroChat(r){
   if (r.txt) return r.txt;
   const L = viajes.filter(enGlobal);
   const tot = G.fact ? L.reduce((s, v) => s + cobro(v).total, 0) : 0;
-  const que = [G.fact, G.op, G.sit && PLURAL[G.sit] && PLURAL[G.sit].toLowerCase(), G.q && `“${G.q}”`].filter(Boolean).join(' · ');
+  const que = [G.foco, G.fact, G.op, G.sit && PLURAL[G.sit] && PLURAL[G.sit].toLowerCase(), G.q && `“${G.q}”`].filter(Boolean).join(' · ');
   return (L.length ? listaCorta(L, `Filtré el tablero (${esc(que)})${tot ? `, por ${pesos(tot)},` : ''}: hay`) : `No hay viajes con ese filtro (${esc(que)}).`)
     + `<div style="margin-top:6px"><button type="button" class="btn" onclick="preguntar('quitar filtros')">Quitar filtros</button></div>`;
 }
