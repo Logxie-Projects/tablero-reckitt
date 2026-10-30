@@ -1865,6 +1865,9 @@ document.addEventListener('input', e => {
   }, 250);
 });
 document.addEventListener('change', e => { const s=e.target.closest('[data-gsel]'); if(!s) return; G[s.dataset.gsel] = s.value;
+  // Foco y Facturación miran todos los viajes (abiertos y cerrados): STATUS pasa a "Todos" para que los números cuadren,
+  // y vuelve a "Abiertos" al quitarlos
+  if (['foco','fact'].includes(s.dataset.gsel)) G.sit = (G.foco || G.fact) ? '' : 'Abierto';
   render(); });
 document.addEventListener('click', e => { const b=e.target.closest('[data-g]'); if(!b) return; G[b.dataset.g] = b.dataset.val;
   render(); });
@@ -2104,7 +2107,7 @@ function filtroDeTexto(q){
 }
 function aplicarFiltroChat(r){
   Object.assign(G, r.G);
-  if (G.fact && !('sit' in r.G)) G.sit = '';
+  if ((G.fact || G.foco) && !('sit' in r.G)) G.sit = '';
   render();
   if (r.txt) return r.txt;
   const L = viajes.filter(enGlobal);
