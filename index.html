@@ -443,7 +443,7 @@ tr:hover td{background:var(--surface-2)}
     <div class="det" id="mDet"></div>
     <div class="nuevo-aviso hidden" id="mNuevo"><span><b>Viaje nuevo:</b> nadie del equipo lo ha tomado todavía. Cualquier cambio que guarde, o el botón, deja constancia de que lo vio.</span><button type="button" class="btn primary" id="mTomar">Lo tomo</button></div>
     <div class="plan" id="mPlan"></div>
-    <div class="full" style="margin-top:16px"><label>Nuevo estado</label><div class="states" id="mStates"></div></div>
+    <div class="full" style="margin-top:16px"><label>Etapa de la operación</label><div class="states" id="mStates"></div></div>
     <div id="mForm"></div>
     <datalist id="dlExtra"></datalist><datalist id="dlPatio"></datalist><datalist id="dlCond"></datalist><datalist id="dlPlaca"></datalist><datalist id="dlFwd"></datalist>
     <div class="hist" id="mHist"></div>
@@ -480,18 +480,28 @@ window.SEED_DATA = [];
 </script>
 <script>
 const CFG = window.APP_CONFIG || {};
+// Etapa de la operación: sale sola de las fechas del viaje (la misma ruta que dibuja la tarjeta), no de una lista manual.
+// EXPO: Sin asignar → Asignado → Vacío retirado → Llenado → (En bodega de paso) → Entregado en puerto → Zarpó
+// IMPO: Sin asignar → Asignado → Retirado de puerto → (En bodega de paso) → Entregado en bodega → Vacío devuelto
+// "En bodega de paso" = hay subviaje y el urbano aún no se hace. Novedad es una marca aparte; Cancelado viene del STATUS.
 const ESTADOS = [
   {k:'Sin asignar', c:'var(--s-sin)'},
   {k:'Asignado', c:'var(--s-asig)'},
-  {k:'Retiro en patio', c:'var(--s-ret)'},
-  {k:'En llenado', c:'var(--s-carg)'},
-  {k:'En tránsito', c:'var(--s-tran)'},
-  {k:'En puerto/patio', c:'var(--s-patio)'},
-  {k:'Entregado', c:'var(--s-ent)'},
-  {k:'Novedad', c:'var(--s-nov)'},
+  {k:'Vacío retirado', c:'var(--s-ret)'},
+  {k:'Retirado de puerto', c:'var(--s-ret)'},
+  {k:'Llenado', c:'var(--s-carg)'},
+  {k:'En bodega de paso', c:'var(--s-patio)'},
+  {k:'Entregado en bodega', c:'var(--s-tran)'},
+  {k:'Entregado en puerto', c:'var(--s-ent)'},
+  {k:'Zarpó', c:'var(--s-ent)'},
+  {k:'Vacío devuelto', c:'var(--s-ent)'},
   {k:'Cancelado', c:'var(--s-can)'},
 ];
-const colorEstado = k => (ESTADOS.find(e=>e.k===k)||ESTADOS[0]).c;
+// marcas que el equipo pone a mano en la ventana del viaje (columna Estado de la base)
+const MARCAS = [{k:'Novedad', c:'var(--s-nov)'}, {k:'Cancelado', c:'var(--s-can)'}];
+// etapas en las que el transporte ya terminó (o el contenedor ya llegó a su destino final)
+const ETAPAS_FIN = ['Entregado en puerto','Zarpó','Entregado en bodega','Vacío devuelto'];
+const colorEstado = k => ([...ESTADOS, ...MARCAS].find(e=>e.k===k)||ESTADOS[0]).c;
 const LS_KEY = 'rkt-transporte-v1';
 // fecha de Colombia (en UTC después de las 7 p. m. ya sería mañana)
 const HOY = CFG.FECHA_REFERENCIA || new Date().toLocaleDateString('en-CA', {timeZone:'America/Bogota'});
@@ -511,17 +521,8 @@ const addDias = (iso, n) => { const d = new Date(iso.slice(0,10)+'T12:00'); d.se
 function normalizar(v, i){
   if (!v.id) v.id = 'F' + String((i||0) + 1).padStart(3, '0');
   v.placa = String(v.placa||'').trim();
-  if (v.estado==='En cargue') v.estado = 'En llenado';
-  // filas nuevas de Google Sheets llegan sin estado
-  // la hoja no trae estado: se deduce de placa y fechas (y no se reporta como error de actualización)
-  if (!v.estado){
-    v.estadoAuto = true;
-    const ret = v.fechaRetiro || (v.operacion==='EXPO' && v.fechaCargue ? addDias(v.fechaCargue, -1) : '');
-    v.estado = /cancel/i.test(v.observacion||'') || /cancel/i.test(v.situacion||'') ? 'Cancelado'
-      : !String(v.placa||'').trim() ? 'Sin asignar'
-      : v.fechaCargue > HOY ? (ret && ret <= HOY ? 'Retiro en patio' : 'Asignado')
-      : v.fechaCargue === HOY ? 'En llenado' : 'En tránsito';
-  }
+  // lo que dice la columna Estado de la hoja: solo cuentan las marcas Novedad y Cancelado; la etapa la calcula etapasViajes()
+  if (v.estadoHoja === undefined) v.estadoHoja = v.estado || '';
   v.actualizado = v.actualizado || new Date().toISOString();
   v.historial = v.historial || [];
   if (v.situacion !== undefined) v.situacion = normSituacion(v.situacion);
@@ -558,7 +559,7 @@ const activos = () => visibles().filter(v=>v.estado!=='Cancelado');
 // si la hoja trae la columna Abierto/Cerrado manda; si no, se deduce del estado
 // Abierto / Cerrado / Sin status: manda la columna de la hoja (celda vacía = Sin status).
 // Solo si la hoja no trae la columna se deduce del estado.
-const situacion = v => v.situacion || (v.estado==='Cancelado' ? 'Cancelado' : v.estado==='Entregado' ? 'Cerrado' : 'Abierto');
+const situacion = v => v.situacion || (v.estado==='Cancelado' ? 'Cancelado' : 'Abierto');
 const abierto = v => situacion(v)==='Abierto';
 // valores de STATUS OPERACIONES en la hoja
 const SITUACIONES = ['Abierto','Cerrado','Cancelado','Pendiente confirmación','Sin status'];
@@ -620,7 +621,7 @@ function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('sh
 /* ---------- datos (Google Sheets o demo local) ---------- */
 async function cargar(){
   if (window.DATOS_HOJA){
-    viajes = window.DATOS_HOJA.map(normalizar);
+    viajes = window.DATOS_HOJA.map(normalizar); etapasViajes();
     let guardado = null;
     try { guardado = JSON.parse(localStorage.getItem(LS_KEY)); } catch(e){}
     historial = guardado?.historial || [];
@@ -636,7 +637,7 @@ async function cargar(){
       const r = await fetch(CFG.SHEETS_API_URL + '?formato=json&clave=' + encodeURIComponent(clave));
       const j = await r.json();
       if (!j.ok) { pedirClave(true); return false; }
-      viajes = j.viajes.map(normalizar);
+      viajes = j.viajes.map(normalizar); etapasViajes();
       let guardado = null;
       try { guardado = JSON.parse(localStorage.getItem(LS_KEY)); } catch(e){}
       historial = [...(j.historial || []), ...(guardado?.historial || [])];
@@ -671,7 +672,8 @@ async function guardarCambio(id, cambios, usuario){
   const v = viajes.find(x=>x.id===id);
   const anterior = v.estado;
   Object.assign(v, cambios, {actualizado: new Date().toISOString()});
-  if (cambios.estado) v.estadoAuto = false;
+  if ('estado' in cambios) v.estadoHoja = cambios.estado;
+  etapasViajes();
   if (!v.vistoPor && hayControlVisto()) v.vistoPor = usuario || 'equipo';
   historial.push({fecha:v.actualizado, id, placa:v.placa, estadoAnterior:anterior, estadoNuevo:v.estado, observacion:cambios.observacion||'', usuario:usuario||CFG.USUARIO||''});
   const enBase = {...cambios};
@@ -799,13 +801,9 @@ function validar(v){
   const intermedio = impo ? /almacenamient|\ben patio\b|\bpatio\b.*\bse (entrega|descarga)\b|\bparo\b|bloqueo|sin cita|problemas en bodega/ : /almacenamient|\bparo\b|bloqueo/;
   if (!hijos.length && intermedio.test(sinTilde(v.observacion||'').toLowerCase())) add('Media','Subviaje','La observación indica patio intermedio, paro o almacenamiento: crear subviaje si el contenedor no va directo al destino final');
   // fechas que ya pasaron sin que se actualice el estado
-  if (!v.estadoAuto && v.fechaRetiro && v.fechaRetiro < HOY && ['Sin asignar','Asignado'].includes(v.estado)) add('Alta','Estado',`El retiro era el ${fd(v.fechaRetiro)} y el estado sigue en "${v.estado}"`);
-  if (!v.estadoAuto && v.fechaCargue && v.fechaCargue < HOY && ['Sin asignar','Asignado','Retiro en patio'].includes(v.estado)) add('Alta','Estado',`El llenado era el ${fd(v.fechaCargue)} y el estado sigue en "${v.estado}"`);
-  if (!v.estadoAuto && expo && v.etd && v.etd < HOY && !['En puerto/patio','Entregado'].includes(v.estado)) add('Media','Estado',`ETD vencido (${fd(v.etd)}) y el viaje no figura en puerto ni entregado`);
+  if (expo && v.etd && v.etd < HOY && !['Entregado en puerto','Zarpó'].includes(v.estado) && !['Cerrado','Cancelado'].includes(sit)) add('Media','Fecha de entrega en puerto',`ETD vencido (${fd(v.etd)}) y el viaje sigue en "${v.estado}": falta la fecha de entrega en puerto`);
   if (primerEvento(v) && primerEvento(v) <= HOY){
     if (!v.observacion) add('Media',C.obs,'Viaje en curso sin observación de status');
-    const horas = Math.round((Date.now() - new Date(v.actualizado)) / 36e5);
-    if (!v.estadoAuto && horas >= 12) add('Media','Actualización',`Viaje en curso sin actualizar hace ${horas} h`);
   }
   return e;
 }
@@ -883,9 +881,9 @@ function renderKpis(){ const act = activos();
   const cumpl = total ? Math.round(asignados/total*100) : 0;
   const ventana = act.filter(v=>{ const d=diffDias(primerEvento(v)); return d>=0 && d<=3; });
   const pendVentana = ventana.filter(v=>!tieneVehiculo(v)).length;
-  const enRuta = act.filter(v=>['Retiro en patio','En llenado','En tránsito'].includes(v.estado)).length;
-  const entregados = act.filter(v=>v.estado==='Entregado').length;
-  const novedades = act.filter(v=>v.estado==='Novedad').length;
+  const enRuta = act.filter(v=>['Vacío retirado','Retirado de puerto','Llenado','En bodega de paso'].includes(v.estado)).length;
+  const entregados = act.filter(v=>ETAPAS_FIN.includes(v.estado)).length;
+  const novedades = act.filter(v=>v.novedad).length;
   const cierres = act.filter(v=>v.cierreDoc && diffDias(v.cierreDoc)>=0 && diffDias(v.cierreDoc)<=7).length;
   const retHoy = act.filter(v=>v.fechaRetiro===HOY), retAsig = retHoy.filter(tieneVehiculo).length;
   const llenHoy = act.filter(v=>v.operacion==='EXPO' && v.fechaCargue===HOY), llenAsig = llenHoy.filter(tieneVehiculo).length;
@@ -956,10 +954,10 @@ function renderAlertas(){ const act = activos();
   act.forEach(v=>{
     const d = diffDias(v.fechaCargue), d0 = diffDias(primerEvento(v));
     const cuando = v.fechaRetiro ? `retiro en patio ${fd(v.fechaRetiro)} · llenado ${fd(v.fechaCargue)}` : `cargue ${fd(v.fechaCargue)}`;
-    if (!tieneVehiculo(v) && d0>=0 && d0<=3 && v.estado!=='Entregado') a.push({t:'Asignar', c:'var(--bad)', p:d0, m:`${v.operacion} ${v.pais||''} · ${cuando} sin vehículo${v.booking?` (booking ${esc(v.booking)})`:''}`});
-    if (v.cierreDoc){ const c=diffDias(v.cierreDoc); if (c>=0 && c<=2 && !['En puerto/patio','Entregado'].includes(v.estado)) a.push({t:'Cierre doc', c:'var(--warn)', p:c, m:`${esc(v.mn)} cierra ${fd(v.cierreDoc)} · ${v.placa||'sin placa'} aún en "${v.estado}"`}); }
-    if (v.estado==='Novedad') a.push({t:'Novedad', c:'var(--s-nov)', p:-1, m:`${v.placa||v.id}: ${esc(v.observacion)}`});
-    if (v.observacion && /cita/i.test(v.observacion) && v.estado!=='Entregado' && d<=0) a.push({t:'Cita', c:'var(--s-tran)', p:0, m:`${v.placa}: ${esc(v.observacion)}`});
+    if (!tieneVehiculo(v) && d0>=0 && d0<=3 && !ETAPAS_FIN.includes(v.estado)) a.push({t:'Asignar', c:'var(--bad)', p:d0, m:`${v.operacion} ${v.pais||''} · ${cuando} sin vehículo${v.booking?` (booking ${esc(v.booking)})`:''}`});
+    if (v.cierreDoc){ const c=diffDias(v.cierreDoc); if (c>=0 && c<=2 && !['Entregado en puerto','Zarpó'].includes(v.estado)) a.push({t:'Cierre doc', c:'var(--warn)', p:c, m:`${esc(v.mn)} cierra ${fd(v.cierreDoc)} · ${v.placa||'sin placa'} aún en "${v.estado}"`}); }
+    if (v.novedad) a.push({t:'Novedad', c:'var(--s-nov)', p:-1, m:`${v.placa||v.id}: ${esc(v.observacion)}`});
+    if (v.observacion && /cita/i.test(v.observacion) && !ETAPAS_FIN.includes(v.estado) && d<=0) a.push({t:'Cita', c:'var(--s-tran)', p:0, m:`${v.placa}: ${esc(v.observacion)}`});
   });
   const nE = window.MODO_CLIENTE ? 0 : errores().filter(x=>x.sev==='Alta').length;
   if (!window.MODO_CLIENTE) (window.BITACORA||[]).filter(b=>b.estadoAccion!=='Hecha' && b.prioridad==='Alta').forEach(b=>
@@ -1010,13 +1008,13 @@ function renderProximos(){ const act = viajes;
     <td><span class="tag-ev" style="background:${c}">${t}</span> ${dia(f)}${f<HOY?`<br><span class="sub" style="color:var(--warn);font-weight:600">En curso · hace ${-diffDias(f)} d</span>`:''}</td>
     <td>${v.fechaRetiro ? dia(v.fechaRetiro, patio(v)) : '—'}</td>
     <td>${dia(v.fechaCargue, v.operacion==='EXPO' ? 'Planta Reckitt' : (v.bodega||''))}</td>
-    <td>${tieneVehiculo(v)?`<span class="placa">${esc(v.placa)}</span>`:'<span class="missing">Sin asignar</span>'}</td><td>${esc(v.pais||'—')}<br><span class="sub">${v.booking?'BK '+esc(v.booking):'Sin booking'}</span><br><span class="sub">${esc(v.mn||'—')}</span></td><td>${fd(v.etd)}</td><td>${pill(v.estado)}${celdaConductor(v)}</td><td class="solo-interno">${celdaAccion(v)}</td>
+    <td>${tieneVehiculo(v)?`<span class="placa">${esc(v.placa)}</span>`:'<span class="missing">Sin asignar</span>'}</td><td>${esc(v.pais||'—')}<br><span class="sub">${v.booking?'BK '+esc(v.booking):'Sin booking'}</span><br><span class="sub">${esc(v.mn||'—')}</span></td><td>${fd(v.etd)}</td><td>${pill(v.estado)}${v.novedad?' '+pill('Novedad'):''}${celdaConductor(v)}</td><td class="solo-interno">${celdaAccion(v)}</td>
     <td><button class="link" onclick="abrir('${v.id}')">Actualizar</button></td></tr>`).join('')}</table></div>` : '<div class="sub">No hay viajes con estos filtros.</div>');
 }
 function renderFeed(){
   const items = historial.slice(-8).reverse();
   if (!items.length){
-    $('#feed').innerHTML = viajes.filter(v=>v.observacion).slice(0,6).map(v=>`<div class="it">${pill(v.estado)} <b>${esc(v.placa||v.id)}</b> — ${esc(v.observacion)}<br><time>Base inicial</time></div>`).join('');
+    $('#feed').innerHTML = viajes.filter(v=>v.observacion).slice(0,6).map(v=>`<div class="it">${pill(v.estado)}${v.novedad?' '+pill('Novedad'):''} <b>${esc(v.placa||v.id)}</b> — ${esc(v.observacion)}<br><time>Base inicial</time></div>`).join('');
     return;
   }
   $('#feed').innerHTML = items.map(h=>`<div class="it"><b>${esc(h.placa||h.id)}</b>: ${h.estadoAnterior===h.estadoNuevo ? '' : esc(h.estadoAnterior)+' → '}${pill(h.estadoNuevo)} ${h.observacion?`<br>${esc(h.observacion)}`:''}<br><time>${new Date(h.fecha).toLocaleString('es-CO')} · ${esc(h.usuario)}</time></div>`).join('');
@@ -1171,7 +1169,7 @@ function renderMotonaves(){
       <div><h3>🚢 ${esc(k)}</h3><div class="sub">${esc(v0.pais||'')} · ${esc(v0.fwd||'')} · Puerto ${esc(v0.puerto||'—')}</div></div>
       <span class="pill" style="background:${asig===L.length?'var(--ok)':'var(--warn)'}">${asig}/${L.length} asignados</span></div>
       <div class="meta"><div>Cierre doc<b>${fd(v0.cierreDoc)} <span class="cd" style="color:${cdCol}">(${cdTxt})</span></b></div><div>ETD<b>${fd(v0.etd)}</b></div><div>ETA<b>${fd(v0.eta)}</b></div></div>
-      ${L.map(v=>`<div class="unit"><span>${tieneVehiculo(v)?`<span class="placa">${esc(v.placa)}</span>`:'<span class="missing">Sin vehículo</span>'} <span class="sub">Retiro ${fd(v.fechaRetiro)} · Llenado ${fd(v.fechaCargue)} · ${esc(v.booking||'')}</span></span><span>${sitTag(v)} ${pill(v.estado)} <button class="link" onclick="abrir('${v.id}')">✎</button></span></div>`).join('')}
+      ${L.map(v=>`<div class="unit"><span>${tieneVehiculo(v)?`<span class="placa">${esc(v.placa)}</span>`:'<span class="missing">Sin vehículo</span>'} <span class="sub">Retiro ${fd(v.fechaRetiro)} · Llenado ${fd(v.fechaCargue)} · ${esc(v.booking||'')}</span></span><span>${sitTag(v)} ${pill(v.estado)}${v.novedad?' '+pill('Novedad'):''} <button class="link" onclick="abrir('${v.id}')">✎</button></span></div>`).join('')}
     </div>`; }).join('');
 }
 
@@ -1202,14 +1200,22 @@ function paradas(v){
   ];
 }
 // cumplidas en orden: una parada cuenta si ella y todas las anteriores tienen fecha cumplida
-// el estado que el equipo marcó en la ventana del viaje adelanta la ruta aunque falten las fechas
-const PARADAS_ESTADO = {
-  EXPO: {'Retiro en patio':1, 'En llenado':2, 'En tránsito':3, 'En puerto/patio':4, 'Entregado':4},
-  IMPO: {'Retiro en patio':1, 'En tránsito':2, 'En puerto/patio':3, 'Entregado':3},
-};
 function avance(v){ const P = paradas(v); let n = 0; while (n < P.length && P[n][2]) n++;
-  if (!v.estadoAuto) n = Math.max(n, (PARADAS_ESTADO[v.operacion]||{})[v.estado] || 0);
   return {P, n}; }
+// etapa de la operación (ver ESTADOS): la más avanzada que respaldan las fechas o las tirillas del viaje.
+// El texto de la observación no cuenta; "En bodega de paso" = subviaje con el urbano pendiente.
+function etapaOperacion(v){
+  if (situacion(v)==='Cancelado' || v.estadoHoja==='Cancelado') return 'Cancelado';
+  const ya = f => !!f && f <= HOY;
+  const sub = hijosDe(v)[0], dePaso = sub && !ya(sub.fechaUrbano);
+  if (v.operacion==='IMPO') return ya(v.fechaDevolucion) || v.tirillaDevolucion ? 'Vacío devuelto'
+    : dePaso ? 'En bodega de paso' : (sub && ya(sub.fechaUrbano)) || ya(v.fechaCargue) ? 'Entregado en bodega'
+    : ya(v.fechaRetiro) ? 'Retirado de puerto' : tieneVehiculo(v) ? 'Asignado' : 'Sin asignar';
+  const enPuerto = ya(v.fechaEntregaPuerto) || !!v.tirillaEntrega || (sub && ya(sub.fechaUrbano));
+  return dePaso && !enPuerto ? 'En bodega de paso' : enPuerto && ya(v.etd) ? 'Zarpó' : enPuerto ? 'Entregado en puerto'
+    : ya(v.fechaCargue) ? 'Llenado' : ya(v.fechaRetiro) ? 'Vacío retirado' : tieneVehiculo(v) ? 'Asignado' : 'Sin asignar';
+}
+function etapasViajes(){ viajes.forEach(v => { v.novedad = v.estadoHoja === 'Novedad'; v.estado = etapaOperacion(v); }); }
 function miniAvance(v){ const {P,n} = avance(v); return `<span class="mini" title="${esc(n<P.length ? 'En: '+P[n][0] : 'Completo')}">${P.map((_,i)=>`<i class="${i<n?'ok':i===n?'ya':''}"></i>`).join('')}</span>`; }
 // el transporte termina con la entrega en puerto (EXPO) o la devolución del vacío (IMPO); de ahí en adelante cuenta la facturación
 // lead time de facturación: desde que termina el transporte (entrega en puerto EXPO / devolución del vacío IMPO) hasta la factura;
@@ -1294,11 +1300,13 @@ function rutaPedido(v){
   const hacia = {Puerto:'En camino a puerto', Bodega:'En camino a bodega', Vacío:'Vacío por devolver', 'Retiro lleno':'Por retirar en puerto', Llenado:'En llenado', Patio:'Por retirar el vacío'};
   const sinTirilla = v.operacion==='EXPO' ? !v.tirillaEntrega : !v.tirillaDevolucion;
   const subP = hijosDe(v).find(s => !(s.fechaUrbano && s.fechaUrbano <= HOY));
-  const sit = situacion(v), ahora = subP && n < P.length ? `En patio ${subP.patioSub || 'intermedio'} · urbano ${subP.fechaUrbano ? fd(subP.fechaUrbano) : 'sin fecha'}`
-    : n>=P.length ? (v.operacion==='IMPO' ? (sinTirilla ? 'Vacío devuelto · falta tirilla' : 'Vacío devuelto ✔') : 'Llegó a destino')
-    : n===0 ? 'Por iniciar'
-    : (v.operacion==='EXPO' && P[n][0]==='Motonave') ? (sinTirilla ? 'Entregado en puerto · falta tirilla' : 'Entregado en puerto · esperando zarpe')
-    : (hacia[P[n][0]] || 'Hacia '+P[n][0].toLowerCase())+' · '+P[n][1];
+  // la etapa de la operación (sale de las fechas) con su detalle
+  const sit = situacion(v), et = v.estado, ahora = et==='En bodega de paso' && subP ? `En bodega de paso ${subP.patioSub || ''} · urbano ${subP.fechaUrbano ? fd(subP.fechaUrbano) : 'sin fecha'}`
+    : et==='Vacío devuelto' ? (sinTirilla ? 'Vacío devuelto · falta tirilla' : 'Vacío devuelto ✔')
+    : et==='Entregado en puerto' ? (sinTirilla ? 'Entregado en puerto · falta tirilla' : 'Entregado en puerto · esperando zarpe')
+    : et==='Zarpó' ? (sinTirilla ? 'Zarpó · falta tirilla' : 'Zarpó ✔')
+    : n < P.length && !['Sin asignar','Asignado'].includes(et) ? `${et} · ${(hacia[P[n][0]] || 'hacia '+P[n][0].toLowerCase()).toLowerCase()}`
+    : et;
   const col = sit==='Cerrado' ? 'var(--ok)' : n===0 ? 'var(--muted)' : 'var(--accent)';
   const ref = v.operacion==='IMPO' ? (v.pedido ? 'Pedido '+v.pedido : v.id) : (v.booking ? 'Booking '+v.booking : v.id);
   return `<div class="ruta"><div class="dos"><div class="izq">
@@ -1324,7 +1332,7 @@ function rutaPedido(v){
 }
 
 function abrir(id){
-  const v = viajes.find(x=>x.id===id); editId = id; estadoSel = v.estado;
+  const v = viajes.find(x=>x.id===id); editId = id; estadoSel = MARCAS.some(m=>m.k===v.estadoHoja) ? v.estadoHoja : '';
   $('#mTitle').textContent = `${v.placa || 'Sin vehículo'} · ${v.operacion} ${v.pais||''}`;
   $('#mSub').textContent = `${v.id} · ${v.fechaRetiro?`Retiro en patio ${fd(v.fechaRetiro)} · Llenado planta ${fd(v.fechaCargue)}`:`Cargue ${fd(v.fechaCargue)}`} · Última actualización ${new Date(v.actualizado).toLocaleString('es-CO')}`;
   const fx = x => x ? fd(x) : '';
@@ -1356,7 +1364,9 @@ function abrir(id){
   $('#ov').classList.add('open');
 }
 function pintarEstados(){
-  $('#mStates').innerHTML = ESTADOS.map(e=>`<button type="button" class="${estadoSel===e.k?'on':''}" data-e="${e.k}"><i style="background:${e.c}"></i>${e.k}</button>`).join('');
+  const v = viajes.find(x=>x.id===editId);
+  $('#mStates').innerHTML = `<span class="sub" style="margin-right:6px">Etapa: ${v ? pill(v.estado) : ''} <span title="Sale de las fechas del viaje: para avanzarla, ponga la fecha correspondiente">(sale de las fechas)</span> · Marcar:</span>`
+    + MARCAS.map(e=>`<button type="button" class="${estadoSel===e.k?'on':''}" data-e="${e.k}"><i style="background:${e.c}"></i>${e.k}</button>`).join('');
 }
 // Campos que se editan en la ventana del viaje: los mismos de las pestañas Seguimiento EXPO / IMPO (ver SEGUIMIENTO en Code.gs)
 const EMPRESAS = ['Reckitt Benckiser','Reckitt Health','Reckitt Hygiene','Mead Johnson'];
@@ -1446,7 +1456,7 @@ function marcarCambios(){
   $('#mNCambios').textContent = n ? `${n} dato${n===1?'':'s'} por guardar` : '';
 }
 function cerrar(){ $('#ov').classList.remove('open'); editId=null; }
-$('#mStates').onclick = e => { const b=e.target.closest('button'); if(!b) return; estadoSel=b.dataset.e; pintarEstados();
+$('#mStates').onclick = e => { const b=e.target.closest('button'); if(!b) return; estadoSel = estadoSel===b.dataset.e ? '' : b.dataset.e; pintarEstados();
   // el viaje solo se cierra a mano (STATUS = Cerrado) o al registrar N° y fecha de factura; marcar "Entregado" no lo cierra
   const sit = $('#mForm [data-k=situacion]');
   if (sit && estadoSel==='Cancelado') sit.value = 'Cancelado';
@@ -1457,9 +1467,9 @@ document.addEventListener('keydown', e => { if (e.key==='Escape') cerrar(); });
 $('#mSave').onclick = () => {
   const v = viajes.find(x=>x.id===editId);
   const cambios = cambiosForm(v), usuario = $('#mUsuario').value.trim();
-  let estado = estadoSel;
-  if ((cambios.placa || v.placa) && estado==='Sin asignar') estado = 'Asignado';
-  if (estado !== v.estado) cambios.estado = estado;
+  // la columna Estado de la base solo guarda las marcas (Novedad / Cancelado); la etapa sale de las fechas
+  const marcaAntes = MARCAS.some(m=>m.k===v.estadoHoja) ? v.estadoHoja : '';
+  if ((estadoSel||'') !== marcaAntes) cambios.estado = estadoSel || '';
   if (Object.keys(cambios).length && !usuario) { $('#mUsuario').focus(); return toast('Escriba su nombre para guardar en la base'); }
   try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
   if (Object.keys(cambios).length) guardarCambio(editId, cambios, usuario);
@@ -1764,7 +1774,7 @@ function sugerencias(){
   return [v && `¿Status de ${v.placa}?`, pais && `¿Qué va para ${pais.pais.charAt(0)+pais.pais.slice(1).toLowerCase()}?`, mn && `¿Cómo va la ${mn.mn.split(' ').slice(0,3).join(' ')}?`, '¿Qué retiros hay hoy?', '¿Qué falta por asignar?', !window.MODO_CLIENTE && 'Lista de errores y acciones pendientes', !window.MODO_CLIENTE && 'Filtra los pendientes por facturar'].filter(Boolean);
 }
 function tarjetaViaje(v){
-  return `<div class="trip"><b>${v.placa?`<span class="placa">${esc(v.placa)}</span>`:'Sin vehículo'}</b> ${sitTag(v)} ${pill(v.estado)}${celdaConductor(v) || '<br>'}
+  return `<div class="trip"><b>${v.placa?`<span class="placa">${esc(v.placa)}</span>`:'Sin vehículo'}</b> ${sitTag(v)} ${pill(v.estado)}${v.novedad?' '+pill('Novedad'):''}${celdaConductor(v) || '<br>'}
     ${v.operacion} → ${esc(v.pais||'—')} · ${esc(v.conductor||'sin conductor')}<br>
     ${v.fechaRetiro?`Retiro patio ${fd(v.fechaRetiro)} (${esc(v.patio||'por definir')}) · `:''}${v.operacion==='EXPO'?'Llenado':'Cargue'} ${fd(v.fechaCargue)}<br>
     ${v.mn?`MN ${esc(v.mn)} · ETD ${fd(v.etd)} · Cierre doc ${fd(v.cierreDoc)}<br>`:''}${v.booking?`Booking ${esc(v.booking)}<br>`:''}
@@ -2000,7 +2010,7 @@ function respuestaLocal(q){
     return p.length ? listaCorta(p, 'Sin vehículo asignado hay') : 'Todos los viajes tienen vehículo asignado.';
   }
   if (/novedad/i.test(q)){
-    const n = viajes.filter(v=>v.estado==='Novedad');
+    const n = viajes.filter(v=>v.novedad);
     return n.length ? `Hay ${n.length} viaje(s) con novedad:` + n.map(tarjetaViaje).join('') : 'No hay viajes con novedad en este momento.';
   }
   return 'No encontré ese viaje. Pregúntame por <b>placa</b>, <b>booking</b>, <b>conductor</b>, <b>destino</b> o <b>motonave</b>, o por “retiros de hoy” y “qué falta por asignar”.';
