@@ -1311,8 +1311,9 @@ function etapaOperacion(v){
   if (situacion(v)==='Cancelado' || v.estadoHoja==='Cancelado') return 'Cancelado';
   const ya = f => !!f && f <= HOY;
   const sub = hijosDe(v)[0], dePaso = sub && !ya(sub.fechaUrbano);
-  if (v.operacion==='IMPO') return ya(v.fechaDevolucion) || v.tirillaDevolucion ? 'Vacío devuelto'
-    : dePaso ? 'En bodega de paso' : (sub && ya(sub.fechaUrbano)) || ya(v.fechaCargue) ? 'Entregado en bodega'
+  // con el urbano pendiente la carga sigue en la bodega de paso, aunque el vacío ya figure devuelto (se revisa en Errores)
+  if (v.operacion==='IMPO') return dePaso ? 'En bodega de paso' : ya(v.fechaDevolucion) || v.tirillaDevolucion ? 'Vacío devuelto'
+    : (sub && ya(sub.fechaUrbano)) || ya(v.fechaCargue) ? 'Entregado en bodega'
     : ya(v.fechaRetiro) ? 'Retirado de puerto' : tieneVehiculo(v) ? 'Asignado' : 'Sin asignar';
   const enPuerto = ya(v.fechaEntregaPuerto) || !!v.tirillaEntrega || (sub && ya(sub.fechaUrbano));
   return dePaso && !enPuerto ? 'En bodega de paso' : enPuerto && ya(v.etd) ? 'Zarpó' : enPuerto ? 'Entregado en puerto'
