@@ -119,6 +119,7 @@ body.cliente #nav [data-v="errores"], body.cliente #nav [data-v="acciones"], bod
 .chips{display:flex;gap:6px;flex-wrap:wrap}
 .gsel{border:1px solid var(--border);background:var(--surface);color:inherit;padding:5px 8px;border-radius:99px;font-size:12px;max-width:200px}
 .gsel.on{border-color:var(--accent);color:var(--accent);font-weight:600}
+.gbus{width:230px;max-width:100%;border-radius:99px}
 .chip{border:1px solid var(--border);background:var(--surface);padding:5px 10px;border-radius:99px;cursor:pointer;font-size:12px}
 .chip.on{background:var(--text);color:var(--surface);border-color:var(--text)}
 .tbl-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
@@ -524,11 +525,22 @@ function normalizar(v, i){
 let G = {op:'', sit:'Abierto', sede:'', emp:'', sol:'', fwd:'', ped:'', bk:''};
 try { Object.assign(G, JSON.parse(localStorage.getItem('rkt-filtros')) || {}); } catch(e){}
 G.sit = {Abiertos:'Abierto', Cerrados:'Cerrado'}[G.sit] || G.sit;
+G.q = '';   // la búsqueda escrita no se recuerda entre visitas
 // listas desplegables: campo del viaje y texto cuando está vacío
 const FILTROS_LISTA = [['sede','sede','Sede','Sin sede'], ['emp','empresa','Empresa','Sin empresa'], ['sol','solicitante','Solicitante','Sin solicitante'], ['fwd','fwd','FWD / agente','Sin FWD'], ['ped','pedido','Pedido','Sin pedido'], ['bk','booking','Booking / BL','Sin booking']];
 const valorFiltro = (v, campo, vacio) => String(v[campo]||'').trim() || vacio;
-const enListas = v => !v.padre && FILTROS_LISTA.every(([k, campo, , vacio]) => !G[k] || valorFiltro(v, campo, vacio)===G[k]);
-const enGlobal = v => (!G.op || v.operacion===G.op) && enSituacion(v, G.sit) && enListas(v);
+// buscador libre: cada palabra debe aparecer en algún dato del viaje o de sus subviajes (placa, contenedor, RBHY, observación…);
+// sin tildes ni mayúsculas, y los códigos se comparan sin guiones ni espacios (TLLU769774-2 = TLLU7697742)
+const textoViaje = v => [v, ...viajes.filter(x => x.padre === v.id)].map(x => Object.entries(x).filter(([k, y]) => k!=='historial' && y!==null && typeof y!=='object').map(([, y]) => y).join(' ')).join(' ');
+function enTexto(v){
+  const t = minus(G.q).split(/\s+/).filter(Boolean);
+  if (!t.length) return true;
+  const txt = minus(textoViaje(v)), comp = txt.replace(/[^a-z0-9]/g, '');
+  return t.every(w => txt.includes(w) || (w.replace(/[^a-z0-9]/g, '') && comp.includes(w.replace(/[^a-z0-9]/g, ''))));
+}
+const enListas = v => !v.padre && FILTROS_LISTA.every(([k, campo, , vacio]) => !G[k] || valorFiltro(v, campo, vacio)===G[k]) && enTexto(v);
+// con algo escrito en el buscador se busca en todos los viajes, abiertos y cerrados
+const enGlobal = v => (!G.op || v.operacion===G.op) && (G.q.trim() || enSituacion(v, G.sit)) && enListas(v);
 const visibles = () => viajes.filter(enGlobal);
 // Los viajes cancelados no cuentan en indicadores, alertas ni programación
 const activos = () => visibles().filter(v=>v.estado!=='Cancelado');
@@ -671,7 +683,8 @@ function chipsGlobales(){
   const chip = (k, val, txt, cnt) => `<button class="chip ${G[k]===val?'on':''}" data-g="${k}" data-val="${val}">${txt} · ${cnt}</button>`;
   return `<div class="chips">${['','EXPO','IMPO'].map(o=>chip('op', o, o||'IMPO + EXPO', n(o, G.sit))).join('')}</div>
     <span class="sub">|</span><div class="chips">${[...situacionesPresentes(), ''].map(s=>chip('sit', s, s ? (PLURAL[s]||s) : 'Todos', n(G.op, s))).join('')}</div>
-    <span class="sub">|</span>${FILTROS_LISTA.map(([k, campo, titulo, vacio]) => {
+    <span class="sub">|</span><input type="search" class="gsel gbus ${G.q.trim()?'on':''}" data-gq aria-label="Buscar en los viajes" placeholder="🔍 Buscar: placa, contenedor, RBHY, DO…" value="${esc(G.q)}">
+    ${FILTROS_LISTA.map(([k, campo, titulo, vacio]) => {
       const vals = [...new Set(viajes.map(v=>valorFiltro(v, campo, vacio)))].sort((a,b)=> (a===vacio)-(b===vacio) || a.localeCompare(b));
       return `<select class="gsel ${G[k]?'on':''}" data-gsel="${k}" aria-label="${titulo}"><option value="">${titulo}: todos</option>${vals.map(x=>`<option value="${esc(x)}" ${G[k]===x?'selected':''}>${esc(x)}</option>`).join('')}</select>`; }).join('')}`;
 }
@@ -1668,6 +1681,20 @@ $('#proximos').onclick = e => { const b = e.target.closest('[data-ag]'); if (!b)
   if (b.dataset.ag==='act') agAct = b.dataset.val; else agDia = b.dataset.val;
   renderProximos(); };
 $('#q').oninput = renderTabla;
+// buscador de la barra de filtros: se pinta de nuevo todo el tablero, así que se devuelve el foco al mismo cuadro
+let tBusca;
+document.addEventListener('input', e => {
+  const s = e.target.closest('[data-gq]'); if (!s) return;
+  G.q = s.value;
+  const donde = s.closest('#gViajes') ? '#gViajes' : '#gbar';
+  clearTimeout(tBusca);
+  tBusca = setTimeout(() => {
+    const pos = s.selectionStart;
+    render();
+    const n = document.querySelector(donde + ' [data-gq]');
+    if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch(err){} }
+  }, 250);
+});
 document.addEventListener('change', e => { const s=e.target.closest('[data-gsel]'); if(!s) return; G[s.dataset.gsel] = s.value;
   try { localStorage.setItem('rkt-filtros', JSON.stringify(G)); } catch(e){}
   render(); });
