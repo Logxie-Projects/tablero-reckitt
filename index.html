@@ -585,7 +585,9 @@ function pendientesOps(v){
 function pendientesFact(v){
   if (!terminoTransporte(v) || ['En aprobación Reckitt','Facturado','Sin servicio'].includes(cobro(v).fact)) return [];
   const f = [];
+  // datos que pide facturación: EXPO → RBHY y OBD; IMPO → N° de pedido y contenedor
   if (v.operacion==='EXPO' && (!v.rbhy || !v.obd)) f.push('RBHY / OBD');
+  if (v.operacion==='IMPO' && (!v.pedido || !v.contenedor)) f.push([!v.pedido && 'N° de pedido', !v.contenedor && 'contenedor'].filter(Boolean).join(' y '));
   if (!Number(v.tarifa)) f.push('tarifa');
   return f;
 }
@@ -1390,8 +1392,11 @@ function panelFactura(v, P, n){
   const leadF = !fin ? '' : `<div class="pieF"><h4>Lead time facturación</h4>${!lf ? `<span class="sub">Falta la fecha de ${v.operacion==='EXPO' ? 'entrega en puerto' : 'devolución del vacío'}</span>`
     : `<b style="${!lf.hecho && lf.dias>5 ? 'color:var(--bad)' : ''}">${lf.dias} d</b> <span class="sub">${lf.hecho ? 'facturado'+(v.fechaFactura ? ' '+fd(v.fechaFactura) : '') : 'sin facturar'}</span>`}</div>`;
   // datos que facturación necesita para la relación a Reckitt
-  const falta = [!v.rbhy && 'RBHY', !v.obd && 'OBD'].filter(Boolean);
-  const docs = (v.rbhy || v.obd || fin) ? `<div class="sub" style="margin:4px 0 2px">${[v.rbhy && esc(v.rbhy), v.obd && 'OBD '+esc(v.obd)].filter(Boolean).join(' · ')}${falta.length && fin ? `${v.rbhy || v.obd ? ' · ' : ''}<span style="color:var(--warn)">Falta ${falta.join(' y ')}</span>` : ''}</div>` : '';
+  // lo que pide facturación: EXPO → RBHY y OBD; IMPO → N° de pedido y contenedor
+  const expo = v.operacion==='EXPO';
+  const datosF = expo ? [[v.rbhy, 'RBHY', x => esc(x)], [v.obd, 'OBD', x => 'OBD '+esc(x)]] : [[v.pedido, 'N° de pedido', x => 'Pedido '+esc(x)], [v.contenedor, 'contenedor', x => esc(x)]];
+  const tiene = datosF.filter(d => d[0]), falta = datosF.filter(d => !d[0]).map(d => d[1]);
+  const docs = (tiene.length || fin) ? `<div class="sub" style="margin:4px 0 2px">${tiene.map(d => d[2](d[0])).join(' · ')}${falta.length && fin ? `${tiene.length ? ' · ' : ''}<span style="color:var(--warn)">Falta ${falta.join(' y ')}</span>` : ''}</div>` : '';
   return `${fin}${docs}<div class="resumen"><div><h4>Resumen de gastos</h4>${gastos}</div></div>${leadF}`;
 }
 function rutaPedido(v){
@@ -1496,7 +1501,7 @@ const CAMPOS_ETAPA = {
     ['Devolución del vacío', [['ciudadDevolucion','Ciudad de devolución','lista',['Buenaventura','Cartagena','Cali']],['citaDevolucion','Cita de devolución','fecha'],
       ['patio','Patio de devolución','dl','dlPatio'],['fechaDevolucion','Fecha de devolución','fecha'],['tirillaDevolucion','Tirilla de devolución']]],
     ['Costos y facturación', [['tarifa','Flete (tarifa)','num'],['conceptoExtra','Extracostos','extras'],
-      ['aprobacionExtra','Aprobación extracostos','lista',['Pendiente','Aprobado','Rechazado']],['facturacion','Facturación','lista',FACTURACION],['numFactura','N° factura'],['fechaFactura','Fecha factura','fecha'],['rbhy','RBHY (factura Reckitt)'],['obd','OBD (Delivery Number)'],['obsFactura','Observaciones facturación']]]]
+      ['aprobacionExtra','Aprobación extracostos','lista',['Pendiente','Aprobado','Rechazado']],['facturacion','Facturación','lista',FACTURACION],['numFactura','N° factura'],['fechaFactura','Fecha factura','fecha'],['obsFactura','Observaciones facturación']]]]
 };
 // valor de un campo tal como lo muestra el formulario (placa y conductor en mayúsculas)
 const valorCampo = (v, k) => { const x = k==='situacion' ? situacion(v) : String(v[k] ?? ''); return ['placa','conductor'].includes(k) ? x.toUpperCase() : x; };
