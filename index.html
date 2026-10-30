@@ -559,6 +559,8 @@ const enListas = v => !v.padre && FILTROS_LISTA.every(([k, campo, , vacio]) => !
 // con texto en el buscador, o con un filtro de Facturación o de Foco, se mira en todos los viajes (abiertos y cerrados)
 const enGlobal = v => (!G.op || v.operacion===G.op) && (G.q.trim() || G.fact || G.foco || enSituacion(v, G.sit)) && enListas(v)
   && (!G.foco || (G.foco===FOCO_OPS ? pendientesOps(v).length > 0 : focoDe(v)===G.foco));
+// cuántos viajes se verían con este cambio de filtro, dejando los demás como están (para mostrarlo en cada opción)
+function cuentaCon(cambio){ const antes = G; G = {...G, ...cambio}; try { return viajes.filter(enGlobal).length; } finally { G = antes; } }
 /* ---------- foco del equipo operativo: en qué está cada viaje y qué le falta ---------- */
 // cada viaje cae en un solo grupo, en el orden de la operación
 const FOCOS = ['Por asignar vehículo','Por iniciar','En tránsito','En bodega de paso','Terminado · faltan datos','Listo para facturar','En facturación','Sin servicio'];
@@ -748,12 +750,12 @@ function chipsGlobales(){
   return sel('op', 'IMPO/EXPO', [['', 'ambas', n('', G.sit)], ['IMPO', 'IMPO', n('IMPO', G.sit)], ['EXPO', 'EXPO', n('EXPO', G.sit)]])
     + sel('sit', 'STATUS', [...situacionesPresentes().map(s=>[s, PLURAL[s]||s, n(G.op, s)]), ['', 'Todos', n(G.op, '')]])
     + `<span class="sub">|</span><input type="search" class="gsel gbus ${G.q.trim()?'on':''}" data-gq aria-label="Buscar en los viajes" placeholder="🔍 Buscar: placa, contenedor, RBHY, DO…" value="${esc(G.q)}">
-    <select class="gsel ${G.foco?'on':''}" data-gsel="foco" aria-label="Foco del equipo" title="En qué está cada viaje y qué le falta"><option value="">🎯 Foco: todos</option>${(() => { const base = viajes.filter(v=>!v.padre && (!G.op || v.operacion===G.op)); const op = (x, n) => `<option value="${esc(x)}" ${G.foco===x?'selected':''}>${esc(x)} · ${n}</option>`;
-      return op(FOCO_OPS, base.filter(v=>pendientesOps(v).length).length) + '<option disabled>──────────</option>' + FOCOS.map(x => op(x, base.filter(v=>focoDe(v)===x).length)).join(''); })()}</select>
-    <select class="gsel ${G.fact?'on':''}" data-gsel="fact" aria-label="Facturación"><option value="">Facturación: todos</option>${ETAPAS_FACTURACION.map(x=>`<option ${G.fact===x?'selected':''}>${esc(x)}</option>`).join('')}</select>
+    <select class="gsel ${G.foco?'on':''}" data-gsel="foco" aria-label="Foco del equipo" title="En qué está cada viaje y qué le falta"><option value="">🎯 Foco: todos · ${cuentaCon({foco:''})}</option>${(() => { const op = x => `<option value="${esc(x)}" ${G.foco===x?'selected':''}>${esc(x)} · ${cuentaCon({foco:x})}</option>`;
+      return op(FOCO_OPS) + '<option disabled>──────────</option>' + FOCOS.map(op).join(''); })()}</select>
+    <select class="gsel ${G.fact?'on':''}" data-gsel="fact" aria-label="Facturación"><option value="">Facturación: todos · ${cuentaCon({fact:''})}</option>${ETAPAS_FACTURACION.map(x=>`<option value="${esc(x)}" ${G.fact===x?'selected':''}>${esc(x)} · ${cuentaCon({fact:x})}</option>`).join('')}</select>
     ${FILTROS_LISTA.map(([k, campo, titulo, vacio]) => {
       const vals = [...new Set(viajes.map(v=>valorFiltro(v, campo, vacio)))].sort((a,b)=> (a===vacio)-(b===vacio) || a.localeCompare(b));
-      return `<select class="gsel ${G[k]?'on':''}" data-gsel="${k}" aria-label="${titulo}"><option value="">${titulo}: todos</option>${vals.map(x=>`<option value="${esc(x)}" ${G[k]===x?'selected':''}>${esc(x)}</option>`).join('')}</select>`; }).join('')}`;
+      return `<select class="gsel ${G[k]?'on':''}" data-gsel="${k}" aria-label="${titulo}"><option value="">${titulo}: todos · ${cuentaCon({[k]:''})}</option>${vals.map(x=>`<option value="${esc(x)}" ${G[k]===x?'selected':''}>${esc(x)} · ${cuentaCon({[k]:x})}</option>`).join('')}</select>`; }).join('')}`;
 }
 // viajes NUEVO de la operación elegida (IMPO/EXPO) que los demás filtros dejan por fuera: aviso con botón para verlos
 const nuevosOcultos = () => viajes.filter(v => esNuevo(v) && (!G.op || v.operacion===G.op) && !enGlobal(v));
