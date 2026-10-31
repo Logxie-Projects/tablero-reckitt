@@ -350,7 +350,7 @@ body.en-turno #gbar{display:none}
   <section id="v-turno" class="hidden">
     <div class="card">
       <div class="toolbar" style="justify-content:space-between;align-items:flex-start">
-        <div><h2 style="margin:0">Mi turno</h2><div class="sub">Lo que hay que hacer hoy, en orden. Al corregir un viaje sale solo de la lista; "Revisado" lo saca por hoy.</div></div>
+        <div><h2 style="margin:0">Mi turno</h2><div class="sub">Lo que hay que hacer hoy, en orden. Al corregir un viaje sale solo de la lista; "Revisado" lo saca por hoy para todo el equipo.</div></div>
         <div class="chips" id="turnoOps"></div>
       </div>
       <div class="tr-prog"><div id="turnoBarra"></div></div><div class="sub" id="turnoResumen" style="margin:4px 0 8px"></div>
@@ -1032,6 +1032,7 @@ async function cargar(){
     historial = j.historial || [];
     window.MODO_CLIENTE = !j.interno;
     window.BITACORA = j.bitacora || [];
+    window.TURNO = j.turno || [];   // "Revisado" de hoy en Mi turno (compartido)
     window.CONDUCTORES = j.conductores || [];
     window.SEG_INICIO = j.seguimiento || '';
     window.CLAVE = clave;
@@ -1237,15 +1238,29 @@ $('#accFiltros').onclick = e => { const a=e.target.closest('[data-area]'); if (a
 
 /* ---------- Mi turno: la bandeja del coordinador (lo que hay que hacer hoy, en orden) ---------- */
 // Cinco pasos armados con las reglas que ya existen: correos, lo que se mueve hoy y mañana, viajes sin actualizar,
-// lo que viene (alertas) y datos que faltan (errores). "Revisado" es una marca del día en este navegador para ir
-// sacando filas de la vista; no cambia el viaje. Lo que se corrige en la base sale solo de la bandeja.
+// lo que viene (alertas) y datos que faltan (errores). Lo que se corrige en la base sale solo de la bandeja.
+// "Revisado" saca una fila por hoy para TODO el equipo (bandeja compartida, D1): se guarda en la base (pestaña
+// Turno revisado) con quién y a qué hora; no cambia el viaje.
 let turnoOp = (() => { try { return localStorage.getItem('rkt-turno-op') || ''; } catch(e){ return ''; } })();
-const claveRevisados = () => 'rkt-turno-' + HOY;
-const revisados = () => { try { return new Set(JSON.parse(localStorage.getItem(claveRevisados()) || '[]')); } catch(e){ return new Set(); } };
-function marcarRevisado(k){
-  const s = revisados(); s.has(k) ? s.delete(k) : s.add(k);
-  try { localStorage.setItem(claveRevisados(), JSON.stringify([...s])); } catch(e){}
+const revisados = () => new Map((window.TURNO || []).map(x => [x.clave, x]));
+async function marcarRevisado(k){
+  let usuario = ''; try { usuario = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
+  if (!usuario) {
+    usuario = (prompt('¿Quién eres? Queda como "Revisado por …" para todo el equipo') || '').trim();
+    if (!usuario) return;
+    try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
+  }
+  const antes = window.TURNO || [], revisado = !revisados().has(k);
+  const hora = new Date().toLocaleTimeString('es-CO', {hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Bogota'});
+  window.TURNO = revisado ? [...antes, {clave: k, estado: 'Revisado', usuario, hora}] : antes.filter(x => x.clave !== k);
   renderTurno();
+  try {
+    const r = await fetch(CFG.SHEETS_API_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'},
+      body: JSON.stringify({action: 'turno', clave: window.CLAVE, k, revisado, usuario})});
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'error');
+    window.TURNO = j.turno || window.TURNO; renderTurno();
+  } catch(e) { window.TURNO = antes; renderTurno(); toast('No se guardó el revisado: ' + e.message); }
 }
 // lo que pasa en el viaje en cada fecha (para "hoy y mañana")
 function hitosDe(v){
@@ -1324,8 +1339,9 @@ function filaTurno(x, rev){
     detalle = esc(x.e[0].porque);
     acc = [btnT('Corregir', `data-t-abrir="${v.id}"`), buscar];
   }
-  acc.push(btnT(rev ? '↺ Volver a la lista' : '✓ Revisado', `data-t-rev="${x.k}"`, rev ? '' : 'Lo saca de la lista de hoy (solo en este navegador)'));
-  return `<div class="tr-fila${rev ? ' rev' : ''}"><div class="tr-txt"><b>${titulo}</b><div class="sub">${detalle}</div></div><div class="tr-acc">${acc.filter(Boolean).join('')}</div></div>`;
+  acc.push(btnT(rev ? '↺ Volver a la lista' : '✓ Revisado', `data-t-rev="${x.k}"`, rev ? '' : 'Lo saca de la lista de hoy para todo el equipo'));
+  const quien = rev ? `<div class="sub">✓ Revisado por ${esc(rev.usuario)}${rev.hora ? ' · ' + esc(rev.hora) : ''}</div>` : '';
+  return `<div class="tr-fila${rev ? ' rev' : ''}"><div class="tr-txt"><b>${titulo}</b><div class="sub">${detalle}</div>${quien}</div><div class="tr-acc">${acc.filter(Boolean).join('')}</div></div>`;
 }
 
 function renderTurno(){
@@ -1343,7 +1359,7 @@ function renderTurno(){
     const extra = p.n === 1 && nProp ? `<div class="tr-fila"><div class="tr-txt"><b>${nProp} dato${nProp === 1 ? '' : 's'} de los correos por aprobar</b><div class="sub">Lo que LogxIA encontró en los correos: revisarlo y aprobarlo pasa a la base</div></div><div class="tr-acc">${btnT('✔ Revisar datos', 'data-t-prop="1"')}</div></div>` : '';
     return `<div class="tr-paso"><h3><span class="tr-n">${p.n}</span> ${p.titulo} <span class="sub">${pend.length ? pend.length + ' por hacer' : ''}${rev.length ? ' · ' + rev.length + ' revisados' : ''}</span></h3>
       ${extra}${pend.map(x => filaTurno(x, false)).join('') || (extra ? '' : `<div class="sub tr-vacio">✓ ${p.vacio}</div>`)}
-      ${rev.length ? `<details class="tr-rev"><summary class="sub">Revisados hoy (${rev.length})</summary>${rev.map(x => filaTurno(x, true)).join('')}</details>` : ''}</div>`;
+      ${rev.length ? `<details class="tr-rev"><summary class="sub">Revisados hoy (${rev.length})</summary>${rev.map(x => filaTurno(x, R.get(x.k))).join('')}</details>` : ''}</div>`;
   }).join('');
 }
 $('#turnoOps').onclick = e => { const b = e.target.closest('[data-t-op]'); if (!b) return; turnoOp = b.dataset.tOp; try { localStorage.setItem('rkt-turno-op', turnoOp); } catch(e){} renderTurno(); };
