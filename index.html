@@ -104,7 +104,7 @@ td.num,th.num{color:var(--muted);font-variant-numeric:tabular-nums;text-align:ri
 .badge:empty{display:none}
 .sev{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;color:#fff}
 .sev-Alta{background:var(--bad)}.sev-Media{background:var(--warn)}
-body.cliente #nav [data-v="errores"], body.cliente #nav [data-v="acciones"], body.cliente .link[onclick^="abrir"], body.cliente .solo-interno{display:none!important}
+body.cliente #nav [data-v="turno"], body.cliente #nav [data-v="errores"], body.cliente #nav [data-v="acciones"], body.cliente .link[onclick^="abrir"], body.cliente .solo-interno{display:none!important}
 .accion{font-size:12px;line-height:1.35;max-width:280px;white-space:normal}
 .accion .pri{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:1px}
 .lx-item{border:1px solid var(--border);border-radius:10px;padding:10px;margin-top:8px;font-size:13px}
@@ -307,6 +307,20 @@ table.prog td:last-child{min-width:260px}
 #leanTablero .ruta.clic{cursor:pointer}
 #leanTablero .ruta.clic:hover{border-color:var(--accent)}
 .gbar .modos{margin:0}
+/* Mi turno: bandeja del coordinador */
+.tr-prog{height:6px;border-radius:99px;background:var(--border);overflow:hidden;margin-top:10px}
+#turnoBarra{height:100%;background:var(--ok);transition:width .3s}
+.tr-paso{margin:14px 0 4px}
+.tr-paso h3{margin:0 0 6px;font-size:15px;display:flex;gap:8px;align-items:baseline}
+.tr-n{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:99px;background:var(--accent);color:#fff;font-size:12px;flex:none}
+.tr-fila{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;padding:9px 10px;border-top:1px solid var(--border)}
+.tr-fila.rev{opacity:.55}
+.tr-txt{min-width:0}
+.tr-acc{display:flex;flex-wrap:wrap;gap:4px 12px;justify-content:flex-end;max-width:52%}
+.tr-vacio{padding:6px 10px}
+.tr-rev summary{cursor:pointer;padding:4px 10px}
+@media (max-width:700px){.tr-fila{flex-direction:column}.tr-acc{max-width:none;justify-content:flex-start}}
+body.en-turno #gbar{display:none}
 </style>
 </head>
 <body>
@@ -314,6 +328,7 @@ table.prog td:last-child{min-width:260px}
   <div class="bar">
     <div class="brand"><div class="logo">▲</div><div>Control de Transporte · Reckitt<small>Operación IMPO / EXPO</small></div></div>
     <nav id="nav">
+      <button data-v="turno">Mi turno <span class="badge" id="nTurno"></span></button>
       <button data-v="tablero" class="on">Tablero</button>
       <button data-v="viajes">Viajes</button>
       <button data-v="motonaves">Motonaves</button>
@@ -332,6 +347,16 @@ table.prog td:last-child{min-width:260px}
 <main>
   <div class="gbar" id="gbar"></div>
   <!-- TABLERO -->
+  <section id="v-turno" class="hidden">
+    <div class="card">
+      <div class="toolbar" style="justify-content:space-between;align-items:flex-start">
+        <div><h2 style="margin:0">Mi turno</h2><div class="sub">Lo que hay que hacer hoy, en orden. Al corregir un viaje sale solo de la lista; "Revisado" lo saca por hoy.</div></div>
+        <div class="chips" id="turnoOps"></div>
+      </div>
+      <div class="tr-prog"><div id="turnoBarra"></div></div><div class="sub" id="turnoResumen" style="margin:4px 0 8px"></div>
+      <div id="turno"></div>
+    </div>
+  </section>
   <section id="v-tablero">
     <div id="leanTablero" class="hidden"></div>
     <div class="grid kpis" id="kpis"></div>
@@ -1210,6 +1235,128 @@ function renderAcciones(){
 $('#accFiltros').onclick = e => { const a=e.target.closest('[data-area]'); if (a) { accArea=a.dataset.area; return renderAcciones(); }
   const b=e.target.closest('[data-acc]'); if(!b) return; accFiltro=b.dataset.acc; renderAcciones(); };
 
+/* ---------- Mi turno: la bandeja del coordinador (lo que hay que hacer hoy, en orden) ---------- */
+// Cinco pasos armados con las reglas que ya existen: correos, lo que se mueve hoy y mañana, viajes sin actualizar,
+// lo que viene (alertas) y datos que faltan (errores). "Revisado" es una marca del día en este navegador para ir
+// sacando filas de la vista; no cambia el viaje. Lo que se corrige en la base sale solo de la bandeja.
+let turnoOp = (() => { try { return localStorage.getItem('rkt-turno-op') || ''; } catch(e){ return ''; } })();
+const claveRevisados = () => 'rkt-turno-' + HOY;
+const revisados = () => { try { return new Set(JSON.parse(localStorage.getItem(claveRevisados()) || '[]')); } catch(e){ return new Set(); } };
+function marcarRevisado(k){
+  const s = revisados(); s.has(k) ? s.delete(k) : s.add(k);
+  try { localStorage.setItem(claveRevisados(), JSON.stringify([...s])); } catch(e){}
+  renderTurno();
+}
+// lo que pasa en el viaje en cada fecha (para "hoy y mañana")
+function hitosDe(v){
+  const expo = v.operacion === 'EXPO';
+  return [[v.fechaRetiro, expo ? 'Retiro del vacío' : 'Retiro en puerto', expo ? v.patio : v.puerto],
+    [v.fechaCargue, expo ? 'Llenado en planta' : 'Entrega en bodega', expo ? '' : v.bodega], [v.citaRetiro, 'Cita de retiro en puerto', v.puerto],
+    [v.citaIngreso, 'Cita de ingreso a puerto', v.puerto], [v.cierreDoc, 'Cierre documental', ''], [v.citaDevolucion, 'Cita de devolución del vacío', v.patio],
+    [v.fechaUrbano, 'Urbano al destino final', v.bodega]]
+    .filter(([f]) => f).map(([f, que, donde]) => ({f: String(f).slice(0, 10), que, donde}));
+}
+// WhatsApp con el mensaje armado; el coordinador elige el contacto (la base aún no guarda el teléfono del conductor)
+const waConductor = (v, pregunta) => 'https://wa.me/?text=' + encodeURIComponent(
+  `Hola${v.conductor ? ' ' + v.conductor.split(' ')[0] : ''}, ${pregunta} · ${v.placa || ''} ${clavesBusqueda(v).slice(0, 1).map(([k, x]) => k + ' ' + x).join('')}`.trim());
+// placas y conductores que ya hicieron esa ruta (misma operación y destino), los más recientes primero
+function sugeridos(v){
+  const destino = x => x.operacion === 'EXPO' ? x.pais : (x.bodega || x.destino);
+  const vistos = new Set();
+  return viajes.filter(x => x !== v && !x.padre && x.placa && x.conductor && x.operacion === v.operacion && minus(destino(x)) === minus(destino(v)))
+    .sort((a, b) => String(b.fechaCargue).localeCompare(String(a.fechaCargue)))
+    .filter(x => !vistos.has(x.placa) && vistos.add(x.placa)).slice(0, 3);
+}
+// abre la ventana del viaje con la placa y el conductor ya puestos: el coordinador revisa y guarda con su nombre
+function asignarSugerido(id, placa, conductor){
+  abrir(id);
+  [['placa', placa], ['conductor', conductor]].forEach(([k, x]) => { const i = $(`#mForm [data-k="${k}"]`); if (i) { i.value = x; i.dispatchEvent(new Event('input', {bubbles: true})); } });
+}
+
+function pasosTurno(){
+  const enOp = v => !turnoOp || !v || v.operacion === turnoOp;
+  const V = viajes.filter(v => vigente(v) && v.estado !== 'Cancelado' && enOp(v));
+  const viajeDeAccion = b => viajes.find(x => accionesDe(x).includes(b));
+  const SEV = e => e.sev === 'Alta' ? 0 : 1;
+  return [
+    {n: 1, titulo: 'Lo que llegó por correo', vacio: 'Sin correos por revisar',
+     filas: (window.BITACORA||[]).filter(b => b.estadoAccion !== 'Hecha' && areaDe(b) === 'Operaciones')
+       .map(b => ({k: 'a' + b.id, tipo: 'accion', b, v: viajeDeAccion(b)})).filter(x => enOp(x.v))},
+    {n: 2, titulo: 'Lo que se mueve hoy y mañana', vacio: 'Nada programado para hoy ni mañana',
+     filas: V.flatMap(v => hitosDe(v).filter(h => [0, 1].includes(diffDias(h.f))).map(h => ({k: 'h' + v.id + h.que + h.f, tipo: 'hoy', v, h})))
+       .sort((a, b) => a.h.f.localeCompare(b.h.f))},
+    {n: 3, titulo: 'Viajes sin actualizar', vacio: 'Todos los viajes van al día',
+     filas: V.map(v => ({k: 's' + v.id, tipo: 'sin', v, s: sinActualizar(v)})).filter(x => x.s.length)},
+    {n: 4, titulo: 'Preparar lo que viene', vacio: 'Nada por preparar en los próximos días',
+     filas: V.map(v => ({k: 'p' + v.id, tipo: 'viene', v, e: validar(v).filter(e => e.tipo === 'Alerta')})).filter(x => x.e.length)
+       .sort((a, b) => String(primerEvento(a.v) || '').localeCompare(String(primerEvento(b.v) || '')))},
+    {n: 5, titulo: 'Datos que faltan', vacio: 'Sin datos por corregir',
+     filas: V.map(v => ({k: 'd' + v.id, tipo: 'dato', v, e: validar(v).filter(e => e.tipo !== 'Alerta' && e.campo !== 'Seguimiento').sort((a, b) => SEV(a) - SEV(b))}))
+       .filter(x => x.e.length).sort((a, b) => SEV(a.e[0]) - SEV(b.e[0]))},
+  ];
+}
+
+const nombreTurno = v => v ? `${v.placa || 'Sin vehículo'} · ${v.operacion} ${v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || '')}${v.padre ? ' · subviaje' : ''}` : 'General';
+const btnT = (txt, data, title='') => `<button type="button" class="link" ${data} ${title ? `title="${esc(title)}"` : ''}>${txt}</button>`;
+const lnkT = (txt, url) => `<a class="link" href="${url}" target="_blank" rel="noopener">${txt}</a>`;
+function filaTurno(x, rev){
+  const v = x.v, abrirV = v ? btnT('Abrir viaje', `data-t-abrir="${v.id}"`) : '', buscar = v ? clavesBusqueda(v).slice(0, 2).map(([k, c]) => lnkT(`🔎 ${esc(k)} ${esc(c)}`, urlBusqueda(c))).join(' ') : '';
+  let titulo = '', detalle = '', acc = [];
+  if (x.tipo === 'accion') {
+    titulo = esc(x.b.accion); detalle = `${esc(nombreTurno(v))} · ${esc(x.b.remitente || '')}`;
+    acc = [botonAtajo(x.b), btnT('Marcar hecha', `data-t-hecha="${x.b.id}"`), btnT('No es para ETP', `data-t-noetp="${x.b.id}"`), abrirV];
+  } else if (x.tipo === 'hoy') {
+    const d = diffDias(x.h.f);
+    titulo = `${d === 0 ? 'Hoy' : 'Mañana'} · ${esc(x.h.que)}${x.h.donde ? ' · ' + esc(x.h.donde) : ''}`;
+    detalle = `${esc(nombreTurno(v))}${v.conductor ? ' · ' + esc(v.conductor) : ''}`;
+    acc = [abrirV, v.placa ? lnkT('💬 Preguntar al conductor', waConductor(v, `¿cómo va ${x.h.que.toLowerCase()} de ${d === 0 ? 'hoy' : 'mañana'}?`)) : ''];
+  } else if (x.tipo === 'sin') {
+    titulo = 'Sin actualizar: ' + esc(x.s.map(s => s.msg).join(' · '));
+    detalle = `${esc(nombreTurno(v))} · ${esc(x.s[0].porque)}${accionPendiente(v) ? ' · <b>hay una acción LogxIA pendiente en este viaje</b>' : ''}`;
+    acc = [abrirV, v.placa ? lnkT('💬 Preguntar al conductor', waConductor(v, '¿dónde está el contenedor? Confírmame si ya se entregó')) : '', buscar];
+  } else if (x.tipo === 'viene') {
+    titulo = `${esc(nombreTurno(v))} · ${primerEvento(v) ? fd(primerEvento(v)) : ''}`;
+    detalle = 'Falta: ' + esc(x.e.map(e => e.campo.toLowerCase()).join(', ')) + ` · ${esc(x.e[0].porque)}`;
+    const sug = !v.placa ? sugeridos(v) : [];
+    acc = [abrirV, ...sug.map(s => btnT(`🚚 ${esc(s.placa)} · ${esc(s.conductor.split(' ').slice(0, 2).join(' '))}`, `data-t-asignar="${v.id}" data-placa="${esc(s.placa)}" data-conductor="${esc(s.conductor)}"`, 'Ya hizo esta ruta: ponerlo en el viaje (se revisa y se guarda)')), buscar];
+  } else {
+    titulo = `${esc(nombreTurno(v))} · ${esc(x.e[0].msg)}${x.e.length > 1 ? ` <span class="sub">(+${x.e.length - 1})</span>` : ''}`;
+    detalle = esc(x.e[0].porque);
+    acc = [btnT('Corregir', `data-t-abrir="${v.id}"`), buscar];
+  }
+  acc.push(btnT(rev ? '↺ Volver a la lista' : '✓ Revisado', `data-t-rev="${x.k}"`, rev ? '' : 'Lo saca de la lista de hoy (solo en este navegador)'));
+  return `<div class="tr-fila${rev ? ' rev' : ''}"><div class="tr-txt"><b>${titulo}</b><div class="sub">${detalle}</div></div><div class="tr-acc">${acc.filter(Boolean).join('')}</div></div>`;
+}
+
+function renderTurno(){
+  const cont = $('#turno'); if (!cont) return;
+  const P = pasosTurno(), R = revisados();
+  const total = P.reduce((t, p) => t + p.filas.length, 0), hechos = P.reduce((t, p) => t + p.filas.filter(x => R.has(x.k)).length, 0);
+  $('#nTurno').textContent = (total - hechos) || '';
+  const nProp = Number($('#nProp')?.textContent) || 0;
+  $('#turnoResumen').textContent = `${total - hechos} por hacer · ${hechos} revisados hoy`;
+  $('#turnoBarra').style.width = total ? Math.round(100 * hechos / total) + '%' : '100%';
+  $('#turnoOps').innerHTML = [['', 'Todas'], ['EXPO', 'EXPO'], ['IMPO', 'IMPO']]
+    .map(([k, l]) => `<button class="chip ${turnoOp === k ? 'on' : ''}" data-t-op="${k}">${l}</button>`).join('');
+  cont.innerHTML = P.map(p => {
+    const pend = p.filas.filter(x => !R.has(x.k)), rev = p.filas.filter(x => R.has(x.k));
+    const extra = p.n === 1 && nProp ? `<div class="tr-fila"><div class="tr-txt"><b>${nProp} dato${nProp === 1 ? '' : 's'} de los correos por aprobar</b><div class="sub">Lo que LogxIA encontró en los correos: revisarlo y aprobarlo pasa a la base</div></div><div class="tr-acc">${btnT('✔ Revisar datos', 'data-t-prop="1"')}</div></div>` : '';
+    return `<div class="tr-paso"><h3><span class="tr-n">${p.n}</span> ${p.titulo} <span class="sub">${pend.length ? pend.length + ' por hacer' : ''}${rev.length ? ' · ' + rev.length + ' revisados' : ''}</span></h3>
+      ${extra}${pend.map(x => filaTurno(x, false)).join('') || (extra ? '' : `<div class="sub tr-vacio">✓ ${p.vacio}</div>`)}
+      ${rev.length ? `<details class="tr-rev"><summary class="sub">Revisados hoy (${rev.length})</summary>${rev.map(x => filaTurno(x, true)).join('')}</details>` : ''}</div>`;
+  }).join('');
+}
+$('#turnoOps').onclick = e => { const b = e.target.closest('[data-t-op]'); if (!b) return; turnoOp = b.dataset.tOp; try { localStorage.setItem('rkt-turno-op', turnoOp); } catch(e){} renderTurno(); };
+$('#turno').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const d = b.dataset;
+  if (d.tAbrir) abrir(d.tAbrir);
+  else if (d.tRev) marcarRevisado(d.tRev);
+  else if (d.tHecha) marcarHecha(d.tHecha);
+  else if (d.tNoetp) marcarHecha(d.tNoetp, true);
+  else if (d.tAsignar) asignarSugerido(d.tAsignar, d.placa, d.conductor);
+  else if (d.tProp) abrirPropuestas();
+};
 /* ---------- KPIs ---------- */
 function renderKpis(){ const act = activos();
   const total = act.length;
@@ -2186,7 +2333,8 @@ $('#ovBarrido').onclick = e => {
 /* ---------- navegación y eventos ---------- */
 $('#nav').onclick = e => { const b=e.target.closest('button'); if(!b) return;
   document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on', x===b));
-  ['tablero','viajes','motonaves','errores','acciones'].forEach(v=>$('#v-'+v).classList.toggle('hidden', v!==b.dataset.v)); };
+  document.body.classList.toggle('en-turno', b.dataset.v==='turno');   // Mi turno no usa la barra de filtros global
+  ['turno','tablero','viajes','motonaves','errores','acciones'].forEach(v=>$('#v-'+v).classList.toggle('hidden', v!==b.dataset.v)); };
 $('#proximos').onclick = e => { const b = e.target.closest('[data-ag]'); if (!b) return;
   if (b.dataset.ag==='act') agAct = b.dataset.val; else agDia = b.dataset.val;
   renderProximos(); };
@@ -2550,7 +2698,7 @@ $('#btnChat').onclick = () => { $('#chat').classList.add('open'); document.body.
 $('#chatClose').onclick = () => { $('#chat').classList.remove('open'); document.body.classList.remove('chat-on'); };
 burbuja('Hola 👋 Soy <b>LogxIA</b>. Pregúntame el status de un viaje por placa, booking o conductor, o por destino y motonave.<span class="solo-interno"><br>También actualizo y filtro: <i>“el booking … ya está en puerto”</i>, <i>“pedido … entregado en bodega ayer”</i>, <i>“placa ABC123 conductor … para el booking …”</i>, <i>“factura FE-123 del 30/10 del booking …”</i>, <i>“filtra los pendientes por facturar”</i>. Siempre le muestro el cambio y solo lo guardo cuando confirma.</span>', 'bot');
 
-function render(){ pintarSugerencias(); renderGbar(); renderLean(); renderErrores(); renderAcciones(); renderKpis(); renderChartDias(); renderChartEstados(); renderChartPais(); renderChartMix(); renderAlertas(); renderProximos(); renderFeed(); renderChips(); renderTabla(); renderMotonaves(); }
+function render(){ pintarSugerencias(); renderGbar(); renderTurno(); renderLean(); renderErrores(); renderAcciones(); renderKpis(); renderChartDias(); renderChartEstados(); renderChartPais(); renderChartMix(); renderAlertas(); renderProximos(); renderFeed(); renderChips(); renderTabla(); renderMotonaves(); }
 // pantalla de acceso cuando la página trae los datos de la hoja con clave
 function pedirClave(errada){
   document.body.insertAdjacentHTML('beforeend', `<div class="ov open" style="background:var(--bg)"><form class="modal" style="width:min(380px,100%)" onsubmit="event.preventDefault(); location.search='?clave='+encodeURIComponent(this.clave.value.trim())">
@@ -2565,10 +2713,10 @@ cargar().then(ok => { if (ok === false) return; if (window.MODO_CLIENTE) documen
   // cuántos datos de LogxIA esperan revisión: número en el botón "Llenar datos desde correos"
   if (!window.MODO_CLIENTE && window.CLAVE)
     fetch(CFG.SHEETS_API_URL + '?formato=json&que=propuestas&clave=' + encodeURIComponent(window.CLAVE)).then(r => r.json())
-      .then(j => { if (j.ok) $('#nProp').textContent = (j.propuestas || []).length || ''; }).catch(() => {});
+      .then(j => { if (j.ok) { $('#nProp').textContent = (j.propuestas || []).length || ''; renderTurno(); } }).catch(() => {});
   const vid = new URLSearchParams(location.search).get('viaje');
   if (vid && !window.MODO_CLIENTE && viajes.some(x=>x.id===vid)) abrir(vid);
-  const vista = new URLSearchParams(location.search).get('vista');
+  const vista = new URLSearchParams(location.search).get('vista') || 'turno';
   if (vista && !window.MODO_CLIENTE && !vid) document.querySelector('#nav [data-v="'+vista.replace(/[^a-z]/g,'')+'"]')?.click();
 });
 </script>
