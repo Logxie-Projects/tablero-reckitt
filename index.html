@@ -1905,7 +1905,8 @@ function rutaPedido(v){
     : et==='Zarpó' ? (sinTirilla ? 'Zarpó · falta tirilla' : 'Zarpó ✔')
     : n < P.length && !['Sin asignar','Asignado'].includes(et) ? `${et} · ${(hacia[P[n][0]] || 'hacia '+P[n][0].toLowerCase()).toLowerCase()}`
     : et;
-  const col = sit==='Cerrado' ? 'var(--ok)' : n===0 ? 'var(--muted)' : 'var(--accent)';
+  // el color sigue a la etapa (no a las paradas cumplidas): sin vehículo gris, en curso rosado, cerrado verde
+  const col = sit==='Cerrado' ? 'var(--ok)' : et==='Sin asignar' ? 'var(--muted)' : 'var(--accent)';
   const ref = v.operacion==='IMPO' ? (v.pedido ? 'Pedido '+v.pedido : v.id) : (v.booking ? 'Booking '+v.booking : v.id);
   return `<div class="ruta"><div class="dos"><div class="izq">
     <div class="cab"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
