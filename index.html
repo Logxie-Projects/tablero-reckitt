@@ -1030,7 +1030,7 @@ const colorEstado = k => ([...ESTADOS, ...MARCAS].find(e=>e.k===k)||ESTADOS[0]).
 // fecha de Colombia (en UTC después de las 7 p. m. ya sería mañana)
 const HOY = CFG.FECHA_REFERENCIA || new Date().toLocaleDateString('en-CA', {timeZone:'America/Bogota'});
 
-let viajes = [], historial = [], filtroEstado = '', orden = {k:'fechaCargue', asc:true}, editId = null, estadoSel = null;
+let viajes = [], historial = [], filtroEstado = '', orden = {k:'', asc:true}, editId = null, estadoSel = null;
 
 /* ---------- utilidades ---------- */
 const $ = s => document.querySelector(s);
@@ -1876,12 +1876,20 @@ function renderChips(){
 // Vista del tablero principal: Modo tabla (indicadores, programación y gráficas) o Modo lean (la ruta de cada pedido); se recuerda en este navegador
 let MODO = 'tabla';
 try { MODO = localStorage.getItem('rkt-modo') === 'lean' ? 'lean' : 'tabla'; } catch(e){}
+// orden de las listas por lo que hay que hacer primero: los que no avanzan (sin actualizar), luego por la fecha de su
+// próximo paso (el más cercano primero, sea NUEVO o no) y al final los que ya terminaron el transporte (el más reciente primero)
+function claveUrgencia(v){
+  if (TERMINADO.includes(v.estado)) return [2, String(9e12 - new Date(fechaFinTransporte(v) || 0)).padStart(14, '0')];   // TERMINADO: turno.js
+  if (sinActualizar(v).length) return [0, ''];
+  const prox = hitosDe(v).map(h => h.f).filter(f => f >= HOY).sort()[0];
+  return [1, prox || primerEvento(v) || '9999'];
+}
+const ordenUrgencia = (a, b) => { const x = claveUrgencia(a), y = claveUrgencia(b); return x[0] - y[0] || x[1].localeCompare(y[1]); };
 function renderLean(){
   const lean = MODO === 'lean';
   [...$('#v-tablero').children].forEach(el => el.classList.toggle('hidden', lean ? el.id !== 'leanTablero' : el.id === 'leanTablero'));
   if (!lean) return;
-  // los que están en curso primero; dentro de cada grupo, por la primera fecha del viaje
-  const L = visibles().sort((a,b) => esNuevo(b) - esNuevo(a) || (situacion(a)!=='Abierto') - (situacion(b)!=='Abierto') || (primerEvento(a)||'9').localeCompare(primerEvento(b)||'9'));
+  const L = visibles().sort(ordenUrgencia);
   const clic = !window.MODO_CLIENTE;
   $('#leanTablero').innerHTML = L.length ? L.map(v => rutaPedido(v).replace('<div class="ruta">', clic ? `<div class="ruta clic" onclick="abrir('${v.id}')">` : '<div class="ruta">')).join('')
     : '<div class="card sub" style="text-align:center;padding:24px">No hay viajes con estos filtros.</div>';
@@ -1893,7 +1901,8 @@ document.addEventListener('click', e => { const b = e.target.closest('[data-modo
 function renderTabla(){
   const q = $('#q').value.toLowerCase();
   let rows = visibles().filter(v=> (!filtroEstado || v.estado===filtroEstado) && (!q || Object.values(v).join(' ').toLowerCase().includes(q)));
-  rows.sort((a,b)=> esNuevo(b) - esNuevo(a) || String(a[orden.k]||'~').localeCompare(String(b[orden.k]||'~')) * (orden.asc?1:-1));
+  // sin columna elegida: por lo que hay que hacer primero; al tocar un encabezado, por esa columna
+  rows.sort((a,b)=> orden.k ? String(a[orden.k]||'~').localeCompare(String(b[orden.k]||'~')) * (orden.asc?1:-1) : ordenUrgencia(a, b));
   const fechas = ['fechaRetiro','fechaCargue','cierreDoc','etd','eta'];
   $('#tbl').innerHTML = `<thead><tr><th class="num">#</th><th></th>${COLS.map(([k,l])=>`<th data-k="${k}">${l}${orden.k===k?(orden.asc?' ▲':' ▼'):''}</th>`).join('')}</tr></thead>
   <tbody>${rows.map((v, n)=>`<tr><td class="num">${n+1}</td><td><button class="link" onclick="abrir('${v.id}')">Actualizar</button></td>${COLS.map(([k])=>{
