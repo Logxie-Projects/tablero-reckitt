@@ -1352,15 +1352,20 @@ function tarjetaHijo(s, padre){
   </div>`;
 }
 // transporte finalizado: EXPO pasó la parada Puerto; IMPO cumplió todas las paradas (vacío devuelto, con el urbano si hay subviaje)
-function transporteFinalizado(v, P, n){
-  if (!P) ({P, n} = avance(v));
-  // hace falta la fecha (EXPO entrega en puerto, IMPO devolución del vacío): el Estado escrito a mano no basta
-  return v.estado!=='Cancelado' && !!fechaFinTransporte(v) && (v.operacion==='EXPO' ? n > P.findIndex(p=>p[0]==='Puerto') : n >= P.length);
+// transporte finalizado = tiene la fecha de fin (EXPO entrega en puerto, IMPO devolución del vacío) y no queda un urbano pendiente.
+// Basta esa fecha aunque falten fechas anteriores (esas salen como pendientes de operaciones); el Estado escrito a mano no cuenta.
+function transporteFinalizado(v){
+  return v.estado!=='Cancelado' && !!fechaFinTransporte(v) && v.estado!=='En bodega de paso';
 }
-function finTransporte(v, P, n){
-  if (!transporteFinalizado(v, P, n) || situacion(v)==='Cancelado') return '';
-  const s = cobro(v).fact, col = COLOR_COBRO[s];
-  return `<div class="fin"><span class="hecho">✓ Transporte finalizado${fechaFinTransporte(v) ? ' '+fd(fechaFinTransporte(v)) : ''}</span><span class="est" style="background:color-mix(in srgb, ${col} 14%, transparent);color:${col}">${s}${v.numFactura?' · '+esc(v.numFactura):''}</span></div>`;
+// etiqueta de facturación del viaje (arriba del resumen de gastos): la etapa de facturación del viaje completo
+function finTransporte(v){
+  if (situacion(v)==='Cancelado' || v.estado==='Cancelado') return '';
+  const s = cobro(v).fact, col = COLOR_COBRO[s] || 'var(--muted)', fin = transporteFinalizado(v);
+  // en facturación sin la fecha de fin: se muestra la etapa y se avisa la fecha que falta
+  if (!fin && !['En aprobación Reckitt','Aprobado por Reckitt','Facturado'].includes(s)) return '';
+  const cab = fin ? `<span class="hecho">✓ Transporte finalizado ${fd(fechaFinTransporte(v))}</span>`
+    : `<span class="hecho" style="color:var(--warn)">⚠ Falta la fecha de ${v.operacion==='EXPO' ? 'entrega en puerto' : 'devolución del vacío'}</span>`;
+  return `<div class="fin">${cab}<span class="est" style="background:color-mix(in srgb, ${col} 14%, transparent);color:${col}">${s}${v.numFactura?' · '+esc(v.numFactura):''}</span></div>`;
 }
 const lnR = (a, b) => `<div class="ln"><span>${a}</span><span>${b}</span></div>`;
 const granR = (a, b, extra='') => `<div class="gran"><span>${a}</span><span><b>${b}</b>${extra ? `<small>${extra}</small>` : ''}</span></div>`;
