@@ -1571,7 +1571,8 @@ function renderTurno(){
   document.body.classList.toggle('turno-bloqueado', T.bloqueado);
   const primeraRoja = M.findIndex((m, i) => T.rojas[i]);
   if (T.bloqueado && $('#v-turno').classList.contains('hidden')) $('#nav [data-v="turno"]').click();
-  const abierto = i => primeraRoja < 0 || i <= primeraRoja;   // un paso se abre cuando los anteriores no tienen líneas rojas
+  // un paso se abre cuando los anteriores no tienen líneas rojas; Gerencia ve todos los pasos sin orden
+  const abierto = i => esGerencia() || primeraRoja < 0 || i <= primeraRoja;
   if (!abierto(M.findIndex(m => m.id === turnoMenu))) turnoMenu = M[primeraRoja].id;
   const cuenta = m => { const h = m.filas.filter(x => x.hecha || (x.exc && ['pendiente', 'aprobada'].includes(x.exc.estado))).length; return {h, t: m.filas.length}; };
   $('#nTurno').textContent = T.rojas.reduce((a, b) => a + b, 0) || '';
