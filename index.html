@@ -775,7 +775,8 @@ function validar(v){
   const intermedio = impo ? /almacenamient|\ben patio\b|\bpatio\b.*\bse (entrega|descarga)\b|\bparo\b|bloqueo|sin cita|problemas en bodega/ : /almacenamient|\bparo\b|bloqueo/;
   if (!hijos.length && intermedio.test(sinTilde(v.observacion||'').toLowerCase())) add('Media','Subviaje','La observación indica patio intermedio, paro o almacenamiento: crear subviaje si el contenedor no va directo al destino final');
   // fechas que ya pasaron sin que se actualice el estado
-  if (expo && v.etd && v.etd < HOY && !['Entregado en puerto','Zarpó'].includes(v.estado) && !['Cerrado','Cancelado'].includes(sit)) add('Media','Fecha de entrega en puerto',`ETD vencido (${fd(v.etd)}) y el viaje sigue en "${v.estado}": falta la fecha de entrega en puerto`);
+  // cuenta la fecha, no la etapa: con la tirilla y sin la fecha el viaje figura como zarpado pero el dato sigue faltando
+  if (expo && v.etd && v.etd < HOY && !v.fechaEntregaPuerto && !['Cerrado','Cancelado'].includes(sit)) add('Media','Fecha de entrega en puerto',`ETD vencido (${fd(v.etd)}) y falta la fecha de entrega en puerto`);
   if (primerEvento(v) && primerEvento(v) <= HOY){
     if (!v.observacion) add('Media',C.obs,'Viaje en curso sin observación de status');
   }
