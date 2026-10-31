@@ -553,7 +553,12 @@ function normalizar(v, i){
 }
 // Filtros globales: aplican a todas las vistas. Al abrir o recargar el tablero arrancan siempre limpios
 // (viajes abiertos de IMPO y EXPO) para no esconder nada; no se recuerdan entre visitas.
-const FILTROS_INICIO = {op:'', sit:'Abierto', emp:'', sol:'', fwd:'', ped:'', bk:'', fact:'', foco:'', q:''};
+const FILTROS_INICIO = {op:'', sit:'Abierto', mes:'', emp:'', sol:'', fwd:'', ped:'', bk:'', fact:'', foco:'', q:''};
+// mes del viaje = mes de su llenado (EXPO) o de su entrega en bodega (IMPO); es como Reckitt programa, mes a mes
+const MESES_LARGO = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+// sin llenado ni entrega en bodega se usa la siguiente fecha que tenga (entrega en puerto, cita, devolución, ETD)
+const mesDe = v => String(v.fechaCargue || v.planCargue || primerEvento(v) || v.fechaEntregaPuerto || v.citaIngreso || v.fechaDevolucion || v.etd || '').slice(0, 7);
+const nombreMes = m => m ? `${MESES_LARGO[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}` : 'Sin fecha';
 let G = {...FILTROS_INICIO};
 try { localStorage.removeItem('rkt-filtros'); } catch(e){}
 // listas desplegables: campo del viaje y texto cuando está vacío
@@ -571,7 +576,8 @@ function enTexto(v){
 const enListas = v => !v.padre && FILTROS_LISTA.every(([k, campo, , vacio]) => !G[k] || valorFiltro(v, campo, vacio)===G[k]) && enTexto(v) && (!G.fact || cobro(v).fact===G.fact);
 // con algo escrito en el buscador se busca en todos los viajes, abiertos y cerrados
 // con texto en el buscador, o con un filtro de Facturación o de Foco, se mira en todos los viajes (abiertos y cerrados)
-const enGlobal = v => (!G.op || v.operacion===G.op) && (G.q.trim() || G.fact || G.foco || enSituacion(v, G.sit)) && enListas(v)
+const enGlobal = v => (!G.op || v.operacion===G.op) && (G.q.trim() || G.fact || G.foco || G.mes || enSituacion(v, G.sit)) && enListas(v)
+  && (!G.mes || mesDe(v)===(G.mes==='sin' ? '' : G.mes))
   && (!G.foco || (G.foco===FOCO_OPS ? pendientesOps(v).length > 0 : focoDe(v)===G.foco));
 // cuántos viajes se verían con este cambio de filtro, dejando los demás como están (para mostrarlo en cada opción)
 function cuentaCon(cambio){ const antes = G; G = {...G, ...cambio}; try { return viajes.filter(enGlobal).length; } finally { G = antes; } }
@@ -763,6 +769,9 @@ function chipsGlobales(){
   const sel = (k, titulo, ops) => `<select class="gsel ${G[k]?'on':''}" data-gsel="${k}" aria-label="${titulo}">${ops.map(([val, txt, cnt])=>`<option value="${esc(val)}" ${G[k]===val?'selected':''}>${titulo}: ${esc(txt)} · ${cnt}</option>`).join('')}</select>`;
   return sel('op', 'IMPO/EXPO', [['', 'ambas', n('', G.sit)], ['IMPO', 'IMPO', n('IMPO', G.sit)], ['EXPO', 'EXPO', n('EXPO', G.sit)]])
     + sel('sit', 'STATUS', [...situacionesPresentes().map(s=>[s, PLURAL[s]||s, n(G.op, s)]), ['', 'Todos', n(G.op, '')]])
+    // Mes: todos los meses con viajes, del más reciente al más antiguo (mira todos los STATUS)
+    + `<select class="gsel ${G.mes?'on':''}" data-gsel="mes" aria-label="Mes" title="Mes del llenado (EXPO) o de la entrega en bodega (IMPO)"><option value="">📅 Mes: todos · ${cuentaCon({mes:''})}</option>${
+      [...new Set(viajes.filter(v=>!v.padre).map(mesDe))].sort().reverse().map(m => `<option value="${m||'sin'}" ${G.mes===(m||'sin')?'selected':''}>${nombreMes(m)} · ${cuentaCon({mes: m||'sin'})}</option>`).join('')}</select>`
     + `<span class="sub">|</span><input type="search" class="gsel gbus ${G.q.trim()?'on':''}" data-gq aria-label="Buscar en los viajes" placeholder="🔍 Buscar: placa, contenedor, RBHY, DO…" value="${esc(G.q)}">
     <select class="gsel ${G.foco?'on':''}" data-gsel="foco" aria-label="Foco del equipo" title="En qué está cada viaje y qué le falta"><option value="">🎯 Foco: todos · ${cuentaCon({foco:''})}</option>${(() => { const op = x => `<option value="${esc(x)}" ${G.foco===x?'selected':''}>${esc(x)} · ${cuentaCon({foco:x})}</option>`;
       return op(FOCO_OPS) + '<option disabled>──────────</option>' + FOCOS.map(op).join(''); })()}</select>
@@ -2007,7 +2016,7 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => { const s=e.target.closest('[data-gsel]'); if(!s) return; G[s.dataset.gsel] = s.value;
   // Foco y Facturación miran todos los viajes (abiertos y cerrados): STATUS pasa a "Todos" para que los números cuadren,
   // y vuelve a "Abiertos" al quitarlos
-  if (['foco','fact'].includes(s.dataset.gsel)) G.sit = (G.foco || G.fact) ? '' : 'Abierto';
+  if (['foco','fact','mes'].includes(s.dataset.gsel)) G.sit = (G.foco || G.fact || G.mes) ? '' : 'Abierto';
   render(); });
 document.addEventListener('click', e => { const b=e.target.closest('[data-g]'); if(!b) return; G[b.dataset.g] = b.dataset.val;
   render(); });
@@ -2263,6 +2272,8 @@ function filtroDeTexto(q){
   if (/\b(quita|quitar|limpia|limpiar|borra|borrar)\b.*\bfiltros?\b|\btodos los viajes\b/.test(t)) return {G: {...FILTROS_INICIO}, txt:'Quité los filtros: se ven los viajes abiertos.'};
   if (!/\b(filtra|filtrar|filtre|muestra|muestrame|mostrar|lista|listar|ver|cuales|cuantos|busca|buscar)\b/.test(t)) return null;
   const f = {};
+  const mesTxt = MESES_LARGO.findIndex(m => new RegExp('\\b' + m + '\\b').test(t));
+  if (mesTxt >= 0) { const meses = [...new Set(viajes.map(mesDe))].filter(m => Number(m.slice(5, 7)) === mesTxt + 1).sort(); f.mes = meses.pop() || `${HOY.slice(0, 4)}-${String(mesTxt + 1).padStart(2, '0')}`; }
   if (/\blistos? para facturar\b/.test(t)) f.foco = 'Listo para facturar';
   else if (/\bpendientes? de operaci|\bfalta.*\boperaci|\bdebe operaci/.test(t)) f.foco = FOCO_OPS;
   else if (/\b(faltan datos|les falta|terminados?|finalizados?)\b/.test(t)) f.foco = 'Terminado · faltan datos';
@@ -2287,12 +2298,12 @@ function filtroDeTexto(q){
 }
 function aplicarFiltroChat(r){
   Object.assign(G, r.G);
-  if ((G.fact || G.foco) && !('sit' in r.G)) G.sit = '';
+  if ((G.fact || G.foco || G.mes) && !('sit' in r.G)) G.sit = '';
   render();
   if (r.txt) return r.txt;
   const L = viajes.filter(enGlobal);
   const tot = G.fact ? L.reduce((s, v) => s + cobro(v).total, 0) : 0;
-  const que = [G.foco, G.fact, G.op, G.sit && PLURAL[G.sit] && PLURAL[G.sit].toLowerCase(), G.q && `“${G.q}”`].filter(Boolean).join(' · ');
+  const que = [G.mes && nombreMes(G.mes==='sin' ? '' : G.mes), G.foco, G.fact, G.op, G.sit && PLURAL[G.sit] && PLURAL[G.sit].toLowerCase(), G.q && `“${G.q}”`].filter(Boolean).join(' · ');
   return (L.length ? listaCorta(L, `Filtré el tablero (${esc(que)})${tot ? `, por ${pesos(tot)},` : ''}: hay`) : `No hay viajes con ese filtro (${esc(que)}).`)
     + `<div style="margin-top:6px"><button type="button" class="btn" onclick="preguntar('quitar filtros')">Quitar filtros</button></div>`;
 }
