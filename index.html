@@ -483,7 +483,7 @@ table.prog td:last-child{min-width:260px}
 <script>
 // Configuración del front end.
 // Deja SHEETS_API_URL vacío para trabajar en MODO DEMO (datos locales, cambios guardados en este navegador).
-// Para conectar a Google Sheets pega aquí la URL /exec de la aplicación web de Apps Script (ver apps-script/Code.gs).
+// Para conectar a Google Sheets pega aquí la URL /exec de la aplicación web de Apps Script (ver apps-script/Código.gs).
 window.APP_CONFIG = {
   SHEETS_API_URL: 'https://script.google.com/macros/s/AKfycbz_st7NWwfY57QfMyTBLGxnufoIMgvlh3wKIwgi2PuzcrT409dFKI7iPsz3hOhUFKQ0/exec',
   // true solo si la hoja es una Hoja de Google con el script dentro (doPost escribe en ella)
@@ -1606,7 +1606,7 @@ function pintarEstados(){
   $('#mStates').innerHTML = `<span class="sub" style="margin-right:6px">Etapa: ${v ? pill(v.estado) : ''} <span title="Sale de las fechas del viaje: para avanzarla, ponga la fecha correspondiente">(sale de las fechas)</span> · Marcar:</span>`
     + MARCAS.map(e=>`<button type="button" class="${estadoSel===e.k?'on':''}" data-e="${e.k}"><i style="background:${e.c}"></i>${e.k}</button>`).join('');
 }
-// Campos que se editan en la ventana del viaje: los mismos de las pestañas Seguimiento EXPO / IMPO (ver SEGUIMIENTO en Code.gs)
+// Campos que se editan en la ventana del viaje: los mismos de las pestañas Seguimiento EXPO / IMPO (ver SEGUIMIENTO en apps-script/Base.gs)
 const EMPRESAS = ['Reckitt Benckiser','Reckitt Health','Reckitt Hygiene','Mead Johnson'];
 const CAMPOS_VIAJE = [['situacion','STATUS','sit'],['empresa','Empresa','lista',EMPRESAS],['solicitante','Solicitante'],['booking','Booking / BL'],['pedido','Pedido'],['do','DO'],
   ['contenedor','Contenedor'],['unidad','Unidad','lista',['1X20','1X40']],['conductor','Conductor','dl','dlCond'],['placa','Placa','dl','dlPlaca'],['fwd','FWD','dl','dlFwd']];
