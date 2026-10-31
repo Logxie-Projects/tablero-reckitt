@@ -884,6 +884,20 @@ function normalizar(v, i){
   v.sede = /bogot/i.test(String(v.destino||'').normalize('NFD')) ? 'Bogotá' : 'Cali';
   return v;
 }
+/* ---------- avisos de hitos (F2): qué cambio de un viaje se cuenta al equipo y, más adelante, al cliente ---------- */
+const HITOS_AVISO = {
+  EXPO: [['fechaRetiro', 'Vacío retirado'], ['fechaCargue', 'Contenedor llenado en planta'], ['citaIngreso', 'Cita de ingreso a puerto'],
+    ['fechaEntregaPuerto', 'Entregado en puerto'], ['tirillaEntrega', 'Tirilla de entrega en puerto']],
+  IMPO: [['fechaRetiro', 'Retirado de puerto'], ['fechaCargue', 'Entregado en bodega'], ['citaDevolucion', 'Cita de devolución del vacío'],
+    ['fechaDevolucion', 'Vacío devuelto'], ['tirillaDevolucion', 'Tirilla de devolución del vacío'], ['fechaUrbano', 'Urbano al destino final']],
+};
+// hitos que trae un cambio guardado: fecha de hoy o pasada = ocurrió; fecha futura = quedó programado (reprogramación)
+function hitosDelCambio(v, cambios){
+  return (HITOS_AVISO[v.operacion] || []).filter(([k]) => cambios[k]).map(([k, txt]) => {
+    const x = String(cambios[k]);
+    return {campo: k, txt: !/^\d{4}-\d{2}-\d{2}/.test(x) ? `${txt}: ${x}` : x.slice(0, 10) > HOY ? `${txt}: programado para el ${fd(x)}` : `${txt} el ${fd(x)}`};
+  });
+}
 /* ---------- operación de una acción de LogxIA que no tiene viaje en la base ---------- */
 // IMPO y EXPO son contenedores de puerto; NACIONAL es transporte dentro de Colombia que no pasa por puerto
 // (recoger estibas, traslados entre bodegas…). Tiene sus propios actores: se reconocen por su correo o nombre.
@@ -1080,6 +1094,7 @@ async function guardarCambio(id, cambios, usuario){
       const r = await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'update', clave:window.CLAVE, id, cambios:enBase, usuario})});
       const j = await r.json();
       toast(j.ok ? (j.cambios ? `Guardado en la base: ${j.cambios} dato${j.cambios===1?'':'s'}` : 'Sin cambios en la base') : 'No se guardó: ' + (j.error||'error'));
+      if (j.ok && j.cambios) ofrecerAviso(v, cambios, usuario);   // F2 (avisos.js)
     }catch(e){ toast('No se pudo guardar en la base, intente de nuevo'); }
   }
   render();
@@ -1465,6 +1480,19 @@ $('#v-turno').onclick = e => {
   else if (d.tAsignar) asignarSugerido(d.tAsignar, d.placa, d.conductor);
   else if (d.tProp) abrirPropuestas();
 };
+/* ---------- avisos de hitos (F2): al guardar un hito, el coordinador ve el aviso y decide si sale ---------- */
+// EN PRUEBA (D2): el aviso va solo a correos de Entrapetrol (AVISO_HITOS en Código.gs); al cliente, cuando Entrapetrol lo libere.
+async function ofrecerAviso(v, cambios, usuario){
+  const H = hitosDelCambio(v, cambios); if (!H.length || !window.CLAVE || window.MODO_CLIENTE) return;
+  const viaje = `${v.placa || 'Sin placa'} · ${v.operacion} ${v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || '')}`;
+  if (!confirm(`¿Avisar este hito al equipo de Entrapetrol?\n(prueba: todavía no le llega al cliente)\n\n${viaje}\n${H.map(h => '• ' + h.txt).join('\n')}`)) return;
+  try {
+    const r = await fetch(CFG.SHEETS_API_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'},
+      body: JSON.stringify({action: 'avisoHito', clave: window.CLAVE, id: v.id, cambios, usuario})});
+    const j = await r.json();
+    toast(j.ok ? `Aviso enviado a ${j.enviadoA.length} correos de Entrapetrol` : 'No se envió el aviso: ' + (j.error || 'error'));
+  } catch(e) { toast('No se pudo enviar el aviso'); }
+}
 /* ---------- KPIs ---------- */
 function renderKpis(){ const act = activos();
   const total = act.length;
