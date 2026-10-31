@@ -206,6 +206,11 @@ tr:hover td{background:var(--surface-2)}
 .msg .pc-act{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}.msg .pc-act .pc-user{flex:1;min-width:110px}
 .msg .pc-act .btn{padding:4px 10px}
 .msg .pc select{font:inherit;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:inherit}
+table.prog{table-layout:auto}table.prog td:nth-child(-n+2),table.prog th:nth-child(-n+2){width:26px;white-space:nowrap}
+table.prog td:last-child{min-width:260px}
+.tl{margin-top:10px}.tl summary{cursor:pointer;padding:4px 0}
+.tl-it{display:grid;grid-template-columns:22px 1fr;gap:6px;padding:6px 0;border-top:1px solid var(--border);font-size:13px}
+.tl-ic{text-align:center;opacity:.8}.tl-Cambiodeplan .tl-ic{color:var(--warn)}.tl-Correo .tl-ic{color:var(--accent)}.tl-Incidente .tl-ic{color:var(--bad)}
 .causa-box{margin-top:12px;padding:10px 12px;border:1px solid var(--warn);border-radius:10px;background:color-mix(in srgb, var(--warn) 8%, var(--surface))}
 .causa-box select,.causa-box input{font:inherit;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:inherit}
 .chat-sug{display:flex;gap:6px;flex-wrap:wrap;padding:0 16px 10px}
@@ -407,6 +412,14 @@ tr:hover td{background:var(--surface-2)}
   </section>
 </main>
 
+<div class="ov" id="ovProg">
+  <div class="modal" role="dialog" aria-modal="true" style="width:min(1150px,100%)">
+    <h3 id="progTitulo">Programación de cargues</h3>
+    <div class="sub" id="progSub"></div>
+    <div id="progLista" style="margin-top:10px"></div>
+    <div class="mfoot"><input id="progUsuario" placeholder="Su nombre" style="width:200px;margin-right:auto"><button class="btn" id="progCerrar">Cerrar</button><button class="btn primary" id="progAplicar">Aplicar seleccionados</button></div>
+  </div>
+</div>
 <div class="ov" id="ovBarrido">
   <div class="modal" role="dialog" aria-modal="true" style="width:min(980px,100%)">
     <h3>Correos de los últimos 2 días</h3>
@@ -449,7 +462,8 @@ tr:hover td{background:var(--surface-2)}
     <div class="full" style="margin-top:16px"><label>Etapa de la operación</label><div class="states" id="mStates"></div></div>
     <div id="mForm"></div>
     <div class="causa-box hidden" id="mCausa"><b>Cambio de fecha programada</b> <span class="sub" id="mCausaLista"></span>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><span id="mCausaSel"></span><input id="mCausaDet" placeholder="Detalle (ej: planta sin producto, vehículo varado)" style="flex:1;min-width:200px"></div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><span id="mCausaSel"></span><input id="mCausaDet" placeholder="Detalle (ej: planta sin producto, vehículo varado)" style="flex:1;min-width:200px">
+        <input id="mCausaCosto" inputmode="numeric" placeholder="Costo extra $ (si hubo)" style="width:170px"><input id="mCausaInc" placeholder="Incidente (si hubo)" style="width:200px"></div></div>
     <datalist id="dlExtra"></datalist><datalist id="dlPatio"></datalist><datalist id="dlCond"></datalist><datalist id="dlPlaca"></datalist><datalist id="dlFwd"></datalist>
     <div class="hist" id="mHist"></div>
     <div class="mfoot"><span class="sub" id="mNCambios" style="margin-right:auto"></span><input id="mUsuario" placeholder="Su nombre (queda en el historial)" style="width:230px"><button class="btn" id="mCancel">Cancelar</button><button class="btn primary" id="mSave">Guardar en la base</button></div>
@@ -1144,19 +1158,29 @@ const CAUSAS_REPROG = [['Cliente (Reckitt)','Reckitt'], ['Transportadora (Entrap
   ['Externo (paro, vía, clima)','Terceros'], ['Corrección de dato','']];
 const responsable = causa => (CAUSAS_REPROG.find(c => c[0]===causa) || [, 'Sin causa'])[1];
 // registro guardado en la base: "fecha|campo|antes|después|causa|detalle|usuario" separados por ";;"
+// registro: "fecha|campo|antes|después|causa|detalle|usuario|costo|incidente" (costo e incidente desde el 31-oct)
 const reprogsDe = v => String(v.reprog||'').split(';;').map(x => x.trim()).filter(Boolean)
-  .map(x => { const [fecha, campo, antes, despues, causa, detalle, usuario] = x.split('|'); return {fecha, campo, antes, despues, causa, detalle, usuario}; });
+  .map(x => { const [fecha, campo, antes, despues, causa, detalle, usuario, costo, incidente] = x.split('|');
+    return {fecha, campo, antes, despues, causa, detalle, usuario, costo: Number(costo)||0, incidente: incidente||''}; });
 // fechas ya programadas que un cambio mueve (las que estaban vacías no son reprogramación)
 function fechasMovidas(v, ch){
   return (HITOS_PLAN[v.operacion]||[]).flatMap(([hito, plan, campos]) => campos.filter(k => k in ch && v[k] && ch[k] && ch[k]!==v[k])
     .map(k => ({hito, plan, campo:k, antes:v[k], despues:ch[k]})));
 }
 // agrega al cambio el registro de la causa; con "Corrección de dato" el plan pasa a la fecha corregida
-function conCausa(v, ch, movidas, causa, detalle, usuario){
+// con costo extra: si lo causó el cliente se agrega como extracosto "Reprogramación" (por aprobar); si no, queda solo registrado
+function conCausa(v, ch, movidas, causa, detalle, usuario, costo, incidente){
   const limpio = t => String(t||'').replace(/[|;]/g, ' ').trim();
-  const nuevas = movidas.map(m => [HOY, m.campo, m.antes, m.despues, causa, limpio(detalle), limpio(usuario)].join('|'));
+  const $c = Number(String(costo||'').replace(/[^\d]/g, '')) || 0;
+  const nuevas = movidas.map((m, i) => [HOY, m.campo, m.antes, m.despues, causa, limpio(detalle), limpio(usuario), i ? '' : ($c || ''), i ? '' : limpio(incidente)].join('|'));
   const out = {...ch, reprog: [String(v.reprog||'').trim(), ...nuevas].filter(Boolean).join(' ;; ')};
   if (causa === 'Corrección de dato') movidas.forEach(m => { if (v[m.plan] === m.antes || !v[m.plan]) out[m.plan] = m.despues; });
+  if ($c && responsable(causa) === 'Reckitt') {
+    const items = [...itemsExtra(v), ['Reprogramación', $c]];
+    out.conceptoExtra = items.map(([k, x]) => `${k}: ${x}`).join('; ');
+    out.extracostos = String(items.reduce((t, x) => t + x[1], 0));
+    out.aprobacionExtra = 'Pendiente';
+  }
   return out;
 }
 // desvíos del plan por hito: fecha original vs la fecha que tiene hoy, con la causa registrada (la última de ese hito)
@@ -1166,7 +1190,8 @@ function desviosPlan(v){
     const actual = campos.map(k => v[k]).find(Boolean) || '', p = v[plan] || '';
     if (!p || !actual || p === actual) return null;
     const r = R.filter(x => campos.includes(x.campo) && x.causa !== 'Corrección de dato').pop();
-    return {hito, plan:p, actual, dias:dDias(p, actual), causa: r ? r.causa : 'Sin causa', detalle: r ? r.detalle : ''};
+    return {hito, plan:p, actual, dias:dDias(p, actual), causa: r ? r.causa : 'Sin causa', detalle: r ? r.detalle : '',
+      costo: R.filter(x => campos.includes(x.campo)).reduce((t, x) => t + x.costo, 0), incidente: R.filter(x => campos.includes(x.campo) && x.incidente).map(x => x.incidente).join(' · ')};
   }).filter(Boolean);
 }
 const htmlCausas = (nombre) => `<select class="${nombre}"><option value="">Causa del cambio…</option>${CAUSAS_REPROG.map(([c, r]) => `<option value="${esc(c)}">${esc(c)}${r ? ' · responde '+r : ''}</option>`).join('')}</select>`;
@@ -1178,8 +1203,10 @@ function reprogKpi(){
   const pct = L.length ? Math.round((L.length - conDesvio) / L.length * 100) : 0;
   const por = {}; D.forEach(d => { const r = responsable(d.causa); por[r] = (por[r]||0) + 1; });
   const dias = D.reduce((s, d) => s + Math.max(d.dias||0, 0), 0);
+  const costo = L.reduce((t, v) => t + reprogsDe(v).reduce((a, r) => a + r.costo, 0), 0);
+  const incid = L.reduce((t, v) => t + reprogsDe(v).filter(r => r.incidente).length, 0) + L.filter(v => v.novedad).length;
   return {l:'Cumplen la fecha original', v: L.length ? pct+'%' : '—', m: pct, bad: pct < 80 && L.length > 0,
-    h:`${D.length} reprogramaci${D.length===1?'ón':'ones'} en ${conDesvio} viaje${conDesvio===1?'':'s'}${dias ? ` · +${dias} d` : ''}<br>${['Reckitt','Entrapetrol','Terceros','Sin causa'].filter(r => por[r]).map(r => `${r} ${por[r]}`).join(' · ') || 'sin reprogramaciones'}`};
+    h:`${D.length} reprogramaci${D.length===1?'ón':'ones'} en ${conDesvio} viaje${conDesvio===1?'':'s'}${dias ? ` · +${dias} d` : ''}<br>${['Reckitt','Entrapetrol','Terceros','Sin causa'].filter(r => por[r]).map(r => `${r} ${por[r]}`).join(' · ') || 'sin reprogramaciones'}${costo || incid ? `<br>${costo ? pesos(costo)+' de costo extra' : ''}${costo && incid ? ' · ' : ''}${incid ? incid+' incidente'+(incid===1?'':'s') : ''}` : ''}`};
 }
 // lead time total: del primer al último hito; real = completo, o "en curso" contando hasta hoy
 function leadTime(v){
@@ -1450,7 +1477,7 @@ function rutaPedido(v){
 
 function abrir(id){
   const v = viajes.find(x=>x.id===id); editId = id; estadoSel = MARCAS.some(m=>m.k===v.estadoHoja) ? v.estadoHoja : '';
-  $('#mCausa').classList.add('hidden'); $('#mCausaSel').innerHTML = ''; $('#mCausaDet').value = '';
+  $('#mCausa').classList.add('hidden'); $('#mCausaSel').innerHTML = ''; $('#mCausaDet').value = ''; $('#mCausaCosto').value = ''; $('#mCausaInc').value = '';
   $('#mTitle').textContent = `${v.placa || 'Sin vehículo'} · ${v.operacion} ${v.pais||''}`;
   $('#mSub').textContent = `${v.id} · ${v.fechaRetiro?`Retiro en patio ${fd(v.fechaRetiro)} · Llenado planta ${fd(v.fechaCargue)}`:`Cargue ${fd(v.fechaCargue)}`} · Última actualización ${new Date(v.actualizado).toLocaleString('es-CO')}`;
   const fx = x => x ? fd(x) : '';
@@ -1478,7 +1505,7 @@ function abrir(id){
     <span class="sev sev-${b.prioridad==='Alta'?'Alta':'Media'}">${esc(String(b.prioridad||'').toUpperCase())}</span> <b>${esc(b.accion)}</b><br>
     <span class="sub">${esc(b.resumen)} · ${esc(b.remitente)} · ${esc(String(b.fechaCorreo||'').slice(0,16).replace('T',' '))}</span><br>
     ${b.estadoAccion==='Hecha' ? '<span class="sub">✔ Hecha</span>' : `<button type="button" class="link" onclick="marcarHecha('${b.id}')">Marcar como hecha</button>`}</div>`).join('') + '<br>' : '';
-  $('#mHist').innerHTML = bloqueLx + (h.length ? '<b>Historial:</b><br>'+h.map(x=>`${new Date(x.fecha).toLocaleString('es-CO')} — ${x.estadoAnterior===x.estadoNuevo ? esc(x.estadoNuevo) : `${esc(x.estadoAnterior)} → ${esc(x.estadoNuevo)}`}${x.observacion?` · ${esc(x.observacion)}`:''}`).join('<br>') : '');
+  $('#mHist').innerHTML = bloqueLx + lineaTiempo(v);
   $('#ov').classList.add('open');
 }
 function pintarEstados(){
@@ -1596,7 +1623,7 @@ $('#mSave').onclick = () => {
   if (mov.length) {
     const causa = $('#mCausa .mCausaSelect') ? $('#mCausa .mCausaSelect').value : '';
     if (!causa) { $('#mCausa').classList.remove('hidden'); $('#mCausa .mCausaSelect')?.focus(); return toast('Indique la causa del cambio de fecha'); }
-    cambios = conCausa(v, cambios, mov, causa, $('#mCausaDet').value, usuario);
+    cambios = conCausa(v, cambios, mov, causa, $('#mCausaDet').value, usuario, $('#mCausaCosto').value, $('#mCausaInc').value);
   }
   // la columna Estado de la base solo guarda las marcas (Novedad / Cancelado); la etapa sale de las fechas
   const marcaAntes = MARCAS.some(m=>m.k===v.estadoHoja) ? v.estadoHoja : '';
@@ -1773,6 +1800,10 @@ function pintarBarrido(){
       estado = `<span style="color:var(--ok);font-weight:600">✓ ${esc(c.viajeId)}</span>` +
         (n ? '<br>' + Object.entries(ch).map(([k, x]) => `<span style="color:var(--warn)">⚠ ${esc(NOMBRES_CAMPO[k]||k)}: ${esc(fmtCambio(k, x))}${k==='fechaCargue' && c.enBase.fechaCargue ? ` (base ${esc(fd(c.enBase.fechaCargue))})` : ''}</span>`).join('<br>') : '<br><span class="sub">al día</span>');
       botones = (n ? btn(`Actualizar viaje (${n})`, 'aplicar', i, true) : '') + btn('Abrir viaje', 'abrir', i);
+    } else if (c.tipo === 'Programación') {
+      const P = compararProgramacion(c), n = k => P.filas.filter(f => f.accion===k).length;
+      estado = `<b>${c.programacion.length} cargues</b><br><span class="sub">${n('crear')} nuevos · ${n('cambiar')+n('reusar')} con cambios · ${n('igual')} al día${P.fuera.length ? ` · ${P.fuera.length} ya no aparecen` : ''}</span>`;
+      botones = btn('Revisar programación', 'prog', i, true);
     } else if (c.tipo === 'Comodato') {
       estado = '<span class="sub">Dato de devolución</span>';
     } else {
@@ -1789,6 +1820,103 @@ function pintarBarrido(){
   $('#barridoLista').innerHTML = `<div class="tbl-wrap"><table class="prop"><tr><th>Llegó</th><th>Tipo</th><th>Booking · DO · Pedido · Contenedor</th><th>Descargue / retiro</th><th>En la base · qué hacer</th></tr>${BARRIDO.map(fila).join('')}</table></div>
     <p class="sub" style="margin-top:6px">${BARRIDO.length} correo${BARRIDO.length===1?'':'s'} · ${pend} sin viaje en la base · ${cambios} con datos por actualizar. Lo que cree o actualice queda en el Historial con su nombre.</p>`;
 }
+/* ---------- programación mensual de cargues (correo de Jhonier): crear los viajes del mes y aplicar los cambios de cada versión ---------- */
+let PROG = null;
+const CAMPOS_PROG = [['fechaCargue','Llenado'],['fechaRetiro','Retiro del vacío'],['pais','País'],['unidad','Unidad'],['mn','Motonave'],['cierreDoc','Cierre doc'],
+  ['etd','ETD'],['eta','ETA'],['booking','Booking'],['fwd','FWD'],['puerto','Puerto']];
+const datosProg = r => ({fechaCargue: r.fechaCargue, fechaRetiro: addDias(r.fechaCargue, -1), pais: r.pais, unidad: r.unidad, mn: r.mn,
+  cierreDoc: r.cierreDoc, etd: r.etd, eta: r.eta, booking: r.booking, fwd: r.fwd, puerto: r.puerto});
+function compararProgramacion(c){
+  const mes = c.programacion[0].fechaCargue.slice(0, 7), eq = (a, b) => compacto(a) === compacto(b);
+  const expo = viajes.filter(v => v.operacion==='EXPO' && !v.padre && situacion(v)!=='Cancelado'), usados = new Set();
+  const libres = () => expo.filter(v => !usados.has(v.id));
+  const enMes = v => [v.fechaCargue, v.planCargue].some(f => String(f||'').slice(0, 7) === mes);
+  const terminado = v => ['Entregado en puerto','Zarpó'].includes(v.estado) || situacion(v)==='Cerrado' && !/reprogram/i.test(v.observacion||'');
+  const filas = c.programacion.map(r => {
+    let v = (r.booking && libres().filter(x => eq(x.booking, r.booking)).sort((a, b) => String(a.fechaCargue).localeCompare(String(b.fechaCargue)))[0])
+      || libres().find(x => enMes(x) && eq(x.pais, r.pais) && x.fechaCargue===r.fechaCargue && eq(x.mn, r.mn))
+      || libres().find(x => enMes(x) && eq(x.pais, r.pais) && r.mn && eq(x.mn, r.mn) && /programaci/i.test(x.observacion||''))
+      || libres().find(x => enMes(x) && eq(x.pais, r.pais) && x.fechaCargue===r.fechaCargue);
+    let reusar = false;
+    // un viaje que esperaba fecha (reprogramado, sin booking) del mismo destino se reutiliza en lugar de crear otro
+    if (!v) { v = libres().find(x => eq(x.pais, r.pais) && (!x.booking || /sin info|pend/i.test(x.booking)) && /reprogram/i.test(x.observacion||'')); reusar = !!v; }
+    if (!v) return {r, accion:'crear'};
+    usados.add(v.id);
+    if (terminado(v) && !reusar) return {r, v, accion:'igual', cambios:{}};
+    const d = datosProg(r), cambios = {};
+    Object.entries(d).forEach(([k, x]) => {
+      if (!x) return;
+      if (k==='fechaRetiro' && v.fechaRetiro && v.fechaCargue===r.fechaCargue) return;   // el retiro real no se toca si el llenado sigue igual
+      if (/^fecha|^cierre|^etd|^eta/.test(k) ? String(v[k]||'') !== x : !eq(v[k], x)) cambios[k] = x;
+    });
+    if (reusar) cambios.situacion = 'Abierto';
+    return {r, v, accion: reusar ? 'reusar' : Object.keys(cambios).length ? 'cambiar' : 'igual', cambios};
+  });
+  const fuera = libres().filter(x => enMes(x) && /programaci/i.test(x.observacion||'') && !terminado(x));
+  return {filas, fuera};
+}
+function abrirProgramacion(c){
+  PROG = {c, ...compararProgramacion(c)};
+  try { $('#progUsuario').value = localStorage.getItem('rkt-usuario') || $('#barridoUsuario').value || ''; } catch(e){}
+  $('#progTitulo').textContent = `Programación de cargues · ${c.asunto.replace(/^(RE|RV|FW|FWD)\s*:\s*/i, '').replace(/\[EXTERNAL\]\s*/i, '')}`;
+  $('#progSub').innerHTML = `Versión del ${esc(c.fecha.replace('T', ' '))} · ${esc(c.firma || c.remitente.replace(/<.*>/, ''))} · ${c.programacion.length} cargues. Se crean los viajes que faltan y se proponen los cambios de esta versión; los cambios de fecha quedan como reprogramación con su causa. Nada se guarda sin “Aplicar”.`;
+  pintarProgramacion();
+  $('#ovProg').classList.add('open');
+}
+// fecha legible si es fecha; si no, el texto tal cual (ej. "sin informacion")
+const fv = x => /^\d{4}-\d{2}-\d{2}/.test(x||'') ? fd(x) : (x || '—');
+function pintarProgramacion(){
+  const ET = {crear:['Nuevo','var(--ok)'], cambiar:['Cambió','var(--warn)'], reusar:['Reutilizar','var(--accent)'], igual:['Al día','var(--muted)']};
+  const fila = (f, i) => {
+    const [txt, col] = ET[f.accion], movFecha = f.v && ['fechaCargue','fechaRetiro'].some(k => k in (f.cambios||{}) && f.v[k]);
+    const det = f.accion==='crear' ? `<span class="sub">Retiro del vacío ${fd(addDias(f.r.fechaCargue, -1))}${f.r.bodega && !/planta/i.test(f.r.bodega) ? ' · bodega '+esc(f.r.bodega) : ''}</span>`
+      : `<b>${esc(f.v.id)}</b> ${f.v.placa ? `<span class="sub">${esc(f.v.placa)}</span>` : ''}${f.accion==='reusar' ? ' <span class="sub">(esperaba fecha: se reabre)</span>' : ''}<br>`
+        + Object.entries(f.cambios||{}).filter(([k]) => k!=='situacion').map(([k, x]) => `<span class="sub">${esc((CAMPOS_PROG.find(c => c[0]===k)||[k,k])[1])}: ${esc(fv(f.v[k]))} → <b>${esc(fv(x))}</b></span>`).join('<br>');
+    return `<tr><td><input type="checkbox" data-pi="${i}" ${f.accion==='igual' ? 'disabled' : 'checked'}></td><td>${f.r.n}</td><td style="white-space:nowrap">${fd(f.r.fechaCargue)}</td>
+      <td>${esc(f.r.pais)}<br><span class="sub">${esc(f.r.unidad)}</span></td><td>${esc(f.r.mn||'—')}<br><span class="sub">cierre ${fd(f.r.cierreDoc)} · ETD ${fd(f.r.etd)}</span></td>
+      <td>${esc(f.r.booking || 'PTE')}<br><span class="sub">${esc(f.r.fwd)} · ${esc(f.r.puerto)}</span></td>
+      <td><span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${txt}</span><br>${det}
+      ${movFecha || f.accion==='reusar' ? `<div style="margin-top:4px">${htmlCausas('prog-causa').replace('<select class="prog-causa">', `<select class="prog-causa" data-pc="${i}">`).replace('value="Cliente (Reckitt)"', 'value="Cliente (Reckitt)" selected')}</div>` : ''}</td></tr>`;
+  };
+  const n = k => PROG.filas.filter(f => f.accion===k).length;
+  $('#progLista').innerHTML = `<p class="sub">${n('crear')} nuevos · ${n('cambiar')} con cambios · ${n('reusar')} por reutilizar · ${n('igual')} al día</p>
+    <div class="tbl-wrap"><table class="prop prog"><tr><th></th><th>#</th><th>Cargue</th><th>Destino</th><th>Motonave</th><th>Booking</th><th>En la base · qué se hará</th></tr>${PROG.filas.map(fila).join('')}</table></div>
+    ${PROG.fuera.length ? `<p style="margin-top:8px;color:var(--warn)">⚠ Ya no aparecen en esta versión: ${PROG.fuera.map(v => `<button class="link" onclick="abrir('${v.id}')">${esc(v.id)} ${esc(v.pais||'')} ${fd(v.fechaCargue)}</button>`).join(' · ')}. Revíselos con Jhonier antes de cancelarlos.</p>` : ''}`;
+}
+async function aplicarProgramacion(){
+  const usuario = $('#progUsuario').value.trim();
+  if (!usuario) { $('#progUsuario').focus(); return toast('Escriba su nombre: queda en el Historial'); }
+  try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
+  const sel = [...document.querySelectorAll('#progLista [data-pi]:checked')].map(x => PROG.filas[+x.dataset.pi]);
+  if (!sel.length) return toast('No hay filas seleccionadas');
+  const c = PROG.c, mesTxt = MES[Number(c.programacion[0].fechaCargue.slice(5, 7)) - 1], quien = `${usuario} (programación ${mesTxt}, correo ${c.fecha.slice(0, 10)})`;
+  const post = async b => { const r = await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({...b, clave: window.CLAVE, usuario: quien})}); return r.json(); };
+  $('#progAplicar').disabled = true;
+  try {
+    const crear = sel.filter(f => f.accion==='crear');
+    if (crear.length) {
+      toast(`Creando ${crear.length} viajes…`);
+      const lista = crear.map(f => ({...datosProg(f.r), situacion:'Abierto', empresa:'Reckitt Hygiene', solicitante:'Jhonier Gómez',
+        planCargue: f.r.fechaCargue, planRetiro: addDias(f.r.fechaCargue, -1),
+        observacion: `Programación ${mesTxt} (correo de ${c.firma || 'Reckitt'} ${c.fecha.slice(0, 10)})${f.r.bodega && !/planta/i.test(f.r.bodega) ? ' · cargue en '+f.r.bodega : ''}`}));
+      const j = await post({action:'nuevos', operacion:'EXPO', lista});
+      if (!j.ok) throw new Error(j.error || 'no se crearon');
+    }
+    for (const f of sel.filter(f => f.accion!=='crear')) {
+      const i = PROG.filas.indexOf(f), causa = (document.querySelector(`.prog-causa[data-pc="${i}"]`) || {}).value || 'Cliente (Reckitt)';
+      let ch = {...f.cambios};
+      const mov = fechasMovidas(f.v, ch);
+      if (mov.length) ch = conCausa(f.v, ch, mov, causa, `Programación ${mesTxt} actualizada (correo ${c.fecha.replace('T', ' ')})`, usuario);
+      const j = await post({action:'update', id: f.v.id, cambios: ch});
+      if (!j.ok) throw new Error(`${f.v.id}: ${j.error || 'error'}`);
+    }
+    toast(`Programación aplicada: ${crear.length} creados, ${sel.length - crear.length} actualizados`);
+    await cargar(); render();
+    PROG = {c, ...compararProgramacion(c)}; pintarProgramacion();
+  } catch(e) { toast('No se pudo aplicar: ' + e.message); }
+  $('#progAplicar').disabled = false;
+}
+
 async function aplicarDesdeCorreo(c){
   const usuario = $('#barridoUsuario').value.trim();
   if (!usuario) { $('#barridoUsuario').focus(); return toast('Escriba su nombre para actualizar el viaje'); }
@@ -1838,12 +1966,16 @@ async function crearDesdeCorreo(c){
 }
 $('#btnBarrido').onclick = abrirBarrido;
 $('#barridoCerrar').onclick = () => $('#ovBarrido').classList.remove('open');
+$('#progCerrar').onclick = () => $('#ovProg').classList.remove('open');
+$('#ovProg').onclick = e => { if (e.target.id==='ovProg') $('#ovProg').classList.remove('open'); };
+$('#progAplicar').onclick = aplicarProgramacion;
 $('#ovBarrido').onclick = e => {
   if (e.target.id==='ovBarrido') return $('#ovBarrido').classList.remove('open');
   const b = e.target.closest('[data-act]'); if (!b) return;
   const c = BARRIDO[+b.dataset.i];
   if (b.dataset.act === 'ver') return window.open(`https://mail.google.com/mail/?authuser=calidad@stentrapetrol.com#all/${c.msgId}`, '_blank');
   if (b.dataset.act === 'abrir') { $('#ovBarrido').classList.remove('open'); return abrir(c.viajeId); }
+  if (b.dataset.act === 'prog') return abrirProgramacion(c);
   b.disabled = true;
   if (b.dataset.act === 'aplicar') aplicarDesdeCorreo(c).finally(() => { b.disabled = false; });
   else if (c.tipo === 'Nueva exportación') crearExpoDesdeCorreo(c);
@@ -1948,6 +2080,45 @@ function listaCorta(L, titulo){
      <span class="sub">· ${v.operacion} ${esc(v.pais||'')} · llenado ${fd(v.fechaCargue)}${v.placa?'':` · ${esc(v.booking||'sin booking')}`}</span> ${sitTag(v)}</li>`).join('')}</ol>
     ¿Cuál quieres ver? Escribe el número o tócalo.`;
 }
+/* ---------- línea de tiempo del viaje: todo lo que ha pasado (ediciones, correos, cambios de plan, costos, incidentes) ---------- */
+// correos de la bitácora que tocan el viaje (también los ya resueltos y los de viajes cerrados)
+const correosDe = v => (window.BITACORA||[]).filter(b => (b.booking && v.booking && String(b.booking).includes(String(v.booking))) ||
+  (b.placa && v.placa && b.placa===v.placa) || b.viajeId===v.id || (v.pedido && String(b.asunto||'').includes(String(v.pedido).split('-')[0])));
+function eventosDe(v){
+  const E = [], hijos = hijosDe(v), ids = [v.id, ...hijos.map(x => x.id)];
+  const fechaHist = f => String(f||'');
+  historial.filter(x => ids.includes(x.id)).forEach(x => {
+    const t = String(x.observacion||'').replace(/^(EXPO|IMPO) · /, '');
+    if (!t || /^Reprogramaciones:/.test(t)) return;
+    E.push({fecha: fechaHist(x.fecha), tipo: /^Versión anterior/.test(t) ? 'Excel' : 'Edición', quien: x.usuario || '', texto: (x.id!==v.id ? `Subviaje ${x.id}: ` : '') + t});
+  });
+  reprogsDe(v).forEach(r => {
+    const hito = ((HITOS_PLAN[v.operacion]||[]).find(([, , cs]) => cs.includes(r.campo)) || [r.campo])[0];
+    E.push({fecha: r.fecha, tipo: 'Cambio de plan', quien: r.usuario, causa: r.causa, resp: responsable(r.causa), costo: r.costo, incidente: r.incidente,
+      texto: `${hito}: ${r.antes ? fd(r.antes) : '—'} → ${r.despues ? fd(r.despues) : 'sin fecha'}${r.antes && r.despues ? ` (${dDias(r.antes, r.despues) > 0 ? '+' : ''}${dDias(r.antes, r.despues)} d)` : ''}${r.detalle ? ' · '+r.detalle : ''}`});
+  });
+  correosDe(v).forEach(b => E.push({fecha: String(b.fechaCorreo||b.registrado||''), tipo: 'Correo', quien: String(b.remitente||'').replace(/<.*>/, '').trim(),
+    texto: `${b.asunto || ''}${b.accion ? ' → ' + b.accion : ''}`, prioridad: b.prioridad, hecha: b.estadoAccion==='Hecha'}));
+  hijos.forEach(x => E.push({fecha: '', tipo: 'Subviaje', texto: `${x.id}: bodega de paso ${x.patioSub||'—'} · urbano ${x.fechaUrbano ? fd(x.fechaUrbano) : 'sin fecha'}${x.motivoSub ? ' · '+x.motivoSub : ''}`}));
+  if (v.novedad) E.push({fecha: '', tipo: 'Incidente', texto: 'Marcado con novedad' + (v.observacion ? ': ' + v.observacion : '')});
+  return E.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+}
+const ICONO_EVENTO = {'Cambio de plan':'⟲', 'Correo':'✉', 'Edición':'✎', 'Excel':'▦', 'Subviaje':'↪', 'Incidente':'⚠'};
+function lineaTiempo(v){
+  const E = eventosDe(v); if (!E.length) return '';
+  const cp = E.filter(e => e.tipo==='Cambio de plan'), por = {};
+  cp.forEach(e => { por[e.resp] = (por[e.resp]||0) + 1; });
+  const costo = cp.reduce((t, e) => t + (e.costo||0), 0), inc = cp.filter(e => e.incidente).length + E.filter(e => e.tipo==='Incidente').length;
+  const resumen = [cp.length && `<b>${cp.length}</b> cambio${cp.length===1?'':'s'} de plan (${Object.entries(por).map(([r, n]) => `${esc(r)} ${n}`).join(', ')})`,
+    `<b>${E.filter(e => e.tipo==='Correo').length}</b> correos`, `<b>${E.filter(e => e.tipo==='Edición').length}</b> ediciones`,
+    costo && `costo extra <b>${pesos(costo)}</b>`, inc && `<b style="color:var(--bad)">${inc}</b> incidente${inc===1?'':'s'}`].filter(Boolean).join(' · ');
+  const cuando = f => !f ? '' : /T/.test(f) ? new Date(f).toLocaleString('es-CO', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'}) : fd(f);
+  return `<details class="tl" open><summary><b>Línea de tiempo del viaje</b> <span class="sub">${resumen}</span></summary>
+    ${E.map(e => `<div class="tl-it tl-${e.tipo.replace(/\s/g,'')}"><span class="tl-ic">${ICONO_EVENTO[e.tipo]||'•'}</span><div><span class="sub">${esc(cuando(e.fecha))}${e.quien ? ' · '+esc(e.quien) : ''}</span>
+      <div>${e.tipo==='Cambio de plan' ? `<b>Cambio de plan</b> · ${esc(e.causa||'Sin causa')}${e.resp && e.resp!=='Sin causa' ? ` <span class="sub">(responde ${esc(e.resp)})</span>` : ''}<br>` : e.tipo==='Correo' ? `<b>Correo</b>${e.prioridad ? ` <span class="sub">· ${esc(e.prioridad)}${e.hecha ? ' · ✔ hecha' : ''}</span>` : ''}<br>` : ''}${esc(e.texto)}
+      ${e.costo ? `<br><span style="color:var(--warn)">Costo extra ${pesos(e.costo)}</span>` : ''}${e.incidente ? `<br><span style="color:var(--bad)">⚠ Incidente: ${esc(e.incidente)}</span>` : ''}</div></div></div>`).join('')}</details>`;
+}
+
 function verDeLista(i){
   const v = ultimaLista[i]; if (!v) return;
   burbuja(String(i+1), 'me');
