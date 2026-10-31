@@ -1861,7 +1861,7 @@ function compararProgramacion(c){
     if (!v) return {r, accion:'crear'};
     usados.add(v.id);
     // ya ejecutado: solo se le anota el mes de la programación
-    if (terminado(v) && !reusar) return v.mesProg===mes ? {r, v, accion:'igual', cambios:{}} : {r, v, accion:'cambiar', cambios:{mesProg: mes}};
+    if (terminado(v) && !reusar) return String(v.mesProg||'').slice(0, 7)===mes ? {r, v, accion:'igual', cambios:{}} : {r, v, accion:'cambiar', cambios:{mesProg: mes}};
     const d = datosProg(r), cambios = {};
     Object.entries(d).forEach(([k, x]) => {
       if (!x) return;
@@ -1869,7 +1869,7 @@ function compararProgramacion(c){
       if (/^fecha|^cierre|^etd|^eta/.test(k) ? String(v[k]||'') !== x : !eq(v[k], x)) cambios[k] = x;
     });
     if (reusar) cambios.situacion = 'Abierto';
-    if (v.mesProg !== mes) cambios.mesProg = mes;
+    if (String(v.mesProg||'').slice(0, 7) !== mes) cambios.mesProg = mes;   // la hoja lo guarda como fecha (1.º del mes)
     return {r, v, accion: reusar ? 'reusar' : Object.keys(cambios).length ? 'cambiar' : 'igual', cambios};
   });
   const fuera = libres().filter(x => enMes(x) && /programaci/i.test(x.observacion||'') && !terminado(x));
@@ -1891,7 +1891,7 @@ function pintarProgramacion(){
     const [txt, col] = ET[f.accion], movFecha = f.v && ['fechaCargue','fechaRetiro'].some(k => k in (f.cambios||{}) && f.v[k]);
     const det = f.accion==='crear' ? `<span class="sub">Retiro del vacío ${fd(addDias(f.r.fechaCargue, -1))}${f.r.bodega && !/planta/i.test(f.r.bodega) ? ' · bodega '+esc(f.r.bodega) : ''}</span>`
       : `<b>${esc(f.v.id)}</b> ${f.v.placa ? `<span class="sub">${esc(f.v.placa)}</span>` : ''}${f.accion==='reusar' ? ' <span class="sub">(esperaba fecha: se reabre)</span>' : ''}<br>`
-        + Object.entries(f.cambios||{}).filter(([k]) => k!=='situacion').map(([k, x]) => `<span class="sub">${esc((CAMPOS_PROG.find(c => c[0]===k)||[k,k])[1])}: ${esc(k==='mesProg' ? (f.v[k] ? nombreMes(f.v[k]) : '—') : fv(f.v[k]))} → <b>${esc(k==='mesProg' ? nombreMes(x) : fv(x))}</b></span>`).join('<br>');
+        + Object.entries(f.cambios||{}).filter(([k]) => k!=='situacion').map(([k, x]) => `<span class="sub">${esc((CAMPOS_PROG.find(c => c[0]===k)||[k,k])[1])}: ${esc(k==='mesProg' ? (f.v[k] ? nombreMes(String(f.v[k]).slice(0, 7)) : '—') : fv(f.v[k]))} → <b>${esc(k==='mesProg' ? nombreMes(x) : fv(x))}</b></span>`).join('<br>');
     return `<tr><td><input type="checkbox" data-pi="${i}" ${f.accion==='igual' ? 'disabled' : 'checked'}></td><td>${f.r.n}</td><td style="white-space:nowrap">${fd(f.r.fechaCargue)}</td>
       <td>${esc(f.r.pais)}<br><span class="sub">${esc(f.r.unidad)}</span></td><td>${esc(f.r.mn||'—')}<br><span class="sub">cierre ${fd(f.r.cierreDoc)} · ETD ${fd(f.r.etd)}</span></td>
       <td>${esc(f.r.booking || 'PTE')}<br><span class="sub">${esc(f.r.fwd)} · ${esc(f.r.puerto)}</span></td>
