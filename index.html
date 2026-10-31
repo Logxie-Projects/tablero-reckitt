@@ -1004,43 +1004,6 @@ let viajes = [], historial = [], filtroEstado = '', orden = {k:'fechaCargue', as
 /* ---------- utilidades ---------- */
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-// Filtros globales: aplican a todas las vistas. Al abrir o recargar el tablero arrancan siempre limpios
-// (viajes abiertos de IMPO y EXPO) para no esconder nada; no se recuerdan entre visitas.
-const FILTROS_INICIO = {op:'', sit:'Abierto', mes:'', mesSol:'', emp:'', sol:'', fwd:'', ped:'', bk:'', fact:'', foco:'', q:''};
-let G = {...FILTROS_INICIO};
-try { localStorage.removeItem('rkt-filtros'); } catch(e){}
-// listas desplegables: campo del viaje y texto cuando está vacío
-const FILTROS_LISTA = [['emp','empresa','Empresa','Sin empresa'], ['sol','solicitante','Solicitante','Sin solicitante'], ['fwd','fwd','FWD / agente','Sin FWD'], ['ped','pedido','Pedido','Sin pedido'], ['bk','booking','Booking / BL','Sin booking']];
-const valorFiltro = (v, campo, vacio) => String(v[campo]||'').trim() || vacio;
-// buscador libre: cada palabra debe aparecer en algún dato del viaje o de sus subviajes (placa, contenedor, RBHY, observación…);
-// sin tildes ni mayúsculas, y los códigos se comparan sin guiones ni espacios (TLLU769774-2 = TLLU7697742)
-const textoViaje = v => [v, ...viajes.filter(x => x.padre === v.id)].map(x => Object.entries(x).filter(([k, y]) => k!=='historial' && y!==null && typeof y!=='object').map(([, y]) => y).join(' ')).join(' ');
-function enTexto(v){
-  const t = minus(G.q).split(/\s+/).filter(Boolean);
-  if (!t.length) return true;
-  const txt = minus(textoViaje(v)), comp = txt.replace(/[^a-z0-9]/g, '');
-  return t.every(w => txt.includes(w) || (w.replace(/[^a-z0-9]/g, '') && comp.includes(w.replace(/[^a-z0-9]/g, ''))));
-}
-const enListas = v => !v.padre && FILTROS_LISTA.every(([k, campo, , vacio]) => !G[k] || valorFiltro(v, campo, vacio)===G[k]) && enTexto(v) && (!G.fact || cobro(v).fact===G.fact);
-// con algo escrito en el buscador se busca en todos los viajes, abiertos y cerrados
-// con texto en el buscador, o con un filtro de Facturación o de Foco, se mira en todos los viajes (abiertos y cerrados)
-// Todos los filtros se suman: un viaje se ve solo si cumple cada filtro activo. STATUS no se salta; al elegir Mes, Foco,
-// Facturación o escribir en Buscar, STATUS pasa solo a "Todos" (se ve en su lista) y se puede volver a acotar.
-const enGlobal = v => (!G.op || v.operacion===G.op) && enSituacion(v, G.sit) && enListas(v)
-  && (!G.mes || mesDe(v)===(G.mes==='sin' ? '' : G.mes)) && (!G.mesSol || mesSolDe(v)===(G.mesSol==='sin' ? '' : G.mesSol))
-  && (!G.foco || (G.foco===FOCO_OPS ? pendientesOps(v).length > 0 : focoDe(v)===G.foco));
-// cuántos viajes se verían con este cambio de filtro, dejando los demás como están (para mostrarlo en cada opción)
-function cuentaCon(cambio){ const antes = G; G = {...G, ...cambio}; try { return viajes.filter(enGlobal).length; } finally { G = antes; } }
-// "Foco: todos" cuenta solo los viajes que tienen foco (los cancelados no): así suma lo mismo que sus opciones
-const conFoco = () => { const antes = G; G = {...G, foco: ''}; try { return viajes.filter(v => enGlobal(v) && focoDe(v)).length; } finally { G = antes; } };
-/* ---------- foco del equipo operativo: en qué está cada viaje y qué le falta ---------- */
-const visibles = () => viajes.filter(enGlobal);
-// Los viajes cancelados no cuentan en indicadores, alertas ni programación, salvo que se pidan con STATUS: Cancelados
-const conCancelados = v => v.estado!=='Cancelado' || G.sit==='Cancelado';
-const activos = () => visibles().filter(conCancelados);
-const PLURAL = {Abierto:'Abiertos', Cerrado:'Cerrados', Cancelado:'Cancelados'};
-const enSituacion = (v, filtro) => !filtro || situacion(v)===filtro;
-const situacionesPresentes = () => [...SITUACIONES, ...new Set(viajes.map(situacion))].filter((s,i,a)=>a.indexOf(s)===i && (SITUACIONES.slice(0,2).includes(s) || viajes.some(v=>situacion(v)===s)));
 const sitTag = v => { const s = situacion(v); return `<span class="sit sit-${s.split(' ')[0]}">${esc(s.toUpperCase())}</span>`; };
 const pill = e => `<span class="pill" style="background:${colorEstado(e)}">${esc(e)}</span>`;
 // último paso que marcó el conductor en la app de conductores (por viaje, o por booking + placa)
@@ -1102,6 +1065,52 @@ async function guardarCambio(id, cambios, usuario){
     }catch(e){ toast('No se pudo guardar en la base, intente de nuevo'); }
   }
   render();
+}
+
+/* ---------- filtros globales: estado, reglas, conteos y la barra (aplican a Tablero, Viajes y Motonaves) ---------- */
+// Al abrir o recargar el tablero arrancan siempre limpios (viajes abiertos de IMPO y EXPO) para no esconder nada;
+// no se recuerdan entre visitas.
+const FILTROS_INICIO = {op:'', sit:'Abierto', mes:'', mesSol:'', emp:'', sol:'', fwd:'', ped:'', bk:'', fact:'', foco:'', q:''};
+let G = {...FILTROS_INICIO};
+try { localStorage.removeItem('rkt-filtros'); } catch(e){}
+// listas desplegables: campo del viaje y texto cuando está vacío
+const FILTROS_LISTA = [['emp','empresa','Empresa','Sin empresa'], ['sol','solicitante','Solicitante','Sin solicitante'], ['fwd','fwd','FWD / agente','Sin FWD'], ['ped','pedido','Pedido','Sin pedido'], ['bk','booking','Booking / BL','Sin booking']];
+const valorFiltro = (v, campo, vacio) => String(v[campo]||'').trim() || vacio;
+// buscador libre: cada palabra debe aparecer en algún dato del viaje o de sus subviajes (placa, contenedor, RBHY, observación…);
+// sin tildes ni mayúsculas, y los códigos se comparan sin guiones ni espacios (TLLU769774-2 = TLLU7697742)
+const textoViaje = v => [v, ...viajes.filter(x => x.padre === v.id)].map(x => Object.entries(x).filter(([k, y]) => k!=='historial' && y!==null && typeof y!=='object').map(([, y]) => y).join(' ')).join(' ');
+function enTexto(v){
+  const t = minus(G.q).split(/\s+/).filter(Boolean);
+  if (!t.length) return true;
+  const txt = minus(textoViaje(v)), comp = txt.replace(/[^a-z0-9]/g, '');
+  return t.every(w => txt.includes(w) || (w.replace(/[^a-z0-9]/g, '') && comp.includes(w.replace(/[^a-z0-9]/g, ''))));
+}
+const enListas = v => !v.padre && FILTROS_LISTA.every(([k, campo, , vacio]) => !G[k] || valorFiltro(v, campo, vacio)===G[k]) && enTexto(v) && (!G.fact || cobro(v).fact===G.fact);
+// Todos los filtros se suman: un viaje se ve solo si cumple cada filtro activo. STATUS no se salta; al elegir Mes, Foco,
+// Facturación o escribir en Buscar, STATUS pasa solo a "Todos" (se ve en su lista) y se puede volver a acotar.
+// Los cancelados (STATUS o marca) solo se ven con STATUS "Cancelados" o "Todos".
+const enGlobal = v => (!G.op || v.operacion===G.op) && enSituacion(v, G.sit) && (v.estado!=='Cancelado' || ['', 'Cancelado'].includes(G.sit)) && enListas(v)
+  && (!G.mes || mesDe(v)===(G.mes==='sin' ? '' : G.mes)) && (!G.mesSol || mesSolDe(v)===(G.mesSol==='sin' ? '' : G.mesSol))
+  && (!G.foco || (G.foco===FOCO_OPS ? pendientesOps(v).length > 0 : focoDe(v)===G.foco));
+// cuántos viajes se verían al elegir esa opción, con los demás filtros como están y con el mismo ajuste de STATUS que
+// hará la barra al elegirla (ajustarStatus): así el número de la opción es el que se ve después
+function cuentaCon(cambio){ const antes = G; G = {...G, ...cambio}; ajustarStatus(antes); try { return viajes.filter(enGlobal).length; } finally { G = antes; } }
+// "Foco: todos" cuenta solo los viajes que tienen foco (los cancelados no): así suma lo mismo que sus opciones
+const conFoco = () => { const antes = G; G = {...G, foco: ''}; try { return viajes.filter(v => enGlobal(v) && focoDe(v)).length; } finally { G = antes; } };
+// lo que muestran las listas (tarjetas, tabla, motonaves) y el "Mostrando N"
+const visibles = () => viajes.filter(enGlobal);
+// indicadores, alertas y programación: sin cancelados, salvo que se pidan con STATUS "Cancelados"
+const activos = () => visibles().filter(v => v.estado!=='Cancelado' || G.sit==='Cancelado');
+const PLURAL = {Abierto:'Abiertos', Cerrado:'Cerrados', Cancelado:'Cancelados'};
+const enSituacion = (v, filtro) => !filtro || situacion(v)===filtro;
+const situacionesPresentes = () => [...SITUACIONES, ...new Set(viajes.map(situacion))].filter((s,i,a)=>a.indexOf(s)===i && (SITUACIONES.slice(0,2).includes(s) || viajes.some(v=>situacion(v)===s)));
+// Foco, Facturación, Mes y Buscar suelen buscar también cerrados: al usarlos STATUS pasa de "Abiertos" a "Todos"
+// (para que los números cuadren) y vuelve a "Abiertos" al quitarlos. La usan la barra, el buscador y el chat.
+const AMPLIAN = ['foco','fact','mes','mesSol','q'];
+const algunoAmplia = g => AMPLIAN.some(k => String(g[k]||'').trim());
+function ajustarStatus(antes){
+  if (!algunoAmplia(antes) && algunoAmplia(G) && G.sit==='Abierto') G.sit = '';
+  else if (algunoAmplia(antes) && !algunoAmplia(G) && G.sit==='') G.sit = 'Abierto';
 }
 
 /* ---------- barra de filtros global ---------- */
@@ -1674,7 +1683,7 @@ function hitos(v){
 const htmlCausas = (nombre) => `<select class="${nombre}"><option value="">Causa del cambio…</option>${CAUSAS_REPROG.map(([c, r]) => `<option value="${esc(c)}">${esc(c)}${r ? ' · responde '+r : ''}</option>`).join('')}</select>`;
 // indicador: viajes que cumplieron la fecha original y reprogramaciones por responsable
 function reprogKpi(){
-  const L = visibles().filter(v => situacion(v)!=='Cancelado' && v.estado!=='Cancelado' && (HITOS_PLAN[v.operacion]||[]).some(([, p]) => v[p]));
+  const L = activos().filter(v => (HITOS_PLAN[v.operacion]||[]).some(([, p]) => v[p]));
   const D = L.flatMap(v => desviosPlan(v));
   const conDesvio = L.filter(v => desviosPlan(v).length).length;
   const pct = L.length ? Math.round((L.length - conDesvio) / L.length * 100) : 0;
@@ -1734,7 +1743,7 @@ function renderLean(){
   [...$('#v-tablero').children].forEach(el => el.classList.toggle('hidden', lean ? el.id !== 'leanTablero' : el.id === 'leanTablero'));
   if (!lean) return;
   // los que están en curso primero; dentro de cada grupo, por la primera fecha del viaje
-  const L = visibles().filter(conCancelados).sort((a,b) => esNuevo(b) - esNuevo(a) || (situacion(a)!=='Abierto') - (situacion(b)!=='Abierto') || (primerEvento(a)||'9').localeCompare(primerEvento(b)||'9'));
+  const L = visibles().sort((a,b) => esNuevo(b) - esNuevo(a) || (situacion(a)!=='Abierto') - (situacion(b)!=='Abierto') || (primerEvento(a)||'9').localeCompare(primerEvento(b)||'9'));
   const clic = !window.MODO_CLIENTE;
   $('#leanTablero').innerHTML = L.length ? L.map(v => rutaPedido(v).replace('<div class="ruta">', clic ? `<div class="ruta clic" onclick="abrir('${v.id}')">` : '<div class="ruta">')).join('')
     : '<div class="card sub" style="text-align:center;padding:24px">No hay viajes con estos filtros.</div>';
@@ -2509,16 +2518,8 @@ document.addEventListener('input', e => {
     if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch(err){} }
   }, 250);
 });
-const AMPLIAN = ['foco','fact','mes','mesSol','q'];   // filtros que suelen buscar también cerrados
-const algunoAmplia = g => AMPLIAN.some(k => String(g[k]||'').trim());
-function ajustarStatus(antes){
-  if (!algunoAmplia(antes) && algunoAmplia(G) && G.sit==='Abierto') G.sit = '';
-  else if (algunoAmplia(antes) && !algunoAmplia(G) && G.sit==='') G.sit = 'Abierto';
-}
 document.addEventListener('change', e => { const s=e.target.closest('[data-gsel]'); if(!s) return; const antes = {...G}; G[s.dataset.gsel] = s.value;
-  if (AMPLIAN.includes(s.dataset.gsel)) ajustarStatus(antes);
-  // Foco y Facturación miran todos los viajes (abiertos y cerrados): STATUS pasa a "Todos" para que los números cuadren,
-  // y vuelve a "Abiertos" al quitarlos
+  ajustarStatus(antes);   // filtros.js
   render(); });
 document.addEventListener('click', e => { const b=e.target.closest('[data-g]'); if(!b) return; G[b.dataset.g] = b.dataset.val;
   render(); });
@@ -2781,8 +2782,9 @@ function filtroDeTexto(q){
   return {G: f};
 }
 function aplicarFiltroChat(r){
+  const antes = {...G};
   Object.assign(G, r.G);
-  if ((G.fact || G.foco || G.mes || G.mesSol) && !('sit' in r.G)) G.sit = '';
+  if (!('sit' in r.G)) ajustarStatus(antes);   // filtros.js
   render();
   if (r.txt) return r.txt;
   const L = viajes.filter(enGlobal);
