@@ -1961,7 +1961,7 @@ function paradas(v){
     ['Origen', v.puerto||'Puerto', v.fechaLevante || (v.eta && v.eta<=HOY ? v.eta : ''), [v.eta&&`ETA ${fd(v.eta)}`, v.fechaLevante&&`Docs ${fd(v.fechaLevante)}`]],
     ['Retiro lleno', v.puerto ? 'Puerto '+v.puerto : 'Puerto', v.fechaRetiro, [ver('Cita', v.citaRetiro), ver('Retiro', v.fechaRetiro)]],
     sub ? ['Bodega', sub.bodega && sub.bodega!==sub.patioSub ? sub.bodega : (v.bodega||'Bodega'), urbano, [`Patio ${sub.patioSub||'intermedio'} ${fd(sub.fechaDescargueSub||v.fechaCargue)}`, sub.fechaUrbano&&`Urbano ${fd(sub.fechaUrbano)}`]]
-      : ['Bodega', v.bodega||'Bodega', v.fechaCargue && v.fechaCargue<=HOY ? v.fechaCargue : '', [v.fechaCargue&&`Entrega ${fd(v.fechaCargue)}`, v.destino]],
+      : ['Bodega', v.bodega||'Bodega', v.fechaCargue && v.fechaCargue<=HOY ? v.fechaCargue : '', [v.fechaCargue ? `${v.fechaCargue > HOY ? 'Cita de entrega' : 'Entregado'} ${fd(v.fechaCargue)}` : 'Cita de entrega —', v.destino]],
     ['Vacío', v.patio||'Patio', hecho(v.fechaDevolucion, v.tirillaDevolucion), [ver('Cita', v.citaDevolucion), !v.fechaDevolucion && v.tirillaDevolucion ? 'Devuelto (sin fecha)' : ver('Devuelto', v.fechaDevolucion), v.fechaLimite&&`Límite ${fd(v.fechaLimite)}`, v.tirillaDevolucion&&'✔ tirilla']],
   ];
   return [
@@ -2064,12 +2064,14 @@ function rutaPedido(v){
   const sinTirilla = v.operacion==='EXPO' ? !v.tirillaEntrega : !v.tirillaDevolucion;
   const subP = hijosDe(v).find(s => !(s.fechaUrbano && s.fechaUrbano <= HOY));
   // la etapa de la operación (sale de las fechas) con su detalle
+  const proxHito = hitosDe(v).filter(h => h.f > HOY && h.que !== 'Cierre documental').sort((a, b) => a.f.localeCompare(b.f))[0];
   const sit = situacion(v), et = v.estado, ahora = et==='En bodega de paso' && subP ? `En bodega de paso ${subP.patioSub || ''} · urbano ${subP.fechaUrbano ? fd(subP.fechaUrbano) : 'sin fecha'}`
     : et==='Vacío devuelto' ? (sinTirilla ? 'Vacío devuelto · falta tirilla' : 'Vacío devuelto ✔')
     : et==='Entregado en puerto' ? (sinTirilla ? 'Entregado en puerto · falta tirilla' : 'Entregado en puerto · esperando zarpe')
     : et==='Zarpó' ? (sinTirilla ? 'Zarpó · falta tirilla' : 'Zarpó ✔')
     // en curso: lo que está pasando ahora (el paso anterior ya se ve hecho en la ruta), ej. "En camino a puerto", no "Llenado · …"
-    : n < P.length && !['Sin asignar','Asignado'].includes(et) ? (hacia[P[n][0]] || 'Hacia '+P[n][0].toLowerCase())
+    // y lo que tiene programado (hitosDe, turno.js): así se ve que el viaje está en espera de una cita y no quieto
+    : n < P.length && !['Sin asignar','Asignado'].includes(et) ? (hacia[P[n][0]] || 'Hacia '+P[n][0].toLowerCase()) + (proxHito ? ` · ${proxHito.que.toLowerCase()} ${fd(proxHito.f)}` : '')
     : et;
   // el color sigue a la etapa (no a las paradas cumplidas): sin vehículo gris, en curso rosado, cerrado verde
   const col = sit==='Cerrado' ? 'var(--ok)' : et==='Sin asignar' ? 'var(--muted)' : 'var(--accent)';
