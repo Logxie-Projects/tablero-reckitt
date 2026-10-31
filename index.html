@@ -581,8 +581,6 @@ function normSituacion(s){
   return String(s).trim();
 }
 const primerEvento = v => v.fechaRetiro || v.fechaCargue;
-// Reglas que se reportan al equipo para que corrijan la hoja. Misma lógica en apps-script/Code.gs (erroresDe_).
-// viaje CERRADO que no llegó a puerto: se reprogramó o la misma placa y booking siguen en una fila posterior (igual que reemplazado_ en Code.gs)
 const minus = s => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
 // "Concepto extracostos" guarda cada extracosto como "Cita: 60000; Standby: 560000"
 function itemsExtra(v){
@@ -695,12 +693,16 @@ const compacto = s => minus(s).replace(/[^a-z0-9]/g, '');
 const DIAS = ['dom','lun','mar','mié','jue','vie','sáb'];
 const MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
 const fd = iso => { if(!iso) return '—'; const d = new Date(iso.slice(0,10)+'T12:00'); return `${DIAS[d.getDay()]} ${d.getDate()} ${MES[d.getMonth()]}`; };
+// viaje CERRADO que no llegó a puerto: se reprogramó o la misma placa y booking siguen en una fila posterior
 function reemplazado(v){
   if (/reprogram|cambio de c?programac/.test(minus(v.observacion))) return true;
   if (!v.booking || !v.placa || /^(sin info|pend)/.test(minus(v.booking))) return false;
-  const clave = x => minus(x.booking)+'|'+minus(x.placa);
-  return viajes.some(x => x!==v && x.operacion===v.operacion && clave(x)===clave(v) && (x.fila||0) > (v.fila||0));
+  const clave = x => minus(x.booking)+'|'+minus(x.placa)+'|'+(x.padre||'');
+  // con contenedores distintos son dos viajes del mismo booking, no una reprogramación
+  return viajes.some(x => x!==v && x.operacion===v.operacion && clave(x)===clave(v) && (x.fila||0) > (v.fila||0)
+    && !(x.contenedor && v.contenedor && compacto(x.contenedor) !== compacto(v.contenedor)));
 }
+// Errores que se reportan al equipo para que corrija la base: pestaña Errores del tablero y reporte por correo (backend)
 function validar(v){
   const e = [], add = (sev, campo, msg) => e.push({v, sev, campo, msg});
   if (v.padre) {
@@ -746,7 +748,7 @@ function validar(v){
     if (v.fechaEntregaPuerto && !v.tirillaEntrega) add('Media','Tirilla de entrega','Entregado en puerto sin tirilla de entrega');
   }
   if (seg && impo && !pend){
-    // lo que Reckitt pregunta de cada importación (igual que erroresDe_ en Code.gs)
+    // lo que Reckitt pregunta de cada importación
     [['pedido','Pedido','Sin número de pedido'],['contenedor','Contenedor','Sin número de contenedor'],['unidad','Unidad','Sin tipo de contenedor (20 o 40)'],
      ['puerto','Origen','Sin origen (puerto de llegada)'],['destino','Destino','Sin destino'],['bodega','Bodega','Sin bodega de entrega'],
      ['fechaLevante','Fecha entrega documentos','Sin fecha de entrega de documentos']].forEach(([k,campo,msg])=>{ if(!v[k]) add('Media',campo,msg); });
