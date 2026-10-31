@@ -481,21 +481,13 @@ table.prog td:last-child{min-width:260px}
 <div class="toast" id="toast"></div>
 
 <script>
-// Configuración del front end.
-// Deja SHEETS_API_URL vacío para trabajar en MODO DEMO (datos locales, cambios guardados en este navegador).
-// Para conectar a Google Sheets pega aquí la URL /exec de la aplicación web de Apps Script (ver apps-script/Código.gs).
+// Configuración del front end. Los datos se leen siempre de la base (Apps Script de calidad@) con la clave del enlace (?clave=...).
 window.APP_CONFIG = {
   SHEETS_API_URL: 'https://script.google.com/macros/s/AKfycbz_st7NWwfY57QfMyTBLGxnufoIMgvlh3wKIwgi2PuzcrT409dFKI7iPsz3hOhUFKQ0/exec',
-  // true solo si la hoja es una Hoja de Google con el script dentro (doPost escribe en ella)
-  ESCRIBE_HOJA: false,
   USUARIO: 'Monitoreo',
   // Fecha de referencia para los indicadores. null = fecha de hoy.
   FECHA_REFERENCIA: null
 };
-</script>
-<script>
-// Base de viajes en monitoreo (exportada de OPERACION DIARIA RECKIT OCTUBRE 2026.xlsx)
-window.SEED_DATA = [];
 </script>
 <script>
 // Reglas de negocio del Control de Transporte Reckitt (dominio): situación, etapas de la operación, facturación,
@@ -880,7 +872,6 @@ const ESTADOS = [
   {k:'Cancelado', c:'var(--s-can)'},
 ];
 const colorEstado = k => ([...ESTADOS, ...MARCAS].find(e=>e.k===k)||ESTADOS[0]).c;
-const LS_KEY = 'rkt-transporte-v1';
 // fecha de Colombia (en UTC después de las 7 p. m. ya sería mañana)
 const HOY = CFG.FECHA_REFERENCIA || new Date().toLocaleDateString('en-CA', {timeZone:'America/Bogota'});
 
@@ -935,11 +926,7 @@ const celdaAccion = v => { const a = accionPendiente(v); const n = accionesDe(v)
 async function marcarHecha(id){
   const b = (window.BITACORA||[]).find(x=>x.id===id); if (!b) return;
   b.estadoAccion = 'Hecha'; b.resueltoEn = new Date().toISOString();
-  if (window.google?.script?.run && window.CLAVE){
-    // dentro de Apps Script: se guarda con google.script.run (fetch al /exec no sirve desde el iframe)
-    google.script.run.withSuccessHandler(()=>toast('Acción marcada como hecha'))
-      .withFailureHandler(()=>toast('No se pudo guardar en la bitácora')).resolverAccion(window.CLAVE, id, CFG.USUARIO);
-  } else if (CFG.SHEETS_API_URL && window.CLAVE){
+  if (window.CLAVE){
     try { await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'resolver', clave:window.CLAVE, id, usuario:CFG.USUARIO})}); toast('Acción marcada como hecha'); }
     catch(e){ toast('No se pudo guardar en la bitácora'); }
   }
@@ -964,54 +951,26 @@ function celdaConductor(v){
 }
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2200); }
 
-/* ---------- datos (Google Sheets o demo local) ---------- */
+/* ---------- datos: la base en Google Sheets, por la API de Apps Script ---------- */
 async function cargar(){
-  if (window.DATOS_HOJA){
-    viajes = window.DATOS_HOJA.map(normalizar); etapasViajes();
-    let guardado = null;
-    try { guardado = JSON.parse(localStorage.getItem(LS_KEY)); } catch(e){}
-    historial = guardado?.historial || [];
-    fusionarHistorial();
-    $('#connDot').classList.add('live'); $('#connTxt').textContent = `Hoja de Drive · ${window.HORA_DATOS || ''}`;
+  // la clave llega en el enlace (?clave=...) o se pide en pantalla
+  const clave = new URLSearchParams(location.search).get('clave');
+  if (!clave) { pedirClave(false); return false; }
+  try{
+    const r = await fetch(CFG.SHEETS_API_URL + '?formato=json&clave=' + encodeURIComponent(clave));
+    const j = await r.json();
+    if (!j.ok) { pedirClave(true); return false; }
+    viajes = j.viajes.map(normalizar); etapasViajes();
+    historial = j.historial || [];
+    window.MODO_CLIENTE = !j.interno;
+    window.BITACORA = j.bitacora || [];
+    window.CONDUCTORES = j.conductores || [];
+    window.SEG_INICIO = j.seguimiento || '';
+    window.CLAVE = clave;
+    $('#connDot').classList.add('live'); $('#connTxt').textContent = `Hoja de Drive · ${j.hora || 'en línea'}`;
     return;
-  }
-  if (CFG.SHEETS_API_URL){
-    // la clave llega en el enlace (?clave=...) o se pide en pantalla
-    const clave = new URLSearchParams(location.search).get('clave');
-    if (!clave) { pedirClave(false); return false; }
-    try{
-      const r = await fetch(CFG.SHEETS_API_URL + '?formato=json&clave=' + encodeURIComponent(clave));
-      const j = await r.json();
-      if (!j.ok) { pedirClave(true); return false; }
-      viajes = j.viajes.map(normalizar); etapasViajes();
-      let guardado = null;
-      try { guardado = JSON.parse(localStorage.getItem(LS_KEY)); } catch(e){}
-      historial = [...(j.historial || []), ...(guardado?.historial || [])];
-      fusionarHistorial();
-      window.MODO_CLIENTE = !j.interno;
-      window.BITACORA = j.bitacora || [];
-      window.CONDUCTORES = j.conductores || [];
-      window.SEG_INICIO = j.seguimiento || '';
-      window.CLAVE = clave;
-      $('#connDot').classList.add('live'); $('#connTxt').textContent = `Hoja de Drive · ${j.hora || 'en línea'}`;
-      return;
-    }catch(e){ console.error(e); toast('No se pudo conectar con la hoja, intente recargar'); return false; }
-  }
-  let guardado = null;
-  try { guardado = JSON.parse(localStorage.getItem(LS_KEY)); } catch(e){}
-  // Base del archivo + cambios hechos en este navegador: gana la versión actualizada más reciente
-  const locales = new Map((guardado?.viajes || []).map(v=>[v.id, v]));
-  viajes = structuredClone(window.SEED_DATA).map(s=>{ const l = locales.get(s.id); return l && l.actualizado > s.actualizado ? l : s; });
-  historial = guardado?.historial || [];
-  fusionarHistorial();
-  viajes.forEach(normalizar);
+  }catch(e){ console.error(e); toast('No se pudo conectar con la hoja, intente recargar'); return false; }
 }
-// Versiones anteriores del viaje (filas repetidas en la hoja) entran al historial general
-function fusionarHistorial(){
-  const ya = new Set(historial.map(x=>x.id+'|'+x.observacion));
-  historial = [...viajes.flatMap(v=>v.historial||[]).filter(x=>!ya.has(x.id+'|'+x.observacion)), ...historial];
-}
-function persistirLocal(){ try{ localStorage.setItem(LS_KEY, JSON.stringify({viajes, historial})); }catch(e){} }
 
 // todo, también el estado (Asignado, En tránsito…), se escribe en la pestaña Seguimiento EXPO / IMPO de la base
 async function guardarCambio(id, cambios, usuario){
@@ -1023,14 +982,14 @@ async function guardarCambio(id, cambios, usuario){
   if (!v.vistoPor && hayControlVisto()) v.vistoPor = usuario || 'equipo';
   historial.push({fecha:v.actualizado, id, placa:v.placa, estadoAnterior:anterior, estadoNuevo:v.estado, observacion:cambios.observacion||'', usuario:usuario||CFG.USUARIO||''});
   const enBase = {...cambios};
-  if (CFG.SHEETS_API_URL && window.CLAVE && Object.keys(enBase).length){
+  if (window.CLAVE && Object.keys(enBase).length){
     render();
     try{
       const r = await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'update', clave:window.CLAVE, id, cambios:enBase, usuario})});
       const j = await r.json();
       toast(j.ok ? (j.cambios ? `Guardado en la base: ${j.cambios} dato${j.cambios===1?'':'s'}` : 'Sin cambios en la base') : 'No se guardó: ' + (j.error||'error'));
     }catch(e){ toast('No se pudo guardar en la base, intente de nuevo'); }
-  } else { persistirLocal(); toast('Estado actualizado'); }
+  }
   render();
 }
 
@@ -2113,24 +2072,14 @@ window.addEventListener('resize', ()=> document.documentElement.style.setPropert
 $('#fEstados').onclick = e => { const b=e.target.closest('.chip'); if(!b) return; filtroEstado=b.dataset.e; renderChips(); renderTabla(); };
 $('#tbl').onclick = e => { const th=e.target.closest('th[data-k]'); if(!th) return; const k=th.dataset.k; orden = {k, asc: orden.k===k ? !orden.asc : true}; renderTabla(); };
 $('#btnTheme').onclick = () => { const r=document.documentElement; r.dataset.theme = r.dataset.theme==='dark' ? 'light' : 'dark'; try { localStorage.setItem('rkt-tema', r.dataset.theme); } catch(e){} };
-const downloadsP = window.claude?.use ? window.claude.use('downloads') : Promise.resolve(null);
 $('#btnCsv').onclick = async () => {
   const head = ['id',...COLS.map(c=>c[0]),'actualizado'];
   const csv = '﻿' + [head.join(','), ...viajes.map(v=>head.map(h=>`"${String(v[h]??'').replace(/"/g,'""')}"`).join(','))].join('\n');
   const nombre = `viajes_reckitt_${HOY}.csv`;
-  if (window.claude?.use){
-    const dl = await downloadsP;
-    if (!dl) return toast('Descarga no disponible en esta vista');
-    try { await dl.save({filename:nombre, data:csv}); toast('CSV exportado'); }
-    catch(e){ if (e?.code!=='declined') toast('No se pudo exportar el CSV'); }
-    return;
-  }
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download = nombre; a.click();
 };
 
 /* ---------- chat LogxIA ---------- */
-// En claude.ai responde con IA (capacidad "sample"); abierto como archivo local usa búsqueda directa en la base
-const sampleP = window.claude?.use ? window.claude.use('sample') : Promise.resolve(null);
 const chatLog = [];
 // sugerencias del chat armadas con los datos cargados (la página pública no trae placas fijas)
 function sugerencias(){
@@ -2424,7 +2373,6 @@ function respuestaLocal(q){
   }
   return 'No encontré ese viaje. Pregúntame por <b>placa</b>, <b>booking</b>, <b>conductor</b>, <b>destino</b> o <b>motonave</b>, o por “retiros de hoy” y “qué falta por asignar”.';
 }
-const mdLite = t => esc(t).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/^\s*[-*] /gm,'• ').replace(/\n/g,'<br>');
 function burbuja(html, quien){
   const d = document.createElement('div'); d.className = 'msg ' + quien; d.innerHTML = html;
   $('#chatMsgs').appendChild(d); $('#chatMsgs').scrollTop = 1e9; return d;
@@ -2437,32 +2385,7 @@ async function preguntar(q){
   if (comandoChat(q)) return;
   burbuja(esc(q), 'me'); $('#chatIn').value = '';
   const b = burbuja('<span class="typing">Consultando…</span>', 'bot');
-  // varios viajes encontrados: lista corta sin pasar por la IA
-  const varios = buscarViajes(q);
-  if (PIDE_REPORTE.test(q) || varios.length > 1 || /\b(hoy|asignar|pendiente|falta)\b/i.test(q) && !varios.length) {
-    b.innerHTML = respuestaLocal(q);
-    chatLog.push({r:'u',t:q},{r:'b',t:b.innerText});
-    return;
-  }
-  const sample = await sampleP;
-  if (sample){
-    const datos = viajes.map(v=>({id:v.id, placa:v.placa, conductor:v.conductor, operacion:v.operacion, estado:v.estado, fechaRetiroPatio:v.fechaRetiro, fechaLlenado:v.fechaCargue, pais:v.pais, patio:v.patio, motonave:v.mn, cierreDoc:v.cierreDoc, etd:v.etd, eta:v.eta, booking:v.booking, fwd:v.fwd, puerto:v.puerto, observacion:v.observacion, actualizado:v.actualizado}));
-    const previo = chatLog.slice(-6).map(m=>`${m.r==='u'?'Usuario':'LogxIA'}: ${m.t}`).join('\n');
-    const prompt = `Eres LogxIA, el asistente de IA de monitoreo de la transportadora para la operación de Reckitt en Colombia. Hoy es ${HOY}.
-En EXPO el contenedor vacío se retira en patio (normalmente el día anterior al llenado, a veces el mismo día) y se llena en la planta Reckitt; luego va a puerto antes del cierre documental y el ETD de la motonave.
-Responde en español, en máximo 4 líneas, usando SOLO estos datos. Si la respuesta involucra varios viajes, enuméralos (1., 2., ...) en una línea cada uno y termina preguntando cuál quiere ver. Si algo no está en los datos, dilo. Fechas en formato "vie 23 oct". Texto plano; puedes usar **negrita** y viñetas "- ".
-Datos de viajes (JSON): ${JSON.stringify(datos)}
-${previo ? 'Conversación previa:\n'+previo+'\n' : ''}
-Si preguntan por un destino (país) o una motonave, resume: cuántos viajes, cuántos con vehículo, estados, fechas de retiro/llenado, cierre documental, ETD y ETA.
-Pregunta: ${q}`;
-    try{
-      const r = await sample([{role:'user', content:prompt}], {modelTier:'quick', cache:false, onText:({text})=>{ b.innerHTML = mdLite(text); $('#chatMsgs').scrollTop = 1e9; }});
-      const enc = buscarViajes(q);
-      b.innerHTML = mdLite(r.text) + (enc.length && enc.length<=4 ? enc.map(tarjetaViaje).join('') : '');
-      chatLog.push({r:'u',t:q},{r:'b',t:r.text});
-      return;
-    }catch(e){ console.warn('sample', e); }
-  }
+  // respuesta con los datos cargados: un viaje, una lista corta para elegir, el reporte o los pendientes
   b.innerHTML = respuestaLocal(q);
   chatLog.push({r:'u',t:q},{r:'b',t:b.innerText});
 }
@@ -2486,12 +2409,12 @@ function pedirClave(errada){
 cargar().then(ok => { if (ok === false) return; if (window.MODO_CLIENTE) document.body.classList.add('cliente'); render();
   // enlace directo desde el correo (?viaje=FILA-9): abre la ventana de ese viaje para corregirlo
   // cuántos datos de LogxIA esperan revisión: número en el botón "Llenar datos desde correos"
-  if (!window.MODO_CLIENTE && CFG.SHEETS_API_URL && window.CLAVE)
+  if (!window.MODO_CLIENTE && window.CLAVE)
     fetch(CFG.SHEETS_API_URL + '?formato=json&que=propuestas&clave=' + encodeURIComponent(window.CLAVE)).then(r => r.json())
       .then(j => { if (j.ok) $('#nProp').textContent = (j.propuestas || []).length || ''; }).catch(() => {});
-  const vid = new URLSearchParams(location.search).get('viaje') || window.VIAJE_INICIAL;
+  const vid = new URLSearchParams(location.search).get('viaje');
   if (vid && !window.MODO_CLIENTE && viajes.some(x=>x.id===vid)) abrir(vid);
-  const vista = new URLSearchParams(location.search).get('vista') || window.VISTA_INICIAL;
+  const vista = new URLSearchParams(location.search).get('vista');
   if (vista && !window.MODO_CLIENTE && !vid) document.querySelector('#nav [data-v="'+vista.replace(/[^a-z]/g,'')+'"]')?.click();
 });
 </script>
