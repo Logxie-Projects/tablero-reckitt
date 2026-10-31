@@ -580,7 +580,9 @@ function enTexto(v){
 const enListas = v => !v.padre && FILTROS_LISTA.every(([k, campo, , vacio]) => !G[k] || valorFiltro(v, campo, vacio)===G[k]) && enTexto(v) && (!G.fact || cobro(v).fact===G.fact);
 // con algo escrito en el buscador se busca en todos los viajes, abiertos y cerrados
 // con texto en el buscador, o con un filtro de Facturación o de Foco, se mira en todos los viajes (abiertos y cerrados)
-const enGlobal = v => (!G.op || v.operacion===G.op) && (G.q.trim() || G.fact || G.foco || G.mes || G.mesSol || enSituacion(v, G.sit)) && enListas(v)
+// Todos los filtros se suman: un viaje se ve solo si cumple cada filtro activo. STATUS no se salta; al elegir Mes, Foco,
+// Facturación o escribir en Buscar, STATUS pasa solo a "Todos" (se ve en su lista) y se puede volver a acotar.
+const enGlobal = v => (!G.op || v.operacion===G.op) && enSituacion(v, G.sit) && enListas(v)
   && (!G.mes || mesDe(v)===(G.mes==='sin' ? '' : G.mes)) && (!G.mesSol || mesSolDe(v)===(G.mesSol==='sin' ? '' : G.mesSol))
   && (!G.foco || (G.foco===FOCO_OPS ? pendientesOps(v).length > 0 : focoDe(v)===G.foco));
 // cuántos viajes se verían con este cambio de filtro, dejando los demás como están (para mostrarlo en cada opción)
@@ -768,12 +770,11 @@ async function guardarCambio(id, cambios, usuario){
 /* ---------- barra de filtros global ---------- */
 const porOp = () => viajes.filter(v=>(!G.op || v.operacion===G.op) && enListas(v));
 function chipsGlobales(){
-  const n = (op, sit) => viajes.filter(v=>(!op || v.operacion===op) && enSituacion(v, sit) && enListas(v)).length;
-  // IMPO/EXPO y STATUS: listas desplegables con el número de viajes de cada opción
+  // cada opción muestra cuántos viajes se verían al elegirla, con los demás filtros como están (igual en todas las listas)
   const sel = (k, titulo, ops) => `<select class="gsel ${G[k]?'on':''}" data-gsel="${k}" aria-label="${titulo}">${ops.map(([val, txt, cnt])=>`<option value="${esc(val)}" ${G[k]===val?'selected':''}>${titulo}: ${esc(txt)} · ${cnt}</option>`).join('')}</select>`;
-  return sel('op', 'IMPO/EXPO', [['', 'ambas', n('', G.sit)], ['IMPO', 'IMPO', n('IMPO', G.sit)], ['EXPO', 'EXPO', n('EXPO', G.sit)]])
-    + sel('sit', 'STATUS', [...situacionesPresentes().map(s=>[s, PLURAL[s]||s, n(G.op, s)]), ['', 'Todos', n(G.op, '')]])
-    // Mes solicitado y mes ejecutado: los meses con viajes, del más reciente al más antiguo (miran todos los STATUS)
+  return sel('op', 'IMPO/EXPO', [['', 'ambas', cuentaCon({op:''})], ['IMPO', 'IMPO', cuentaCon({op:'IMPO'})], ['EXPO', 'EXPO', cuentaCon({op:'EXPO'})]])
+    + sel('sit', 'STATUS', [...situacionesPresentes().map(s=>[s, PLURAL[s]||s, cuentaCon({sit:s})]), ['', 'Todos', cuentaCon({sit:''})]])
+    // Mes solicitado y mes ejecutado: los meses con viajes, del más reciente al más antiguo
     + [['mesSol', '📋 Solicitado', mesSolDe, 'Mes para el que Reckitt pidió el viaje (fecha original)'], ['mes', '📅 Ejecutado', mesDe, 'Mes del llenado (EXPO) o de la entrega en bodega (IMPO), la fecha que tiene hoy']]
       .map(([k, titulo, f, ayuda]) => `<select class="gsel ${G[k]?'on':''}" data-gsel="${k}" aria-label="${titulo}" title="${ayuda}"><option value="">${titulo}: todos · ${cuentaCon({[k]:''})}</option>${
         [...new Set(viajes.filter(v=>!v.padre).map(f))].sort().reverse().map(m => `<option value="${m||'sin'}" ${G[k]===(m||'sin')?'selected':''}>${nombreMes(m)} · ${cuentaCon({[k]: m||'sin'})}</option>`).join('')}</select>`).join('')
@@ -789,6 +790,7 @@ function chipsGlobales(){
 const nuevosOcultos = () => viajes.filter(v => esNuevo(v) && (!G.op || v.operacion===G.op) && !enGlobal(v));
 const avisoNuevos = () => { const n = nuevosOcultos().length;
   return n ? `<button type="button" class="chip on" style="background:var(--ok);border-color:var(--ok)" onclick="verNuevos()" title="${esc(nuevosOcultos().map(v=>v.id).join(', '))}">${n} viaje${n>1?'s':''} NUEVO oculto${n>1?'s':''} por los filtros · ver</button>` : ''; };
+function limpiarFiltros(){ Object.assign(G, FILTROS_INICIO); render(); }
 function verNuevos(){
   Object.assign(G, {...FILTROS_INICIO, op: G.op});   // se mantiene IMPO/EXPO
   render();
@@ -796,7 +798,8 @@ function verNuevos(){
 function renderGbar(){
   document.documentElement.style.setProperty('--hh', document.querySelector('header').offsetHeight + 'px');
   $('#gbar').innerHTML = `<div class="modos" role="group" aria-label="Vista del tablero">${[['tabla','Modo tabla'],['lean','Modo lean']].map(([k,t])=>`<button type="button" data-modo="${k}" class="${MODO===k?'on':''}">${t}</button>`).join('')}</div>
-    <b>Filtros</b>${chipsGlobales()}${avisoNuevos()}<span class="sub" style="margin-left:auto">Aplican a Tablero, Viajes y Motonaves</span>`;
+    <b>Filtros</b>${chipsGlobales()}${avisoNuevos()}<span class="sub" style="margin-left:auto">Mostrando <b>${visibles().length}</b> viaje${visibles().length===1?'':'s'}${
+      Object.keys(FILTROS_INICIO).some(k => String(G[k]||'') !== String(FILTROS_INICIO[k])) ? ` · <button type="button" class="link" onclick="limpiarFiltros()">Limpiar filtros</button>` : ''} · aplican a Tablero, Viajes y Motonaves</span>`;
   $('#gViajes').innerHTML = chipsGlobales();
 }
 
@@ -2008,7 +2011,7 @@ $('#q').oninput = renderTabla;
 let tBusca;
 document.addEventListener('input', e => {
   const s = e.target.closest('[data-gq]'); if (!s) return;
-  G.q = s.value;
+  const antes = {...G}; G.q = s.value; ajustarStatus(antes);
   const donde = s.closest('#gViajes') ? '#gViajes' : '#gbar';
   clearTimeout(tBusca);
   tBusca = setTimeout(() => {
@@ -2018,10 +2021,16 @@ document.addEventListener('input', e => {
     if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch(err){} }
   }, 250);
 });
-document.addEventListener('change', e => { const s=e.target.closest('[data-gsel]'); if(!s) return; G[s.dataset.gsel] = s.value;
+const AMPLIAN = ['foco','fact','mes','mesSol','q'];   // filtros que suelen buscar también cerrados
+const algunoAmplia = g => AMPLIAN.some(k => String(g[k]||'').trim());
+function ajustarStatus(antes){
+  if (!algunoAmplia(antes) && algunoAmplia(G) && G.sit==='Abierto') G.sit = '';
+  else if (algunoAmplia(antes) && !algunoAmplia(G) && G.sit==='') G.sit = 'Abierto';
+}
+document.addEventListener('change', e => { const s=e.target.closest('[data-gsel]'); if(!s) return; const antes = {...G}; G[s.dataset.gsel] = s.value;
+  if (AMPLIAN.includes(s.dataset.gsel)) ajustarStatus(antes);
   // Foco y Facturación miran todos los viajes (abiertos y cerrados): STATUS pasa a "Todos" para que los números cuadren,
   // y vuelve a "Abiertos" al quitarlos
-  if (['foco','fact','mes','mesSol'].includes(s.dataset.gsel)) G.sit = (G.foco || G.fact || G.mes || G.mesSol) ? '' : 'Abierto';
   render(); });
 document.addEventListener('click', e => { const b=e.target.closest('[data-g]'); if(!b) return; G[b.dataset.g] = b.dataset.val;
   render(); });
