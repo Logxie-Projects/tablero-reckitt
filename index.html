@@ -1903,7 +1903,8 @@ function rutaPedido(v){
     : et==='Vacío devuelto' ? (sinTirilla ? 'Vacío devuelto · falta tirilla' : 'Vacío devuelto ✔')
     : et==='Entregado en puerto' ? (sinTirilla ? 'Entregado en puerto · falta tirilla' : 'Entregado en puerto · esperando zarpe')
     : et==='Zarpó' ? (sinTirilla ? 'Zarpó · falta tirilla' : 'Zarpó ✔')
-    : n < P.length && !['Sin asignar','Asignado'].includes(et) ? `${et} · ${(hacia[P[n][0]] || 'hacia '+P[n][0].toLowerCase()).toLowerCase()}`
+    // en curso: lo que está pasando ahora (el paso anterior ya se ve hecho en la ruta), ej. "En camino a puerto", no "Llenado · …"
+    : n < P.length && !['Sin asignar','Asignado'].includes(et) ? (hacia[P[n][0]] || 'Hacia '+P[n][0].toLowerCase())
     : et;
   // el color sigue a la etapa (no a las paradas cumplidas): sin vehículo gris, en curso rosado, cerrado verde
   const col = sit==='Cerrado' ? 'var(--ok)' : et==='Sin asignar' ? 'var(--muted)' : 'var(--accent)';
