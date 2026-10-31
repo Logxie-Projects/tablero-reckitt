@@ -879,6 +879,24 @@ function normalizar(v, i){
   v.sede = /bogot/i.test(String(v.destino||'').normalize('NFD')) ? 'Bogotá' : 'Cali';
   return v;
 }
+/* ---------- operación de una acción de LogxIA que no tiene viaje en la base ---------- */
+// IMPO y EXPO son contenedores de puerto; NACIONAL es transporte dentro de Colombia que no pasa por puerto
+// (recoger estibas, traslados entre bodegas…). Tiene sus propios actores: se reconocen por su correo o nombre.
+// Actor nuevo de la operación nacional → se agrega aquí (y en el prompt de LogxIA). Ver REGLAS-NEGOCIO §12.
+const ACTORES_NACIONAL = [
+  ['gabriela lopez', 'Reckitt · Logistics Assistant (Bogotá, Cra 69 # 21-73 bodega 11): pide los servicios'],
+  ['yesika gonzalez', 'Reckitt · en copia de las solicitudes'],
+  ['valentina zamudio', 'Reckitt · en copia de las solicitudes'],
+  ['ercol', 'ERCOL Cali (ercolcali@ercol.com.co): proveedor de estibas, entrega el certificado'],
+];
+const OPERACIONES = ['IMPO', 'EXPO', 'NACIONAL'];
+function operacionAccion(b){
+  const quien = minus(b.remitente) + ' ' + minus(b.asunto), t = minus(`${b.asunto} ${b.accion} ${b.resumen}`);
+  if (ACTORES_NACIONAL.some(([a]) => quien.includes(a)) || /\bestibas?\b|traslado entre bodegas|despacho nacional/.test(t)) return 'NACIONAL';
+  if (/exportaci|\brbhy|planilla de ingreso|\bexpo\b/.test(t)) return 'EXPO';
+  if (/importaci|levante|revalidaci|documentos para retiro|\bimpo\b|comodato/.test(t)) return 'IMPO';
+  return '';
+}
 /* ---------- utilidades compartidas: un solo criterio para saber de qué viaje es un dato y un solo lector de fechas ---------- */
 // hoy en Colombia (UTC-5 todo el año): HOY si quien carga el dominio ya lo fijó
 const hoyISO = () => HOY || new Date(Date.now() - 5 * 36e5).toISOString().slice(0, 10);
@@ -1172,10 +1190,31 @@ function areaDe(b){
   return 'Operaciones';
 }
 const COLOR_AREA = {Operaciones:'var(--accent)', 'Facturación':'var(--warn)', Gerencia:'#7c3aed'};
+// operación de la acción: la de su viaje; sin viaje, la deducida del correo (dominio); si no se sabe, General
+const viajeDeAccion = b => viajes.find(x => accionesDe(x).includes(b));
+const operacionDe = b => viajeDeAccion(b)?.operacion || operacionAccion(b) || 'General';
+// acción que el avance del viaje ya muestra hecha (la operación siguió, pero nadie la marcó). Cada paso que pide se
+// compara con lo que el viaje registra; debe pedir al menos un hito (retiro, entrega, devolución, factura) y estar
+// TODO hecho. Tener vehículo solo cuenta junto a un hito. Nada se cierra solo: el equipo confirma con un clic.
+function pareceHecha(b){
+  const v = b.estadoAccion !== 'Hecha' && viajeDeAccion(b); if (!v) return '';
+  const t = minus(b.accion), ya = f => !!f && f <= HOY, impo = v.operacion === 'IMPO';
+  const pasos = [
+    [true, /cita de retiro|retiro en puerto|retirar .*(del )?puerto|programar (el )?retiro/, impo && ya(v.fechaRetiro), `el contenedor se retiró del puerto el ${fd(v.fechaRetiro)}`],
+    [true, /cita de ingreso|ingreso a puerto|entrega(r)? en puerto/, !impo && (ya(v.fechaEntregaPuerto) || !!v.tirillaEntrega), 'el contenedor ya se entregó en puerto'],
+    [true, /descargue|entrega(r)? en bodega/, impo && ya(v.fechaCargue), `se entregó en bodega el ${fd(v.fechaCargue)}`],
+    [true, /devolucion del vacio|devolver el vacio|cita de devolucion/, ya(v.fechaDevolucion) || !!v.tirillaDevolucion, 'el vacío ya se devolvió'],
+    [true, /emitir (las )?facturas?|^facturar/, cobro(v).fact === 'Facturado', 'el viaje ya está facturado'],
+    [false, /asignar vehiculo|programar vehiculo|placa y conductor|conductor y vehiculo/, !!(v.placa && v.conductor), `ya tiene vehículo (${v.placa})`],
+  ].filter(([, re]) => re.test(t));
+  return pasos.some(([hito]) => hito) && pasos.every(([, , hecho]) => hecho) ? pasos.map(([, , , por]) => por).join(' y ') : '';
+}
+const avisoHecha = b => { const p = pareceHecha(b); return p ? `<div class="sub" style="color:var(--ok)">✔ Parece hecha: ${esc(p)}</div>` : ''; };
 const tagArea = b => { const a = areaDe(b); return `<span class="tg" style="background:color-mix(in srgb, ${COLOR_AREA[a]} 15%, transparent);color:${COLOR_AREA[a]}" title="Área de Entrapetrol que la hace">${a}</span>`; };
 async function marcarHecha(id, noEtp, nota){
   const b = (window.BITACORA||[]).find(x=>x.id===id); if (!b) return;
   if (noEtp && !confirm(`¿Cerrar esta acción como "No es para ETP"?\n\n${b.accion}\n\nSale de pendientes; queda registrada como cerrada por no corresponder a Entrapetrol.`)) return;
+  nota = nota || (!noEtp && pareceHecha(b) ? 'el viaje ya muestra que ' + pareceHecha(b) : '');
   const usuario = noEtp ? `${NO_ETP} · ${CFG.USUARIO}` : nota ? `${CFG.USUARIO} · ${nota}` : CFG.USUARIO;
   b.estadoAccion = 'Hecha'; b.resueltoEn = new Date().toISOString(); b.resueltoPor = usuario;
   if (window.CLAVE){
@@ -1225,10 +1264,10 @@ function renderAcciones(){
     .sort((a,b)=> (a.estadoAccion==='Hecha') - (b.estadoAccion==='Hecha') || ord.indexOf(a.prioridad)-ord.indexOf(b.prioridad) || String(b.fechaCorreo).localeCompare(String(a.fechaCorreo)));
   const horas = b => b.registrado ? Math.max(0, Math.round((Date.now() - new Date(b.registrado)) / 36e5)) : 0;
   $('#tblAcc').innerHTML = vis.length ? `<tr><th class="num">#</th><th>Prioridad</th><th>Viaje</th><th>Acción</th><th>Correo</th><th></th></tr>` +
-    vis.map((b,i)=>{ const v = viajes.find(x=>accionesDe(x).includes(b));
+    vis.map((b,i)=>{ const v = viajeDeAccion(b);
       return `<tr><td class="num">${i+1}</td><td><span class="sev sev-${b.prioridad==='Alta'?'Alta':'Media'}">${esc(String(b.prioridad||'Media').toUpperCase())}</span><br>${tagArea(b)}</td>
-      <td>${v?.placa||b.placa?`<span class="placa">${esc(v?.placa||b.placa)}</span>`:'<span class="sub">General</span>'}${b.booking?`<br><span class="sub">BK ${esc(b.booking)}</span>`:''}</td>
-      <td class="obs" style="color:var(--text);min-width:260px"><b>${esc(b.accion)}</b>${b.estadoAccion==='Hecha'?`<br><span class="sub">${estadoCerrada(b)}${b.resueltoPor && !noEsEtp(b)?' por '+esc(b.resueltoPor):''}</span>`:`<br><span class="sub" style="${horas(b)>=24?'color:var(--bad);font-weight:600':''}">pendiente hace ${horas(b)} h</span>`}</td>
+      <td>${v?.placa||b.placa?`<span class="placa">${esc(v?.placa||b.placa)}</span>`:`<span class="sub">${esc(operacionDe(b))}</span>`}${b.booking?`<br><span class="sub">BK ${esc(b.booking)}</span>`:''}</td>
+      <td class="obs" style="color:var(--text);min-width:260px"><b>${esc(b.accion)}</b>${avisoHecha(b)}${b.estadoAccion==='Hecha'?`<br><span class="sub">${estadoCerrada(b)}${b.resueltoPor && !noEsEtp(b)?' por '+esc(b.resueltoPor):''}</span>`:`<br><span class="sub" style="${horas(b)>=24?'color:var(--bad);font-weight:600':''}">pendiente hace ${horas(b)} h</span>`}</td>
       <td class="obs" style="min-width:220px"><span class="sub">${esc(b.resumen)}<br>${esc(b.remitente)}</span></td>
       <td style="white-space:nowrap">${b.estadoAccion==='Hecha'?'':`${botonAtajo(b) ? botonAtajo(b) + '<br>' : ''}<button class="link" onclick="marcarHecha('${b.id}')">Marcar hecha</button><br><button class="link" onclick="marcarHecha('${b.id}', true)" title="La gestiona Reckitt, el agente de carga u otro: no le toca a Entrapetrol">No es para ETP</button>`}${v?`<br><button class="link" onclick="abrir('${v.id}')">Abrir viaje</button>`:''}</td></tr>`; }).join('')
     : '<tr><td class="sub" style="padding:20px">Sin acciones en este filtro 🎉</td></tr>';
@@ -1291,12 +1330,11 @@ function asignarSugerido(id, placa, conductor){
 function pasosTurno(){
   const enOp = v => !turnoOp || !v || v.operacion === turnoOp;
   const V = viajes.filter(v => vigente(v) && v.estado !== 'Cancelado' && enOp(v));
-  const viajeDeAccion = b => viajes.find(x => accionesDe(x).includes(b));
   const SEV = e => e.sev === 'Alta' ? 0 : 1;
   return [
     {n: 1, titulo: 'Lo que llegó por correo', vacio: 'Sin correos por revisar',
      filas: (window.BITACORA||[]).filter(b => b.estadoAccion !== 'Hecha' && areaDe(b) === 'Operaciones')
-       .map(b => ({k: 'a' + b.id, tipo: 'accion', b, v: viajeDeAccion(b)})).filter(x => enOp(x.v))},
+       .map(b => ({k: 'a' + b.id, tipo: 'accion', b, v: viajeDeAccion(b)})).filter(x => !turnoOp || operacionDe(x.b) === turnoOp)},
     {n: 2, titulo: 'Lo que se mueve hoy y mañana', vacio: 'Nada programado para hoy ni mañana',
      filas: V.flatMap(v => hitosDe(v).filter(h => [0, 1].includes(diffDias(h.f))).map(h => ({k: 'h' + v.id + h.que + h.f, tipo: 'hoy', v, h})))
        .sort((a, b) => a.h.f.localeCompare(b.h.f))},
@@ -1311,14 +1349,14 @@ function pasosTurno(){
   ];
 }
 
-const nombreTurno = v => v ? `${v.placa || 'Sin vehículo'} · ${v.operacion} ${v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || '')}${v.padre ? ' · subviaje' : ''}` : 'General';
+const nombreTurno = v => v ? `${v.placa || 'Sin vehículo'} · ${v.operacion} ${v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || '')}${v.padre ? ' · subviaje' : ''}` : '';
 const btnT = (txt, data, title='') => `<button type="button" class="link" ${data} ${title ? `title="${esc(title)}"` : ''}>${txt}</button>`;
 const lnkT = (txt, url) => `<a class="link" href="${url}" target="_blank" rel="noopener">${txt}</a>`;
 function filaTurno(x, rev){
   const v = x.v, abrirV = v ? btnT('Abrir viaje', `data-t-abrir="${v.id}"`) : '', buscar = v ? clavesBusqueda(v).slice(0, 2).map(([k, c]) => lnkT(`🔎 ${esc(k)} ${esc(c)}`, urlBusqueda(c))).join(' ') : '';
   let titulo = '', detalle = '', acc = [];
   if (x.tipo === 'accion') {
-    titulo = esc(x.b.accion); detalle = `${esc(nombreTurno(v))} · ${esc(x.b.remitente || '')}`;
+    titulo = esc(x.b.accion); detalle = `${esc(nombreTurno(v) || operacionDe(x.b))} · ${esc(x.b.remitente || '')}${avisoHecha(x.b)}`;
     acc = [botonAtajo(x.b), btnT('Marcar hecha', `data-t-hecha="${x.b.id}"`), btnT('No es para ETP', `data-t-noetp="${x.b.id}"`), abrirV];
   } else if (x.tipo === 'hoy') {
     const d = diffDias(x.h.f);
@@ -1352,7 +1390,7 @@ function renderTurno(){
   const nProp = Number($('#nProp')?.textContent) || 0;
   $('#turnoResumen').textContent = `${total - hechos} por hacer · ${hechos} revisados hoy`;
   $('#turnoBarra').style.width = total ? Math.round(100 * hechos / total) + '%' : '100%';
-  $('#turnoOps').innerHTML = [['', 'Todas'], ['EXPO', 'EXPO'], ['IMPO', 'IMPO']]
+  $('#turnoOps').innerHTML = [['', 'Todas'], ...OPERACIONES.map(o => [o, o])]
     .map(([k, l]) => `<button class="chip ${turnoOp === k ? 'on' : ''}" data-t-op="${k}">${l}</button>`).join('');
   cont.innerHTML = P.map(p => {
     const pend = p.filas.filter(x => !R.has(x.k)), rev = p.filas.filter(x => R.has(x.k));
