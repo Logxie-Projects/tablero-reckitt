@@ -319,6 +319,8 @@ table.prog td:last-child{min-width:260px}
 .tr-menu.ok .tr-n{background:var(--ok)}
 .tr-fila.tr-roja{border-left:3px solid var(--bad)}
 .tr-meta{margin-top:12px}
+.tr-ger{color:var(--ok);font-weight:600}
+.tr-nota{display:block;width:100%;margin-top:6px;font:inherit;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text)}
 .tr-motivo{display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap}
 .tr-exc{margin-top:4px}
 .tr-exc-pendiente{color:var(--warn)}
@@ -896,6 +898,23 @@ function normalizar(v, i){
   v.sede = /bogot/i.test(String(v.destino||'').normalize('NFD')) ? 'Bogotá' : 'Cali';
   return v;
 }
+/* ---------- acciones de LogxIA: área de Entrapetrol que la hace ---------- */
+// área de Entrapetrol que hace la acción: LogxIA la escribe al inicio ("Gerencia: …"); en las anteriores se deduce del texto
+// (Gerencia: cotizaciones, propuestas, seguridad, relación comercial; Facturación: facturar, RBHY/OBD; lo demás, Operaciones)
+const AREAS = ['Operaciones', 'Facturación', 'Gerencia'];
+function areaDe(b){
+  const t = String(b.accion||''), m = t.match(/^(Operaciones|Facturaci[oó]n|Gerencia)\b/i);
+  if (m) return AREAS.find(a => minus(a) === minus(m[1]));
+  if (/cotizaci|propuesta|\bITR\b|esquema de seguridad|tarifa|contrato/i.test(t + ' ' + (b.resumen||''))) return 'Gerencia';
+  if (/^(facturar|emitir (las )?facturas?)\b/i.test(t)) return 'Facturación';
+  return 'Operaciones';
+}
+/* ---------- Mi turno: las líneas rojas (las usan el tablero y el resumen diario del backend) ---------- */
+const HORAS_COBERTURA = 72, HORAS_CLIENTE = 4;
+// viaje sin vehículo que arranca en HORAS_COBERTURA o menos (o que ya debió arrancar)
+const sinCobertura = v => vigente(v) && v.estado !== 'Cancelado' && !v.padre && !tieneVehiculo(v) && !!primerEvento(v) && diffDias(primerEvento(v)) * 24 <= HORAS_COBERTURA;
+// pedido del cliente (acción de Operaciones) de prioridad alta con más de HORAS_CLIENTE horas sin atender
+const pedidoVencido = b => b.estadoAccion !== 'Hecha' && b.prioridad === 'Alta' && areaDe(b) === 'Operaciones' && !!b.registrado && (Date.now() - new Date(b.registrado)) / 36e5 > HORAS_CLIENTE;
 /* ---------- avisos de hitos (F2): qué cambio de un viaje se cuenta al equipo y, más adelante, al cliente ---------- */
 const HITOS_AVISO = {
   EXPO: [['fechaRetiro', 'Vacío retirado'], ['fechaCargue', 'Contenedor llenado en planta'], ['citaIngreso', 'Cita de ingreso a puerto'],
@@ -1223,17 +1242,6 @@ const celdaAccion = v => { const a = accionPendiente(v); const n = accionesDe(v)
 const NO_ETP = 'No es para ETP';
 const noEsEtp = b => String(b.resueltoPor||'').startsWith(NO_ETP);
 const estadoCerrada = b => noEsEtp(b) ? '✖ No es para ETP' : '✔ Hecha';
-// área de Entrapetrol que hace la acción: LogxIA la escribe al inicio ("Gerencia: …"); en las anteriores se deduce del texto
-// (Gerencia: cotizaciones, propuestas, seguridad, relación comercial; Facturación: facturar, RBHY/OBD; lo demás, Operaciones)
-const AREAS = ['Operaciones', 'Facturación', 'Gerencia'];
-function areaDe(b){
-  const t = String(b.accion||''), m = t.match(/^(Operaciones|Facturaci[oó]n|Gerencia)\b/i);
-  if (m) return AREAS.find(a => minus(a) === minus(m[1]));
-  if (/cotizaci|propuesta|\bITR\b|esquema de seguridad|tarifa|contrato/i.test(t + ' ' + (b.resumen||''))) return 'Gerencia';
-  if (/^(facturar|emitir (las )?facturas?)\b/i.test(t)) return 'Facturación';
-  return 'Operaciones';
-}
-const COLOR_AREA = {Operaciones:'var(--accent)', 'Facturación':'var(--warn)', Gerencia:'#7c3aed'};
 // operación de la acción: la de su viaje; sin viaje, la deducida del correo (dominio); si no se sabe, General
 const viajeDeAccion = b => viajes.find(x => accionesDe(x).includes(b));
 const operacionDe = b => viajeDeAccion(b)?.operacion || operacionAccion(b) || 'General';
@@ -1254,6 +1262,7 @@ function pareceHecha(b){
   return pasos.some(([hito]) => hito) && pasos.every(([, , hecho]) => hecho) ? pasos.map(([, , , por]) => por).join(' y ') : '';
 }
 const avisoHecha = b => { const p = pareceHecha(b); return p ? `<div class="sub" style="color:var(--ok)">✔ Parece hecha: ${esc(p)}</div>` : ''; };
+const COLOR_AREA = {Operaciones:'var(--accent)', 'Facturación':'var(--warn)', Gerencia:'#7c3aed'};
 const tagArea = b => { const a = areaDe(b); return `<span class="tg" style="background:color-mix(in srgb, ${COLOR_AREA[a]} 15%, transparent);color:${COLOR_AREA[a]}" title="Área de Entrapetrol que la hace">${a}</span>`; };
 async function marcarHecha(id, noEtp, nota){
   const b = (window.BITACORA||[]).find(x=>x.id===id); if (!b) return;
@@ -1323,15 +1332,19 @@ $('#accFiltros').onclick = e => { const a=e.target.closest('[data-area]'); if (a
 // En cada ronda (RONDAS, 2 horas cada una) el coordinador recorre 4 pasos en orden:
 //   1 Seguimiento: dónde va cada vehículo en movimiento.     2 Cobertura: viajes sin vehículo a 72 h o menos.
 //   3 Cliente: pedidos de Reckitt (acciones) y datos de los correos.     4 Datos: errores y lo que viene.
+//   5 Cierre del día (desde la última ronda): lo de mañana listo (vehículo, conductor avisado) y la nota de entrega de turno.
 // LÍNEAS ROJAS (bloquean todo el tablero hasta resolverlas): ronda de seguimiento vencida, viaje sin actualizar,
 // viaje sin vehículo a 72 h o menos, pedido del cliente de prioridad alta con más de 4 h sin atender.
 // Un paso se abre cuando el anterior no tiene líneas rojas. Toda EXCEPCIÓN (no se puede cumplir una línea roja) pide un
 // motivo y queda esperando a Gerencia: mientras espera no bloquea; si Gerencia la rechaza, vuelve a bloquear. La aprobación
 // vale 4 horas (HORAS_EXCEPCION): Gerencia queda enterada, pero si sigue sin resolverse vuelven la alerta y el bloqueo.
+// MODO GERENCIA: con la clave de Gerencia (la verifica el Apps Script) el tablero no se bloquea en ese navegador mientras
+// la pestaña esté abierta, y solo así se aprueban o rechazan excepciones. Los coordinadores sí se bloquean.
 // Las marcas ("Sigue igual", "Revisado", excepciones y su aprobación) son del día y las ve todo el equipo: se guardan en
 // la base (pestaña Turno revisado) con quién y a qué hora; no cambian el viaje.
 const RONDAS = [8, 12, 16], HORAS_RONDA = 2;
-let turnoMenu = 'seg', excAbierta = '';   // paso en pantalla · fila con el selector de motivo abierto
+let turnoMenu = 'seg', excAbierta = '';
+const esGerencia = () => { try { return sessionStorage.getItem('rkt-gerencia') === '1'; } catch(e){ return false; } };   // paso en pantalla · fila con el selector de motivo abierto
 const revisados = () => new Map((window.TURNO || []).map(x => [x.clave, x]));
 async function marcarRevisado(k){
   let usuario = ''; try { usuario = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
@@ -1393,17 +1406,28 @@ const TERMINADO = ['Entregado en puerto', 'Zarpó', 'Vacío devuelto', 'Cancelad
 // qué debería pasar después según la etapa (para decir qué se espera del vehículo)
 const SIGUE = {'Asignado': 'el retiro', 'Vacío retirado': 'el llenado en planta', 'Llenado': 'la entrega en puerto', 'Retirado de puerto': 'la entrega en bodega',
   'Entregado en bodega': 'la devolución del vacío', 'En bodega de paso': 'el urbano al destino final'};
-// lo último que registró el viaje y lo próximo que tiene fecha: con eso se ve si el vehículo va al día o se quedó quieto
+// dónde está el vehículo según la etapa del viaje (sale de las fechas): dónde quedó, hacia dónde va y desde cuándo
+// no cambia de estado ni de lugar; además, qué se esperaba y lo último que reportó el conductor en su app
+const UBICACION = {
+  EXPO: {'Asignado': v => [`Por retirar el vacío en ${v.patio || 'patio'}`, ''], 'Vacío retirado': v => [`Con el vacío, hacia el llenado en Reckitt`, v.fechaRetiro],
+    'Llenado': v => [`Lleno, en camino a puerto ${v.puerto || ''}`, v.fechaCargue], 'En bodega de paso': v => [`En bodega de paso ${(hijosDe(v)[0] || {}).patioSub || ''}`, (hijosDe(v)[0] || {}).fechaDescargueSub]},
+  IMPO: {'Asignado': v => [`Por retirar en puerto ${v.puerto || ''}`, ''], 'Retirado de puerto': v => [`Lleno, en camino a bodega ${v.bodega || ''}`, v.fechaRetiro],
+    'Entregado en bodega': v => [`Vacío por devolver en ${v.patio || 'patio'}`, v.fechaCargue], 'En bodega de paso': v => [`En bodega de paso ${(hijosDe(v)[0] || {}).patioSub || ''}`, (hijosDe(v)[0] || {}).fechaDescargueSub]},
+};
 function pulsoViaje(v){
-  const H = hitosDe(v).sort((a, b) => a.f.localeCompare(b.f)), ult = H.filter(h => h.f <= HOY && h.que !== 'Cierre documental').pop(), prox = H.find(h => h.f > HOY);
-  const hace = ult ? -diffDias(ult.f) : 0, sin = sinActualizar(v)[0];
-  return {hace, alerta: !!sin, txt: [ult ? `Último: ${ult.que} ${fd(ult.f)}${hace ? ` (hace ${hace} d)` : ' (hoy)'}` : 'Sin hitos registrados',
-    prox ? `Próximo: ${prox.que} ${fd(prox.f)}` : SIGUE[v.estado] ? `Sigue ${SIGUE[v.estado]}: sin fecha registrada` : ''].filter(Boolean).join(' · '),
-    porque: sin ? `${sin.msg}: ${sin.porque}` : ''};
+  const [donde, f] = ((UBICACION[v.operacion] || {})[v.estado] || (() => [v.estado, '']))(v);
+  const desde = String(f || '').slice(0, 10), quieto = desde && desde <= HOY ? -diffDias(desde) : 0;
+  const prox = hitosDe(v).sort((a, b) => a.f.localeCompare(b.f)).find(h => h.f >= HOY && h.que !== 'Cierre documental');
+  const sin = sinActualizar(v)[0], c = conductorDe(v);
+  return {hace: quieto, alerta: !!sin,
+    donde: `${donde.trim()}${desde ? ' · desde el ' + fd(desde) : ''}`,
+    quieto: desde && desde <= HOY ? (quieto ? `sin cambio de estado ni lugar hace ${quieto} d` : 'se movió hoy') : '',
+    espera: sin ? `Se esperaba: ${sin.msg}` : prox ? `Próximo: ${prox.que} ${fd(prox.f)}` : '',
+    app: c ? `📱 Conductor: ${c.paso}${c.fecha ? ' · ' + haceTxt(c.fecha) : ''}` : '',
+    porque: sin ? sin.porque : ''};
 }
 const enSeguimiento = V => V.filter(v => v.placa && !TERMINADO.includes(v.estado) && primerEvento(v) && diffDias(primerEvento(v)) <= 1);
 
-const HORAS_COBERTURA = 72, HORAS_CLIENTE = 4;
 // motivos de excepción por paso (los revisa Gerencia)
 const MOTIVOS = {
   ronda: ['Sin contacto con los conductores', 'Urgencia operativa en curso', 'Otro'],
@@ -1422,17 +1446,16 @@ function excepcionDe(k, R){
   return {...x, motivo: x.clave.slice(('exc|' + k + '|').length), estado: no ? 'rechazada' : vencida ? 'vencida' : ok ? 'aprobada' : 'pendiente', aprobo: ok || no,
     vence: ok ? hhmm(minutosDe(ok.hora) + HORAS_EXCEPCION * 60) : ''};
 }
-const horasDesde = iso => iso ? (Date.now() - new Date(iso)) / 36e5 : 0;
 
 function menusTurno(r){
   const V = viajes.filter(v => vigente(v) && v.estado !== 'Cancelado' && !v.padre);
   const SEV = e => e.sev === 'Alta' ? 0 : 1;
   const nProp = Number($('#nProp')?.textContent) || 0;
   const sinVehiculo = V.filter(v => !tieneVehiculo(v) && primerEvento(v)).sort((a, b) => primerEvento(a).localeCompare(primerEvento(b)));
-  const cob = sinVehiculo.filter(v => diffDias(primerEvento(v)) * 24 <= HORAS_COBERTURA), despues = sinVehiculo.filter(v => !cob.includes(v));
+  const cob = sinVehiculo.filter(sinCobertura), despues = sinVehiculo.filter(v => !cob.includes(v));
   return [
     {id: 'seg', titulo: 'Seguimiento', meta: 'Todos los vehículos con seguimiento en esta ronda', vacio: 'Ningún vehículo en movimiento',
-     ayuda: r ? `Ronda ${r.n} de ${RONDAS.length}: confirme dónde va cada vehículo. Los que no avanzan van primero y solo salen actualizándolos.` : `Primera ronda a las ${RONDAS[0]}:00`,
+     ayuda: r ? `Ronda ${r.n} de ${RONDAS.length}: ¿dónde está cada vehículo? Los que no avanzan (en rojo) van primero: confirme con el conductor y registre si llegó o la novedad.` : `Primera ronda a las ${RONDAS[0]}:00`,
      filas: V.filter(v => enSeguimiento([v]).length || sinActualizar(v).length).map(v => ({k: `seg${r ? r.n : 0}|${v.id}`, tipo: 'seg', v, p: pulsoViaje(v), roja: !!sinActualizar(v).length}))
        .sort((a, b) => b.roja - a.roja || b.p.hace - a.p.hace)},
     {id: 'cob', titulo: 'Cobertura', meta: `Ningún viaje sin vehículo a ${HORAS_COBERTURA} h o menos`, vacio: `Todos los viajes de las próximas ${HORAS_COBERTURA} h tienen vehículo`,
@@ -1443,7 +1466,7 @@ function menusTurno(r){
      ayuda: `Lo que Reckitt pidió por correo y los datos por aprobar. Lo de prioridad alta con más de ${HORAS_CLIENTE} h sin atender bloquea el tablero.`,
      filas: [...(nProp ? [{k: 'prop', tipo: 'prop', n: nProp}] : []),
        ...(window.BITACORA || []).filter(b => b.estadoAccion !== 'Hecha' && areaDe(b) === 'Operaciones')
-         .map(b => ({k: 'a' + b.id, tipo: 'accion', b, v: viajeDeAccion(b), roja: b.prioridad === 'Alta' && horasDesde(b.registrado) > HORAS_CLIENTE && !pareceHecha(b)}))
+         .map(b => ({k: 'a' + b.id, tipo: 'accion', b, v: viajeDeAccion(b), roja: pedidoVencido(b) && !pareceHecha(b)}))
          .sort((a, b) => b.roja - a.roja)]},
     {id: 'dat', titulo: 'Datos', meta: 'Datos de los viajes completos', vacio: 'Sin datos por corregir',
      ayuda: 'Errores de datos y lo que hay que preparar para los próximos días, con la búsqueda en el correo.',
@@ -1451,6 +1474,10 @@ function menusTurno(r){
          .filter(x => x.e.length).sort((a, b) => SEV(a.e[0]) - SEV(b.e[0])),
        ...V.filter(v => !cob.includes(v)).map(v => ({k: 'p' + v.id, tipo: 'viene', v, e: validar(v).filter(e => e.tipo === 'Alerta')})).filter(x => x.e.length)
          .sort((a, b) => String(primerEvento(a.v) || '').localeCompare(String(primerEvento(b.v) || '')))]},
+    ...(r && r.n === RONDAS.length ? [{id: 'cie', titulo: 'Cierre del día', meta: 'Lo de mañana listo y la entrega de turno escrita', vacio: 'Nada programado para mañana',
+     ayuda: 'Confirme con cada conductor lo de mañana y deje la nota de entrega de turno: va en el resumen del día a Gerencia y Calidad.',
+     filas: [...V.map(v => ({k: 'man|' + v.id, tipo: 'man', v, h: hitosDe(v).filter(h => diffDias(h.f) === 1 && h.que !== 'Cierre documental')})).filter(x => x.h.length),
+       {k: 'nota', tipo: 'nota'}]}] : []),
   ];
 }
 // estado del turno: por cada paso, sus filas pendientes y sus líneas rojas (sin excepción vigente); la ronda y el bloqueo
@@ -1459,12 +1486,12 @@ function estadoTurno(){
   const viva = x => !!x && ['pendiente', 'aprobada'].includes(x.estado);   // rechazada o vencida: vuelve a bloquear
   const vigenteExc = k => viva(excepcionDe(k, R));
   const rondaExc = excepcionDe('ronda' + n, R), rondaSaltada = viva(rondaExc);
-  M.forEach(m => m.filas.forEach(x => { x.exc = excepcionDe(x.k, R); x.hecha = !x.roja && R.has(x.k); x.bloquea = !!x.roja && !vigenteExc(x.k) && !(m.id === 'seg' && rondaSaltada); }));
+  M.forEach(m => m.filas.forEach(x => { x.exc = excepcionDe(x.k, R); x.hecha = !x.roja && (x.tipo === 'nota' ? [...R.keys()].some(c => c.startsWith('nota|')) : R.has(x.k)); x.bloquea = !!x.roja && !vigenteExc(x.k) && !(m.id === 'seg' && rondaSaltada); }));
   const segPend = M[0].filas.filter(x => !x.hecha && !vigenteExc(x.k)).length, resta = r ? r.vence - r.ahora : 0;
   const rondaHecha = !r || rondaSaltada || !segPend, rondaVencida = !!r && !rondaHecha && resta <= 0;
   const rojas = M.map((m, i) => m.filas.filter(x => x.bloquea).length + (i === 0 && rondaVencida ? 1 : 0));
   const excepciones = [...R.values()].filter(x => x.clave.startsWith('exc|')).map(x => { const k = x.clave.slice(4).split('|').slice(0, -1).join('|'); return {k, ...excepcionDe(k, R)}; });
-  return {r, n, R, M, resta, rondaHecha, rondaVencida, rondaExc, rojas, excepciones, bloqueado: !window.MODO_CLIENTE && rojas.some(Boolean)};
+  return {r, n, R, M, resta, rondaHecha, rondaVencida, rondaExc, rojas, excepciones, bloqueado: !window.MODO_CLIENTE && !esGerencia() && rojas.some(Boolean)};
 }
 
 const nombreTurno = v => v ? `${v.placa || 'Sin vehículo'} · ${v.operacion} ${v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || '')}${v.padre ? ' · subviaje' : ''}` : '';
@@ -1474,17 +1501,33 @@ function filaTurno(x, rev){
   const v = x.v, abrirV = v ? btnT('Abrir viaje', `data-t-abrir="${v.id}"`) : '', buscar = v ? clavesBusqueda(v).slice(0, 2).map(([k, c]) => lnkT(`🔎 ${esc(k)} ${esc(c)}`, urlBusqueda(c))).join(' ') : '';
   let titulo = '', detalle = '', acc = [], marca = rev ? '↺ Volver a la lista' : '✓ Revisado';
   if (x.tipo === 'seg') {
-    titulo = `${esc(nombreTurno(v))} · ${esc(v.estado)}`;
-    detalle = [v.contenedor, clavesBusqueda(v).slice(0, 1).map(([k, c]) => `${k} ${c}`)[0], v.conductor].filter(Boolean).map(esc).join(' · ')
-      + `<br>${esc(x.p.txt)}` + (x.p.porque ? `<br><span style="color:var(--bad);font-weight:600">⚠ ${esc(x.p.porque)}</span>` : '');
-    acc = [btnT('Actualizar', `data-t-abrir="${v.id}"`, 'Abrir el viaje y registrar lo que avanzó'), lnkT('💬 Conductor', waConductor(v, '¿dónde va el vehículo? Confírmame cómo va el viaje'))];
-    marca = rev ? '↺ Deshacer' : '✓ Sigue igual';   // sin actualizar (roja): no se ofrece, solo sale actualizando el viaje
+    const p = x.p;
+    titulo = `${esc(v.placa)} · ${esc(v.operacion)} ${esc(v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || ''))} <span class="sub">· ${esc([v.conductor, v.contenedor].filter(Boolean).join(' · '))}</span>`;
+    detalle = `📍 <b>${esc(p.donde)}</b>${p.quieto ? ` · <span style="${x.roja ? 'color:var(--bad);font-weight:600' : ''}">${esc(p.quieto)}</span>` : ''}`
+      + (p.espera ? `<br>${x.roja ? '<span style="color:var(--bad);font-weight:600">⚠ ' + esc(p.espera) + '</span> · ' + esc(p.porque) : esc(p.espera)}` : '')
+      + (p.app ? `<br>${esc(p.app)}` : '');
+    acc = [btnT('✓ Ya llegó', `data-t-llego="${v.id}"`, 'Abre el viaje con la fecha de hoy en el siguiente paso; revise y guarde'),
+      btnT('⚠ Novedad / retraso', `data-t-novedad="${v.id}"`, 'Abre el viaje marcado con Novedad: escriba qué pasó y la nueva fecha'),
+      lnkT('💬 Preguntar dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas'))];
+    marca = rev ? '↺ Deshacer' : '📍 Sigue en camino';   // sin actualizar (roja): no se ofrece; hay que registrar dónde está
   } else if (x.tipo === 'cob') {
     const d = diffDias(primerEvento(v)), sug = sugeridos(v);
     titulo = `${esc(nombreTurno(v))} · ${d < 0 ? 'debió arrancar el ' : d === 0 ? 'hoy, ' : d === 1 ? 'mañana, ' : ''}${fd(primerEvento(v))}`;
     detalle = [v.booking && 'Booking ' + v.booking, v.pedido && 'Pedido ' + v.pedido, v.patio, esNuevo(v) && 'NUEVO: nadie lo ha tomado'].filter(Boolean).map(esc).join(' · ')
       + (sug.length ? '<br>Ya hicieron esta ruta: elija uno, revise y guarde' : '<br>Nadie ha hecho esta ruta: elija placa y conductor en el viaje');
     acc = [...sug.map(s => btnT(`🚚 ${esc(s.placa)} · ${esc(s.conductor.split(' ').slice(0, 2).join(' '))}`, `data-t-asignar="${v.id}" data-placa="${esc(s.placa)}" data-conductor="${esc(s.conductor)}"`, 'Ya hizo esta ruta: ponerlo en el viaje (se revisa y se guarda)')), btnT('Asignar en el viaje', `data-t-abrir="${v.id}"`)];
+    marca = '';
+  } else if (x.tipo === 'man') {
+    titulo = `Mañana · ${esc(x.h.map(h => h.que + (h.donde ? ' · ' + h.donde : '')).join(' · '))}`;
+    detalle = `${esc(nombreTurno(v))} · ${v.placa ? '✓ vehículo ' + esc(v.placa) : '<b style="color:var(--bad)">⚠ sin vehículo</b>'} · ${v.conductor ? '✓ ' + esc(v.conductor) : '<b style="color:var(--bad)">⚠ sin conductor</b>'}`;
+    acc = [v.placa ? lnkT('💬 Avisar al conductor', waConductor(v, `te confirmo mañana ${x.h.map(h => h.que.toLowerCase()).join(' y ')}${x.h[0].donde ? ' en ' + x.h[0].donde : ''}. ¿Todo listo?`)) : '', abrirV];
+    marca = rev ? '↺ Deshacer' : '✓ Listo para mañana';
+  } else if (x.tipo === 'nota') {
+    const notas = [...revisados().values()].filter(y => y.clave.startsWith('nota|'));
+    titulo = 'Nota de entrega de turno';
+    detalle = (notas.map(y => `«${esc(y.clave.slice(5))}» · ${esc(y.usuario)} ${esc(y.hora)}`).join('<br>') || 'Qué queda pendiente, qué se habló con Reckitt o con los conductores, qué debe mirar el siguiente turno.')
+      + `<textarea id="turnoNota" maxlength="180" rows="2" class="tr-nota" placeholder="Ej.: EXPO-006 sin confirmar cita; Jhonier espera la tirilla de JYY043"></textarea>`;
+    acc = [btnT('Guardar nota', 'data-t-nota="1"')];
     marca = '';
   } else if (x.tipo === 'prop') {
     titulo = `${x.n} dato${x.n === 1 ? '' : 's'} de los correos por aprobar`; detalle = 'Lo que LogxIA encontró en los correos: al aprobarlo pasa a la base';
@@ -1518,7 +1561,7 @@ function bloqueGerencia(T){
   const P = T.excepciones.filter(x => x.estado === 'pendiente'); if (!P.length) return '';
   return `<div class="tr-gerencia"><b>Por aprobar (Gerencia) · ${P.length}</b>${P.map(x => `<div class="tr-fila"><div class="tr-txt">${esc(x.motivo)}
     <div class="sub">${esc(x.k.replace(/^seg\d\|/, 'Seguimiento · ').replace(/^cob\|/, 'Sin vehículo · ').replace(/^a(LX-)/, 'Pedido del cliente $1').replace(/^ronda/, 'Saltar la ronda '))} · pedida por ${esc(x.usuario)} ${esc(x.hora)}</div></div>
-    <div class="tr-acc">${btnT('✓ Aprobar', `data-t-aprobar="${esc(x.k)}"`)}${btnT('✖ Rechazar', `data-t-rechazar="${esc(x.k)}"`)}</div></div>`).join('')}</div>`;
+    <div class="tr-acc">${esGerencia() ? btnT('✓ Aprobar', `data-t-aprobar="${esc(x.k)}"`) + btnT('✖ Rechazar', `data-t-rechazar="${esc(x.k)}"`) : '<span class="sub">Solo Gerencia aprueba (con su clave)</span>'}</div></div>`).join('')}</div>`;
 }
 function renderTurno(){
   const cont = $('#turno'); if (!cont) return;
@@ -1540,13 +1583,26 @@ function renderTurno(){
     : T.rondaVencida ? `<span class="tr-vencida">⛔ Ronda ${r.n} vencida a las ${hhmm(r.vence)}: falta el seguimiento</span>${btnT('No se puede: excepción', `data-t-exc="ronda${r.n}"`)}`
     : `<span class="${T.resta <= 30 ? 'tr-urge' : ''}">⏱ Ronda ${r.n} de ${RONDAS.length} · faltan ${hhmm(T.resta)} (vence ${hhmm(r.vence)})</span>`;
   const rojas = T.rojas.map((n, i) => n ? `${n} en ${M[i].titulo}` : '').filter(Boolean);
-  $('#turnoReloj').innerHTML = `${ronda}${rojas.length ? ` · <span class="tr-vencida">⛔ Tablero bloqueado: ${rojas.join(', ')}</span>` : ''}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}`;
+  const llave = esGerencia() ? ` · <span class="tr-ger">🔓 Modo Gerencia</span> ${btnT('Salir', 'data-t-gsalir="1"')}` : btnT('🔑 Entrar como Gerencia', 'data-t-gerencia="1"', 'Con la clave de Gerencia el tablero no se bloquea y se pueden aprobar excepciones');
+  $('#turnoReloj').innerHTML = `${ronda}${rojas.length ? ` · <span class="tr-vencida">⛔ Tablero bloqueado: ${rojas.join(', ')}</span>` : ''}${llave}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}`;
   const m = M.find(x => x.id === turnoMenu);
   const pend = m.filas.filter(x => !x.hecha), hechos = m.filas.filter(x => x.hecha);
   cont.innerHTML = bloqueGerencia(T) + `<div class="tr-meta"><b>Meta:</b> ${esc(m.meta)}</div><div class="sub" style="margin:2px 0 6px">${esc(m.ayuda)}</div>
     ${pend.map(x => filaTurno(x, false)).join('') || `<div class="tr-vacio">✓ ${esc(m.vacio)}${M[M.indexOf(m) + 1] ? ` · ${btnT('Siguiente: ' + M[M.indexOf(m) + 1].titulo + ' →', `data-t-menu="${M[M.indexOf(m) + 1].id}"`)}` : ''}</div>`}
     ${m.despues ? `<div class="sub tr-vacio">ℹ ${esc(m.despues)}</div>` : ''}
     ${hechos.length ? `<details class="tr-rev"><summary class="sub">Hechos hoy (${hechos.length})</summary>${hechos.map(x => filaTurno(x, R.get(x.k))).join('')}</details>` : ''}`;
+}
+// la clave se escribe aquí y la comprueba el Apps Script; el tablero solo guarda "es Gerencia" mientras la pestaña esté abierta
+async function entrarGerencia(){
+  const codigo = prompt('Clave de Gerencia'); if (!codigo) return;
+  try {
+    const r = await fetch(CFG.SHEETS_API_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'},
+      body: JSON.stringify({action: 'gerencia', clave: window.CLAVE, codigo})});
+    const j = await r.json();
+    if (!j.ok) return toast(j.error || 'Clave de Gerencia incorrecta');
+    try { sessionStorage.setItem('rkt-gerencia', '1'); } catch(e){}
+    toast('Modo Gerencia: el tablero no se bloquea en esta pestaña'); renderTurno();
+  } catch(e) { toast('No se pudo verificar la clave'); }
 }
 setInterval(() => { if (window.BITACORA) renderTurno(); }, 60e3);   // el reloj de la ronda y el bloqueo avanzan solos
 $('#v-turno').onclick = e => {   // incluye el reloj de la ronda (#turnoReloj)
@@ -1556,14 +1612,19 @@ $('#v-turno').onclick = e => {   // incluye el reloj de la ronda (#turnoReloj)
   else if (d.tExc) { excAbierta = d.tExc; renderTurno(); }
   else if (d.tExccancel) { excAbierta = ''; renderTurno(); }
   else if (d.tExcok) { const motivo = $(`[data-t-motivo="${CSS.escape(d.tExcok)}"]`).value; excAbierta = ''; marcarRevisado(`exc|${d.tExcok}|${motivo}`); }
-  else if (d.tAprobar || d.tRechazar) { const k = d.tAprobar || d.tRechazar;
+  else if (d.tGerencia) entrarGerencia();
+  else if (d.tGsalir) { try { sessionStorage.removeItem('rkt-gerencia'); } catch(e){} renderTurno(); }
+  else if ((d.tAprobar || d.tRechazar) && esGerencia()) { const k = d.tAprobar || d.tRechazar;
     if (confirm(`¿${d.tAprobar ? 'Aprobar' : 'Rechazar'} esta excepción como Gerencia?\n\nQueda registrado con su nombre y la hora.`)) marcarRevisado((d.tAprobar ? 'ok|' : 'no|') + k); }
   else if (d.tAbrir) abrir(d.tAbrir);
+  else if (d.tLlego) { abrir(d.tLlego); const b = $('#mStates [data-sig]'); if (b) b.click(); }
+  else if (d.tNovedad) { abrir(d.tNovedad); const b = $('#mStates [data-e="Novedad"]'); if (b && !b.classList.contains('on')) b.click(); const o = $('#mForm [data-k="observacion"]'); if (o) { o.scrollIntoView({block: 'center'}); o.focus(); } }
   else if (d.tRev) marcarRevisado(d.tRev);
   else if (d.tHecha) marcarHecha(d.tHecha);
   else if (d.tNoetp) marcarHecha(d.tNoetp, true);
   else if (d.tAsignar) asignarSugerido(d.tAsignar, d.placa, d.conductor);
   else if (d.tProp) abrirPropuestas();
+  else if (d.tNota) { const txt = $('#turnoNota').value.replace(/\s+/g, ' ').trim(); if (txt) marcarRevisado('nota|' + txt.slice(0, 180)); }
 };
 /* ---------- avisos de hitos (F2): al guardar un hito, el coordinador ve el aviso y decide si sale ---------- */
 // EN PRUEBA (D2): el aviso va solo a correos de Entrapetrol (AVISO_HITOS en Código.gs); al cliente, cuando Entrapetrol lo libere.
