@@ -1386,7 +1386,7 @@ function filaTurno(x, rev){
   let titulo = '', detalle = '', acc = [], marca = rev ? '↺ Volver a la lista' : '✓ Revisado';
   if (x.tipo === 'seg') {
     titulo = `${esc(nombreTurno(v))} · ${esc(v.estado)}`;
-    detalle = [clavesBusqueda(v).slice(0, 1).map(([k, c]) => `${k} ${c}`)[0], v.conductor, ...x.hoy.map(h => `${diffDias(h.f) ? 'Mañana' : 'Hoy'}: ${h.que}${h.donde ? ' · ' + h.donde : ''}`)].filter(Boolean).map(esc).join(' · ');
+    detalle = [v.contenedor, clavesBusqueda(v).slice(0, 1).map(([k, c]) => `${k} ${c}`)[0], v.conductor, ...x.hoy.map(h => `${diffDias(h.f) ? 'Mañana' : 'Hoy'}: ${h.que}${h.donde ? ' · ' + h.donde : ''}`)].filter(Boolean).map(esc).join(' · ');
     acc = [btnT('Actualizar', `data-t-abrir="${v.id}"`, 'Abrir el viaje y registrar lo que avanzó'), lnkT('💬 Conductor', waConductor(v, '¿dónde va el vehículo? Confírmame cómo va el viaje'))];
     marca = rev ? '↺ Deshacer' : '✓ Sigue igual';
   } else if (x.tipo === 'prop') {
