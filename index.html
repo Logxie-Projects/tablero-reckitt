@@ -785,7 +785,8 @@ function validar(v){
     }
     return e;
   }
-  if (sit==='Sin status') add('Media',C.status,'Sin status (ABIERTO / CERRADO / CANCELADA)', 'Error', 'Sin STATUS el viaje no aparece en los filtros de abiertos ni de cerrados');
+  // STATUS válidos: Abierto, Cerrado, Cancelado. "Pendiente confirmación" o vacío vienen de la hoja original y esconden el viaje
+  if (!['Abierto','Cerrado','Cancelado'].includes(sit)) add('Alta',C.status,`STATUS "${sit}": debe ser Abierto, Cerrado o Cancelado`, 'Error', 'Con otro STATUS el viaje no sale en la vista inicial ni en el total de abiertos');
   // sin fecha del viaje: si ya se entregó (o devolvió) la fecha existe y solo falta registrarla; si no, no se puede programar nada
   if (!v.fechaCargue) {
     const hecho = expo ? (v.fechaEntregaPuerto || v.tirillaEntrega) : (v.fechaDevolucion || v.tirillaDevolucion);
