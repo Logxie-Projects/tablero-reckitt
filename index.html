@@ -695,8 +695,11 @@ function reemplazado(v){
     && !(x.contenedor && v.contenedor && compacto(x.contenedor) !== compacto(v.contenedor)));
 }
 // Errores que se reportan al equipo para que corrija la base: pestaña Errores del tablero y reporte por correo (backend)
+// Error = algo está mal o ya se venció (se corrige ya). Alerta = algo que hay que hacer pronto. Lo que falta para un viaje lejano
+// no se muestra hasta que entra en su ventana: días antes del primer evento del viaje (retiro o llenado) en que empieza a pedirse.
+const VENTANAS = {placa: 5, conductor: 3, booking: 7, patio: 7, mn: 7, cierreDoc: 7, patioDevolucion: 7};
 function validar(v){
-  const e = [], add = (sev, campo, msg) => e.push({v, sev, campo, msg});
+  const e = [], add = (sev, campo, msg, tipo = 'Error') => e.push({v, sev, campo, msg, tipo});
   if (v.padre) {
     // subviaje (regla 4, igual que el reporte por correo): vehículo, destino final y fecha del urbano mientras esté abierto
     if (!['Cerrado','Cancelado'].includes(situacion(v))) {
@@ -722,21 +725,27 @@ function validar(v){
   if (sit==='Sin status') add('Media',C.status,'Sin status (ABIERTO / CERRADO / CANCELADA)');
   if (!v.fechaCargue) add('Alta',C.cargue, impo?'Sin fecha de entrega en bodega':'Sin fecha de llenado / cargue');
   if (expo && !v.fechaRetiro) add('Alta',C.retiro,'Sin fecha de retiro del contenedor');
-  if (expo && !v.patio && !pend) add('Alta',C.patio,'Patio de retiro sin definir');
-  if (!tieneVehiculo(v) && !pend){ const d = diffDias(primerEvento(v)||HOY); add(d<=2?'Alta':'Media','Placa',`Sin vehículo asignado${d<0?' (fecha vencida)':d===0?' (es hoy)':` (faltan ${d} d)`}`); }
-  if (tieneVehiculo(v) && !v.conductor) add('Media','Conductor','Placa sin conductor');
-  if (expo && !v.booking) add(pend?'Media':'Alta',C.booking,'Sin booking');
-  if (expo && !v.mn) add('Media',C.mn,'Sin motonave');
-  if (expo && !pend && !v.cierreDoc) add('Media',C.cierre,'Sin fecha de cierre documental');
+  // datos que se completan cerca de la fecha: alerta dentro de su ventana, error si la fecha ya pasó; antes no se piden.
+  // Sin fecha del viaje no se piden (ya sale "Sin fecha"): todo lo demás depende de ella.
+  const dias = primerEvento(v) ? diffDias(primerEvento(v)) : null, urge = dias !== null && dias <= 2 ? 'Alta' : 'Media';
+  const cuando = dias < 0 ? ' (fecha vencida)' : dias === 0 ? ' (es hoy)' : ` (faltan ${dias} d)`;
+  const falta = (ventana, sev, campo, msg) => { if (dias === null || dias > ventana) return;
+    if (dias < 0) add('Alta', campo, msg + cuando); else add(sev, campo, msg + cuando, 'Alerta'); };
+  if (expo && !v.patio && !pend) falta(VENTANAS.patio, urge, C.patio, 'Patio de retiro sin definir');
+  if (!tieneVehiculo(v) && !pend) falta(VENTANAS.placa, urge, 'Placa', 'Sin vehículo asignado');
+  if (tieneVehiculo(v) && !v.conductor) falta(VENTANAS.conductor, 'Media', 'Conductor', 'Placa sin conductor');
+  if (expo && !v.booking) falta(VENTANAS.booking, pend ? 'Media' : urge, C.booking, 'Sin booking');
+  if (expo && !v.mn) falta(VENTANAS.mn, 'Media', C.mn, 'Sin motonave');
+  if (expo && !pend && !v.cierreDoc) falta(VENTANAS.cierreDoc, 'Media', C.cierre, 'Sin fecha de cierre documental');
   if (v.fechaRetiro && v.fechaCargue && v.fechaRetiro > v.fechaCargue) add('Alta','Fechas',`Retiro (${fd(v.fechaRetiro)}) después del ${impo?'descargue':'llenado'} (${fd(v.fechaCargue)})`);
   if (v.etd && v.fechaCargue && v.fechaCargue >= v.etd) add('Alta','ETD',`Llenado (${fd(v.fechaCargue)}) igual o posterior al ETD (${fd(v.etd)})`);
   if (v.cierreDoc && v.etd && v.cierreDoc > v.etd) add('Media',C.cierre,'Cierre documental después del ETD');
   if (v.eta && v.etd && v.eta < v.etd) add('Alta','ETA',`ETA (${fd(v.eta)}) antes del ETD (${fd(v.etd)})`);
   if (seg && expo && !pend){
     // el contenedor entra a puerto con la cita más cercana, siempre antes del cierre documental
-    if (v.cierreDoc && !v.citaIngreso && !v.fechaEntregaPuerto && diffDias(v.cierreDoc) <= 3) add(diffDias(v.cierreDoc)<=1?'Alta':'Media','Cita de ingreso',`Sin cita de ingreso a puerto (cierre documental ${fd(v.cierreDoc)})`);
+    if (v.cierreDoc && !v.citaIngreso && !v.fechaEntregaPuerto && diffDias(v.cierreDoc) <= 3) add(diffDias(v.cierreDoc)<=1?'Alta':'Media','Cita de ingreso',`Sin cita de ingreso a puerto (cierre documental ${fd(v.cierreDoc)})`, diffDias(v.cierreDoc) < 0 ? 'Error' : 'Alerta');
     if (v.citaIngreso && v.cierreDoc && v.citaIngreso > v.cierreDoc) add('Alta','Cita de ingreso',`Cita de ingreso (${fd(v.citaIngreso)}) después del cierre documental (${fd(v.cierreDoc)})`);
-    if (v.citaIngreso && !v.fechaEntregaPuerto && diffDias(v.citaIngreso) <= 1 && !/confirm|entreg/i.test(v.estadoCita||'')) add('Media','Estado de la cita',`Cita del ${fd(v.citaIngreso)} sin confirmar`);
+    if (v.citaIngreso && !v.fechaEntregaPuerto && diffDias(v.citaIngreso) <= 1 && !/confirm|entreg/i.test(v.estadoCita||'')) add('Media','Estado de la cita',`Cita del ${fd(v.citaIngreso)} sin confirmar`, 'Alerta');
     if (v.fechaEntregaPuerto && !v.tirillaEntrega) add('Media','Tirilla de entrega','Entregado en puerto sin tirilla de entrega');
   }
   if (seg && impo && !pend){
@@ -747,13 +756,14 @@ function validar(v){
     if (v.fechaRetiro && v.eta && v.fechaRetiro < v.eta) add('Alta','Fecha de retiro',`Retiro del lleno (${fd(v.fechaRetiro)}) antes de la ETA (${fd(v.eta)})`);
     const descargado = v.fechaCargue && v.fechaCargue <= HOY;
     if (!v.fechaDevolucion){
-      if (!v.patio) add(descargado?'Alta':'Media','Patio de devolución','Sin patio de devolución del vacío');
+      if (!v.patio && descargado) add('Alta','Patio de devolución','Sin patio de devolución del vacío');
+      else if (!v.patio && dias !== null && dias <= VENTANAS.patioDevolucion) add('Media','Patio de devolución','Sin patio de devolución del vacío' + cuando, 'Alerta');
       if (descargado && !v.ciudadDevolucion) add('Media','Ciudad de devolución','Sin ciudad de devolución: no se puede calcular la fecha límite');
       if (descargado && !v.citaDevolucion) add('Media','Cita de devolución','Sin cita de devolución del vacío (tramitarla con anticipación)');
       if (v.fechaLimite){
         const d = diffDias(v.fechaLimite);
         if (d < 0) add('Alta','Devolución del vacío',`Vacío sin devolver: el plazo venció el ${fd(v.fechaLimite)} (${-d} d de demora)`);
-        else if (d <= 1) add('Alta','Devolución del vacío',`La devolución del vacío vence ${d===0?'hoy':'mañana'} (${fd(v.fechaLimite)})`);
+        else if (d <= 1) add('Alta','Devolución del vacío',`La devolución del vacío vence ${d===0?'hoy':'mañana'} (${fd(v.fechaLimite)})`, 'Alerta');
       }
     } else if (!v.tirillaDevolucion) add('Media','Tirilla de devolución','Vacío devuelto sin tirilla de devolución');
   }
@@ -1015,37 +1025,39 @@ function renderGbar(){
 const SEV = {Alta:0, Media:1};
 // la pestaña Errores muestra siempre IMPO y EXPO (igual que el reporte por correo), sin importar el filtro global
 const revisables = () => viajes.filter(v=> situacion(v)!=='Cancelado' && v.estado!=='Cancelado' && (situacion(v)!=='Cerrado' || window.SEG_INICIO));
-const errores = () => revisables().flatMap(validar).sort((a,b)=> SEV[a.sev]-SEV[b.sev] || (primerEvento(a.v)||'').localeCompare(primerEvento(b.v)||''));
-let errSev = '';
+const errores = () => revisables().flatMap(validar).sort((a,b)=> (a.tipo==='Alerta') - (b.tipo==='Alerta') || SEV[a.sev]-SEV[b.sev] || (primerEvento(a.v)||'').localeCompare(primerEvento(b.v)||''));
+let errSev = '';   // '' todos · 'Error' · 'Alerta' · 'Alta'
 const nombreViaje = v => `${v.placa || 'Sin placa'} · ${v.operacion} ${v.pais||''}${v.booking?` · booking ${v.booking}`:''} · llenado ${fd(v.fechaCargue)}`;
 function textoReporte(){
   const E = errores(), porViaje = new Map();
   E.forEach(x=>{ if(!porViaje.has(x.v.id)) porViaje.set(x.v.id, []); porViaje.get(x.v.id).push(x); });
   const ahora = new Date().toLocaleString('es-CO', {dateStyle:'full', timeStyle:'short'});
-  const altas = E.filter(x=>x.sev==='Alta').length;
+  const altas = E.filter(x=>x.sev==='Alta').length, nErr = E.filter(x=>x.tipo!=='Alerta').length;
   let n = 0;
   return `REPORTE DE ERRORES EN LA HOJA · OPERACIÓN RECKITT
 ${ahora}
 
-Total: ${E.length} errores en ${porViaje.size} viajes (${altas} de prioridad ALTA).
+Total: ${nErr} errores para corregir y ${E.length - nErr} alertas de los próximos días, en ${porViaje.size} viajes (${altas} de prioridad ALTA).
 Por favor corregir en la hoja "OPERACION DIARIA RECKIT 2026" y actualizar el status.
 
 ` + [...porViaje.values()].map(L=>`${++n}. ${nombreViaje(L[0].v)}
-${L.map(x=>`   - [${x.sev.toUpperCase()}] ${x.campo}: ${x.msg}`).join('\n')}`).join('\n\n');
+${L.map(x=>`   - [${x.tipo==='Alerta'?'ALERTA':'ERROR'} · ${x.sev.toUpperCase()}] ${x.campo}: ${x.msg}`).join('\n')}`).join('\n\n');
 }
 function renderErrores(){
   const E = errores(), altas = E.filter(x=>x.sev==='Alta').length, nViajes = new Set(E.map(x=>x.v.id)).size;
+  const nErr = E.filter(x=>x.tipo!=='Alerta').length, nAl = E.length - nErr;
   $('#nErr').textContent = E.length || '';
-  $('#errResumen').textContent = `${E.length} errores en ${nViajes} viajes · ${altas} prioridad alta · ${E.length-altas} media` + (G.op ? ` · incluye IMPO y EXPO (el filtro ${G.op} no aplica aquí)` : '');
-  $('#errFiltros').innerHTML = [['','Todos',E.length],['Alta','Alta',altas],['Media','Media',E.length-altas]]
+  // lo de viajes lejanos no sale hasta entrar en su ventana (VENTANAS, en el dominio)
+  $('#errResumen').textContent = `${nErr} errores para corregir · ${nAl} alertas de los próximos días · ${nViajes} viajes · ${altas} prioridad alta` + (G.op ? ` · incluye IMPO y EXPO (el filtro ${G.op} no aplica aquí)` : '');
+  $('#errFiltros').innerHTML = [['','Todos',E.length],['Error','Errores',nErr],['Alerta','Alertas',nAl],['Alta','Prioridad alta',altas]]
     .map(([k,l,c])=>`<button class="chip ${errSev===k?'on':''}" data-sev="${k}">${l} · ${c}</button>`).join('');
-  const vis = E.filter(x=>!errSev || x.sev===errSev);
-  $('#tblErr').innerHTML = vis.length ? `<tr><th class="num">#</th><th>Prioridad</th><th>Viaje</th><th>Campo</th><th>Error</th><th></th></tr>` +
-    vis.map((x,i)=>`<tr><td class="num">${i+1}</td><td><span class="sev sev-${x.sev}">${x.sev.toUpperCase()}</span></td>
+  const vis = E.filter(x=>!errSev || (errSev==='Alta' ? x.sev==='Alta' : (x.tipo||'Error')===errSev));
+  $('#tblErr').innerHTML = vis.length ? `<tr><th class="num">#</th><th>Tipo</th><th>Viaje</th><th>Campo</th><th>Detalle</th><th></th></tr>` +
+    vis.map((x,i)=>`<tr><td class="num">${i+1}</td><td><span class="sev sev-${x.sev}">${x.tipo==='Alerta'?'ALERTA':'ERROR'}</span><br><span class="sub">${esc(x.sev)}</span></td>
       <td>${x.v.placa?`<span class="placa">${esc(x.v.placa)}</span>`:'<span class="missing">Sin placa</span>'} <span class="sub">${esc(x.v.operacion)} ${esc(x.v.pais||'')} · llenado ${fd(x.v.fechaCargue)}</span></td>
       <td>${esc(x.campo)}</td><td class="obs" style="color:var(--text)">${esc(x.msg)}</td>
       <td><button class="link" onclick="abrir('${x.v.id}')">Corregir</button></td></tr>`).join('')
-    : '<tr><td class="sub" style="padding:20px">Sin errores 🎉</td></tr>';
+    : `<tr><td class="sub" style="padding:20px">${errSev==='Alerta' ? 'Sin alertas para los próximos días' : 'Sin errores'} 🎉</td></tr>`;
   if (!$('#repTexto').classList.contains('hidden')) $('#repTexto').value = textoReporte();
 }
 $('#errFiltros').onclick = e => { const b=e.target.closest('[data-sev]'); if(!b) return; errSev=b.dataset.sev; renderErrores(); };
