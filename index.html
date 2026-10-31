@@ -923,11 +923,18 @@ const accionesDe = v => situacion(v)==='Cerrado' ? [] : (window.BITACORA||[]).fi
 const accionPendiente = v => accionesDe(v).find(b=>b.estadoAccion!=='Hecha');
 const celdaAccion = v => { const a = accionPendiente(v); const n = accionesDe(v).filter(b=>b.estadoAccion!=='Hecha').length;
   return a ? `<div class="accion"><span class="pri" style="background:${PRI[a.prioridad]||PRI.Media}"></span>${esc(a.accion)}${n>1?` <span class="sub">(+${n-1})</span>`:''}</div>` : '<span class="sub">—</span>'; };
-async function marcarHecha(id){
+// acción que no le toca a Entrapetrol (la gestiona Reckitt, el agente de carga, la aduana…): se cierra con esa marca en "resuelto por"
+const NO_ETP = 'No es para ETP';
+const noEsEtp = b => String(b.resueltoPor||'').startsWith(NO_ETP);
+const estadoCerrada = b => noEsEtp(b) ? '✖ No es para ETP' : '✔ Hecha';
+async function marcarHecha(id, noEtp){
   const b = (window.BITACORA||[]).find(x=>x.id===id); if (!b) return;
-  b.estadoAccion = 'Hecha'; b.resueltoEn = new Date().toISOString();
+  if (noEtp && !confirm(`¿Cerrar esta acción como "No es para ETP"?\n\n${b.accion}\n\nSale de pendientes; queda registrada como cerrada por no corresponder a Entrapetrol.`)) return;
+  const usuario = noEtp ? `${NO_ETP} · ${CFG.USUARIO}` : CFG.USUARIO;
+  b.estadoAccion = 'Hecha'; b.resueltoEn = new Date().toISOString(); b.resueltoPor = usuario;
   if (window.CLAVE){
-    try { await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'resolver', clave:window.CLAVE, id, usuario:CFG.USUARIO})}); toast('Acción marcada como hecha'); }
+    try { await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'resolver', clave:window.CLAVE, id, usuario})});
+      toast(noEtp ? 'Acción cerrada: no es para Entrapetrol' : 'Acción marcada como hecha'); }
     catch(e){ toast('No se pudo guardar en la bitácora'); }
   }
   if (editId) abrir(editId);
@@ -1090,9 +1097,9 @@ function renderAcciones(){
     vis.map((b,i)=>{ const v = viajes.find(x=>accionesDe(x).includes(b));
       return `<tr><td class="num">${i+1}</td><td><span class="sev sev-${b.prioridad==='Alta'?'Alta':'Media'}">${esc(String(b.prioridad||'Media').toUpperCase())}</span></td>
       <td>${v?.placa||b.placa?`<span class="placa">${esc(v?.placa||b.placa)}</span>`:'<span class="sub">General</span>'}${b.booking?`<br><span class="sub">BK ${esc(b.booking)}</span>`:''}</td>
-      <td class="obs" style="color:var(--text);min-width:260px"><b>${esc(b.accion)}</b>${b.estadoAccion==='Hecha'?`<br><span class="sub">✔ Hecha${b.resueltoPor?' por '+esc(b.resueltoPor):''}</span>`:`<br><span class="sub" style="${horas(b)>=24?'color:var(--bad);font-weight:600':''}">pendiente hace ${horas(b)} h</span>`}</td>
+      <td class="obs" style="color:var(--text);min-width:260px"><b>${esc(b.accion)}</b>${b.estadoAccion==='Hecha'?`<br><span class="sub">${estadoCerrada(b)}${b.resueltoPor && !noEsEtp(b)?' por '+esc(b.resueltoPor):''}</span>`:`<br><span class="sub" style="${horas(b)>=24?'color:var(--bad);font-weight:600':''}">pendiente hace ${horas(b)} h</span>`}</td>
       <td class="obs" style="min-width:220px"><span class="sub">${esc(b.resumen)}<br>${esc(b.remitente)}</span></td>
-      <td style="white-space:nowrap">${b.estadoAccion==='Hecha'?'':`<button class="link" onclick="marcarHecha('${b.id}')">Marcar hecha</button>`}${v?`<br><button class="link" onclick="abrir('${v.id}')">Abrir viaje</button>`:''}</td></tr>`; }).join('')
+      <td style="white-space:nowrap">${b.estadoAccion==='Hecha'?'':`<button class="link" onclick="marcarHecha('${b.id}')">Marcar hecha</button><br><button class="link" onclick="marcarHecha('${b.id}', true)" title="La gestiona Reckitt, el agente de carga u otro: no le toca a Entrapetrol">No es para ETP</button>`}${v?`<br><button class="link" onclick="abrir('${v.id}')">Abrir viaje</button>`:''}</td></tr>`; }).join('')
     : '<tr><td class="sub" style="padding:20px">Sin acciones en este filtro 🎉</td></tr>';
 }
 $('#accFiltros').onclick = e => { const b=e.target.closest('[data-acc]'); if(!b) return; accFiltro=b.dataset.acc; renderAcciones(); };
@@ -1556,7 +1563,7 @@ function abrir(id){
   const bloqueLx = lx.length ? '<b>Acciones LogxIA (de los correos):</b>' + lx.map(b=>`<div class="lx-item ${b.estadoAccion==='Hecha'?'hecha':''}">
     <span class="sev sev-${b.prioridad==='Alta'?'Alta':'Media'}">${esc(String(b.prioridad||'').toUpperCase())}</span> <b>${esc(b.accion)}</b><br>
     <span class="sub">${esc(b.resumen)} · ${esc(b.remitente)} · ${esc(String(b.fechaCorreo||'').slice(0,16).replace('T',' '))}</span><br>
-    ${b.estadoAccion==='Hecha' ? '<span class="sub">✔ Hecha</span>' : `<button type="button" class="link" onclick="marcarHecha('${b.id}')">Marcar como hecha</button>`}</div>`).join('') + '<br>' : '';
+    ${b.estadoAccion==='Hecha' ? `<span class="sub">${estadoCerrada(b)}</span>` : `<button type="button" class="link" onclick="marcarHecha('${b.id}')">Marcar como hecha</button> · <button type="button" class="link" onclick="marcarHecha('${b.id}', true)" title="La gestiona Reckitt, el agente de carga u otro: no le toca a Entrapetrol">No es para ETP</button>`}</div>`).join('') + '<br>' : '';
   $('#mHist').innerHTML = bloqueLx + lineaTiempo(v);
   $('#ov').classList.add('open');
 }
