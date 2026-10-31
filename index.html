@@ -923,13 +923,17 @@ const HITOS_AVISO = {
   IMPO: [['fechaRetiro', 'Retirado de puerto'], ['fechaCargue', 'Entregado en bodega'], ['citaDevolucion', 'Cita de devolución del vacío'],
     ['fechaDevolucion', 'Vacío devuelto'], ['tirillaDevolucion', 'Tirilla de devolución del vacío'], ['fechaUrbano', 'Urbano al destino final']],
 };
-// hitos que trae un cambio guardado: fecha de hoy o pasada = ocurrió; fecha futura = quedó programado (reprogramación)
+// hitos que trae un cambio guardado: fecha de hoy o pasada = ocurrió; fecha futura = quedó programado (reprogramación).
+// Guardar placa o conductor es el aviso "Vehículo asignado" (lo que Reckitt pide: placa y conductor).
 function hitosDelCambio(v, cambios){
-  return (HITOS_AVISO[v.operacion] || []).filter(([k]) => cambios[k]).map(([k, txt]) => {
+  const vehiculo = (cambios.placa || cambios.conductor) && v.placa ? [{campo: 'placa', txt: `Vehículo asignado: ${v.placa}${v.conductor ? ' · ' + v.conductor : ''}`}] : [];
+  return [...vehiculo, ...(HITOS_AVISO[v.operacion] || []).filter(([k]) => cambios[k]).map(([k, txt]) => {
     const x = String(cambios[k]);
     return {campo: k, txt: !/^\d{4}-\d{2}-\d{2}/.test(x) ? `${txt}: ${x}` : x.slice(0, 10) > HOY ? `${txt}: programado para el ${fd(x)}` : `${txt} el ${fd(x)}`};
-  });
+  })];
 }
+// números con los que el cliente identifica el viaje: booking, RBHY y contenedor (EXPO); pedido, DO, contenedor y BL (IMPO)
+const refCliente = v => clavesBusqueda(v).filter(([k]) => k !== 'Placa').map(([k, x]) => `${k} ${x}`).join(' · ');
 /* ---------- operación de una acción de LogxIA que no tiene viaje en la base ---------- */
 // IMPO y EXPO son contenedores de puerto; NACIONAL es transporte dentro de Colombia que no pasa por puerto
 // (recoger estibas, traslados entre bodegas…). Tiene sus propios actores: se reconocen por su correo o nombre.
@@ -1634,7 +1638,7 @@ $('#v-turno').onclick = e => {   // incluye el reloj de la ronda (#turnoReloj)
 // EN PRUEBA (D2): el aviso va solo a correos de Entrapetrol (AVISO_HITOS en Código.gs); al cliente, cuando Entrapetrol lo libere.
 async function ofrecerAviso(v, cambios, usuario){
   const H = hitosDelCambio(v, cambios); if (!H.length || !window.CLAVE || window.MODO_CLIENTE) return;
-  const viaje = `${v.placa || 'Sin placa'} · ${v.operacion} ${v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || '')}`;
+  const viaje = `${refCliente(v) || v.placa || 'Sin referencia'} · ${v.operacion} ${v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || '')}`;
   if (!confirm(`¿Avisar este hito al equipo de Entrapetrol?\n(prueba: todavía no le llega al cliente)\n\n${viaje}\n${H.map(h => '• ' + h.txt).join('\n')}`)) return;
   try {
     const r = await fetch(CFG.SHEETS_API_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'},
