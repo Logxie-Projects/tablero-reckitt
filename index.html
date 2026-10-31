@@ -498,62 +498,16 @@ window.APP_CONFIG = {
 window.SEED_DATA = [];
 </script>
 <script>
-const CFG = window.APP_CONFIG || {};
-// Etapa de la operación: sale sola de las fechas del viaje (la misma ruta que dibuja la tarjeta), no de una lista manual.
-// EXPO: Sin asignar → Asignado → Vacío retirado → Llenado → (En bodega de paso) → Entregado en puerto → Zarpó
-// IMPO: Sin asignar → Asignado → Retirado de puerto → (En bodega de paso) → Entregado en bodega → Vacío devuelto
-// "En bodega de paso" = hay subviaje y el urbano aún no se hace. Novedad es una marca aparte; Cancelado viene del STATUS.
-const ESTADOS = [
-  {k:'Sin asignar', c:'var(--s-sin)'},
-  {k:'Asignado', c:'var(--s-asig)'},
-  {k:'Vacío retirado', c:'var(--s-ret)'},
-  {k:'Retirado de puerto', c:'var(--s-ret)'},
-  {k:'Llenado', c:'var(--s-carg)'},
-  {k:'En bodega de paso', c:'var(--s-patio)'},
-  {k:'Entregado en bodega', c:'var(--s-tran)'},
-  {k:'Entregado en puerto', c:'var(--s-ent)'},
-  {k:'Zarpó', c:'var(--s-ent)'},
-  {k:'Vacío devuelto', c:'var(--s-ent)'},
-  {k:'Cancelado', c:'var(--s-can)'},
-];
+// Reglas de negocio del Control de Transporte Reckitt (dominio): situación, etapas de la operación, facturación,
+// reprogramaciones, foco, pendientes y meses. Sin pantallas ni DOM: lo usan el tablero y, como Dominio.gs, el backend.
+// Depende de: viajes, HOY, fd, esc, validar (definidos por quien lo carga).
 // marcas que el equipo pone a mano en la ventana del viaje (columna Estado de la base)
 const MARCAS = [{k:'Novedad', c:'var(--s-nov)'}, {k:'Cancelado', c:'var(--s-can)'}];
 // etapas en las que el transporte ya terminó (o el contenedor ya llegó a su destino final)
 const ETAPAS_FIN = ['Entregado en puerto','Zarpó','Entregado en bodega','Vacío devuelto'];
-const colorEstado = k => ([...ESTADOS, ...MARCAS].find(e=>e.k===k)||ESTADOS[0]).c;
-const LS_KEY = 'rkt-transporte-v1';
-// fecha de Colombia (en UTC después de las 7 p. m. ya sería mañana)
-const HOY = CFG.FECHA_REFERENCIA || new Date().toLocaleDateString('en-CA', {timeZone:'America/Bogota'});
-
-let viajes = [], historial = [], filtroEstado = '', orden = {k:'fechaCargue', asc:true}, editId = null, estadoSel = null;
-
-/* ---------- utilidades ---------- */
-const $ = s => document.querySelector(s);
-const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const DIAS = ['dom','lun','mar','mié','jue','vie','sáb'];
-const MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-const fd = iso => { if(!iso) return '—'; const d = new Date(iso.slice(0,10)+'T12:00'); return `${DIAS[d.getDay()]} ${d.getDate()} ${MES[d.getMonth()]}`; };
 const diffDias = iso => Math.round((new Date(iso.slice(0,10)+'T12:00') - new Date(HOY+'T12:00'))/864e5);
 const tieneVehiculo = v => !!(v.placa && v.placa.trim());
 const addDias = (iso, n) => { const d = new Date(iso.slice(0,10)+'T12:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
-// EXPO: el contenedor vacío se retira en patio el día anterior al llenado en planta Reckitt
-function normalizar(v, i){
-  if (!v.id) v.id = 'F' + String((i||0) + 1).padStart(3, '0');
-  v.placa = String(v.placa||'').trim();
-  // lo que dice la columna Estado de la hoja: solo cuentan las marcas Novedad y Cancelado; la etapa la calcula etapasViajes()
-  if (v.estadoHoja === undefined) v.estadoHoja = v.estado || '';
-  v.actualizado = v.actualizado || new Date().toISOString();
-  v.historial = v.historial || [];
-  if (v.situacion !== undefined) v.situacion = normSituacion(v.situacion);
-  if (!v.fechaRetiro && v.operacion==='EXPO' && v.fechaCargue) v.fechaRetiro = addDias(v.fechaCargue, -1);
-  v.fechaRetiro = v.fechaRetiro || '';
-  // sede de la operación: las IMPO que van a Bogotá son de la operación Bogotá; lo demás sale o llega a Cali
-  v.sede = /bogot/i.test(String(v.destino||'').normalize('NFD')) ? 'Bogotá' : 'Cali';
-  return v;
-}
-// Filtros globales: aplican a todas las vistas. Al abrir o recargar el tablero arrancan siempre limpios
-// (viajes abiertos de IMPO y EXPO) para no esconder nada; no se recuerdan entre visitas.
-const FILTROS_INICIO = {op:'', sit:'Abierto', mes:'', mesSol:'', emp:'', sol:'', fwd:'', ped:'', bk:'', fact:'', foco:'', q:''};
 // Dos meses por viaje (Reckitt programa mes a mes):
 //  · mes EJECUTADO = mes de su llenado (EXPO) o de su entrega en bodega (IMPO), la fecha que tiene hoy
 //  · mes PROGRAMADO = mes de la programación de Reckitt (cuadro mensual) en la que está el viaje (columna "Mes programado",
@@ -564,31 +518,6 @@ const MESES_LARGO = ['enero','febrero','marzo','abril','mayo','junio','julio','a
 const mesDe = v => String(v.fechaCargue || v.planCargue || primerEvento(v) || v.fechaEntregaPuerto || v.citaIngreso || v.fechaDevolucion || v.etd || '').slice(0, 7);
 const mesSolDe = v => String(v.mesProg || v.planCargue || mesDe(v)).slice(0, 7);
 const nombreMes = m => m ? `${MESES_LARGO[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}` : 'Sin fecha';
-let G = {...FILTROS_INICIO};
-try { localStorage.removeItem('rkt-filtros'); } catch(e){}
-// listas desplegables: campo del viaje y texto cuando está vacío
-const FILTROS_LISTA = [['emp','empresa','Empresa','Sin empresa'], ['sol','solicitante','Solicitante','Sin solicitante'], ['fwd','fwd','FWD / agente','Sin FWD'], ['ped','pedido','Pedido','Sin pedido'], ['bk','booking','Booking / BL','Sin booking']];
-const valorFiltro = (v, campo, vacio) => String(v[campo]||'').trim() || vacio;
-// buscador libre: cada palabra debe aparecer en algún dato del viaje o de sus subviajes (placa, contenedor, RBHY, observación…);
-// sin tildes ni mayúsculas, y los códigos se comparan sin guiones ni espacios (TLLU769774-2 = TLLU7697742)
-const textoViaje = v => [v, ...viajes.filter(x => x.padre === v.id)].map(x => Object.entries(x).filter(([k, y]) => k!=='historial' && y!==null && typeof y!=='object').map(([, y]) => y).join(' ')).join(' ');
-function enTexto(v){
-  const t = minus(G.q).split(/\s+/).filter(Boolean);
-  if (!t.length) return true;
-  const txt = minus(textoViaje(v)), comp = txt.replace(/[^a-z0-9]/g, '');
-  return t.every(w => txt.includes(w) || (w.replace(/[^a-z0-9]/g, '') && comp.includes(w.replace(/[^a-z0-9]/g, ''))));
-}
-const enListas = v => !v.padre && FILTROS_LISTA.every(([k, campo, , vacio]) => !G[k] || valorFiltro(v, campo, vacio)===G[k]) && enTexto(v) && (!G.fact || cobro(v).fact===G.fact);
-// con algo escrito en el buscador se busca en todos los viajes, abiertos y cerrados
-// con texto en el buscador, o con un filtro de Facturación o de Foco, se mira en todos los viajes (abiertos y cerrados)
-// Todos los filtros se suman: un viaje se ve solo si cumple cada filtro activo. STATUS no se salta; al elegir Mes, Foco,
-// Facturación o escribir en Buscar, STATUS pasa solo a "Todos" (se ve en su lista) y se puede volver a acotar.
-const enGlobal = v => (!G.op || v.operacion===G.op) && enSituacion(v, G.sit) && enListas(v)
-  && (!G.mes || mesDe(v)===(G.mes==='sin' ? '' : G.mes)) && (!G.mesSol || mesSolDe(v)===(G.mesSol==='sin' ? '' : G.mesSol))
-  && (!G.foco || (G.foco===FOCO_OPS ? pendientesOps(v).length > 0 : focoDe(v)===G.foco));
-// cuántos viajes se verían con este cambio de filtro, dejando los demás como están (para mostrarlo en cada opción)
-function cuentaCon(cambio){ const antes = G; G = {...G, ...cambio}; try { return viajes.filter(enGlobal).length; } finally { G = antes; } }
-/* ---------- foco del equipo operativo: en qué está cada viaje y qué le falta ---------- */
 // cada viaje cae en un solo grupo, en el orden de la operación
 const FOCOS = ['Por asignar vehículo','Por iniciar','En tránsito','En bodega de paso','Terminado · faltan datos','Listo para facturar','En facturación','Sin servicio'];
 // vista de conjunto (no es un grupo): todos los viajes, en cualquier etapa, a los que operaciones les debe algo
@@ -632,9 +561,6 @@ function focoDe(v){
   if (v.estado==='Asignado') return 'Por iniciar';
   return 'En tránsito';
 }
-const visibles = () => viajes.filter(enGlobal);
-// Los viajes cancelados no cuentan en indicadores, alertas ni programación
-const activos = () => visibles().filter(v=>v.estado!=='Cancelado');
 // Abierto = viaje en proceso (ni entregado ni cancelado)
 // si la hoja trae la columna Abierto/Cerrado manda; si no, se deduce del estado
 // Abierto / Cerrado / Sin status: manda la columna de la hoja (celda vacía = Sin status).
@@ -643,7 +569,6 @@ const situacion = v => v.situacion || (v.estado==='Cancelado' ? 'Cancelado' : 'A
 const abierto = v => situacion(v)==='Abierto';
 // valores de STATUS OPERACIONES en la hoja
 const SITUACIONES = ['Abierto','Cerrado','Cancelado','Pendiente confirmación','Sin status'];
-const PLURAL = {Abierto:'Abiertos', Cerrado:'Cerrados', Cancelado:'Cancelados'};
 function normSituacion(s){
   const u = String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
   if (!u.trim()) return 'Sin status';
@@ -653,9 +578,200 @@ function normSituacion(s){
   if (/CONFIRM|PEND|PEDN/.test(u)) return 'Pendiente confirmación';
   return String(s).trim();
 }
+const primerEvento = v => v.fechaRetiro || v.fechaCargue;
+// Reglas que se reportan al equipo para que corrijan la hoja. Misma lógica en apps-script/Code.gs (erroresDe_).
+// viaje CERRADO que no llegó a puerto: se reprogramó o la misma placa y booking siguen en una fila posterior (igual que reemplazado_ en Code.gs)
+const minus = s => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
+// "Concepto extracostos" guarda cada extracosto como "Cita: 60000; Standby: 560000"
+function itemsExtra(v){
+  const L = String(v.conceptoExtra||'').split(';').map(s=>s.trim()).filter(Boolean).map(s=>{
+    const m = s.match(/^(.*?)[:=]\s*\$?\s*([\d.,]+)$/);
+    return m ? [m[1].trim(), Number(m[2].replace(/[.,]/g,''))||0] : [s, 0];
+  });
+  // dato viejo: un concepto sin valor y el total en Extracostos
+  if (L.length===1 && !L[0][1] && Number(v.extracostos)) L[0][1] = Number(v.extracostos);
+  if (!L.length && Number(v.extracostos)) L.push(['Extracostos', Number(v.extracostos)]);
+  return L;
+}
+function cobro(v){
+  const tarifa = Number(v.tarifa) || 0, extra = Number(v.extracostos) || itemsExtra(v).reduce((s,x)=>s+x[1],0);
+  const aprob = extra ? (v.aprobacionExtra || 'Pendiente') : '';
+  // etapa de facturación (igual en filtro, indicador, chat y tarjeta):
+  //  Aún no facturable → el transporte no ha terminado · Pendiente por facturar → terminó y facturación no ha hecho nada ·
+  //  En aprobación Reckitt → facturación envió la relación y Reckitt debe aprobar · Aprobado por Reckitt → Reckitt dio el visto
+  //  bueno y falta emitir la factura · Facturado → con N° y fecha de factura ·
+  //  Sin servicio → cerrado sin que el transporte terminara (reprogramado o anulado)
+  const marcada = etapaFacturacion(v.facturacion);
+  const fact = ['Facturado','Aprobado por Reckitt','En aprobación Reckitt'].includes(marcada) ? marcada
+    : (situacion(v)==='Cancelado' || v.estado==='Cancelado') ? '' : transporteFinalizado(v) ? 'Pendiente por facturar'
+    : situacion(v)==='Cerrado' ? 'Sin servicio' : 'Aún no facturable';
+  return {tarifa, extra, aprob, fact, total: tarifa + (aprob==='Aprobado' ? extra : 0)};
+}
+const dDias = (a, b) => a && b ? diffDias(b) - diffDias(a) : null;
+// [hito, campo del plan, campos de fecha (programada o real) que lo mueven]
+const HITOS_PLAN = {
+  EXPO: [['Retiro del vacío','planRetiro',['fechaRetiro']], ['Llenado en planta','planCargue',['fechaCargue']],
+    ['Entrega en puerto','planEntregaPuerto',['fechaEntregaPuerto','citaIngreso']]],
+  IMPO: [['Entrega documentos','planLevante',['fechaLevante']], ['Retiro en puerto','planRetiro',['fechaRetiro','citaRetiro']],
+    ['Entrega en bodega','planCargue',['fechaCargue']], ['Devolución del vacío','planDevolucion',['fechaDevolucion','citaDevolucion']]],
+};
+// causa → responsable; "Corrección de dato" no cuenta como reprogramación (la fecha estaba mal escrita)
+const CAUSAS_REPROG = [['Cliente (Reckitt)','Reckitt'], ['Transportadora (Entrapetrol)','Entrapetrol'], ['Puerto o naviera','Terceros'],
+  ['Externo (paro, vía, clima)','Terceros'], ['Corrección de dato','']];
+const responsable = causa => (CAUSAS_REPROG.find(c => c[0]===causa) || [, 'Sin causa'])[1];
+// registro guardado en la base: "fecha|campo|antes|después|causa|detalle|usuario" separados por ";;"
+// registro: "fecha|campo|antes|después|causa|detalle|usuario|costo|incidente" (costo e incidente desde el 31-oct)
+const reprogsDe = v => String(v.reprog||'').split(';;').map(x => x.trim()).filter(Boolean)
+  .map(x => { const [fecha, campo, antes, despues, causa, detalle, usuario, costo, incidente] = x.split('|');
+    return {fecha, campo, antes, despues, causa, detalle, usuario, costo: Number(costo)||0, incidente: incidente||''}; });
+// fechas ya programadas que un cambio mueve (las que estaban vacías no son reprogramación)
+function fechasMovidas(v, ch){
+  return (HITOS_PLAN[v.operacion]||[]).flatMap(([hito, plan, campos]) => campos.filter(k => k in ch && v[k] && ch[k] && ch[k]!==v[k])
+    .map(k => ({hito, plan, campo:k, antes:v[k], despues:ch[k]})));
+}
+// agrega al cambio el registro de la causa; con "Corrección de dato" el plan pasa a la fecha corregida
+// con costo extra: si lo causó el cliente se agrega como extracosto "Reprogramación" (por aprobar); si no, queda solo registrado
+function conCausa(v, ch, movidas, causa, detalle, usuario, costo, incidente){
+  const limpio = t => String(t||'').replace(/[|;]/g, ' ').trim();
+  const $c = Number(String(costo||'').replace(/[^\d]/g, '')) || 0;
+  const nuevas = movidas.map((m, i) => [HOY, m.campo, m.antes, m.despues, causa, limpio(detalle), limpio(usuario), i ? '' : ($c || ''), i ? '' : limpio(incidente)].join('|'));
+  const out = {...ch, reprog: [String(v.reprog||'').trim(), ...nuevas].filter(Boolean).join(' ;; ')};
+  if (causa === 'Corrección de dato') movidas.forEach(m => { if (v[m.plan] === m.antes || !v[m.plan]) out[m.plan] = m.despues; });
+  if ($c && responsable(causa) === 'Reckitt') {
+    const items = [...itemsExtra(v), ['Reprogramación', $c]];
+    out.conceptoExtra = items.map(([k, x]) => `${k}: ${x}`).join('; ');
+    out.extracostos = String(items.reduce((t, x) => t + x[1], 0));
+    out.aprobacionExtra = 'Pendiente';
+  }
+  return out;
+}
+// desvíos del plan por hito: fecha original vs la fecha que tiene hoy, con la causa registrada (la última de ese hito)
+function desviosPlan(v){
+  const R = reprogsDe(v);
+  return (HITOS_PLAN[v.operacion]||[]).map(([hito, plan, campos]) => {
+    const actual = campos.map(k => v[k]).find(Boolean) || '', p = v[plan] || '';
+    if (!p || !actual || p === actual) return null;
+    const r = R.filter(x => campos.includes(x.campo) && x.causa !== 'Corrección de dato').pop();
+    return {hito, plan:p, actual, dias:dDias(p, actual), causa: r ? r.causa : 'Sin causa', detalle: r ? r.detalle : '',
+      costo: R.filter(x => campos.includes(x.campo)).reduce((t, x) => t + x.costo, 0), incidente: R.filter(x => campos.includes(x.campo) && x.incidente).map(x => x.incidente).join(' · ')};
+  }).filter(Boolean);
+}
+// etapa de la operación (ver ESTADOS): la más avanzada que respaldan las fechas o las tirillas del viaje.
+// El texto de la observación no cuenta; "En bodega de paso" = subviaje con el urbano pendiente.
+function etapaOperacion(v){
+  if (situacion(v)==='Cancelado' || v.estadoHoja==='Cancelado') return 'Cancelado';
+  const ya = f => !!f && f <= HOY;
+  const sub = hijosDe(v)[0], dePaso = sub && !ya(sub.fechaUrbano);
+  // con el urbano pendiente la carga sigue en la bodega de paso, aunque el vacío ya figure devuelto (se revisa en Errores)
+  if (v.operacion==='IMPO') return dePaso ? 'En bodega de paso' : ya(v.fechaDevolucion) || v.tirillaDevolucion ? 'Vacío devuelto'
+    : (sub && ya(sub.fechaUrbano)) || ya(v.fechaCargue) ? 'Entregado en bodega'
+    : ya(v.fechaRetiro) ? 'Retirado de puerto' : tieneVehiculo(v) ? 'Asignado' : 'Sin asignar';
+  const enPuerto = ya(v.fechaEntregaPuerto) || !!v.tirillaEntrega || (sub && ya(sub.fechaUrbano));
+  return dePaso && !enPuerto ? 'En bodega de paso' : enPuerto && ya(v.etd) ? 'Zarpó' : enPuerto ? 'Entregado en puerto'
+    : ya(v.fechaCargue) ? 'Llenado' : ya(v.fechaRetiro) ? 'Vacío retirado' : tieneVehiculo(v) ? 'Asignado' : 'Sin asignar';
+}
+function etapasViajes(){ viajes.forEach(v => { v.novedad = v.estadoHoja === 'Novedad'; v.estado = etapaOperacion(v); }); }
+// el transporte termina con la entrega en puerto (EXPO) o la devolución del vacío (IMPO); de ahí en adelante cuenta la facturación
+// lead time de facturación: desde que termina el transporte (entrega en puerto EXPO / devolución del vacío IMPO) hasta la factura;
+// sin factura, los días que lleva esperando
+const fechaFinTransporte = v => { const f = v.operacion==='EXPO' ? v.fechaEntregaPuerto : v.fechaDevolucion; return f && f <= HOY ? f : ''; };
+const hijosDe = v => viajes.filter(x => x.padre === v.id && situacion(x) !== 'Cancelado');
+// transporte finalizado: EXPO pasó la parada Puerto; IMPO cumplió todas las paradas (vacío devuelto, con el urbano si hay subviaje)
+// transporte finalizado = tiene la fecha de fin (EXPO entrega en puerto, IMPO devolución del vacío) y no queda un urbano pendiente.
+// Basta esa fecha aunque falten fechas anteriores (esas salen como pendientes de operaciones); el Estado escrito a mano no cuenta.
+function transporteFinalizado(v){
+  return v.estado!=='Cancelado' && !!fechaFinTransporte(v) && v.estado!=='En bodega de paso';
+}
+// lo que facturación marca en el viaje ("En aprobación Reckitt": envió la relación y Reckitt debe aprobar); el resto lo calcula cobro()
+const FACTURACION = ['Pendiente por facturar','En aprobación Reckitt','Aprobado por Reckitt','Facturado'];
+const ETAPAS_FACTURACION = ['Aún no facturable','Pendiente por facturar','En aprobación Reckitt','Aprobado por Reckitt','Facturado','Sin servicio'];
+// nombre anterior de la etapa
+const etapaFacturacion = x => x === 'En autorización' ? 'En aprobación Reckitt' : (x || '');
+const sinTilde = s => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase();
+// viajes que el texto identifica por booking, pedido, DO, contenedor, placa, Ref, RBHY u OBD (sin guiones ni espacios)
+const compacto = s => minus(s).replace(/[^a-z0-9]/g, '');
+</script>
+<script>
+const CFG = window.APP_CONFIG || {};
+// Etapa de la operación: sale sola de las fechas del viaje (la misma ruta que dibuja la tarjeta), no de una lista manual.
+// EXPO: Sin asignar → Asignado → Vacío retirado → Llenado → (En bodega de paso) → Entregado en puerto → Zarpó
+// IMPO: Sin asignar → Asignado → Retirado de puerto → (En bodega de paso) → Entregado en bodega → Vacío devuelto
+// "En bodega de paso" = hay subviaje y el urbano aún no se hace. Novedad es una marca aparte; Cancelado viene del STATUS.
+const ESTADOS = [
+  {k:'Sin asignar', c:'var(--s-sin)'},
+  {k:'Asignado', c:'var(--s-asig)'},
+  {k:'Vacío retirado', c:'var(--s-ret)'},
+  {k:'Retirado de puerto', c:'var(--s-ret)'},
+  {k:'Llenado', c:'var(--s-carg)'},
+  {k:'En bodega de paso', c:'var(--s-patio)'},
+  {k:'Entregado en bodega', c:'var(--s-tran)'},
+  {k:'Entregado en puerto', c:'var(--s-ent)'},
+  {k:'Zarpó', c:'var(--s-ent)'},
+  {k:'Vacío devuelto', c:'var(--s-ent)'},
+  {k:'Cancelado', c:'var(--s-can)'},
+];
+const colorEstado = k => ([...ESTADOS, ...MARCAS].find(e=>e.k===k)||ESTADOS[0]).c;
+const LS_KEY = 'rkt-transporte-v1';
+// fecha de Colombia (en UTC después de las 7 p. m. ya sería mañana)
+const HOY = CFG.FECHA_REFERENCIA || new Date().toLocaleDateString('en-CA', {timeZone:'America/Bogota'});
+
+let viajes = [], historial = [], filtroEstado = '', orden = {k:'fechaCargue', asc:true}, editId = null, estadoSel = null;
+
+/* ---------- utilidades ---------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const DIAS = ['dom','lun','mar','mié','jue','vie','sáb'];
+const MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const fd = iso => { if(!iso) return '—'; const d = new Date(iso.slice(0,10)+'T12:00'); return `${DIAS[d.getDay()]} ${d.getDate()} ${MES[d.getMonth()]}`; };
+// EXPO: el contenedor vacío se retira en patio el día anterior al llenado en planta Reckitt
+function normalizar(v, i){
+  if (!v.id) v.id = 'F' + String((i||0) + 1).padStart(3, '0');
+  v.placa = String(v.placa||'').trim();
+  // lo que dice la columna Estado de la hoja: solo cuentan las marcas Novedad y Cancelado; la etapa la calcula etapasViajes()
+  if (v.estadoHoja === undefined) v.estadoHoja = v.estado || '';
+  v.actualizado = v.actualizado || new Date().toISOString();
+  v.historial = v.historial || [];
+  if (v.situacion !== undefined) v.situacion = normSituacion(v.situacion);
+  if (!v.fechaRetiro && v.operacion==='EXPO' && v.fechaCargue) v.fechaRetiro = addDias(v.fechaCargue, -1);
+  v.fechaRetiro = v.fechaRetiro || '';
+  // sede de la operación: las IMPO que van a Bogotá son de la operación Bogotá; lo demás sale o llega a Cali
+  v.sede = /bogot/i.test(String(v.destino||'').normalize('NFD')) ? 'Bogotá' : 'Cali';
+  return v;
+}
+// Filtros globales: aplican a todas las vistas. Al abrir o recargar el tablero arrancan siempre limpios
+// (viajes abiertos de IMPO y EXPO) para no esconder nada; no se recuerdan entre visitas.
+const FILTROS_INICIO = {op:'', sit:'Abierto', mes:'', mesSol:'', emp:'', sol:'', fwd:'', ped:'', bk:'', fact:'', foco:'', q:''};
+let G = {...FILTROS_INICIO};
+try { localStorage.removeItem('rkt-filtros'); } catch(e){}
+// listas desplegables: campo del viaje y texto cuando está vacío
+const FILTROS_LISTA = [['emp','empresa','Empresa','Sin empresa'], ['sol','solicitante','Solicitante','Sin solicitante'], ['fwd','fwd','FWD / agente','Sin FWD'], ['ped','pedido','Pedido','Sin pedido'], ['bk','booking','Booking / BL','Sin booking']];
+const valorFiltro = (v, campo, vacio) => String(v[campo]||'').trim() || vacio;
+// buscador libre: cada palabra debe aparecer en algún dato del viaje o de sus subviajes (placa, contenedor, RBHY, observación…);
+// sin tildes ni mayúsculas, y los códigos se comparan sin guiones ni espacios (TLLU769774-2 = TLLU7697742)
+const textoViaje = v => [v, ...viajes.filter(x => x.padre === v.id)].map(x => Object.entries(x).filter(([k, y]) => k!=='historial' && y!==null && typeof y!=='object').map(([, y]) => y).join(' ')).join(' ');
+function enTexto(v){
+  const t = minus(G.q).split(/\s+/).filter(Boolean);
+  if (!t.length) return true;
+  const txt = minus(textoViaje(v)), comp = txt.replace(/[^a-z0-9]/g, '');
+  return t.every(w => txt.includes(w) || (w.replace(/[^a-z0-9]/g, '') && comp.includes(w.replace(/[^a-z0-9]/g, ''))));
+}
+const enListas = v => !v.padre && FILTROS_LISTA.every(([k, campo, , vacio]) => !G[k] || valorFiltro(v, campo, vacio)===G[k]) && enTexto(v) && (!G.fact || cobro(v).fact===G.fact);
+// con algo escrito en el buscador se busca en todos los viajes, abiertos y cerrados
+// con texto en el buscador, o con un filtro de Facturación o de Foco, se mira en todos los viajes (abiertos y cerrados)
+// Todos los filtros se suman: un viaje se ve solo si cumple cada filtro activo. STATUS no se salta; al elegir Mes, Foco,
+// Facturación o escribir en Buscar, STATUS pasa solo a "Todos" (se ve en su lista) y se puede volver a acotar.
+const enGlobal = v => (!G.op || v.operacion===G.op) && enSituacion(v, G.sit) && enListas(v)
+  && (!G.mes || mesDe(v)===(G.mes==='sin' ? '' : G.mes)) && (!G.mesSol || mesSolDe(v)===(G.mesSol==='sin' ? '' : G.mesSol))
+  && (!G.foco || (G.foco===FOCO_OPS ? pendientesOps(v).length > 0 : focoDe(v)===G.foco));
+// cuántos viajes se verían con este cambio de filtro, dejando los demás como están (para mostrarlo en cada opción)
+function cuentaCon(cambio){ const antes = G; G = {...G, ...cambio}; try { return viajes.filter(enGlobal).length; } finally { G = antes; } }
+/* ---------- foco del equipo operativo: en qué está cada viaje y qué le falta ---------- */
+const visibles = () => viajes.filter(enGlobal);
+// Los viajes cancelados no cuentan en indicadores, alertas ni programación
+const activos = () => visibles().filter(v=>v.estado!=='Cancelado');
+const PLURAL = {Abierto:'Abiertos', Cerrado:'Cerrados', Cancelado:'Cancelados'};
 const enSituacion = (v, filtro) => !filtro || situacion(v)===filtro;
 const situacionesPresentes = () => [...SITUACIONES, ...new Set(viajes.map(situacion))].filter((s,i,a)=>a.indexOf(s)===i && (SITUACIONES.slice(0,2).includes(s) || viajes.some(v=>situacion(v)===s)));
-const primerEvento = v => v.fechaRetiro || v.fechaCargue;
 const sitTag = v => { const s = situacion(v); return `<span class="sit sit-${s.split(' ')[0]}">${esc(s.toUpperCase())}</span>`; };
 /* ---------- bitácora LogxIA: acciones a tomar que salen de los correos ---------- */
 const PRI = {Alta:'var(--bad)', Media:'var(--warn)', Baja:'var(--s-sin)'};
@@ -805,9 +921,6 @@ function renderGbar(){
 }
 
 /* ---------- control de calidad de datos ---------- */
-// Reglas que se reportan al equipo para que corrijan la hoja. Misma lógica en apps-script/Code.gs (erroresDe_).
-// viaje CERRADO que no llegó a puerto: se reprogramó o la misma placa y booking siguen en una fila posterior (igual que reemplazado_ en Code.gs)
-const minus = s => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
 function reemplazado(v){
   if (/reprogram|cambio de c?programac/.test(minus(v.observacion))) return true;
   if (!v.booking || !v.placa || /^(sin info|pend)/.test(minus(v.booking))) return false;
@@ -1117,31 +1230,6 @@ const COLS = [
 const demora = v => v.fechaLimite ? Math.max(0, diffDias(v.fechaDevolucion || HOY) - diffDias(v.fechaLimite)) : null;
 // cobro del viaje: tarifa + extracostos aprobados por Reckitt; sin dato de facturación, el viaje cerrado queda pendiente por facturar
 const pesos = n => n ? '$' + Number(n).toLocaleString('es-CO') : '—';
-// "Concepto extracostos" guarda cada extracosto como "Cita: 60000; Standby: 560000"
-function itemsExtra(v){
-  const L = String(v.conceptoExtra||'').split(';').map(s=>s.trim()).filter(Boolean).map(s=>{
-    const m = s.match(/^(.*?)[:=]\s*\$?\s*([\d.,]+)$/);
-    return m ? [m[1].trim(), Number(m[2].replace(/[.,]/g,''))||0] : [s, 0];
-  });
-  // dato viejo: un concepto sin valor y el total en Extracostos
-  if (L.length===1 && !L[0][1] && Number(v.extracostos)) L[0][1] = Number(v.extracostos);
-  if (!L.length && Number(v.extracostos)) L.push(['Extracostos', Number(v.extracostos)]);
-  return L;
-}
-function cobro(v){
-  const tarifa = Number(v.tarifa) || 0, extra = Number(v.extracostos) || itemsExtra(v).reduce((s,x)=>s+x[1],0);
-  const aprob = extra ? (v.aprobacionExtra || 'Pendiente') : '';
-  // etapa de facturación (igual en filtro, indicador, chat y tarjeta):
-  //  Aún no facturable → el transporte no ha terminado · Pendiente por facturar → terminó y facturación no ha hecho nada ·
-  //  En aprobación Reckitt → facturación envió la relación y Reckitt debe aprobar · Aprobado por Reckitt → Reckitt dio el visto
-  //  bueno y falta emitir la factura · Facturado → con N° y fecha de factura ·
-  //  Sin servicio → cerrado sin que el transporte terminara (reprogramado o anulado)
-  const marcada = etapaFacturacion(v.facturacion);
-  const fact = ['Facturado','Aprobado por Reckitt','En aprobación Reckitt'].includes(marcada) ? marcada
-    : (situacion(v)==='Cancelado' || v.estado==='Cancelado') ? '' : transporteFinalizado(v) ? 'Pendiente por facturar'
-    : situacion(v)==='Cerrado' ? 'Sin servicio' : 'Aún no facturable';
-  return {tarifa, extra, aprob, fact, total: tarifa + (aprob==='Aprobado' ? extra : 0)};
-}
 const COLOR_COBRO = {'Aprobado':'var(--ok)', 'Facturado':'var(--ok)', 'Rechazado':'var(--bad)', 'Pendiente':'var(--warn)', 'Pendiente por facturar':'var(--warn)', 'En aprobación Reckitt':'var(--accent)', 'Aprobado por Reckitt':'var(--ok)', 'Aún no facturable':'var(--muted)', 'Sin servicio':'var(--muted)'};
 const tagCobro = (s, pre='') => s ? `<span class="tg" style="background:color-mix(in srgb, ${COLOR_COBRO[s]||'var(--muted)'} 15%, transparent);color:${COLOR_COBRO[s]||'var(--muted)'}">${esc(pre+s)}</span>` : '';
 function celdaCobro(v){
@@ -1162,56 +1250,7 @@ function hitos(v){
        ['Entrega en puerto', v.planEntregaPuerto || v.citaIngreso, v.fechaEntregaPuerto]];
   return H.map(([l, plan, f]) => [l, plan || f || '', f && f <= HOY ? f : '']);
 }
-const dDias = (a, b) => a && b ? diffDias(b) - diffDias(a) : null;
 /* ---------- reprogramaciones: cambios de una fecha ya programada, con su causa y responsable ---------- */
-// [hito, campo del plan, campos de fecha (programada o real) que lo mueven]
-const HITOS_PLAN = {
-  EXPO: [['Retiro del vacío','planRetiro',['fechaRetiro']], ['Llenado en planta','planCargue',['fechaCargue']],
-    ['Entrega en puerto','planEntregaPuerto',['fechaEntregaPuerto','citaIngreso']]],
-  IMPO: [['Entrega documentos','planLevante',['fechaLevante']], ['Retiro en puerto','planRetiro',['fechaRetiro','citaRetiro']],
-    ['Entrega en bodega','planCargue',['fechaCargue']], ['Devolución del vacío','planDevolucion',['fechaDevolucion','citaDevolucion']]],
-};
-// causa → responsable; "Corrección de dato" no cuenta como reprogramación (la fecha estaba mal escrita)
-const CAUSAS_REPROG = [['Cliente (Reckitt)','Reckitt'], ['Transportadora (Entrapetrol)','Entrapetrol'], ['Puerto o naviera','Terceros'],
-  ['Externo (paro, vía, clima)','Terceros'], ['Corrección de dato','']];
-const responsable = causa => (CAUSAS_REPROG.find(c => c[0]===causa) || [, 'Sin causa'])[1];
-// registro guardado en la base: "fecha|campo|antes|después|causa|detalle|usuario" separados por ";;"
-// registro: "fecha|campo|antes|después|causa|detalle|usuario|costo|incidente" (costo e incidente desde el 31-oct)
-const reprogsDe = v => String(v.reprog||'').split(';;').map(x => x.trim()).filter(Boolean)
-  .map(x => { const [fecha, campo, antes, despues, causa, detalle, usuario, costo, incidente] = x.split('|');
-    return {fecha, campo, antes, despues, causa, detalle, usuario, costo: Number(costo)||0, incidente: incidente||''}; });
-// fechas ya programadas que un cambio mueve (las que estaban vacías no son reprogramación)
-function fechasMovidas(v, ch){
-  return (HITOS_PLAN[v.operacion]||[]).flatMap(([hito, plan, campos]) => campos.filter(k => k in ch && v[k] && ch[k] && ch[k]!==v[k])
-    .map(k => ({hito, plan, campo:k, antes:v[k], despues:ch[k]})));
-}
-// agrega al cambio el registro de la causa; con "Corrección de dato" el plan pasa a la fecha corregida
-// con costo extra: si lo causó el cliente se agrega como extracosto "Reprogramación" (por aprobar); si no, queda solo registrado
-function conCausa(v, ch, movidas, causa, detalle, usuario, costo, incidente){
-  const limpio = t => String(t||'').replace(/[|;]/g, ' ').trim();
-  const $c = Number(String(costo||'').replace(/[^\d]/g, '')) || 0;
-  const nuevas = movidas.map((m, i) => [HOY, m.campo, m.antes, m.despues, causa, limpio(detalle), limpio(usuario), i ? '' : ($c || ''), i ? '' : limpio(incidente)].join('|'));
-  const out = {...ch, reprog: [String(v.reprog||'').trim(), ...nuevas].filter(Boolean).join(' ;; ')};
-  if (causa === 'Corrección de dato') movidas.forEach(m => { if (v[m.plan] === m.antes || !v[m.plan]) out[m.plan] = m.despues; });
-  if ($c && responsable(causa) === 'Reckitt') {
-    const items = [...itemsExtra(v), ['Reprogramación', $c]];
-    out.conceptoExtra = items.map(([k, x]) => `${k}: ${x}`).join('; ');
-    out.extracostos = String(items.reduce((t, x) => t + x[1], 0));
-    out.aprobacionExtra = 'Pendiente';
-  }
-  return out;
-}
-// desvíos del plan por hito: fecha original vs la fecha que tiene hoy, con la causa registrada (la última de ese hito)
-function desviosPlan(v){
-  const R = reprogsDe(v);
-  return (HITOS_PLAN[v.operacion]||[]).map(([hito, plan, campos]) => {
-    const actual = campos.map(k => v[k]).find(Boolean) || '', p = v[plan] || '';
-    if (!p || !actual || p === actual) return null;
-    const r = R.filter(x => campos.includes(x.campo) && x.causa !== 'Corrección de dato').pop();
-    return {hito, plan:p, actual, dias:dDias(p, actual), causa: r ? r.causa : 'Sin causa', detalle: r ? r.detalle : '',
-      costo: R.filter(x => campos.includes(x.campo)).reduce((t, x) => t + x.costo, 0), incidente: R.filter(x => campos.includes(x.campo) && x.incidente).map(x => x.incidente).join(' · ')};
-  }).filter(Boolean);
-}
 const htmlCausas = (nombre) => `<select class="${nombre}"><option value="">Causa del cambio…</option>${CAUSAS_REPROG.map(([c, r]) => `<option value="${esc(c)}">${esc(c)}${r ? ' · responde '+r : ''}</option>`).join('')}</select>`;
 // indicador: viajes que cumplieron la fecha original y reprogramaciones por responsable
 function reprogKpi(){
@@ -1355,32 +1394,12 @@ function paradas(v){
 // cumplidas en orden: una parada cuenta si ella y todas las anteriores tienen fecha cumplida
 function avance(v){ const P = paradas(v); let n = 0; while (n < P.length && P[n][2]) n++;
   return {P, n}; }
-// etapa de la operación (ver ESTADOS): la más avanzada que respaldan las fechas o las tirillas del viaje.
-// El texto de la observación no cuenta; "En bodega de paso" = subviaje con el urbano pendiente.
-function etapaOperacion(v){
-  if (situacion(v)==='Cancelado' || v.estadoHoja==='Cancelado') return 'Cancelado';
-  const ya = f => !!f && f <= HOY;
-  const sub = hijosDe(v)[0], dePaso = sub && !ya(sub.fechaUrbano);
-  // con el urbano pendiente la carga sigue en la bodega de paso, aunque el vacío ya figure devuelto (se revisa en Errores)
-  if (v.operacion==='IMPO') return dePaso ? 'En bodega de paso' : ya(v.fechaDevolucion) || v.tirillaDevolucion ? 'Vacío devuelto'
-    : (sub && ya(sub.fechaUrbano)) || ya(v.fechaCargue) ? 'Entregado en bodega'
-    : ya(v.fechaRetiro) ? 'Retirado de puerto' : tieneVehiculo(v) ? 'Asignado' : 'Sin asignar';
-  const enPuerto = ya(v.fechaEntregaPuerto) || !!v.tirillaEntrega || (sub && ya(sub.fechaUrbano));
-  return dePaso && !enPuerto ? 'En bodega de paso' : enPuerto && ya(v.etd) ? 'Zarpó' : enPuerto ? 'Entregado en puerto'
-    : ya(v.fechaCargue) ? 'Llenado' : ya(v.fechaRetiro) ? 'Vacío retirado' : tieneVehiculo(v) ? 'Asignado' : 'Sin asignar';
-}
-function etapasViajes(){ viajes.forEach(v => { v.novedad = v.estadoHoja === 'Novedad'; v.estado = etapaOperacion(v); }); }
 function miniAvance(v){ const {P,n} = avance(v); return `<span class="mini" title="${esc(n<P.length ? 'En: '+P[n][0] : 'Completo')}">${P.map((_,i)=>`<i class="${i<n?'ok':i===n?'ya':''}"></i>`).join('')}</span>`; }
-// el transporte termina con la entrega en puerto (EXPO) o la devolución del vacío (IMPO); de ahí en adelante cuenta la facturación
-// lead time de facturación: desde que termina el transporte (entrega en puerto EXPO / devolución del vacío IMPO) hasta la factura;
-// sin factura, los días que lleva esperando
-const fechaFinTransporte = v => { const f = v.operacion==='EXPO' ? v.fechaEntregaPuerto : v.fechaDevolucion; return f && f <= HOY ? f : ''; };
 function leadFactura(v){
   const fin = fechaFinTransporte(v);
   if (!fin) return null;
   return v.fechaFactura ? {dias: dDias(fin, v.fechaFactura), hecho: true} : {dias: dDias(fin, HOY), hecho: false};
 }
-const hijosDe = v => viajes.filter(x => x.padre === v.id && situacion(x) !== 'Cancelado');
 const costoViaje = v => { const c = cobro(v); return c.tarifa + (c.aprob==='Rechazado' ? 0 : c.extra); };
 function tarjetaHijo(s, padre){
   // el subviaje guarda su destino final en Bodega; si no lo tiene, el del viaje padre
@@ -1395,12 +1414,6 @@ function tarjetaHijo(s, padre){
     <div class="hijo-f"><span class="sub">${esc(s.conductor || 'Sin conductor')}</span> ${s.placa ? `<span class="placa">${esc(s.placa)}</span>` : '<span class="missing">Sin placa</span>'}</div>
     <div class="hijo-f" style="text-align:right"><b>${pesos(costoViaje(s))}</b></div>
   </div>`;
-}
-// transporte finalizado: EXPO pasó la parada Puerto; IMPO cumplió todas las paradas (vacío devuelto, con el urbano si hay subviaje)
-// transporte finalizado = tiene la fecha de fin (EXPO entrega en puerto, IMPO devolución del vacío) y no queda un urbano pendiente.
-// Basta esa fecha aunque falten fechas anteriores (esas salen como pendientes de operaciones); el Estado escrito a mano no cuenta.
-function transporteFinalizado(v){
-  return v.estado!=='Cancelado' && !!fechaFinTransporte(v) && v.estado!=='En bodega de paso';
 }
 // etiqueta de facturación del viaje (arriba del resumen de gastos): la etapa de facturación del viaje completo
 function finTransporte(v){
@@ -1535,11 +1548,6 @@ function pintarEstados(){
 const EMPRESAS = ['Reckitt Benckiser','Reckitt Health','Reckitt Hygiene','Mead Johnson'];
 const CAMPOS_VIAJE = [['situacion','STATUS','sit'],['empresa','Empresa','lista',EMPRESAS],['solicitante','Solicitante'],['booking','Booking / BL'],['pedido','Pedido'],['do','DO'],
   ['contenedor','Contenedor'],['unidad','Unidad','lista',['1X20','1X40']],['conductor','Conductor','dl','dlCond'],['placa','Placa','dl','dlPlaca'],['fwd','FWD','dl','dlFwd']];
-// lo que facturación marca en el viaje ("En aprobación Reckitt": envió la relación y Reckitt debe aprobar); el resto lo calcula cobro()
-const FACTURACION = ['Pendiente por facturar','En aprobación Reckitt','Aprobado por Reckitt','Facturado'];
-const ETAPAS_FACTURACION = ['Aún no facturable','Pendiente por facturar','En aprobación Reckitt','Aprobado por Reckitt','Facturado','Sin servicio'];
-// nombre anterior de la etapa
-const etapaFacturacion = x => x === 'En autorización' ? 'En aprobación Reckitt' : (x || '');
 const CAMPOS_ETAPA = {
   EXPO: [['Retiro del vacío', [['patio','Patio de retiro','dl','dlPatio'],['fechaRetiro','Fecha de retiro','fecha']]],
     ['Llenado en planta', [['fechaCargue','Fecha de llenado','fecha'],['sello','Sello'],['vgm','VGM']]],
@@ -2075,7 +2083,6 @@ function tarjetaViaje(v){
     ${v.observacion?`<i>${esc(v.observacion)}</i><br>`:''}<span class="sub">Actualizado ${new Date(v.actualizado).toLocaleString('es-CO')}</span>
     · <button class="link" onclick="abrir('${v.id}')">Actualizar</button></div>`;
 }
-const sinTilde = s => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase();
 const PALABRAS_VACIAS = new Set(['STATUS','ESTADO','COMO','VIAJE','VIAJES','PARA','HACIA','DESTINO','MOTONAVE','BARCO','BUQUE','CUANTOS','CUALES','TODOS','TIENE','HAY','DONDE','ESTA','ESTAN','DAME','INFO','SOBRE','CON','LOS','LAS','DEL','QUE','VAN','VA']);
 // Busca por placa, booking, conductor, destino (país), motonave, patio o FWD
 function buscarViajes(q){
@@ -2200,8 +2207,6 @@ function fechaDeTexto(q){
   if (/\bmanana\b/.test(t)) return mas(1);
   return '';
 }
-// viajes que el texto identifica por booking, pedido, DO, contenedor, placa, Ref, RBHY u OBD (sin guiones ni espacios)
-const compacto = s => minus(s).replace(/[^a-z0-9]/g, '');
 function viajesDeTexto(q){
   const toks = minus(q).split(/[\s,;:()]+/).map(compacto).filter(t => t.length >= 5), todo = compacto(q);
   const L = viajes.filter(v => situacion(v) !== 'Cancelado' && ['booking','pedido','do','contenedor','placa','id','rbhy','obd'].some(k => {
