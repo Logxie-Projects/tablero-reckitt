@@ -556,12 +556,13 @@ function normalizar(v, i){
 const FILTROS_INICIO = {op:'', sit:'Abierto', mes:'', mesSol:'', emp:'', sol:'', fwd:'', ped:'', bk:'', fact:'', foco:'', q:''};
 // Dos meses por viaje (Reckitt programa mes a mes):
 //  · mes EJECUTADO = mes de su llenado (EXPO) o de su entrega en bodega (IMPO), la fecha que tiene hoy
-//  · mes SOLICITADO = mes para el que Reckitt lo pidió = mes de la fecha original (plan) de ese hito
-// Si difieren, el viaje se corrió de un mes a otro (reprogramación).
+//  · mes PROGRAMADO = mes de la programación de Reckitt (cuadro mensual) en la que está el viaje (columna "Mes programado",
+//    la llena el tablero al aplicar la programación); sin programación, el mes de la fecha original (plan)
+// Ej.: Guatemala venía de la programación de octubre y Jhonier la pasó al cuadro de noviembre → programado noviembre.
 const MESES_LARGO = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 // sin llenado ni entrega en bodega se usa la siguiente fecha que tenga (entrega en puerto, cita, devolución, ETD)
 const mesDe = v => String(v.fechaCargue || v.planCargue || primerEvento(v) || v.fechaEntregaPuerto || v.citaIngreso || v.fechaDevolucion || v.etd || '').slice(0, 7);
-const mesSolDe = v => String(v.planCargue || mesDe(v)).slice(0, 7);
+const mesSolDe = v => String(v.mesProg || v.planCargue || mesDe(v)).slice(0, 7);
 const nombreMes = m => m ? `${MESES_LARGO[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}` : 'Sin fecha';
 let G = {...FILTROS_INICIO};
 try { localStorage.removeItem('rkt-filtros'); } catch(e){}
@@ -775,7 +776,7 @@ function chipsGlobales(){
   return sel('op', 'IMPO/EXPO', [['', 'ambas', cuentaCon({op:''})], ['IMPO', 'IMPO', cuentaCon({op:'IMPO'})], ['EXPO', 'EXPO', cuentaCon({op:'EXPO'})]])
     + sel('sit', 'STATUS', [...situacionesPresentes().map(s=>[s, PLURAL[s]||s, cuentaCon({sit:s})]), ['', 'Todos', cuentaCon({sit:''})]])
     // Mes solicitado y mes ejecutado: los meses con viajes, del más reciente al más antiguo
-    + [['mesSol', '📋 Solicitado', mesSolDe, 'Mes para el que Reckitt pidió el viaje (fecha original)'], ['mes', '📅 Ejecutado', mesDe, 'Mes del llenado (EXPO) o de la entrega en bodega (IMPO), la fecha que tiene hoy']]
+    + [['mesSol', '📋 Programado', mesSolDe, 'Mes de la programación de Reckitt en la que está el viaje'], ['mes', '📅 Ejecutado', mesDe, 'Mes del llenado (EXPO) o de la entrega en bodega (IMPO), la fecha que tiene hoy']]
       .map(([k, titulo, f, ayuda]) => `<select class="gsel ${G[k]?'on':''}" data-gsel="${k}" aria-label="${titulo}" title="${ayuda}"><option value="">${titulo}: todos · ${cuentaCon({[k]:''})}</option>${
         [...new Set(viajes.filter(v=>!v.padre).map(f))].sort().reverse().map(m => `<option value="${m||'sin'}" ${G[k]===(m||'sin')?'selected':''}>${nombreMes(m)} · ${cuentaCon({[k]: m||'sin'})}</option>`).join('')}</select>`).join('')
     + `<span class="sub">|</span><input type="search" class="gsel gbus ${G.q.trim()?'on':''}" data-gq aria-label="Buscar en los viajes" placeholder="🔍 Buscar: placa, contenedor, RBHY, DO…" value="${esc(G.q)}">
@@ -1839,7 +1840,7 @@ function pintarBarrido(){
 }
 /* ---------- programación mensual de cargues (correo de Jhonier): crear los viajes del mes y aplicar los cambios de cada versión ---------- */
 let PROG = null;
-const CAMPOS_PROG = [['fechaCargue','Llenado'],['fechaRetiro','Retiro del vacío'],['pais','País'],['unidad','Unidad'],['mn','Motonave'],['cierreDoc','Cierre doc'],
+const CAMPOS_PROG = [['mesProg','Mes programado'],['fechaCargue','Llenado'],['fechaRetiro','Retiro del vacío'],['pais','País'],['unidad','Unidad'],['mn','Motonave'],['cierreDoc','Cierre doc'],
   ['etd','ETD'],['eta','ETA'],['booking','Booking'],['fwd','FWD'],['puerto','Puerto']];
 const datosProg = r => ({fechaCargue: r.fechaCargue, fechaRetiro: addDias(r.fechaCargue, -1), pais: r.pais, unidad: r.unidad, mn: r.mn,
   cierreDoc: r.cierreDoc, etd: r.etd, eta: r.eta, booking: r.booking, fwd: r.fwd, puerto: r.puerto});
@@ -1859,7 +1860,8 @@ function compararProgramacion(c){
     if (!v) { v = libres().find(x => eq(x.pais, r.pais) && (!x.booking || /sin info|pend/i.test(x.booking)) && /reprogram/i.test(x.observacion||'')); reusar = !!v; }
     if (!v) return {r, accion:'crear'};
     usados.add(v.id);
-    if (terminado(v) && !reusar) return {r, v, accion:'igual', cambios:{}};
+    // ya ejecutado: solo se le anota el mes de la programación
+    if (terminado(v) && !reusar) return v.mesProg===mes ? {r, v, accion:'igual', cambios:{}} : {r, v, accion:'cambiar', cambios:{mesProg: mes}};
     const d = datosProg(r), cambios = {};
     Object.entries(d).forEach(([k, x]) => {
       if (!x) return;
@@ -1867,6 +1869,7 @@ function compararProgramacion(c){
       if (/^fecha|^cierre|^etd|^eta/.test(k) ? String(v[k]||'') !== x : !eq(v[k], x)) cambios[k] = x;
     });
     if (reusar) cambios.situacion = 'Abierto';
+    if (v.mesProg !== mes) cambios.mesProg = mes;
     return {r, v, accion: reusar ? 'reusar' : Object.keys(cambios).length ? 'cambiar' : 'igual', cambios};
   });
   const fuera = libres().filter(x => enMes(x) && /programaci/i.test(x.observacion||'') && !terminado(x));
@@ -1888,7 +1891,7 @@ function pintarProgramacion(){
     const [txt, col] = ET[f.accion], movFecha = f.v && ['fechaCargue','fechaRetiro'].some(k => k in (f.cambios||{}) && f.v[k]);
     const det = f.accion==='crear' ? `<span class="sub">Retiro del vacío ${fd(addDias(f.r.fechaCargue, -1))}${f.r.bodega && !/planta/i.test(f.r.bodega) ? ' · bodega '+esc(f.r.bodega) : ''}</span>`
       : `<b>${esc(f.v.id)}</b> ${f.v.placa ? `<span class="sub">${esc(f.v.placa)}</span>` : ''}${f.accion==='reusar' ? ' <span class="sub">(esperaba fecha: se reabre)</span>' : ''}<br>`
-        + Object.entries(f.cambios||{}).filter(([k]) => k!=='situacion').map(([k, x]) => `<span class="sub">${esc((CAMPOS_PROG.find(c => c[0]===k)||[k,k])[1])}: ${esc(fv(f.v[k]))} → <b>${esc(fv(x))}</b></span>`).join('<br>');
+        + Object.entries(f.cambios||{}).filter(([k]) => k!=='situacion').map(([k, x]) => `<span class="sub">${esc((CAMPOS_PROG.find(c => c[0]===k)||[k,k])[1])}: ${esc(k==='mesProg' ? (f.v[k] ? nombreMes(f.v[k]) : '—') : fv(f.v[k]))} → <b>${esc(k==='mesProg' ? nombreMes(x) : fv(x))}</b></span>`).join('<br>');
     return `<tr><td><input type="checkbox" data-pi="${i}" ${f.accion==='igual' ? 'disabled' : 'checked'}></td><td>${f.r.n}</td><td style="white-space:nowrap">${fd(f.r.fechaCargue)}</td>
       <td>${esc(f.r.pais)}<br><span class="sub">${esc(f.r.unidad)}</span></td><td>${esc(f.r.mn||'—')}<br><span class="sub">cierre ${fd(f.r.cierreDoc)} · ETD ${fd(f.r.etd)}</span></td>
       <td>${esc(f.r.booking || 'PTE')}<br><span class="sub">${esc(f.r.fwd)} · ${esc(f.r.puerto)}</span></td>
@@ -1913,7 +1916,7 @@ async function aplicarProgramacion(){
     const crear = sel.filter(f => f.accion==='crear');
     if (crear.length) {
       toast(`Creando ${crear.length} viajes…`);
-      const lista = crear.map(f => ({...datosProg(f.r), situacion:'Abierto', empresa:'Reckitt Hygiene', solicitante:'Jhonier Gómez',
+      const lista = crear.map(f => ({...datosProg(f.r), mesProg: c.programacion[0].fechaCargue.slice(0, 7), situacion:'Abierto', empresa:'Reckitt Hygiene', solicitante:'Jhonier Gómez',
         planCargue: f.r.fechaCargue, planRetiro: addDias(f.r.fechaCargue, -1),
         observacion: `Programación ${mesTxt} (correo de ${c.firma || 'Reckitt'} ${c.fecha.slice(0, 10)})${f.r.bodega && !/planta/i.test(f.r.bodega) ? ' · cargue en '+f.r.bodega : ''}`}));
       const j = await post({action:'nuevos', operacion:'EXPO', lista});
@@ -2321,7 +2324,7 @@ function aplicarFiltroChat(r){
   if (r.txt) return r.txt;
   const L = viajes.filter(enGlobal);
   const tot = G.fact ? L.reduce((s, v) => s + cobro(v).total, 0) : 0;
-  const que = [G.mesSol && 'solicitados para ' + nombreMes(G.mesSol==='sin' ? '' : G.mesSol), G.mes && 'ejecutados en ' + nombreMes(G.mes==='sin' ? '' : G.mes), G.foco, G.fact, G.op, G.sit && PLURAL[G.sit] && PLURAL[G.sit].toLowerCase(), G.q && `“${G.q}”`].filter(Boolean).join(' · ');
+  const que = [G.mesSol && 'programación de ' + nombreMes(G.mesSol==='sin' ? '' : G.mesSol), G.mes && 'ejecutados en ' + nombreMes(G.mes==='sin' ? '' : G.mes), G.foco, G.fact, G.op, G.sit && PLURAL[G.sit] && PLURAL[G.sit].toLowerCase(), G.q && `“${G.q}”`].filter(Boolean).join(' · ');
   return (L.length ? listaCorta(L, `Filtré el tablero (${esc(que)})${tot ? `, por ${pesos(tot)},` : ''}: hay`) : `No hay viajes con ese filtro (${esc(que)}).`)
     + `<div style="margin-top:6px"><button type="button" class="btn" onclick="preguntar('quitar filtros')">Quitar filtros</button></div>`;
 }
