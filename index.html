@@ -698,6 +698,30 @@ function reemplazado(v){
 // Error = algo está mal o ya se venció (se corrige ya). Alerta = algo que hay que hacer pronto. Lo que falta para un viaje lejano
 // no se muestra hasta que entra en su ventana: días antes del primer evento del viaje (retiro o llenado) en que empieza a pedirse.
 const VENTANAS = {placa: 5, conductor: 3, booking: 7, patio: 7, mn: 7, cierreDoc: 7, patioDevolucion: 7};
+// días normales de tránsito de Cali al puerto (si el puerto no está, 2)
+const TRANSITO_PUERTO = {BUN: 1, CTG: 3};
+// SIN ACTUALIZAR: pasó la fecha del siguiente paso del viaje y no hay registro de que ocurrió (el viaje "no avanza").
+// La usan la pestaña Errores, la tarjeta del viaje y el aviso por correo a Gerencia y Calidad.
+function sinActualizar(v){
+  const S = [];
+  if (v.padre || ['Cerrado','Cancelado'].includes(situacion(v)) || v.estado === 'Cancelado') return S;
+  if (v.operacion === 'EXPO' && !v.fechaEntregaPuerto && !v.tirillaEntrega) {
+    if (v.citaIngreso && v.citaIngreso < HOY) S.push({sev: 'Alta', msg: `la cita de ingreso a puerto era el ${fd(v.citaIngreso)} y no hay entrega registrada`,
+      porque: `Si el contenedor entró, faltan la fecha de entrega y la tirilla; si no, hay que reprogramar la cita${v.cierreDoc ? ' antes del cierre documental del ' + fd(v.cierreDoc) : ''}`});
+    else if (!(v.citaIngreso && v.citaIngreso >= HOY) && v.fechaCargue && v.fechaCargue <= HOY) {
+      const t = TRANSITO_PUERTO[String(v.puerto||'').toUpperCase().slice(0, 3)] ?? 2, d = -diffDias(v.fechaCargue);
+      if (d > t) S.push({sev: 'Media', msg: `lleva ${d} días desde el llenado (${fd(v.fechaCargue)}) sin cita ni entrega en puerto`,
+        porque: `El tránsito normal a ${v.puerto || 'puerto'} es de ${t} día${t === 1 ? '' : 's'}: hay que confirmar dónde está el contenedor`});
+    }
+  }
+  if (v.operacion === 'IMPO') {
+    if (v.citaRetiro && v.citaRetiro < HOY && !(v.fechaRetiro && v.fechaRetiro <= HOY)) S.push({sev: 'Alta', msg: `la cita de retiro en puerto era el ${fd(v.citaRetiro)} y no hay retiro registrado`,
+      porque: 'Si se retiró, falta la fecha de retiro; si no, hay que pedir una nueva cita'});
+    if (v.citaDevolucion && v.citaDevolucion < HOY && !v.fechaDevolucion && !v.tirillaDevolucion) S.push({sev: 'Alta', msg: `la cita de devolución del vacío era el ${fd(v.citaDevolucion)} y no hay devolución registrada`,
+      porque: 'Si se devolvió, faltan la fecha y la tirilla; si no, el plazo de devolución sigue corriendo'});
+  }
+  return S;
+}
 // con qué se busca el viaje en los correos: EXPO por booking (y factura RBHY); IMPO por pedido, DO y contenedor; si no, la placa
 function clavesBusqueda(v){
   const L = v.operacion === 'IMPO' ? [['Pedido', v.pedido], ['DO', v.do], ['Contenedor', v.contenedor], ['BL', v.booking]]
@@ -763,9 +787,12 @@ function validar(v){
   if (v.etd && v.fechaCargue && v.fechaCargue >= v.etd) add('Alta','ETD',`Llenado (${fd(v.fechaCargue)}) igual o posterior al ETD (${fd(v.etd)})`, 'Error', choque);
   if (v.cierreDoc && v.etd && v.cierreDoc > v.etd) add('Media',C.cierre,'Cierre documental después del ETD', 'Error', choque);
   if (v.eta && v.etd && v.eta < v.etd) add('Alta','ETA',`ETA (${fd(v.eta)}) antes del ETD (${fd(v.etd)})`, 'Error', choque);
+  // viaje sin actualizar: se reporta una vez; las reglas que dirían lo mismo (sin cita con el cierre vencido, ETD vencido) se omiten
+  const sa = sinActualizar(v);
+  sa.forEach(s => add(s.sev, 'Seguimiento', 'Sin actualizar: ' + s.msg, 'Error', s.porque));
   if (seg && expo && !pend){
     // el contenedor entra a puerto con la cita más cercana, siempre antes del cierre documental
-    if (v.cierreDoc && !v.citaIngreso && !v.fechaEntregaPuerto && diffDias(v.cierreDoc) <= 3) add(diffDias(v.cierreDoc)<=1?'Alta':'Media','Cita de ingreso',`Sin cita de ingreso a puerto (cierre documental ${fd(v.cierreDoc)})`, diffDias(v.cierreDoc) < 0 ? 'Error' : 'Alerta',
+    if (!sa.length && v.cierreDoc && !v.citaIngreso && !v.fechaEntregaPuerto && diffDias(v.cierreDoc) <= 3) add(diffDias(v.cierreDoc)<=1?'Alta':'Media','Cita de ingreso',`Sin cita de ingreso a puerto (cierre documental ${fd(v.cierreDoc)})`, diffDias(v.cierreDoc) < 0 ? 'Error' : 'Alerta',
       diffDias(v.cierreDoc) < 0 ? `El cierre documental fue el ${fd(v.cierreDoc)}: si el contenedor entró, falta registrar la cita o la entrega` : `El contenedor debe entrar a puerto antes del cierre documental del ${fd(v.cierreDoc)}`);
     if (v.citaIngreso && v.cierreDoc && v.citaIngreso > v.cierreDoc) add('Alta','Cita de ingreso',`Cita de ingreso (${fd(v.citaIngreso)}) después del cierre documental (${fd(v.cierreDoc)})`, 'Error', `El contenedor debe entrar antes del cierre documental del ${fd(v.cierreDoc)}`);
     if (v.citaIngreso && !v.fechaEntregaPuerto && diffDias(v.citaIngreso) <= 1 && !/confirm|entreg/i.test(v.estadoCita||'')) add('Media','Estado de la cita',`Cita del ${fd(v.citaIngreso)} sin confirmar`, 'Alerta', `La cita es el ${fd(v.citaIngreso)}`);
@@ -804,7 +831,7 @@ function validar(v){
   if (!hijos.length && intermedio.test(sinTilde(v.observacion||'').toLowerCase())) add('Media','Subviaje','La observación indica patio intermedio, paro o almacenamiento: crear subviaje si el contenedor no va directo al destino final', 'Error', 'La observación del viaje dice que el contenedor quedó en un patio intermedio');
   // fechas que ya pasaron sin que se actualice el estado
   // cuenta la fecha, no la etapa: con la tirilla y sin la fecha el viaje figura como zarpado pero el dato sigue faltando
-  if (expo && v.etd && v.etd < HOY && !v.fechaEntregaPuerto && !['Cerrado','Cancelado'].includes(sit)) add('Media','Fecha de entrega en puerto',`ETD vencido (${fd(v.etd)}) y falta la fecha de entrega en puerto`, 'Error', `El buque zarpó el ${fd(v.etd)}: el contenedor ya debió entregarse en puerto${v.tirillaEntrega ? ' (hay tirilla: la fecha está en ella)' : ''}`);
+  if (!sa.length && expo && v.etd && v.etd < HOY && !v.fechaEntregaPuerto && !['Cerrado','Cancelado'].includes(sit)) add('Media','Fecha de entrega en puerto',`ETD vencido (${fd(v.etd)}) y falta la fecha de entrega en puerto`, 'Error', `El buque zarpó el ${fd(v.etd)}: el contenedor ya debió entregarse en puerto${v.tirillaEntrega ? ' (hay tirilla: la fecha está en ella)' : ''}`);
   if (primerEvento(v) && primerEvento(v) <= HOY){
     if (!v.observacion) add('Media',C.obs,'Viaje en curso sin observación de status', 'Error', `El viaje empezó el ${fd(primerEvento(v))}`);
   }
@@ -1572,6 +1599,12 @@ function panelFactura(v, P, n){
   const docs = (tiene.length || fin) ? `<div class="sub" style="margin:4px 0 2px">${tiene.map(d => d[2](d[0])).join(' · ')}${falta.length && fin ? `${tiene.length ? ' · ' : ''}<span style="color:var(--warn)">Falta ${falta.join(' y ')}</span>` : ''}</div>` : '';
   return `${fin}${docs}<div class="resumen"><div><h4>Resumen de gastos</h4>${gastos}</div></div>${leadF}`;
 }
+// viaje que no avanza: etiqueta roja junto a la etapa (el detalle, al pasar el mouse)
+function etiquetaSinActualizar(v){
+  const S = window.MODO_CLIENTE ? [] : sinActualizar(v); if (!S.length) return '';
+  const det = S.map(s => 'Sin actualizar: ' + s.msg + '. ' + s.porque).join('\n') + (accionPendiente(v) ? '\nHay una acción LogxIA pendiente en este viaje: revisarla' : '');
+  return `<span class="tg" style="background:color-mix(in srgb, var(--bad) 15%, transparent);color:var(--bad)" title="${esc(det)}">⚠ Sin actualizar</span>`;
+}
 function rutaPedido(v){
   const {P, n} = avance(v);
   const ini = s => String(s||'').split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]).join('').toUpperCase() || '—';
@@ -1595,7 +1628,7 @@ function rutaPedido(v){
     <div class="cab"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
       ${tagNuevo(v)}<span class="op ${v.operacion}">${v.operacion}</span><b>${esc(v.empresa||'Empresa sin definir')} · ${esc(ref)}</b>
       <span class="sub">${esc([v.solicitante && 'Solicita '+v.solicitante, v.fwd].filter(Boolean).join(' · '))}</span></div>
-      <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span>${!window.MODO_CLIENTE && pendientesOps(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)" title="Lo que operaciones debe completar">Falta (operaciones): ${esc(pendientesOps(v).join(' · '))}</span>` : ''}${!window.MODO_CLIENTE && pendientesFact(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--muted) 15%, transparent);color:var(--muted)" title="Para poder facturarlo">Falta (facturación): ${esc(pendientesFact(v).join(' · '))}</span>` : ''}</div>
+      <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span>${etiquetaSinActualizar(v)}${!window.MODO_CLIENTE && pendientesOps(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)" title="Lo que operaciones debe completar">Falta (operaciones): ${esc(pendientesOps(v).join(' · '))}</span>` : ''}${!window.MODO_CLIENTE && pendientesFact(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--muted) 15%, transparent);color:var(--muted)" title="Para poder facturarlo">Falta (facturación): ${esc(pendientesFact(v).join(' · '))}</span>` : ''}</div>
     ${v.observacion ? `<div class="sub" style="margin:-4px 0 10px">💬 ${esc(v.observacion)}</div>` : ''}
     <div class="cuerpo"><div>
       <div style="display:flex;align-items:flex-end;gap:2px"><div class="cont"><b style="font-size:12px">${esc(v.contenedor||'—')}</b><div class="sub">${esc(v.unidad||'')}</div></div><div class="cabina"></div></div>
