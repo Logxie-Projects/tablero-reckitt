@@ -1030,6 +1030,8 @@ const enGlobal = v => (!G.op || v.operacion===G.op) && enSituacion(v, G.sit) && 
   && (!G.foco || (G.foco===FOCO_OPS ? pendientesOps(v).length > 0 : focoDe(v)===G.foco));
 // cuántos viajes se verían con este cambio de filtro, dejando los demás como están (para mostrarlo en cada opción)
 function cuentaCon(cambio){ const antes = G; G = {...G, ...cambio}; try { return viajes.filter(enGlobal).length; } finally { G = antes; } }
+// "Foco: todos" cuenta solo los viajes que tienen foco (los cancelados no): así suma lo mismo que sus opciones
+const conFoco = () => { const antes = G; G = {...G, foco: ''}; try { return viajes.filter(v => enGlobal(v) && focoDe(v)).length; } finally { G = antes; } };
 /* ---------- foco del equipo operativo: en qué está cada viaje y qué le falta ---------- */
 const visibles = () => viajes.filter(enGlobal);
 // Los viajes cancelados no cuentan en indicadores, alertas ni programación
@@ -1112,7 +1114,7 @@ function chipsGlobales(){
       .map(([k, titulo, f, ayuda]) => `<select class="gsel ${G[k]?'on':''}" data-gsel="${k}" aria-label="${titulo}" title="${ayuda}"><option value="">${titulo}: todos · ${cuentaCon({[k]:''})}</option>${
         [...new Set(viajes.filter(v=>!v.padre).map(f))].sort().reverse().map(m => `<option value="${m||'sin'}" ${G[k]===(m||'sin')?'selected':''}>${nombreMes(m)} · ${cuentaCon({[k]: m||'sin'})}</option>`).join('')}</select>`).join('')
     + `<span class="sub">|</span><input type="search" class="gsel gbus ${G.q.trim()?'on':''}" data-gq aria-label="Buscar en los viajes" placeholder="🔍 Buscar: placa, contenedor, RBHY, DO…" value="${esc(G.q)}">
-    <select class="gsel ${G.foco?'on':''}" data-gsel="foco" aria-label="Foco del equipo" title="En qué está cada viaje y qué le falta"><option value="">🎯 Foco: todos · ${cuentaCon({foco:''})}</option>${(() => { const op = x => `<option value="${esc(x)}" ${G.foco===x?'selected':''}>${esc(x)} · ${cuentaCon({foco:x})}</option>`;
+    <select class="gsel ${G.foco?'on':''}" data-gsel="foco" aria-label="Foco del equipo" title="En qué está cada viaje y qué le falta"><option value="">🎯 Foco: todos · ${conFoco()}</option>${(() => { const op = x => `<option value="${esc(x)}" ${G.foco===x?'selected':''}>${esc(x)} · ${cuentaCon({foco:x})}</option>`;
       return op(FOCO_OPS) + '<option disabled>──────────</option>' + FOCOS.map(op).join(''); })()}</select>
     <select class="gsel ${G.fact?'on':''}" data-gsel="fact" aria-label="Facturación"><option value="">Facturación: todos · ${cuentaCon({fact:''})}</option>${ETAPAS_FACTURACION.map(x=>`<option value="${esc(x)}" ${G.fact===x?'selected':''}>${esc(x)} · ${cuentaCon({fact:x})}</option>`).join('')}</select>
     ${FILTROS_LISTA.map(([k, campo, titulo, vacio]) => {
