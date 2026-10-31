@@ -927,10 +927,10 @@ const celdaAccion = v => { const a = accionPendiente(v); const n = accionesDe(v)
 const NO_ETP = 'No es para ETP';
 const noEsEtp = b => String(b.resueltoPor||'').startsWith(NO_ETP);
 const estadoCerrada = b => noEsEtp(b) ? '✖ No es para ETP' : '✔ Hecha';
-async function marcarHecha(id, noEtp){
+async function marcarHecha(id, noEtp, nota){
   const b = (window.BITACORA||[]).find(x=>x.id===id); if (!b) return;
   if (noEtp && !confirm(`¿Cerrar esta acción como "No es para ETP"?\n\n${b.accion}\n\nSale de pendientes; queda registrada como cerrada por no corresponder a Entrapetrol.`)) return;
-  const usuario = noEtp ? `${NO_ETP} · ${CFG.USUARIO}` : CFG.USUARIO;
+  const usuario = noEtp ? `${NO_ETP} · ${CFG.USUARIO}` : nota ? `${CFG.USUARIO} · ${nota}` : CFG.USUARIO;
   b.estadoAccion = 'Hecha'; b.resueltoEn = new Date().toISOString(); b.resueltoPor = usuario;
   if (window.CLAVE){
     try { await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'resolver', clave:window.CLAVE, id, usuario})});
@@ -939,6 +939,48 @@ async function marcarHecha(id, noEtp){
   }
   if (editId) abrir(editId);
   render();
+}
+// "Hacer aquí": las acciones que el tablero mismo puede hacer llevan un botón que abre esa pantalla. La acción se cierra sola
+// cuando ESE paso termina bien (aplicar la programación, aprobar datos, crear el viaje o el subviaje), no con cualquier otro.
+let accionEnCurso = null;   // {id, tipo, desde}
+const ATAJOS = [
+  ['programacion', '📋 Aplicar programación', b => /programaci[oó]n/i.test(b.accion) && /programaci[oó]n/i.test(b.asunto + ' ' + b.resumen), b => atajoProgramacion(b)],
+  ['propuestas', '✔ Revisar datos', b => /Llenar datos desde correos/i.test(b.accion), () => abrirPropuestas()],
+  ['viaje', '＋ Crear viaje', b => /^crear (en el tablero )?(el )?viaje|crear viaje nuevo/i.test(b.accion), () => abrirBarrido()],
+  ['subviaje', '↪ Crear subviaje', b => /crear subviaje de [A-Z]+-[\w-]+/i.test(b.accion), b => nuevoSubviaje(b.accion.match(/crear subviaje de ([A-Z]+-[\w-]+?)(?=[:,\s]|$)/i)[1])],
+];
+const atajoDe = b => b.estadoAccion==='Hecha' || window.MODO_CLIENTE ? null : ATAJOS.find(a => a[2](b));
+const botonAtajo = b => { const a = atajoDe(b); return a ? `<button type="button" class="link" onclick="hacerAqui('${b.id}')" title="Lo hace el tablero; al terminar, la acción se cierra sola">${a[1]}</button>` : ''; };
+function hacerAqui(id){
+  const b = (window.BITACORA||[]).find(x=>x.id===id), a = b && atajoDe(b); if (!a) return;
+  accionEnCurso = {id, tipo: a[0], desde: Date.now()};
+  a[3](b);
+}
+// la llama la pantalla que terminó bien; solo cierra la acción si se abrió desde ella (y hace menos de 30 min)
+function cerrarAccionEnCurso(tipo, nota){
+  const a = accionEnCurso;
+  if (!a || a.tipo !== tipo || Date.now() - a.desde > 30*60e3) return;
+  accionEnCurso = null;
+  marcarHecha(a.id, false, nota);
+}
+// programación mensual: busca el cuadro del mes en los correos; si ya está aplicado, ofrece cerrar la acción
+async function atajoProgramacion(b){
+  toast('Buscando el cuadro de programación en los correos…');
+  try {
+    const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=correos&dias=20&clave=' + encodeURIComponent(window.CLAVE))).json();
+    const progs = (j.correos||[]).filter(c => c.programacion && c.programacion.length);
+    const nMes = MESES_LARGO.findIndex(m => minus(b.asunto + ' ' + b.accion).includes(m));
+    const c = progs.find(p => Number(p.programacion[0].fechaCargue.slice(5, 7)) === nMes + 1) || progs[0];
+    if (!c) { accionEnCurso = null; return toast('No encontré el cuadro de programación en los correos de los últimos 20 días'); }
+    const R = compararProgramacion(c), mes = nombreMes(c.programacion[0].fechaCargue.slice(0, 7));
+    if (R.filas.every(f => f.accion==='igual') && !(R.fuera||[]).length) {
+      if (confirm(`La programación de ${mes} ya está aplicada en el tablero (${R.filas.length} de ${R.filas.length} iguales).\n\n¿Marcar la acción como hecha?`))
+        cerrarAccionEnCurso('programacion', `programación de ${mes} ya aplicada en el tablero`);
+      else accionEnCurso = null;
+      return;
+    }
+    abrirProgramacion(c);
+  } catch(e) { accionEnCurso = null; toast('No se pudo leer el buzón: ' + e.message); }
 }
 const pill = e => `<span class="pill" style="background:${colorEstado(e)}">${esc(e)}</span>`;
 // último paso que marcó el conductor en la app de conductores (por viaje, o por booking + placa)
@@ -1099,7 +1141,7 @@ function renderAcciones(){
       <td>${v?.placa||b.placa?`<span class="placa">${esc(v?.placa||b.placa)}</span>`:'<span class="sub">General</span>'}${b.booking?`<br><span class="sub">BK ${esc(b.booking)}</span>`:''}</td>
       <td class="obs" style="color:var(--text);min-width:260px"><b>${esc(b.accion)}</b>${b.estadoAccion==='Hecha'?`<br><span class="sub">${estadoCerrada(b)}${b.resueltoPor && !noEsEtp(b)?' por '+esc(b.resueltoPor):''}</span>`:`<br><span class="sub" style="${horas(b)>=24?'color:var(--bad);font-weight:600':''}">pendiente hace ${horas(b)} h</span>`}</td>
       <td class="obs" style="min-width:220px"><span class="sub">${esc(b.resumen)}<br>${esc(b.remitente)}</span></td>
-      <td style="white-space:nowrap">${b.estadoAccion==='Hecha'?'':`<button class="link" onclick="marcarHecha('${b.id}')">Marcar hecha</button><br><button class="link" onclick="marcarHecha('${b.id}', true)" title="La gestiona Reckitt, el agente de carga u otro: no le toca a Entrapetrol">No es para ETP</button>`}${v?`<br><button class="link" onclick="abrir('${v.id}')">Abrir viaje</button>`:''}</td></tr>`; }).join('')
+      <td style="white-space:nowrap">${b.estadoAccion==='Hecha'?'':`${botonAtajo(b) ? botonAtajo(b) + '<br>' : ''}<button class="link" onclick="marcarHecha('${b.id}')">Marcar hecha</button><br><button class="link" onclick="marcarHecha('${b.id}', true)" title="La gestiona Reckitt, el agente de carga u otro: no le toca a Entrapetrol">No es para ETP</button>`}${v?`<br><button class="link" onclick="abrir('${v.id}')">Abrir viaje</button>`:''}</td></tr>`; }).join('')
     : '<tr><td class="sub" style="padding:20px">Sin acciones en este filtro 🎉</td></tr>';
 }
 $('#accFiltros').onclick = e => { const b=e.target.closest('[data-acc]'); if(!b) return; accFiltro=b.dataset.acc; renderAcciones(); };
@@ -1554,6 +1596,7 @@ function abrir(id){
   $('#mDet').classList.add('hidden');
   $('#mPlan').innerHTML = v.padre ? resumenCobro(v) : tablaPlan(v) + resumenCobro(v);
   $('#mNuevo').classList.toggle('hidden', !esNuevo(v));
+  if (v.mesProg && !v.padre) $('#mSub').textContent += ' · 📋 ' + textoProgramacion(v, '', v.mesProg);
   if (v.padre) $('#mSub').textContent = `Subviaje de ${v.padre} · ${[v.motivoSub, v.patioSub && 'patio '+v.patioSub].filter(Boolean).join(' · ') || 'sin motivo'}`;
   pintarForm(v);
   try { $('#mUsuario').value = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
@@ -1563,7 +1606,7 @@ function abrir(id){
   const bloqueLx = lx.length ? '<b>Acciones LogxIA (de los correos):</b>' + lx.map(b=>`<div class="lx-item ${b.estadoAccion==='Hecha'?'hecha':''}">
     <span class="sev sev-${b.prioridad==='Alta'?'Alta':'Media'}">${esc(String(b.prioridad||'').toUpperCase())}</span> <b>${esc(b.accion)}</b><br>
     <span class="sub">${esc(b.resumen)} · ${esc(b.remitente)} · ${esc(String(b.fechaCorreo||'').slice(0,16).replace('T',' '))}</span><br>
-    ${b.estadoAccion==='Hecha' ? `<span class="sub">${estadoCerrada(b)}</span>` : `<button type="button" class="link" onclick="marcarHecha('${b.id}')">Marcar como hecha</button> · <button type="button" class="link" onclick="marcarHecha('${b.id}', true)" title="La gestiona Reckitt, el agente de carga u otro: no le toca a Entrapetrol">No es para ETP</button>`}</div>`).join('') + '<br>' : '';
+    ${b.estadoAccion==='Hecha' ? `<span class="sub">${estadoCerrada(b)}</span>` : `${botonAtajo(b) ? botonAtajo(b) + ' · ' : ''}<button type="button" class="link" onclick="marcarHecha('${b.id}')">Marcar como hecha</button> · <button type="button" class="link" onclick="marcarHecha('${b.id}', true)" title="La gestiona Reckitt, el agente de carga u otro: no le toca a Entrapetrol">No es para ETP</button>`}</div>`).join('') + '<br>' : '';
   $('#mHist').innerHTML = bloqueLx + lineaTiempo(v);
   $('#ov').classList.add('open');
 }
@@ -1747,6 +1790,7 @@ async function decidirPropuestas(aprobar){
       body: JSON.stringify({action:'decidir', clave:window.CLAVE, usuario, aprobar: aprobar ? datos : [], rechazar: aprobar ? [] : datos})});
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'error');
+    if (aprobar) cerrarAccionEnCurso('propuestas', `${j.aprobadas} dato${j.aprobadas===1?'':'s'} aprobado${j.aprobadas===1?'':'s'} en el tablero`);
     toast(aprobar ? `${j.aprobadas} dato${j.aprobadas===1?'':'s'} guardado${j.aprobadas===1?'':'s'} en la base` : `${j.rechazadas} rechazado${j.rechazadas===1?'':'s'}`);
     const usados = new Set(sel.map(p => p.clave));
     PROP = PROP.filter(p => !usados.has(p.clave));
@@ -1805,6 +1849,7 @@ $('#subCrear').onclick = async () => {
     $('#ovSub').classList.remove('open');
     toast('Subviaje creado: complete el vehículo y los costos');
     await cargar(); render();
+    cerrarAccionEnCurso('subviaje', 'subviaje creado en el tablero');
     if (j.id && viajes.some(x=>x.id===j.id)) abrir(j.id);
   } catch(e) { toast('No se pudo crear el subviaje: ' + e.message); }
   $('#subCrear').disabled = false;
@@ -1970,6 +2015,7 @@ async function aplicarProgramacion(){
     }
     toast(`Programación aplicada: ${crear.length} creados, ${sel.length - crear.length} actualizados`);
     await cargar(); render();
+    cerrarAccionEnCurso('programacion', `programación aplicada en el tablero (${crear.length} creados, ${sel.length - crear.length} actualizados)`);
     PROG = {c, ...compararProgramacion(c)}; pintarProgramacion();
   } catch(e) { toast('No se pudo aplicar: ' + e.message); }
   $('#progAplicar').disabled = false;
@@ -1999,6 +2045,7 @@ async function crearExpoDesdeCorreo(c){
     c.viajeId = j.id; c.enBase = {operacion:'EXPO'}; pintarBarrido();
     toast(`Exportación ${j.id} creada: queda arriba como NUEVO; complete patio, fechas y vehículo`);
     await cargar(); render();
+    cerrarAccionEnCurso('viaje', `viaje ${j.id} creado en el tablero`);
   } catch(e) { toast('No se pudo crear la exportación: ' + e.message); }
 }
 async function crearDesdeCorreo(c){
@@ -2020,6 +2067,7 @@ async function crearDesdeCorreo(c){
     c.viajeId = j.id; pintarBarrido();
     toast(`Viaje ${j.id} creado: queda arriba como NUEVO hasta que alguien lo tome`);
     await cargar(); render();
+    cerrarAccionEnCurso('viaje', `viaje ${j.id} creado en el tablero`);
   } catch(e) { toast('No se pudo crear el viaje: ' + e.message); }
 }
 $('#btnBarrido').onclick = abrirBarrido;
@@ -2138,13 +2186,23 @@ function listaCorta(L, titulo){
 // (más amplio que accionesDe: también el booking dentro de un texto más largo y el pedido citado en el asunto)
 const correosDe = v => (window.BITACORA||[]).filter(b => coincide(v, b) || (compacto(v.booking).length >= 6 && compacto(b.booking).includes(compacto(v.booking))) ||
   (v.pedido && String(b.asunto||'').includes(String(v.pedido).split('-')[0])));
+// cuadro mensual de Reckitt en el que está el viaje; sin mes anterior escrito, el de su plan original (ej. Guatemala: de octubre pasó a noviembre)
+function textoProgramacion(v, antes, despues){
+  const d = String(despues || '').trim().slice(0, 7), a = String(antes || '').replace('—', '').trim().slice(0, 7) || String(v.planCargue || '').slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(d)) return 'Sin mes programado' + (/^\d{4}-\d{2}$/.test(a) ? ` (antes: ${nombreMes(a)})` : '');
+  return `Programado para ${nombreMes(d)}` + (/^\d{4}-\d{2}$/.test(a) && a !== d ? ` · venía de la programación de ${nombreMes(a)}` : '');
+}
 function eventosDe(v){
   const E = [], hijos = hijosDe(v), ids = [v.id, ...hijos.map(x => x.id)];
   const fechaHist = f => String(f||'');
   historial.filter(x => ids.includes(x.id)).forEach(x => {
     const t = String(x.observacion||'').replace(/^(EXPO|IMPO) · /, '');
     if (!t || /^Reprogramaciones:/.test(t)) return;
-    E.push({fecha: fechaHist(x.fecha), tipo: /^Versión anterior/.test(t) ? 'Excel' : 'Edición', quien: x.usuario || '', texto: (x.id!==v.id ? `Subviaje ${x.id}: ` : '') + t});
+    // "Mes programado: antes → después" va como evento de programación (de qué cuadro mensual de Reckitt a cuál pasó)
+    const partes = t.split(' | '), prog = partes.find(p => /^Mes programado: /.test(p)), resto = partes.filter(p => p !== prog).join(' | ');
+    if (prog) { const [antes, despues] = prog.replace(/^Mes programado: /, '').split(' → ');
+      E.push({fecha: fechaHist(x.fecha), tipo: 'Programación', quien: x.usuario || '', texto: textoProgramacion(v, antes, despues)}); }
+    if (resto) E.push({fecha: fechaHist(x.fecha), tipo: /^Versión anterior/.test(resto) ? 'Excel' : 'Edición', quien: x.usuario || '', texto: (x.id!==v.id ? `Subviaje ${x.id}: ` : '') + resto});
   });
   reprogsDe(v).forEach(r => {
     const hito = ((HITOS_PLAN[v.operacion]||[]).find(([, , cs]) => cs.includes(r.campo)) || [r.campo])[0];
@@ -2157,7 +2215,7 @@ function eventosDe(v){
   if (v.novedad) E.push({fecha: '', tipo: 'Incidente', texto: 'Marcado con novedad' + (v.observacion ? ': ' + v.observacion : '')});
   return E.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
 }
-const ICONO_EVENTO = {'Cambio de plan':'⟲', 'Correo':'✉', 'Edición':'✎', 'Excel':'▦', 'Subviaje':'↪', 'Incidente':'⚠'};
+const ICONO_EVENTO = {'Programación':'📋', 'Cambio de plan':'⟲', 'Correo':'✉', 'Edición':'✎', 'Excel':'▦', 'Subviaje':'↪', 'Incidente':'⚠'};
 function lineaTiempo(v){
   const E = eventosDe(v); if (!E.length) return '';
   const cp = E.filter(e => e.tipo==='Cambio de plan'), por = {};
@@ -2169,7 +2227,7 @@ function lineaTiempo(v){
   const cuando = f => !f ? '' : /T/.test(f) ? new Date(f).toLocaleString('es-CO', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'}) : fd(f);
   return `<details class="tl" open><summary><b>Línea de tiempo del viaje</b> <span class="sub">${resumen}</span></summary>
     ${E.map(e => `<div class="tl-it tl-${e.tipo.replace(/\s/g,'')}"><span class="tl-ic">${ICONO_EVENTO[e.tipo]||'•'}</span><div><span class="sub">${esc(cuando(e.fecha))}${e.quien ? ' · '+esc(e.quien) : ''}</span>
-      <div>${e.tipo==='Cambio de plan' ? `<b>Cambio de plan</b> · ${esc(e.causa||'Sin causa')}${e.resp && e.resp!=='Sin causa' ? ` <span class="sub">(responde ${esc(e.resp)})</span>` : ''}<br>` : e.tipo==='Correo' ? `<b>Correo</b>${e.prioridad ? ` <span class="sub">· ${esc(e.prioridad)}${e.hecha ? ' · ✔ hecha' : ''}</span>` : ''}<br>` : ''}${esc(e.texto)}
+      <div>${e.tipo==='Cambio de plan' ? `<b>Cambio de plan</b> · ${esc(e.causa||'Sin causa')}${e.resp && e.resp!=='Sin causa' ? ` <span class="sub">(responde ${esc(e.resp)})</span>` : ''}<br>` : e.tipo==='Programación' ? '<b>Programación de Reckitt</b><br>' : e.tipo==='Correo' ? `<b>Correo</b>${e.prioridad ? ` <span class="sub">· ${esc(e.prioridad)}${e.hecha ? ' · ✔ hecha' : ''}</span>` : ''}<br>` : ''}${esc(e.texto)}
       ${e.costo ? `<br><span style="color:var(--warn)">Costo extra ${pesos(e.costo)}</span>` : ''}${e.incidente ? `<br><span style="color:var(--bad)">⚠ Incidente: ${esc(e.incidente)}</span>` : ''}</div></div></div>`).join('')}</details>`;
 }
 
