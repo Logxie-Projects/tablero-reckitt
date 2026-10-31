@@ -801,6 +801,64 @@ function normalizar(v, i){
   v.sede = /bogot/i.test(String(v.destino||'').normalize('NFD')) ? 'Bogotá' : 'Cali';
   return v;
 }
+/* ---------- utilidades compartidas: un solo criterio para saber de qué viaje es un dato y un solo lector de fechas ---------- */
+// hoy en Colombia (UTC-5 todo el año): HOY si quien carga el dominio ya lo fijó
+const hoyISO = () => HOY || new Date(Date.now() - 5 * 36e5).toISOString().slice(0, 10);
+// mismo dato sin importar mayúsculas, tildes, espacios ni guiones ("MSKU 123456-7" = "msku1234567")
+const mismoDato = (a, b) => !!compacto(a) && compacto(a) === compacto(b);
+// una celda de pedido puede traer varios ("4512-4513", "4512 / 4513")
+const pedidosDe = s => String(s||'').split(/[-\s,;/]+/).map(compacto).filter(x => x.length >= 4);
+// datos que identifican un viaje sin dudas; la placa no (un mismo carro lleva varios viajes)
+const CLAVES_VIAJE = ['contenedor', 'do', 'booking', 'rbhy', 'obd'];
+// ¿el dato d (correo, acción de la bitácora, propuesta de LogxIA) es de este viaje? Por su id, por un dato fuerte
+// (contenedor, DO, booking, RBHY, OBD o uno de los pedidos; en IMPO el "booking" del correo a veces es el pedido) y,
+// solo si d no trae ninguno de esos, por la placa
+function coincide(v, d){
+  if (!v || !d) return false;
+  if (d.viajeId && v.id === d.viajeId) return true;
+  const ped = pedidosDe(v.pedido), pedD = [...pedidosDe(d.pedido), ...pedidosDe(d.booking)];
+  if (CLAVES_VIAJE.some(k => mismoDato(v[k], d[k])) || pedD.some(p => ped.includes(p))) return true;
+  const fuerte = d.viajeId || compacto(d.pedido) || CLAVES_VIAJE.some(k => compacto(d[k]));
+  return !fuerte && mismoDato(v.placa, d.placa);
+}
+// viajes del dato: primero los vigentes (con el mismo booking puede haber una versión cerrada y la vigente)
+const vigente = v => !['Cerrado','Cancelado'].includes(situacion(v));
+const viajesDe = (d, lista) => (lista || viajes).filter(v => coincide(v, d)).sort((a, b) => vigente(b) - vigente(a));
+const viajeDe = (d, lista) => (d && d.viajeId && (lista || viajes).find(v => v.id === d.viajeId)) || viajesDe(d, lista)[0];
+function distancia(a, b){
+  const d = Array.from({length: a.length + 1}, (_, i) => [i]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i-1][j] + 1, d[i][j-1] + 1, d[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+// mes (0-11) de una palabra: "nov", "noviembre", "sept" o mal escrita ("cotubre"); -1 si no es un mes
+function mesDePalabra(p){
+  const i = MESES_LARGO.findIndex(m => p.length >= 3 && m.startsWith(p.slice(0, Math.min(p.length, m.length))));
+  if (i >= 0 || p.length < 5) return i;
+  let mejor = -1, dist = 3;
+  MESES_LARGO.forEach((m, j) => { const x = distancia(p, m); if (x < dist) { dist = x; mejor = j; } });
+  return mejor;
+}
+// Fecha escrita en un correo, una celda o el chat -> yyyy-MM-dd ('' si no hay). Lee "2026-11-09", "9/11", "9/11/26",
+// "9 de noviembre (de 2026)", "lunes 9 nov", "09-nov", meses mal escritos ("cotubre"), "ayer", "antier" y "mañana".
+// Sin año, el más cercano a la fecha de referencia (por defecto hoy): "5 de enero" leído en diciembre es del año siguiente.
+function fechaDeTexto(texto, ref){
+  const t = minus(texto), r = String(ref || hoyISO()).slice(0, 10), mr = Number(r.slice(5, 7));
+  const anio = (mes, a) => a ? (a.length === 2 ? '20' + a : a) : String(Number(r.slice(0, 4)) + (mes < mr - 6 ? 1 : mes > mr + 6 ? -1 : 0));
+  const iso = (d, mes, a) => d >= 1 && d <= 31 && mes >= 1 && mes <= 12 ? `${anio(mes, a)}-${String(mes).padStart(2, '0')}-${String(d).padStart(2, '0')}` : '';
+  let m;
+  if ((m = t.match(/\b\d{4}-\d{2}-\d{2}\b/))) return m[0];
+  if ((m = t.match(/(?:^|\s)(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?(?=\s|$|[,.])/)) && iso(+m[1], +m[2], m[3])) return iso(+m[1], +m[2], m[3]);
+  for (const x of t.matchAll(/(\d{1,2})\s*(?:de\s+|-|\/)?\s*([a-z]{3,})\.?(?:,?\s+(?:de\s+|del\s+)?(\d{4}))?/g)) {
+    const mes = mesDePalabra(x[2]);
+    if (mes >= 0 && iso(+x[1], mes + 1, x[3])) return iso(+x[1], mes + 1, x[3]);
+  }
+  if (/\b(antier|anteayer)\b/.test(t)) return addDias(r, -2);
+  if (/\bayer\b/.test(t)) return addDias(r, -1);
+  if (/\bmanana\b/.test(t)) return addDias(r, 1);
+  return '';
+}
 </script>
 <script>
 const CFG = window.APP_CONFIG || {};
@@ -868,9 +926,8 @@ const situacionesPresentes = () => [...SITUACIONES, ...new Set(viajes.map(situac
 const sitTag = v => { const s = situacion(v); return `<span class="sit sit-${s.split(' ')[0]}">${esc(s.toUpperCase())}</span>`; };
 /* ---------- bitácora LogxIA: acciones a tomar que salen de los correos ---------- */
 const PRI = {Alta:'var(--bad)', Media:'var(--warn)', Baja:'var(--s-sin)'};
-// se cruza por booking o placa (estables) y, si no, por el id del viaje
-const accionesDe = v => situacion(v)==='Cerrado' ? [] : (window.BITACORA||[]).filter(b =>
-  (b.booking && v.booking && String(b.booking)===String(v.booking)) || (b.placa && v.placa && b.placa===v.placa) || (!b.booking && !b.placa && b.viajeId===v.id))
+// mismo criterio que el backend (coincide, en el dominio): id del viaje, dato fuerte y, solo si la acción no trae ninguno, la placa
+const accionesDe = v => situacion(v)==='Cerrado' ? [] : (window.BITACORA||[]).filter(b => coincide(v, b))
   .sort((a,b)=> (a.estadoAccion==='Hecha') - (b.estadoAccion==='Hecha') || ['Alta','Media','Baja'].indexOf(a.prioridad) - ['Alta','Media','Baja'].indexOf(b.prioridad));
 const accionPendiente = v => accionesDe(v).find(b=>b.estadoAccion!=='Hecha');
 const celdaAccion = v => { const a = accionPendiente(v); const n = accionesDe(v).filter(b=>b.estadoAccion!=='Hecha').length;
@@ -2122,8 +2179,9 @@ function listaCorta(L, titulo){
 }
 /* ---------- línea de tiempo del viaje: todo lo que ha pasado (ediciones, correos, cambios de plan, costos, incidentes) ---------- */
 // correos de la bitácora que tocan el viaje (también los ya resueltos y los de viajes cerrados)
-const correosDe = v => (window.BITACORA||[]).filter(b => (b.booking && v.booking && String(b.booking).includes(String(v.booking))) ||
-  (b.placa && v.placa && b.placa===v.placa) || b.viajeId===v.id || (v.pedido && String(b.asunto||'').includes(String(v.pedido).split('-')[0])));
+// (más amplio que accionesDe: también el booking dentro de un texto más largo y el pedido citado en el asunto)
+const correosDe = v => (window.BITACORA||[]).filter(b => coincide(v, b) || (compacto(v.booking).length >= 6 && compacto(b.booking).includes(compacto(v.booking))) ||
+  (v.pedido && String(b.asunto||'').includes(String(v.pedido).split('-')[0])));
 function eventosDe(v){
   const E = [], hijos = hijosDe(v), ids = [v.id, ...hijos.map(x => x.id)];
   const fechaHist = f => String(f||'');
@@ -2198,20 +2256,6 @@ async function enviarReporteCorreo(){
 /* ---------- LogxIA por chat: actualiza viajes y filtra el tablero ----------
    Reglas fijas (sin IA, sin costo). Nunca guarda sola: muestra lo que propone, se puede corregir y solo se guarda con "Confirmar".
    Nunca cierra un viaje: eso lo hace facturación con N° y fecha de factura. */
-const MESES_CHAT = {ene:1,feb:2,mar:3,abr:4,may:5,jun:6,jul:7,ago:8,sep:9,oct:10,nov:11,dic:12};
-function fechaDeTexto(q){
-  const t = minus(q), y = HOY.slice(0,4);
-  const iso = (d, m, a) => `${a||y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-  const mas = n => { const d = new Date(HOY+'T12:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
-  let m;
-  if ((m = t.match(/\b\d{4}-\d{2}-\d{2}\b/))) return m[0];
-  if ((m = t.match(/(?:^|\s)(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?(?=\s|$|[,.])/))) return iso(m[1], m[2], m[3] && (m[3].length===2 ? '20'+m[3] : m[3]));
-  if ((m = t.match(/\b(\d{1,2})\s*(?:de\s+)?(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)[a-z]*\b/))) return iso(m[1], MESES_CHAT[m[2]]);
-  if (/\b(antier|anteayer)\b/.test(t)) return mas(-2);
-  if (/\bayer\b/.test(t)) return mas(-1);
-  if (/\bmanana\b/.test(t)) return mas(1);
-  return '';
-}
 function viajesDeTexto(q){
   const toks = minus(q).split(/[\s,;:()]+/).map(compacto).filter(t => t.length >= 5), todo = compacto(q);
   const L = viajes.filter(v => situacion(v) !== 'Cancelado' && ['booking','pedido','do','contenedor','placa','id','rbhy','obd'].some(k => {
