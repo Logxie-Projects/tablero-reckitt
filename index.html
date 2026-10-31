@@ -314,6 +314,17 @@ table.prog td:last-child{min-width:260px}
 .tr-menu:disabled{opacity:.5;cursor:not-allowed}
 .tr-reloj{margin:8px 0 0;display:flex;gap:6px 12px;flex-wrap:wrap;align-items:center}
 .tr-urge{color:var(--warn);font-weight:600}
+.tr-menu.roja{border-color:var(--bad);color:var(--bad)}
+.tr-menu.roja .tr-n{background:var(--bad)}
+.tr-menu.ok .tr-n{background:var(--ok)}
+.tr-fila.tr-roja{border-left:3px solid var(--bad)}
+.tr-meta{margin-top:12px}
+.tr-motivo{display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap}
+.tr-exc{margin-top:4px}
+.tr-exc-pendiente{color:var(--warn)}
+.tr-exc-aprobada{color:var(--ok)}
+.tr-exc-rechazada,.tr-exc-vencida{color:var(--bad);font-weight:600}
+.tr-gerencia{margin-top:12px;padding:8px 10px;border:1px solid var(--warn);border-radius:10px;background:color-mix(in srgb, var(--warn) 8%, transparent)}
 .tr-vencida{color:var(--bad);font-weight:700}
 /* ronda vencida: solo queda Mi turno (y la ventana del viaje para actualizar) */
 body.turno-bloqueado #nav button:not([data-v="turno"]), body.turno-bloqueado #gbar{pointer-events:none;opacity:.35}
@@ -355,7 +366,7 @@ body.en-turno #gbar{display:none}
   <section id="v-turno" class="hidden">
     <div class="card">
       <div class="toolbar" style="justify-content:space-between;align-items:flex-start">
-        <div><h2 style="margin:0">Mi turno</h2><div class="sub">El día en orden: seguimiento de los vehículos (3 rondas), actualización y planeación.</div></div>
+        <div><h2 style="margin:0">Mi turno</h2><div class="sub">En cada ronda (8, 12 y 16 h): 1 Seguimiento → 2 Cobertura → 3 Cliente → 4 Datos. Lo marcado en rojo bloquea el tablero hasta resolverlo o que Gerencia apruebe una excepción.</div></div>
       </div>
       <div class="tr-menus" id="turnoMenus"></div>
       <div class="sub tr-reloj" id="turnoReloj"></div>
@@ -1308,18 +1319,19 @@ function renderAcciones(){
 $('#accFiltros').onclick = e => { const a=e.target.closest('[data-area]'); if (a) { accArea=a.dataset.area; return renderAcciones(); }
   const b=e.target.closest('[data-acc]'); if(!b) return; accFiltro=b.dataset.acc; renderAcciones(); };
 
-/* ---------- Mi turno: organiza el día del coordinador en tres menús, en orden ---------- */
-// 1 Seguimiento: estado de cada vehículo en movimiento, en tres rondas al día (RONDAS). Cada ronda tiene 2 horas;
-//   mientras no se completa, Actualización y Planeación esperan; si vence, se bloquea todo el tablero hasta hacerla.
-//   "Saltar" deja seguir, pero queda registrado con nombre y hora y suma al contador del día.
-//   Un viaje SIN ACTUALIZAR (regla sinActualizar del dominio) bloquea el tablero de inmediato, sin esperar la ronda, y no
-//   admite "Sigue igual": sale de la lista solo cuando se actualiza el viaje (o si se salta la ronda, que queda registrado).
-// 2 Actualización: errores de datos y viajes sin actualizar.  3 Planeación: acciones de los correos, datos por aprobar
-//   y lo que viene (vehículo por asignar). Todo sale de reglas que ya existen en el dominio.
-// Las marcas ("Listo", "Revisado", "Saltar") son del día y las ve todo el equipo (bandeja compartida, D1): se guardan
-// en la base (pestaña Turno revisado) con quién y a qué hora; no cambian el viaje.
+/* ---------- Mi turno: el flujo del coordinador, un paso a la vez ---------- */
+// En cada ronda (RONDAS, 2 horas cada una) el coordinador recorre 4 pasos en orden:
+//   1 Seguimiento: dónde va cada vehículo en movimiento.     2 Cobertura: viajes sin vehículo a 72 h o menos.
+//   3 Cliente: pedidos de Reckitt (acciones) y datos de los correos.     4 Datos: errores y lo que viene.
+// LÍNEAS ROJAS (bloquean todo el tablero hasta resolverlas): ronda de seguimiento vencida, viaje sin actualizar,
+// viaje sin vehículo a 72 h o menos, pedido del cliente de prioridad alta con más de 4 h sin atender.
+// Un paso se abre cuando el anterior no tiene líneas rojas. Toda EXCEPCIÓN (no se puede cumplir una línea roja) pide un
+// motivo y queda esperando a Gerencia: mientras espera no bloquea; si Gerencia la rechaza, vuelve a bloquear. La aprobación
+// vale 4 horas (HORAS_EXCEPCION): Gerencia queda enterada, pero si sigue sin resolverse vuelven la alerta y el bloqueo.
+// Las marcas ("Sigue igual", "Revisado", excepciones y su aprobación) son del día y las ve todo el equipo: se guardan en
+// la base (pestaña Turno revisado) con quién y a qué hora; no cambian el viaje.
 const RONDAS = [8, 12, 16], HORAS_RONDA = 2;
-let turnoMenu = 'seg';
+let turnoMenu = 'seg', excAbierta = '';   // paso en pantalla · fila con el selector de motivo abierto
 const revisados = () => new Map((window.TURNO || []).map(x => [x.clave, x]));
 async function marcarRevisado(k){
   let usuario = ''; try { usuario = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
@@ -1391,33 +1403,68 @@ function pulsoViaje(v){
 }
 const enSeguimiento = V => V.filter(v => v.placa && !TERMINADO.includes(v.estado) && primerEvento(v) && diffDias(primerEvento(v)) <= 1);
 
+const HORAS_COBERTURA = 72, HORAS_CLIENTE = 4;
+// motivos de excepción por paso (los revisa Gerencia)
+const MOTIVOS = {
+  ronda: ['Sin contacto con los conductores', 'Urgencia operativa en curso', 'Otro'],
+  seg: ['Conductor sin señal: se confirma en la próxima ronda', 'Esperando confirmación del puerto o la bodega', 'Otro'],
+  cob: ['Sin vehículo disponible', 'Reckitt no ha confirmado la fecha', 'Viaje por reprogramar o cancelar', 'Otro'],
+  cli: ['Esperando respuesta de Reckitt', 'Depende de otro (agente, naviera, aduana)', 'Otro'],
+};
+// excepción de una fila: "exc|<fila>|<motivo>"; Gerencia la aprueba ("ok|<fila>") o la rechaza ("no|<fila>").
+// La aprobación vale HORAS_EXCEPCION: Gerencia queda enterada, pero si sigue sin resolverse vuelven la alerta y el bloqueo.
+const HORAS_EXCEPCION = 4;
+const minutosDe = hhmm => { const [h, m] = String(hhmm || '').split(':').map(Number); return h * 60 + (m || 0); };
+const minutosAhora = () => minutosDe(new Date().toLocaleTimeString('es-CO', {hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Bogota'}));
+function excepcionDe(k, R){
+  const x = [...R.values()].find(y => y.clave.startsWith('exc|' + k + '|')); if (!x) return null;
+  const ok = R.get('ok|' + k), no = R.get('no|' + k), vencida = ok && minutosAhora() - minutosDe(ok.hora) >= HORAS_EXCEPCION * 60;
+  return {...x, motivo: x.clave.slice(('exc|' + k + '|').length), estado: no ? 'rechazada' : vencida ? 'vencida' : ok ? 'aprobada' : 'pendiente', aprobo: ok || no,
+    vence: ok ? hhmm(minutosDe(ok.hora) + HORAS_EXCEPCION * 60) : ''};
+}
+const horasDesde = iso => iso ? (Date.now() - new Date(iso)) / 36e5 : 0;
+
 function menusTurno(r){
-  const V = viajes.filter(v => vigente(v) && v.estado !== 'Cancelado');
+  const V = viajes.filter(v => vigente(v) && v.estado !== 'Cancelado' && !v.padre);
   const SEV = e => e.sev === 'Alta' ? 0 : 1;
   const nProp = Number($('#nProp')?.textContent) || 0;
+  const sinVehiculo = V.filter(v => !tieneVehiculo(v) && primerEvento(v)).sort((a, b) => primerEvento(a).localeCompare(primerEvento(b)));
+  const cob = sinVehiculo.filter(v => diffDias(primerEvento(v)) * 24 <= HORAS_COBERTURA), despues = sinVehiculo.filter(v => !cob.includes(v));
   return [
-    {id: 'seg', titulo: 'Seguimiento', vacio: 'Ningún vehículo en movimiento',
-     ayuda: r ? `Ronda ${r.n} de ${RONDAS.length}: confirme dónde va cada vehículo (sigue igual, avanzó o pregúntele al conductor)` : `Primera ronda a las ${RONDAS[0]}:00`,
-     filas: V.filter(v => enSeguimiento([v]).length || sinActualizar(v).length).map(v => ({k: `seg${r ? r.n : 0}|${v.id}`, tipo: 'seg', v, p: pulsoViaje(v)}))
-       .sort((a, b) => b.p.alerta - a.p.alerta || b.p.hace - a.p.hace)},   // primero los quietos
-    {id: 'act', titulo: 'Actualización', vacio: 'Sin errores de datos', ayuda: 'Cierre los errores de datos de los viajes',
-     filas: [...V.map(v => ({k: 'd' + v.id, tipo: 'dato', v, e: validar(v).filter(e => e.tipo !== 'Alerta' && e.campo !== 'Seguimiento').sort((a, b) => SEV(a) - SEV(b))}))
-         .filter(x => x.e.length).sort((a, b) => SEV(a.e[0]) - SEV(b.e[0]))]},
-    {id: 'plan', titulo: 'Planeación', vacio: 'Nada por planear', ayuda: 'Acciones de los correos, datos por aprobar y vehículos para lo que viene',
+    {id: 'seg', titulo: 'Seguimiento', meta: 'Todos los vehículos con seguimiento en esta ronda', vacio: 'Ningún vehículo en movimiento',
+     ayuda: r ? `Ronda ${r.n} de ${RONDAS.length}: confirme dónde va cada vehículo. Los que no avanzan van primero y solo salen actualizándolos.` : `Primera ronda a las ${RONDAS[0]}:00`,
+     filas: V.filter(v => enSeguimiento([v]).length || sinActualizar(v).length).map(v => ({k: `seg${r ? r.n : 0}|${v.id}`, tipo: 'seg', v, p: pulsoViaje(v), roja: !!sinActualizar(v).length}))
+       .sort((a, b) => b.roja - a.roja || b.p.hace - a.p.hace)},
+    {id: 'cob', titulo: 'Cobertura', meta: `Ningún viaje sin vehículo a ${HORAS_COBERTURA} h o menos`, vacio: `Todos los viajes de las próximas ${HORAS_COBERTURA} h tienen vehículo`,
+     ayuda: `Asigne vehículo a los viajes que arrancan en ${HORAS_COBERTURA} h o menos. Al guardar placa y conductor, el viaje sale de la lista.`,
+     filas: cob.map(v => ({k: 'cob|' + v.id, tipo: 'cob', v, roja: true})),
+     despues: despues.length ? `${despues.length} viaje${despues.length === 1 ? '' : 's'} más sin vehículo, del ${fd(primerEvento(despues[0]))} al ${fd(primerEvento(despues[despues.length - 1]))}: se asignan cuando entren a las ${HORAS_COBERTURA} h` : ''},
+    {id: 'cli', titulo: 'Cliente', meta: 'Pedidos de Reckitt atendidos', vacio: 'Sin pedidos del cliente por atender',
+     ayuda: `Lo que Reckitt pidió por correo y los datos por aprobar. Lo de prioridad alta con más de ${HORAS_CLIENTE} h sin atender bloquea el tablero.`,
      filas: [...(nProp ? [{k: 'prop', tipo: 'prop', n: nProp}] : []),
-       ...(window.BITACORA || []).filter(b => b.estadoAccion !== 'Hecha' && areaDe(b) === 'Operaciones').map(b => ({k: 'a' + b.id, tipo: 'accion', b, v: viajeDeAccion(b)})),
-       ...V.map(v => ({k: 'p' + v.id, tipo: 'viene', v, e: validar(v).filter(e => e.tipo === 'Alerta')})).filter(x => x.e.length)
+       ...(window.BITACORA || []).filter(b => b.estadoAccion !== 'Hecha' && areaDe(b) === 'Operaciones')
+         .map(b => ({k: 'a' + b.id, tipo: 'accion', b, v: viajeDeAccion(b), roja: b.prioridad === 'Alta' && horasDesde(b.registrado) > HORAS_CLIENTE && !pareceHecha(b)}))
+         .sort((a, b) => b.roja - a.roja)]},
+    {id: 'dat', titulo: 'Datos', meta: 'Datos de los viajes completos', vacio: 'Sin datos por corregir',
+     ayuda: 'Errores de datos y lo que hay que preparar para los próximos días, con la búsqueda en el correo.',
+     filas: [...V.map(v => ({k: 'd' + v.id, tipo: 'dato', v, e: validar(v).filter(e => e.tipo !== 'Alerta' && e.campo !== 'Seguimiento').sort((a, b) => SEV(a) - SEV(b))}))
+         .filter(x => x.e.length).sort((a, b) => SEV(a.e[0]) - SEV(b.e[0])),
+       ...V.filter(v => !cob.includes(v)).map(v => ({k: 'p' + v.id, tipo: 'viene', v, e: validar(v).filter(e => e.tipo === 'Alerta')})).filter(x => x.e.length)
          .sort((a, b) => String(primerEvento(a.v) || '').localeCompare(String(primerEvento(b.v) || '')))]},
   ];
 }
-// estado del día: la ronda, si ya se hizo (o se saltó), cuánto falta para que venza y si el tablero queda bloqueado
+// estado del turno: por cada paso, sus filas pendientes y sus líneas rojas (sin excepción vigente); la ronda y el bloqueo
 function estadoTurno(){
-  const r = rondaActual(), R = revisados(), M = menusTurno(r);
-  const n = r ? r.n : 0, saltada = R.has('saltar' + n), quietos = saltada ? [] : M[0].filas.filter(x => x.p.alerta);
-  const pend = M[0].filas.filter(x => x.p.alerta || !R.has(x.k)).length;
-  const hecha = saltada || (!r ? !quietos.length : !pend), resta = r ? r.vence - r.ahora : 0;
-  return {r, n, R, M, hecha, saltada, resta, quietos, bloqueado: !window.MODO_CLIENTE && !saltada && (quietos.length > 0 || (!hecha && resta <= 0)),
-    saltos: [...R.values()].filter(x => x.clave.startsWith('saltar'))};
+  const r = rondaActual(), R = revisados(), M = menusTurno(r), n = r ? r.n : 0;
+  const viva = x => !!x && ['pendiente', 'aprobada'].includes(x.estado);   // rechazada o vencida: vuelve a bloquear
+  const vigenteExc = k => viva(excepcionDe(k, R));
+  const rondaExc = excepcionDe('ronda' + n, R), rondaSaltada = viva(rondaExc);
+  M.forEach(m => m.filas.forEach(x => { x.exc = excepcionDe(x.k, R); x.hecha = !x.roja && R.has(x.k); x.bloquea = !!x.roja && !vigenteExc(x.k) && !(m.id === 'seg' && rondaSaltada); }));
+  const segPend = M[0].filas.filter(x => !x.hecha && !vigenteExc(x.k)).length, resta = r ? r.vence - r.ahora : 0;
+  const rondaHecha = !r || rondaSaltada || !segPend, rondaVencida = !!r && !rondaHecha && resta <= 0;
+  const rojas = M.map((m, i) => m.filas.filter(x => x.bloquea).length + (i === 0 && rondaVencida ? 1 : 0));
+  const excepciones = [...R.values()].filter(x => x.clave.startsWith('exc|')).map(x => { const k = x.clave.slice(4).split('|').slice(0, -1).join('|'); return {k, ...excepcionDe(k, R)}; });
+  return {r, n, R, M, resta, rondaHecha, rondaVencida, rondaExc, rojas, excepciones, bloqueado: !window.MODO_CLIENTE && rojas.some(Boolean)};
 }
 
 const nombreTurno = v => v ? `${v.placa || 'Sin vehículo'} · ${v.operacion} ${v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || '')}${v.padre ? ' · subviaje' : ''}` : '';
@@ -1431,7 +1478,14 @@ function filaTurno(x, rev){
     detalle = [v.contenedor, clavesBusqueda(v).slice(0, 1).map(([k, c]) => `${k} ${c}`)[0], v.conductor].filter(Boolean).map(esc).join(' · ')
       + `<br>${esc(x.p.txt)}` + (x.p.porque ? `<br><span style="color:var(--bad);font-weight:600">⚠ ${esc(x.p.porque)}</span>` : '');
     acc = [btnT('Actualizar', `data-t-abrir="${v.id}"`, 'Abrir el viaje y registrar lo que avanzó'), lnkT('💬 Conductor', waConductor(v, '¿dónde va el vehículo? Confírmame cómo va el viaje'))];
-    marca = x.p.alerta ? '' : rev ? '↺ Deshacer' : '✓ Sigue igual';   // sin actualizar: solo sale actualizando el viaje
+    marca = rev ? '↺ Deshacer' : '✓ Sigue igual';   // sin actualizar (roja): no se ofrece, solo sale actualizando el viaje
+  } else if (x.tipo === 'cob') {
+    const d = diffDias(primerEvento(v)), sug = sugeridos(v);
+    titulo = `${esc(nombreTurno(v))} · ${d < 0 ? 'debió arrancar el ' : d === 0 ? 'hoy, ' : d === 1 ? 'mañana, ' : ''}${fd(primerEvento(v))}`;
+    detalle = [v.booking && 'Booking ' + v.booking, v.pedido && 'Pedido ' + v.pedido, v.patio, esNuevo(v) && 'NUEVO: nadie lo ha tomado'].filter(Boolean).map(esc).join(' · ')
+      + (sug.length ? '<br>Ya hicieron esta ruta: elija uno, revise y guarde' : '<br>Nadie ha hecho esta ruta: elija placa y conductor en el viaje');
+    acc = [...sug.map(s => btnT(`🚚 ${esc(s.placa)} · ${esc(s.conductor.split(' ').slice(0, 2).join(' '))}`, `data-t-asignar="${v.id}" data-placa="${esc(s.placa)}" data-conductor="${esc(s.conductor)}"`, 'Ya hizo esta ruta: ponerlo en el viaje (se revisa y se guarda)')), btnT('Asignar en el viaje', `data-t-abrir="${v.id}"`)];
+    marca = '';
   } else if (x.tipo === 'prop') {
     titulo = `${x.n} dato${x.n === 1 ? '' : 's'} de los correos por aprobar`; detalle = 'Lo que LogxIA encontró en los correos: al aprobarlo pasa a la base';
     acc = [btnT('✔ Revisar datos', 'data-t-prop="1"')];
@@ -1448,43 +1502,62 @@ function filaTurno(x, rev){
     detalle = esc(x.e[0].porque);
     acc = [btnT('Corregir', `data-t-abrir="${v.id}"`), buscar];
   }
-  if (x.tipo !== 'prop' && marca) acc.push(btnT(marca, `data-t-rev="${x.k}"`, rev ? '' : 'Lo saca de la lista de hoy para todo el equipo'));
+  if (x.tipo !== 'prop' && marca && !x.roja) acc.push(btnT(marca, `data-t-rev="${x.k}"`, rev ? '' : 'Lo saca de la lista de hoy para todo el equipo'));
+  if (x.roja && !x.exc) acc.push(btnT('⚠ No se puede: excepción', `data-t-exc="${x.k}"`, 'Pide a Gerencia que apruebe dejarlo así; queda registrado con su nombre'));
   const quien = rev ? `<div class="sub">✓ ${esc(rev.usuario)}${rev.hora ? ' · ' + esc(rev.hora) : ''}</div>` : '';
-  return `<div class="tr-fila${rev ? ' rev' : ''}"><div class="tr-txt"><b>${titulo}</b><div class="sub">${detalle}</div>${quien}</div><div class="tr-acc">${acc.filter(Boolean).join('')}</div></div>`;
+  const exc = x.exc ? `<div class="sub tr-exc tr-exc-${x.exc.estado}">${{pendiente: '⏳ Excepción esperando a Gerencia', aprobada: '✓ Excepción aprobada por ' + esc(x.exc.aprobo?.usuario || 'Gerencia') + ' · vale hasta las ' + x.exc.vence, vencida: '✖ La aprobación venció a las ' + x.exc.vence + ': hay que resolverlo', rechazada: '✖ Excepción rechazada por ' + esc(x.exc.aprobo?.usuario || 'Gerencia') + ': hay que resolverlo'}[x.exc.estado]} · ${esc(x.exc.motivo)} (${esc(x.exc.usuario)} ${esc(x.exc.hora)})</div>` : '';
+  return `<div class="tr-fila${rev ? ' rev' : ''}${x.bloquea ? ' tr-roja' : ''}"><div class="tr-txt"><b>${titulo}</b><div class="sub">${detalle}</div>${quien}${exc}${excAbierta === x.k ? selectorMotivo(x.k) : ''}</div><div class="tr-acc">${acc.filter(Boolean).join('')}</div></div>`;
 }
 
+// selector del motivo de una excepción (en la misma fila)
+const tipoExc = k => k.startsWith('ronda') ? 'ronda' : k.startsWith('seg') ? 'seg' : k.startsWith('cob') ? 'cob' : 'cli';
+const selectorMotivo = k => `<div class="tr-motivo"><select data-t-motivo="${esc(k)}">${MOTIVOS[tipoExc(k)].map(m => `<option>${esc(m)}</option>`).join('')}</select>
+  ${btnT('Enviar a Gerencia', `data-t-excok="${esc(k)}"`)} ${btnT('Cancelar', 'data-t-exccancel="1"')}</div>`;
+// Gerencia: excepciones del día por aprobar
+function bloqueGerencia(T){
+  const P = T.excepciones.filter(x => x.estado === 'pendiente'); if (!P.length) return '';
+  return `<div class="tr-gerencia"><b>Por aprobar (Gerencia) · ${P.length}</b>${P.map(x => `<div class="tr-fila"><div class="tr-txt">${esc(x.motivo)}
+    <div class="sub">${esc(x.k.replace(/^seg\d\|/, 'Seguimiento · ').replace(/^cob\|/, 'Sin vehículo · ').replace(/^a(LX-)/, 'Pedido del cliente $1').replace(/^ronda/, 'Saltar la ronda '))} · pedida por ${esc(x.usuario)} ${esc(x.hora)}</div></div>
+    <div class="tr-acc">${btnT('✓ Aprobar', `data-t-aprobar="${esc(x.k)}"`)}${btnT('✖ Rechazar', `data-t-rechazar="${esc(x.k)}"`)}</div></div>`).join('')}</div>`;
+}
 function renderTurno(){
   const cont = $('#turno'); if (!cont) return;
   const T = estadoTurno(), {r, R, M} = T;
-  // bloqueo: la ronda venció sin hacerse → solo Mi turno · Seguimiento (y la ventana del viaje para actualizar)
+  // líneas rojas: se bloquea todo el tablero y se lleva al primer paso que las tiene
   document.body.classList.toggle('turno-bloqueado', T.bloqueado);
-  if (T.bloqueado) { turnoMenu = 'seg'; if ($('#v-turno').classList.contains('hidden')) $('#nav [data-v="turno"]').click(); }
-  const espera = id => id !== 'seg' && !T.hecha;   // Actualización y Planeación esperan a que termine la ronda
-  if (espera(turnoMenu)) turnoMenu = 'seg';
-  const cuenta = m => { const h = m.filas.filter(x => R.has(x.k) && !x.p?.alerta).length; return {h, t: m.filas.length, p: m.filas.length - h}; };
-  $('#nTurno').textContent = M.reduce((t, m) => t + cuenta(m).p, 0) || '';
-  $('#turnoMenus').innerHTML = M.map((m, i) => { const c = cuenta(m);
-    return `<button class="tr-menu ${turnoMenu === m.id ? 'on' : ''}" data-t-menu="${m.id}" ${espera(m.id) ? 'disabled title="Primero termine la ronda de seguimiento"' : ''}>
-      <span class="tr-n">${i + 1}</span> ${m.titulo} <b>${c.h}/${c.t}</b>${espera(m.id) ? ' 🔒' : ''}</button>`; }).join('');
-  const saltos = T.saltos.length ? ` · Saltadas hoy: ${T.saltos.length} (${T.saltos.map(x => `${esc(x.usuario)} ${esc(x.hora)}`).join(', ')})` : '';
-  $('#turnoReloj').innerHTML = T.quietos.length ? `<span class="tr-vencida">⛔ ${T.quietos.length} viaje${T.quietos.length === 1 ? '' : 's'} sin actualizar: el tablero queda bloqueado hasta actualizarlo${T.quietos.length === 1 ? '' : 's'}</span>${btnT('Saltar', `data-t-saltar="${T.n}"`, 'Deja seguir sin actualizar; queda registrado con su nombre y la hora')}${saltos}`
-    : !r ? `Sin ronda en curso · rondas a las ${RONDAS.map(h => h + ':00').join(', ')}${saltos}`
-    : T.hecha ? `✓ Ronda ${r.n} de ${RONDAS.length} ${T.saltada ? 'saltada' : 'hecha'}${r.n < RONDAS.length ? ` · la siguiente a las ${RONDAS[r.n]}:00` : ''}${saltos}`
-    : `<span class="${T.bloqueado ? 'tr-vencida' : T.resta <= 30 ? 'tr-urge' : ''}">${T.bloqueado ? `⛔ Ronda ${r.n} vencida a las ${hhmm(r.vence)}: el tablero queda bloqueado hasta hacer el seguimiento`
-        : `⏱ Ronda ${r.n} de ${RONDAS.length} · faltan ${hhmm(T.resta)} (vence ${hhmm(r.vence)}); después se bloquea el tablero`}</span>
-      ${btnT('Saltar ronda', `data-t-saltar="${r.n}"`, 'Deja seguir sin hacer el seguimiento; queda registrado con su nombre y la hora')}${saltos}`;
+  const primeraRoja = M.findIndex((m, i) => T.rojas[i]);
+  if (T.bloqueado && $('#v-turno').classList.contains('hidden')) $('#nav [data-v="turno"]').click();
+  const abierto = i => primeraRoja < 0 || i <= primeraRoja;   // un paso se abre cuando los anteriores no tienen líneas rojas
+  if (!abierto(M.findIndex(m => m.id === turnoMenu))) turnoMenu = M[primeraRoja].id;
+  const cuenta = m => { const h = m.filas.filter(x => x.hecha || (x.exc && ['pendiente', 'aprobada'].includes(x.exc.estado))).length; return {h, t: m.filas.length}; };
+  $('#nTurno').textContent = T.rojas.reduce((a, b) => a + b, 0) || '';
+  $('#turnoMenus').innerHTML = M.map((m, i) => { const c = cuenta(m), roja = T.rojas[i];
+    return `<button class="tr-menu ${turnoMenu === m.id ? 'on' : ''} ${roja ? 'roja' : c.h === c.t ? 'ok' : ''}" data-t-menu="${m.id}" ${abierto(i) ? '' : 'disabled title="Primero resuelva las líneas rojas del paso anterior"'}>
+      <span class="tr-n">${roja ? '!' : c.h === c.t ? '✓' : i + 1}</span> ${m.titulo} <b>${c.h}/${c.t}</b>${abierto(i) ? '' : ' 🔒'}</button>`; }).join('');
+  // encabezado: la ronda y, si hay, por qué está bloqueado
+  const ronda = !r ? `Sin ronda en curso · rondas a las ${RONDAS.map(h => h + ':00').join(', ')}`
+    : T.rondaHecha ? `✓ Ronda ${r.n} de ${RONDAS.length} ${T.rondaExc ? 'con excepción (' + ({pendiente: 'esperando a Gerencia', aprobada: 'aprobada hasta las ' + T.rondaExc.vence}[T.rondaExc.estado] || '') + ')' : 'hecha'}${r.n < RONDAS.length ? ` · la siguiente a las ${RONDAS[r.n]}:00` : ''}`
+    : T.rondaVencida ? `<span class="tr-vencida">⛔ Ronda ${r.n} vencida a las ${hhmm(r.vence)}: falta el seguimiento</span>${btnT('No se puede: excepción', `data-t-exc="ronda${r.n}"`)}`
+    : `<span class="${T.resta <= 30 ? 'tr-urge' : ''}">⏱ Ronda ${r.n} de ${RONDAS.length} · faltan ${hhmm(T.resta)} (vence ${hhmm(r.vence)})</span>`;
+  const rojas = T.rojas.map((n, i) => n ? `${n} en ${M[i].titulo}` : '').filter(Boolean);
+  $('#turnoReloj').innerHTML = `${ronda}${rojas.length ? ` · <span class="tr-vencida">⛔ Tablero bloqueado: ${rojas.join(', ')}</span>` : ''}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}`;
   const m = M.find(x => x.id === turnoMenu);
-  const pend = m.filas.filter(x => x.p?.alerta || !R.has(x.k)), rev = m.filas.filter(x => R.has(x.k) && !x.p?.alerta);
-  cont.innerHTML = `<div class="sub" style="margin:10px 0 4px">${esc(m.ayuda)}</div>
-    ${pend.map(x => filaTurno(x, false)).join('') || `<div class="sub tr-vacio">✓ ${m.vacio}</div>`}
-    ${rev.length ? `<details class="tr-rev"><summary class="sub">Hechos hoy (${rev.length})</summary>${rev.map(x => filaTurno(x, R.get(x.k))).join('')}</details>` : ''}`;
+  const pend = m.filas.filter(x => !x.hecha), hechos = m.filas.filter(x => x.hecha);
+  cont.innerHTML = bloqueGerencia(T) + `<div class="tr-meta"><b>Meta:</b> ${esc(m.meta)}</div><div class="sub" style="margin:2px 0 6px">${esc(m.ayuda)}</div>
+    ${pend.map(x => filaTurno(x, false)).join('') || `<div class="tr-vacio">✓ ${esc(m.vacio)}${M[M.indexOf(m) + 1] ? ` · ${btnT('Siguiente: ' + M[M.indexOf(m) + 1].titulo + ' →', `data-t-menu="${M[M.indexOf(m) + 1].id}"`)}` : ''}</div>`}
+    ${m.despues ? `<div class="sub tr-vacio">ℹ ${esc(m.despues)}</div>` : ''}
+    ${hechos.length ? `<details class="tr-rev"><summary class="sub">Hechos hoy (${hechos.length})</summary>${hechos.map(x => filaTurno(x, R.get(x.k))).join('')}</details>` : ''}`;
 }
 setInterval(() => { if (window.BITACORA) renderTurno(); }, 60e3);   // el reloj de la ronda y el bloqueo avanzan solos
-$('#v-turno').onclick = e => {
+$('#v-turno').onclick = e => {   // incluye el reloj de la ronda (#turnoReloj)
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   const d = b.dataset;
   if (d.tMenu) { turnoMenu = d.tMenu; renderTurno(); }
-  else if (d.tSaltar) { if (confirm(`¿Saltar ${+d.tSaltar ? 'la ronda ' + d.tSaltar + ' de' : 'el'} seguimiento?\n\nQueda registrado con su nombre y la hora, y lo ve todo el equipo.`)) marcarRevisado('saltar' + d.tSaltar); }
+  else if (d.tExc) { excAbierta = d.tExc; renderTurno(); }
+  else if (d.tExccancel) { excAbierta = ''; renderTurno(); }
+  else if (d.tExcok) { const motivo = $(`[data-t-motivo="${CSS.escape(d.tExcok)}"]`).value; excAbierta = ''; marcarRevisado(`exc|${d.tExcok}|${motivo}`); }
+  else if (d.tAprobar || d.tRechazar) { const k = d.tAprobar || d.tRechazar;
+    if (confirm(`¿${d.tAprobar ? 'Aprobar' : 'Rechazar'} esta excepción como Gerencia?\n\nQueda registrado con su nombre y la hora.`)) marcarRevisado((d.tAprobar ? 'ok|' : 'no|') + k); }
   else if (d.tAbrir) abrir(d.tAbrir);
   else if (d.tRev) marcarRevisado(d.tRev);
   else if (d.tHecha) marcarHecha(d.tHecha);
