@@ -1348,6 +1348,17 @@ function rondaActual(){
 const hhmm = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 // vehículos en movimiento: con placa, el transporte sin terminar y que ya arrancó o arranca mañana
 const TERMINADO = ['Entregado en puerto', 'Zarpó', 'Vacío devuelto', 'Cancelado'];
+// qué debería pasar después según la etapa (para decir qué se espera del vehículo)
+const SIGUE = {'Asignado': 'el retiro', 'Vacío retirado': 'el llenado en planta', 'Llenado': 'la entrega en puerto', 'Retirado de puerto': 'la entrega en bodega',
+  'Entregado en bodega': 'la devolución del vacío', 'En bodega de paso': 'el urbano al destino final'};
+// lo último que registró el viaje y lo próximo que tiene fecha: con eso se ve si el vehículo va al día o se quedó quieto
+function pulsoViaje(v){
+  const H = hitosDe(v).sort((a, b) => a.f.localeCompare(b.f)), ult = H.filter(h => h.f <= HOY && h.que !== 'Cierre documental').pop(), prox = H.find(h => h.f > HOY);
+  const hace = ult ? -diffDias(ult.f) : 0, sin = sinActualizar(v)[0];
+  return {hace, alerta: !!sin, txt: [ult ? `Último: ${ult.que} ${fd(ult.f)}${hace ? ` (hace ${hace} d)` : ' (hoy)'}` : 'Sin hitos registrados',
+    prox ? `Próximo: ${prox.que} ${fd(prox.f)}` : SIGUE[v.estado] ? `Sigue ${SIGUE[v.estado]}: sin fecha registrada` : ''].filter(Boolean).join(' · '),
+    porque: sin ? `${sin.msg}: ${sin.porque}` : ''};
+}
 const enSeguimiento = V => V.filter(v => v.placa && !TERMINADO.includes(v.estado) && primerEvento(v) && diffDias(primerEvento(v)) <= 1);
 
 function menusTurno(r){
@@ -1357,7 +1368,8 @@ function menusTurno(r){
   return [
     {id: 'seg', titulo: 'Seguimiento', vacio: 'Ningún vehículo en movimiento',
      ayuda: r ? `Ronda ${r.n} de ${RONDAS.length}: confirme dónde va cada vehículo (sigue igual, avanzó o pregúntele al conductor)` : `Primera ronda a las ${RONDAS[0]}:00`,
-     filas: enSeguimiento(V).map(v => ({k: `seg${r ? r.n : 0}|${v.id}`, tipo: 'seg', v, hoy: hitosDe(v).filter(h => [0, 1].includes(diffDias(h.f)))}))},
+     filas: enSeguimiento(V).map(v => ({k: `seg${r ? r.n : 0}|${v.id}`, tipo: 'seg', v, p: pulsoViaje(v)}))
+       .sort((a, b) => b.p.alerta - a.p.alerta || b.p.hace - a.p.hace)},   // primero los quietos
     {id: 'act', titulo: 'Actualización', vacio: 'Sin errores ni viajes por actualizar', ayuda: 'Cierre los errores de datos y los viajes que no avanzan',
      filas: [...V.map(v => ({k: 's' + v.id, tipo: 'sin', v, s: sinActualizar(v)})).filter(x => x.s.length),
        ...V.map(v => ({k: 'd' + v.id, tipo: 'dato', v, e: validar(v).filter(e => e.tipo !== 'Alerta' && e.campo !== 'Seguimiento').sort((a, b) => SEV(a) - SEV(b))}))
@@ -1386,7 +1398,8 @@ function filaTurno(x, rev){
   let titulo = '', detalle = '', acc = [], marca = rev ? '↺ Volver a la lista' : '✓ Revisado';
   if (x.tipo === 'seg') {
     titulo = `${esc(nombreTurno(v))} · ${esc(v.estado)}`;
-    detalle = [v.contenedor, clavesBusqueda(v).slice(0, 1).map(([k, c]) => `${k} ${c}`)[0], v.conductor, ...x.hoy.map(h => `${diffDias(h.f) ? 'Mañana' : 'Hoy'}: ${h.que}${h.donde ? ' · ' + h.donde : ''}`)].filter(Boolean).map(esc).join(' · ');
+    detalle = [v.contenedor, clavesBusqueda(v).slice(0, 1).map(([k, c]) => `${k} ${c}`)[0], v.conductor].filter(Boolean).map(esc).join(' · ')
+      + `<br>${esc(x.p.txt)}` + (x.p.porque ? `<br><span style="color:var(--bad);font-weight:600">⚠ ${esc(x.p.porque)}</span>` : '');
     acc = [btnT('Actualizar', `data-t-abrir="${v.id}"`, 'Abrir el viaje y registrar lo que avanzó'), lnkT('💬 Conductor', waConductor(v, '¿dónde va el vehículo? Confírmame cómo va el viaje'))];
     marca = rev ? '↺ Deshacer' : '✓ Sigue igual';
   } else if (x.tipo === 'prop') {
