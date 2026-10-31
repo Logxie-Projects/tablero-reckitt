@@ -308,10 +308,15 @@ table.prog td:last-child{min-width:260px}
 #leanTablero .ruta.clic:hover{border-color:var(--accent)}
 .gbar .modos{margin:0}
 /* Mi turno: bandeja del coordinador */
-.tr-prog{height:6px;border-radius:99px;background:var(--border);overflow:hidden;margin-top:10px}
-#turnoBarra{height:100%;background:var(--ok);transition:width .3s}
-.tr-paso{margin:14px 0 4px}
-.tr-paso h3{margin:0 0 6px;font-size:15px;display:flex;gap:8px;align-items:baseline}
+.tr-menus{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.tr-menu{display:flex;gap:8px;align-items:center;padding:8px 14px;border:1px solid var(--border);border-radius:10px;background:var(--card);color:var(--text);cursor:pointer;font:inherit}
+.tr-menu.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.tr-menu:disabled{opacity:.5;cursor:not-allowed}
+.tr-reloj{margin:8px 0 0;display:flex;gap:6px 12px;flex-wrap:wrap;align-items:center}
+.tr-urge{color:var(--warn);font-weight:600}
+.tr-vencida{color:var(--bad);font-weight:700}
+/* ronda vencida: solo queda Mi turno (y la ventana del viaje para actualizar) */
+body.turno-bloqueado #nav button:not([data-v="turno"]), body.turno-bloqueado #gbar{pointer-events:none;opacity:.35}
 .tr-n{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:99px;background:var(--accent);color:#fff;font-size:12px;flex:none}
 .tr-fila{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;padding:9px 10px;border-top:1px solid var(--border)}
 .tr-fila.rev{opacity:.55}
@@ -350,10 +355,10 @@ body.en-turno #gbar{display:none}
   <section id="v-turno" class="hidden">
     <div class="card">
       <div class="toolbar" style="justify-content:space-between;align-items:flex-start">
-        <div><h2 style="margin:0">Mi turno</h2><div class="sub">Lo que hay que hacer hoy, en orden. Al corregir un viaje sale solo de la lista; "Revisado" lo saca por hoy para todo el equipo.</div></div>
-        <div class="chips" id="turnoOps"></div>
+        <div><h2 style="margin:0">Mi turno</h2><div class="sub">El día en orden: seguimiento de los vehículos (3 rondas), actualización y planeación.</div></div>
       </div>
-      <div class="tr-prog"><div id="turnoBarra"></div></div><div class="sub" id="turnoResumen" style="margin:4px 0 8px"></div>
+      <div class="tr-menus" id="turnoMenus"></div>
+      <div class="sub tr-reloj" id="turnoReloj"></div>
       <div id="turno"></div>
     </div>
   </section>
@@ -1275,12 +1280,16 @@ function renderAcciones(){
 $('#accFiltros').onclick = e => { const a=e.target.closest('[data-area]'); if (a) { accArea=a.dataset.area; return renderAcciones(); }
   const b=e.target.closest('[data-acc]'); if(!b) return; accFiltro=b.dataset.acc; renderAcciones(); };
 
-/* ---------- Mi turno: la bandeja del coordinador (lo que hay que hacer hoy, en orden) ---------- */
-// Cinco pasos armados con las reglas que ya existen: correos, lo que se mueve hoy y mañana, viajes sin actualizar,
-// lo que viene (alertas) y datos que faltan (errores). Lo que se corrige en la base sale solo de la bandeja.
-// "Revisado" saca una fila por hoy para TODO el equipo (bandeja compartida, D1): se guarda en la base (pestaña
-// Turno revisado) con quién y a qué hora; no cambia el viaje.
-let turnoOp = (() => { try { return localStorage.getItem('rkt-turno-op') || ''; } catch(e){ return ''; } })();
+/* ---------- Mi turno: organiza el día del coordinador en tres menús, en orden ---------- */
+// 1 Seguimiento: estado de cada vehículo en movimiento, en tres rondas al día (RONDAS). Cada ronda tiene 2 horas;
+//   mientras no se completa, Actualización y Planeación esperan; si vence, se bloquea todo el tablero hasta hacerla.
+//   "Saltar" deja seguir, pero queda registrado con nombre y hora y suma al contador del día.
+// 2 Actualización: errores de datos y viajes sin actualizar.  3 Planeación: acciones de los correos, datos por aprobar
+//   y lo que viene (vehículo por asignar). Todo sale de reglas que ya existen en el dominio.
+// Las marcas ("Listo", "Revisado", "Saltar") son del día y las ve todo el equipo (bandeja compartida, D1): se guardan
+// en la base (pestaña Turno revisado) con quién y a qué hora; no cambian el viaje.
+const RONDAS = [8, 12, 16], HORAS_RONDA = 2;
+let turnoMenu = 'seg';
 const revisados = () => new Map((window.TURNO || []).map(x => [x.clave, x]));
 async function marcarRevisado(k){
   let usuario = ''; try { usuario = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
@@ -1299,9 +1308,9 @@ async function marcarRevisado(k){
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'error');
     window.TURNO = j.turno || window.TURNO; renderTurno();
-  } catch(e) { window.TURNO = antes; renderTurno(); toast('No se guardó el revisado: ' + e.message); }
+  } catch(e) { window.TURNO = antes; renderTurno(); toast('No se guardó la marca: ' + e.message); }
 }
-// lo que pasa en el viaje en cada fecha (para "hoy y mañana")
+// lo que pasa en el viaje en cada fecha
 function hitosDe(v){
   const expo = v.operacion === 'EXPO';
   return [[v.fechaRetiro, expo ? 'Retiro del vacío' : 'Retiro en puerto', expo ? v.patio : v.puerto],
@@ -1327,26 +1336,46 @@ function asignarSugerido(id, placa, conductor){
   [['placa', placa], ['conductor', conductor]].forEach(([k, x]) => { const i = $(`#mForm [data-k="${k}"]`); if (i) { i.value = x; i.dispatchEvent(new Event('input', {bubbles: true})); } });
 }
 
-function pasosTurno(){
-  const enOp = v => !turnoOp || !v || v.operacion === turnoOp;
-  const V = viajes.filter(v => vigente(v) && v.estado !== 'Cancelado' && enOp(v));
+// ronda de seguimiento en curso (hora de Colombia, lunes a sábado): número, inicio y vencimiento en minutos del día
+function rondaActual(){
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {timeZone: 'America/Bogota', hour12: false, weekday: 'short', hour: 'numeric', minute: 'numeric'})
+    .formatToParts(new Date()).map(x => [x.type, x.value]));
+  const ahora = (+p.hour % 24) * 60 + +p.minute, n = RONDAS.filter(h => h * 60 <= ahora).length;
+  if (p.weekday === 'Sun' || !n) return null;
+  const inicio = RONDAS[n - 1] * 60;
+  return {n, ahora, inicio, vence: inicio + HORAS_RONDA * 60};
+}
+const hhmm = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+// vehículos en movimiento: con placa, el transporte sin terminar y que ya arrancó o arranca mañana
+const TERMINADO = ['Entregado en puerto', 'Zarpó', 'Vacío devuelto', 'Cancelado'];
+const enSeguimiento = V => V.filter(v => v.placa && !TERMINADO.includes(v.estado) && primerEvento(v) && diffDias(primerEvento(v)) <= 1);
+
+function menusTurno(r){
+  const V = viajes.filter(v => vigente(v) && v.estado !== 'Cancelado');
   const SEV = e => e.sev === 'Alta' ? 0 : 1;
+  const nProp = Number($('#nProp')?.textContent) || 0;
   return [
-    {n: 1, titulo: 'Lo que llegó por correo', vacio: 'Sin correos por revisar',
-     filas: (window.BITACORA||[]).filter(b => b.estadoAccion !== 'Hecha' && areaDe(b) === 'Operaciones')
-       .map(b => ({k: 'a' + b.id, tipo: 'accion', b, v: viajeDeAccion(b)})).filter(x => !turnoOp || operacionDe(x.b) === turnoOp)},
-    {n: 2, titulo: 'Lo que se mueve hoy y mañana', vacio: 'Nada programado para hoy ni mañana',
-     filas: V.flatMap(v => hitosDe(v).filter(h => [0, 1].includes(diffDias(h.f))).map(h => ({k: 'h' + v.id + h.que + h.f, tipo: 'hoy', v, h})))
-       .sort((a, b) => a.h.f.localeCompare(b.h.f))},
-    {n: 3, titulo: 'Viajes sin actualizar', vacio: 'Todos los viajes van al día',
-     filas: V.map(v => ({k: 's' + v.id, tipo: 'sin', v, s: sinActualizar(v)})).filter(x => x.s.length)},
-    {n: 4, titulo: 'Preparar lo que viene', vacio: 'Nada por preparar en los próximos días',
-     filas: V.map(v => ({k: 'p' + v.id, tipo: 'viene', v, e: validar(v).filter(e => e.tipo === 'Alerta')})).filter(x => x.e.length)
-       .sort((a, b) => String(primerEvento(a.v) || '').localeCompare(String(primerEvento(b.v) || '')))},
-    {n: 5, titulo: 'Datos que faltan', vacio: 'Sin datos por corregir',
-     filas: V.map(v => ({k: 'd' + v.id, tipo: 'dato', v, e: validar(v).filter(e => e.tipo !== 'Alerta' && e.campo !== 'Seguimiento').sort((a, b) => SEV(a) - SEV(b))}))
-       .filter(x => x.e.length).sort((a, b) => SEV(a.e[0]) - SEV(b.e[0]))},
+    {id: 'seg', titulo: 'Seguimiento', vacio: 'Ningún vehículo en movimiento',
+     ayuda: r ? `Ronda ${r.n} de ${RONDAS.length}: confirme dónde va cada vehículo (sigue igual, avanzó o pregúntele al conductor)` : `Primera ronda a las ${RONDAS[0]}:00`,
+     filas: enSeguimiento(V).map(v => ({k: `seg${r ? r.n : 0}|${v.id}`, tipo: 'seg', v, hoy: hitosDe(v).filter(h => [0, 1].includes(diffDias(h.f)))}))},
+    {id: 'act', titulo: 'Actualización', vacio: 'Sin errores ni viajes por actualizar', ayuda: 'Cierre los errores de datos y los viajes que no avanzan',
+     filas: [...V.map(v => ({k: 's' + v.id, tipo: 'sin', v, s: sinActualizar(v)})).filter(x => x.s.length),
+       ...V.map(v => ({k: 'd' + v.id, tipo: 'dato', v, e: validar(v).filter(e => e.tipo !== 'Alerta' && e.campo !== 'Seguimiento').sort((a, b) => SEV(a) - SEV(b))}))
+         .filter(x => x.e.length).sort((a, b) => SEV(a.e[0]) - SEV(b.e[0]))]},
+    {id: 'plan', titulo: 'Planeación', vacio: 'Nada por planear', ayuda: 'Acciones de los correos, datos por aprobar y vehículos para lo que viene',
+     filas: [...(nProp ? [{k: 'prop', tipo: 'prop', n: nProp}] : []),
+       ...(window.BITACORA || []).filter(b => b.estadoAccion !== 'Hecha' && areaDe(b) === 'Operaciones').map(b => ({k: 'a' + b.id, tipo: 'accion', b, v: viajeDeAccion(b)})),
+       ...V.map(v => ({k: 'p' + v.id, tipo: 'viene', v, e: validar(v).filter(e => e.tipo === 'Alerta')})).filter(x => x.e.length)
+         .sort((a, b) => String(primerEvento(a.v) || '').localeCompare(String(primerEvento(b.v) || '')))]},
   ];
+}
+// estado del día: la ronda, si ya se hizo (o se saltó), cuánto falta para que venza y si el tablero queda bloqueado
+function estadoTurno(){
+  const r = rondaActual(), R = revisados(), M = menusTurno(r);
+  const pend = M[0].filas.filter(x => !R.has(x.k)).length, saltada = r && R.has('saltar' + r.n);
+  const hecha = !r || !pend || saltada, resta = r ? r.vence - r.ahora : 0;
+  return {r, R, M, hecha, saltada, resta, bloqueado: !window.MODO_CLIENTE && !hecha && resta <= 0,
+    saltos: [...R.values()].filter(x => x.clave.startsWith('saltar'))};
 }
 
 const nombreTurno = v => v ? `${v.placa || 'Sin vehículo'} · ${v.operacion} ${v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || '')}${v.padre ? ' · subviaje' : ''}` : '';
@@ -1354,19 +1383,22 @@ const btnT = (txt, data, title='') => `<button type="button" class="link" ${data
 const lnkT = (txt, url) => `<a class="link" href="${url}" target="_blank" rel="noopener">${txt}</a>`;
 function filaTurno(x, rev){
   const v = x.v, abrirV = v ? btnT('Abrir viaje', `data-t-abrir="${v.id}"`) : '', buscar = v ? clavesBusqueda(v).slice(0, 2).map(([k, c]) => lnkT(`🔎 ${esc(k)} ${esc(c)}`, urlBusqueda(c))).join(' ') : '';
-  let titulo = '', detalle = '', acc = [];
-  if (x.tipo === 'accion') {
+  let titulo = '', detalle = '', acc = [], marca = rev ? '↺ Volver a la lista' : '✓ Revisado';
+  if (x.tipo === 'seg') {
+    titulo = `${esc(nombreTurno(v))} · ${esc(v.estado)}`;
+    detalle = [clavesBusqueda(v).slice(0, 1).map(([k, c]) => `${k} ${c}`)[0], v.conductor, ...x.hoy.map(h => `${diffDias(h.f) ? 'Mañana' : 'Hoy'}: ${h.que}${h.donde ? ' · ' + h.donde : ''}`)].filter(Boolean).map(esc).join(' · ');
+    acc = [btnT('Actualizar', `data-t-abrir="${v.id}"`, 'Abrir el viaje y registrar lo que avanzó'), lnkT('💬 Conductor', waConductor(v, '¿dónde va el vehículo? Confírmame cómo va el viaje'))];
+    marca = rev ? '↺ Deshacer' : '✓ Sigue igual';
+  } else if (x.tipo === 'prop') {
+    titulo = `${x.n} dato${x.n === 1 ? '' : 's'} de los correos por aprobar`; detalle = 'Lo que LogxIA encontró en los correos: al aprobarlo pasa a la base';
+    acc = [btnT('✔ Revisar datos', 'data-t-prop="1"')];
+  } else if (x.tipo === 'accion') {
     titulo = esc(x.b.accion); detalle = `${esc(nombreTurno(v) || operacionDe(x.b))} · ${esc(x.b.remitente || '')}${avisoHecha(x.b)}`;
     acc = [botonAtajo(x.b), btnT('Marcar hecha', `data-t-hecha="${x.b.id}"`), btnT('No es para ETP', `data-t-noetp="${x.b.id}"`), abrirV];
-  } else if (x.tipo === 'hoy') {
-    const d = diffDias(x.h.f);
-    titulo = `${d === 0 ? 'Hoy' : 'Mañana'} · ${esc(x.h.que)}${x.h.donde ? ' · ' + esc(x.h.donde) : ''}`;
-    detalle = `${esc(nombreTurno(v))}${v.conductor ? ' · ' + esc(v.conductor) : ''}`;
-    acc = [abrirV, v.placa ? lnkT('💬 Preguntar al conductor', waConductor(v, `¿cómo va ${x.h.que.toLowerCase()} de ${d === 0 ? 'hoy' : 'mañana'}?`)) : ''];
   } else if (x.tipo === 'sin') {
     titulo = 'Sin actualizar: ' + esc(x.s.map(s => s.msg).join(' · '));
     detalle = `${esc(nombreTurno(v))} · ${esc(x.s[0].porque)}${accionPendiente(v) ? ' · <b>hay una acción LogxIA pendiente en este viaje</b>' : ''}`;
-    acc = [abrirV, v.placa ? lnkT('💬 Preguntar al conductor', waConductor(v, '¿dónde está el contenedor? Confírmame si ya se entregó')) : '', buscar];
+    acc = [abrirV, v.placa ? lnkT('💬 Conductor', waConductor(v, '¿dónde está el contenedor? Confírmame si ya se entregó')) : '', buscar];
   } else if (x.tipo === 'viene') {
     titulo = `${esc(nombreTurno(v))} · ${primerEvento(v) ? fd(primerEvento(v)) : ''}`;
     detalle = 'Falta: ' + esc(x.e.map(e => e.campo.toLowerCase()).join(', ')) + ` · ${esc(x.e[0].porque)}`;
@@ -1377,34 +1409,43 @@ function filaTurno(x, rev){
     detalle = esc(x.e[0].porque);
     acc = [btnT('Corregir', `data-t-abrir="${v.id}"`), buscar];
   }
-  acc.push(btnT(rev ? '↺ Volver a la lista' : '✓ Revisado', `data-t-rev="${x.k}"`, rev ? '' : 'Lo saca de la lista de hoy para todo el equipo'));
-  const quien = rev ? `<div class="sub">✓ Revisado por ${esc(rev.usuario)}${rev.hora ? ' · ' + esc(rev.hora) : ''}</div>` : '';
+  if (x.tipo !== 'prop') acc.push(btnT(marca, `data-t-rev="${x.k}"`, rev ? '' : 'Lo saca de la lista de hoy para todo el equipo'));
+  const quien = rev ? `<div class="sub">✓ ${esc(rev.usuario)}${rev.hora ? ' · ' + esc(rev.hora) : ''}</div>` : '';
   return `<div class="tr-fila${rev ? ' rev' : ''}"><div class="tr-txt"><b>${titulo}</b><div class="sub">${detalle}</div>${quien}</div><div class="tr-acc">${acc.filter(Boolean).join('')}</div></div>`;
 }
 
 function renderTurno(){
   const cont = $('#turno'); if (!cont) return;
-  const P = pasosTurno(), R = revisados();
-  const total = P.reduce((t, p) => t + p.filas.length, 0), hechos = P.reduce((t, p) => t + p.filas.filter(x => R.has(x.k)).length, 0);
-  $('#nTurno').textContent = (total - hechos) || '';
-  const nProp = Number($('#nProp')?.textContent) || 0;
-  $('#turnoResumen').textContent = `${total - hechos} por hacer · ${hechos} revisados hoy`;
-  $('#turnoBarra').style.width = total ? Math.round(100 * hechos / total) + '%' : '100%';
-  $('#turnoOps').innerHTML = [['', 'Todas'], ...OPERACIONES.map(o => [o, o])]
-    .map(([k, l]) => `<button class="chip ${turnoOp === k ? 'on' : ''}" data-t-op="${k}">${l}</button>`).join('');
-  cont.innerHTML = P.map(p => {
-    const pend = p.filas.filter(x => !R.has(x.k)), rev = p.filas.filter(x => R.has(x.k));
-    const extra = p.n === 1 && nProp ? `<div class="tr-fila"><div class="tr-txt"><b>${nProp} dato${nProp === 1 ? '' : 's'} de los correos por aprobar</b><div class="sub">Lo que LogxIA encontró en los correos: revisarlo y aprobarlo pasa a la base</div></div><div class="tr-acc">${btnT('✔ Revisar datos', 'data-t-prop="1"')}</div></div>` : '';
-    return `<div class="tr-paso"><h3><span class="tr-n">${p.n}</span> ${p.titulo} <span class="sub">${pend.length ? pend.length + ' por hacer' : ''}${rev.length ? ' · ' + rev.length + ' revisados' : ''}</span></h3>
-      ${extra}${pend.map(x => filaTurno(x, false)).join('') || (extra ? '' : `<div class="sub tr-vacio">✓ ${p.vacio}</div>`)}
-      ${rev.length ? `<details class="tr-rev"><summary class="sub">Revisados hoy (${rev.length})</summary>${rev.map(x => filaTurno(x, R.get(x.k))).join('')}</details>` : ''}</div>`;
-  }).join('');
+  const T = estadoTurno(), {r, R, M} = T;
+  // bloqueo: la ronda venció sin hacerse → solo Mi turno · Seguimiento (y la ventana del viaje para actualizar)
+  document.body.classList.toggle('turno-bloqueado', T.bloqueado);
+  if (T.bloqueado) { turnoMenu = 'seg'; if ($('#v-turno').classList.contains('hidden')) $('#nav [data-v="turno"]').click(); }
+  const espera = id => id !== 'seg' && !T.hecha;   // Actualización y Planeación esperan a que termine la ronda
+  if (espera(turnoMenu)) turnoMenu = 'seg';
+  const cuenta = m => { const h = m.filas.filter(x => R.has(x.k)).length; return {h, t: m.filas.length, p: m.filas.length - h}; };
+  $('#nTurno').textContent = M.reduce((t, m) => t + cuenta(m).p, 0) || '';
+  $('#turnoMenus').innerHTML = M.map((m, i) => { const c = cuenta(m);
+    return `<button class="tr-menu ${turnoMenu === m.id ? 'on' : ''}" data-t-menu="${m.id}" ${espera(m.id) ? 'disabled title="Primero termine la ronda de seguimiento"' : ''}>
+      <span class="tr-n">${i + 1}</span> ${m.titulo} <b>${c.h}/${c.t}</b>${espera(m.id) ? ' 🔒' : ''}</button>`; }).join('');
+  const saltos = T.saltos.length ? ` · Saltadas hoy: ${T.saltos.length} (${T.saltos.map(x => `${esc(x.usuario)} ${esc(x.hora)}`).join(', ')})` : '';
+  $('#turnoReloj').innerHTML = !r ? `Sin ronda en curso · rondas a las ${RONDAS.map(h => h + ':00').join(', ')}${saltos}`
+    : T.hecha ? `✓ Ronda ${r.n} de ${RONDAS.length} ${T.saltada ? 'saltada' : 'hecha'}${r.n < RONDAS.length ? ` · la siguiente a las ${RONDAS[r.n]}:00` : ''}${saltos}`
+    : `<span class="${T.bloqueado ? 'tr-vencida' : T.resta <= 30 ? 'tr-urge' : ''}">${T.bloqueado ? `⛔ Ronda ${r.n} vencida a las ${hhmm(r.vence)}: el tablero queda bloqueado hasta hacer el seguimiento`
+        : `⏱ Ronda ${r.n} de ${RONDAS.length} · faltan ${hhmm(T.resta)} (vence ${hhmm(r.vence)}); después se bloquea el tablero`}</span>
+      ${btnT('Saltar ronda', `data-t-saltar="${r.n}"`, 'Deja seguir sin hacer el seguimiento; queda registrado con su nombre y la hora')}${saltos}`;
+  const m = M.find(x => x.id === turnoMenu);
+  const pend = m.filas.filter(x => !R.has(x.k)), rev = m.filas.filter(x => R.has(x.k));
+  cont.innerHTML = `<div class="sub" style="margin:10px 0 4px">${esc(m.ayuda)}</div>
+    ${pend.map(x => filaTurno(x, false)).join('') || `<div class="sub tr-vacio">✓ ${m.vacio}</div>`}
+    ${rev.length ? `<details class="tr-rev"><summary class="sub">Hechos hoy (${rev.length})</summary>${rev.map(x => filaTurno(x, R.get(x.k))).join('')}</details>` : ''}`;
 }
-$('#turnoOps').onclick = e => { const b = e.target.closest('[data-t-op]'); if (!b) return; turnoOp = b.dataset.tOp; try { localStorage.setItem('rkt-turno-op', turnoOp); } catch(e){} renderTurno(); };
-$('#turno').onclick = e => {
-  const b = e.target.closest('button'); if (!b) return;
+setInterval(() => { if (window.BITACORA) renderTurno(); }, 60e3);   // el reloj de la ronda y el bloqueo avanzan solos
+$('#v-turno').onclick = e => {
+  const b = e.target.closest('button'); if (!b || b.disabled) return;
   const d = b.dataset;
-  if (d.tAbrir) abrir(d.tAbrir);
+  if (d.tMenu) { turnoMenu = d.tMenu; renderTurno(); }
+  else if (d.tSaltar) { if (confirm(`¿Saltar la ronda ${d.tSaltar} de seguimiento?\n\nQueda registrado con su nombre y la hora, y lo ve todo el equipo.`)) marcarRevisado('saltar' + d.tSaltar); }
+  else if (d.tAbrir) abrir(d.tAbrir);
   else if (d.tRev) marcarRevisado(d.tRev);
   else if (d.tHecha) marcarHecha(d.tHecha);
   else if (d.tNoetp) marcarHecha(d.tNoetp, true);
