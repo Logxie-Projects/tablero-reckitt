@@ -585,7 +585,7 @@ function pendientesOps(v){
 }
 // lo que le falta para facturar un viaje terminado (lo completa facturación o el cliente)
 function pendientesFact(v){
-  if (!terminoTransporte(v) || ['En aprobación Reckitt','Facturado','Sin servicio'].includes(cobro(v).fact)) return [];
+  if (!terminoTransporte(v) || ['En aprobación Reckitt','Aprobado por Reckitt','Facturado','Sin servicio'].includes(cobro(v).fact)) return [];
   const f = [];
   // datos que pide facturación: EXPO → RBHY y OBD; IMPO → N° de pedido y contenedor
   if (v.operacion==='EXPO' && (!v.rbhy || !v.obd)) f.push('RBHY / OBD');
@@ -598,7 +598,7 @@ function focoDe(v){
   if (situacion(v)==='Cancelado' || v.estado==='Cancelado') return '';
   const fact = cobro(v).fact;
   if (fact==='Sin servicio') return 'Sin servicio';
-  if (['En aprobación Reckitt','Facturado'].includes(fact)) return 'En facturación';
+  if (['En aprobación Reckitt','Aprobado por Reckitt','Facturado'].includes(fact)) return 'En facturación';
   if (v.estado==='En bodega de paso') return 'En bodega de paso';
   if (terminoTransporte(v)) return pendientesDe(v).length ? 'Terminado · faltan datos' : 'Listo para facturar';
   if (v.estado==='Sin asignar') return 'Por asignar vehículo';
@@ -958,7 +958,7 @@ function renderKpis(){ const act = activos();
 // viajes cerrados sin facturar (y su valor) y extracostos que esperan la aprobación de Reckitt
 function cobroKpi(){
   const C = visibles().map(v=>[v, cobro(v)]);
-  const porFact = C.filter(([,c])=>c.fact==='Pendiente por facturar' || c.fact==='En aprobación Reckitt'), extra = C.filter(([,c])=>c.aprob==='Pendiente');
+  const porFact = C.filter(([,c])=>['Pendiente por facturar','En aprobación Reckitt','Aprobado por Reckitt'].includes(c.fact)), extra = C.filter(([,c])=>c.aprob==='Pendiente');
   const suma = porFact.reduce((s,[,c])=>s+c.total,0);
   const lf = visibles().map(leadFactura).filter(x=>x && x.hecho), promF = lf.length ? Math.round(lf.reduce((s,x)=>s+x.dias,0)/lf.length*10)/10 : null;
   return {l:'Pendiente por facturar', v: porFact.length, h:`${suma ? pesos(suma)+' · ' : ''}${promF!==null ? `facturan en ${promF} d · ` : ''}${C.filter(([,c])=>c.fact==='Facturado').length} facturados<br>${extra.length} extracosto${extra.length===1?'':'s'} por aprobar${extra.length?' · '+pesos(extra.reduce((s,[,c])=>s+c.extra,0)):''}`, bad: extra.length>0};
@@ -1101,15 +1101,16 @@ function cobro(v){
   const aprob = extra ? (v.aprobacionExtra || 'Pendiente') : '';
   // etapa de facturación (igual en filtro, indicador, chat y tarjeta):
   //  Aún no facturable → el transporte no ha terminado · Pendiente por facturar → terminó y facturación no ha hecho nada ·
-  //  En aprobación Reckitt → facturación envió la relación y Reckitt debe aprobar · Facturado → con N° y fecha de factura ·
+  //  En aprobación Reckitt → facturación envió la relación y Reckitt debe aprobar · Aprobado por Reckitt → Reckitt dio el visto
+  //  bueno y falta emitir la factura · Facturado → con N° y fecha de factura ·
   //  Sin servicio → cerrado sin que el transporte terminara (reprogramado o anulado)
   const marcada = etapaFacturacion(v.facturacion);
-  const fact = ['Facturado','En aprobación Reckitt'].includes(marcada) ? marcada
+  const fact = ['Facturado','Aprobado por Reckitt','En aprobación Reckitt'].includes(marcada) ? marcada
     : (situacion(v)==='Cancelado' || v.estado==='Cancelado') ? '' : transporteFinalizado(v) ? 'Pendiente por facturar'
     : situacion(v)==='Cerrado' ? 'Sin servicio' : 'Aún no facturable';
   return {tarifa, extra, aprob, fact, total: tarifa + (aprob==='Aprobado' ? extra : 0)};
 }
-const COLOR_COBRO = {'Aprobado':'var(--ok)', 'Facturado':'var(--ok)', 'Rechazado':'var(--bad)', 'Pendiente':'var(--warn)', 'Pendiente por facturar':'var(--warn)', 'En aprobación Reckitt':'var(--accent)', 'Aún no facturable':'var(--muted)', 'Sin servicio':'var(--muted)'};
+const COLOR_COBRO = {'Aprobado':'var(--ok)', 'Facturado':'var(--ok)', 'Rechazado':'var(--bad)', 'Pendiente':'var(--warn)', 'Pendiente por facturar':'var(--warn)', 'En aprobación Reckitt':'var(--accent)', 'Aprobado por Reckitt':'var(--ok)', 'Aún no facturable':'var(--muted)', 'Sin servicio':'var(--muted)'};
 const tagCobro = (s, pre='') => s ? `<span class="tg" style="background:color-mix(in srgb, ${COLOR_COBRO[s]||'var(--muted)'} 15%, transparent);color:${COLOR_COBRO[s]||'var(--muted)'}">${esc(pre+s)}</span>` : '';
 function celdaCobro(v){
   const c = cobro(v);
@@ -1485,8 +1486,8 @@ const EMPRESAS = ['Reckitt Benckiser','Reckitt Health','Reckitt Hygiene','Mead J
 const CAMPOS_VIAJE = [['situacion','STATUS','sit'],['empresa','Empresa','lista',EMPRESAS],['solicitante','Solicitante'],['booking','Booking / BL'],['pedido','Pedido'],['do','DO'],
   ['contenedor','Contenedor'],['unidad','Unidad','lista',['1X20','1X40']],['conductor','Conductor','dl','dlCond'],['placa','Placa','dl','dlPlaca'],['fwd','FWD','dl','dlFwd']];
 // lo que facturación marca en el viaje ("En aprobación Reckitt": envió la relación y Reckitt debe aprobar); el resto lo calcula cobro()
-const FACTURACION = ['Pendiente por facturar','En aprobación Reckitt','Facturado'];
-const ETAPAS_FACTURACION = ['Aún no facturable','Pendiente por facturar','En aprobación Reckitt','Facturado','Sin servicio'];
+const FACTURACION = ['Pendiente por facturar','En aprobación Reckitt','Aprobado por Reckitt','Facturado'];
+const ETAPAS_FACTURACION = ['Aún no facturable','Pendiente por facturar','En aprobación Reckitt','Aprobado por Reckitt','Facturado','Sin servicio'];
 // nombre anterior de la etapa
 const etapaFacturacion = x => x === 'En autorización' ? 'En aprobación Reckitt' : (x || '');
 const CAMPOS_ETAPA = {
@@ -2094,6 +2095,7 @@ function filtroDeTexto(q){
   else if (/\bpor asignar\b|\bsin vehiculo\b/.test(t)) f.foco = 'Por asignar vehículo';
   else if (/\bpor iniciar\b/.test(t)) f.foco = 'Por iniciar';
   else if (/\b(pendientes?|falta|faltan)\b.*\bfactur|\bsin facturar\b|\bpor facturar\b/.test(t)) f.fact = 'Pendiente por facturar';
+  else if (/\baprobados?\b/.test(t) && /\breckitt\b|\bfactur/.test(t)) f.fact = 'Aprobado por Reckitt';
   else if (/\ben (autorizacion|aprobacion)\b/.test(t)) f.fact = 'En aprobación Reckitt';
   else if (/\b(no facturable|aun no)\b/.test(t)) f.fact = 'Aún no facturable';
   else if (/\bsin servicio\b/.test(t)) f.fact = 'Sin servicio';
