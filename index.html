@@ -1035,8 +1035,9 @@ function cuentaCon(cambio){ const antes = G; G = {...G, ...cambio}; try { return
 const conFoco = () => { const antes = G; G = {...G, foco: ''}; try { return viajes.filter(v => enGlobal(v) && focoDe(v)).length; } finally { G = antes; } };
 /* ---------- foco del equipo operativo: en qué está cada viaje y qué le falta ---------- */
 const visibles = () => viajes.filter(enGlobal);
-// Los viajes cancelados no cuentan en indicadores, alertas ni programación
-const activos = () => visibles().filter(v=>v.estado!=='Cancelado');
+// Los viajes cancelados no cuentan en indicadores, alertas ni programación, salvo que se pidan con STATUS: Cancelados
+const conCancelados = v => v.estado!=='Cancelado' || G.sit==='Cancelado';
+const activos = () => visibles().filter(conCancelados);
 const PLURAL = {Abierto:'Abiertos', Cerrado:'Cerrados', Cancelado:'Cancelados'};
 const enSituacion = (v, filtro) => !filtro || situacion(v)===filtro;
 const situacionesPresentes = () => [...SITUACIONES, ...new Set(viajes.map(situacion))].filter((s,i,a)=>a.indexOf(s)===i && (SITUACIONES.slice(0,2).includes(s) || viajes.some(v=>situacion(v)===s)));
@@ -1733,7 +1734,7 @@ function renderLean(){
   [...$('#v-tablero').children].forEach(el => el.classList.toggle('hidden', lean ? el.id !== 'leanTablero' : el.id === 'leanTablero'));
   if (!lean) return;
   // los que están en curso primero; dentro de cada grupo, por la primera fecha del viaje
-  const L = visibles().filter(v => v.estado !== 'Cancelado').sort((a,b) => esNuevo(b) - esNuevo(a) || (situacion(a)!=='Abierto') - (situacion(b)!=='Abierto') || (primerEvento(a)||'9').localeCompare(primerEvento(b)||'9'));
+  const L = visibles().filter(conCancelados).sort((a,b) => esNuevo(b) - esNuevo(a) || (situacion(a)!=='Abierto') - (situacion(b)!=='Abierto') || (primerEvento(a)||'9').localeCompare(primerEvento(b)||'9'));
   const clic = !window.MODO_CLIENTE;
   $('#leanTablero').innerHTML = L.length ? L.map(v => rutaPedido(v).replace('<div class="ruta">', clic ? `<div class="ruta clic" onclick="abrir('${v.id}')">` : '<div class="ruta">')).join('')
     : '<div class="card sub" style="text-align:center;padding:24px">No hay viajes con estos filtros.</div>';
