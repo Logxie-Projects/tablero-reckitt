@@ -369,6 +369,7 @@ body.en-turno #gbar{display:none}
     <div class="card">
       <div class="toolbar" style="justify-content:space-between;align-items:flex-start">
         <div><h2 style="margin:0">Mi turno</h2><div class="sub">En cada ronda (8, 12 y 16 h): 1 Seguimiento → 2 Cobertura → 3 Cliente → 4 Datos. Lo marcado en rojo bloquea el tablero hasta resolverlo o que Gerencia apruebe una excepción.</div></div>
+        <div id="turnoLlave"></div>
       </div>
       <div class="tr-menus" id="turnoMenus"></div>
       <div class="sub tr-reloj" id="turnoReloj"></div>
@@ -1583,8 +1584,10 @@ function renderTurno(){
     : T.rondaVencida ? `<span class="tr-vencida">⛔ Ronda ${r.n} vencida a las ${hhmm(r.vence)}: falta el seguimiento</span>${btnT('No se puede: excepción', `data-t-exc="ronda${r.n}"`)}`
     : `<span class="${T.resta <= 30 ? 'tr-urge' : ''}">⏱ Ronda ${r.n} de ${RONDAS.length} · faltan ${hhmm(T.resta)} (vence ${hhmm(r.vence)})</span>`;
   const rojas = T.rojas.map((n, i) => n ? `${n} en ${M[i].titulo}` : '').filter(Boolean);
-  const llave = esGerencia() ? ` · <span class="tr-ger">🔓 Modo Gerencia</span> ${btnT('Salir', 'data-t-gsalir="1"')}` : btnT('🔑 Entrar como Gerencia', 'data-t-gerencia="1"', 'Con la clave de Gerencia el tablero no se bloquea y se pueden aprobar excepciones');
-  $('#turnoReloj').innerHTML = `${ronda}${rojas.length ? ` · <span class="tr-vencida">⛔ Tablero bloqueado: ${rojas.join(', ')}</span>` : ''}${llave}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}`;
+  // arriba a la derecha: entrar o salir del modo Gerencia
+  $('#turnoLlave').innerHTML = window.MODO_CLIENTE ? '' : esGerencia() ? `<span class="tr-ger">🔓 Modo Gerencia</span> <button type="button" class="btn" data-t-gsalir="1">Salir</button>`
+    : '<button type="button" class="btn" data-t-gerencia="1" title="Con la clave de Gerencia el tablero no se bloquea y se pueden aprobar excepciones">🔑 Entrar como Gerencia</button>';
+  $('#turnoReloj').innerHTML = `${ronda}${rojas.length ? ` · <span class="tr-vencida">⛔ Tablero bloqueado: ${rojas.join(', ')}</span>` : ''}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}`;
   const m = M.find(x => x.id === turnoMenu);
   const pend = m.filas.filter(x => !x.hecha), hechos = m.filas.filter(x => x.hecha);
   cont.innerHTML = bloqueGerencia(T) + `<div class="tr-meta"><b>Meta:</b> ${esc(m.meta)}</div><div class="sub" style="margin:2px 0 6px">${esc(m.ayuda)}</div>
