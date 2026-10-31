@@ -1790,19 +1790,21 @@ const dijoEntregado = v => /descargad|entregad/i.test(v.observacion||'');
 function paradas(v){
   const hecho = (fecha, otraSenal) => fecha || (otraSenal ? 'sí' : '');
   // con subviaje, la entrega final (bodega IMPO / puerto EXPO) es la del urbano desde el patio intermedio
+  // fechas clave siempre a la vista (con "—" si falta), para que se note lo que no está registrado
+  const ver = (txt, f) => `${txt} ${f ? fd(f) : '—'}`;
   const sub = hijosDe(v)[0], urbano = sub && sub.fechaUrbano && sub.fechaUrbano <= HOY ? sub.fechaUrbano : '';
   if (v.operacion==='IMPO') return [
     ['Origen', v.puerto||'Puerto', v.fechaLevante || (v.eta && v.eta<=HOY ? v.eta : ''), [v.eta&&`ETA ${fd(v.eta)}`, v.fechaLevante&&`Docs ${fd(v.fechaLevante)}`]],
-    ['Retiro lleno', v.puerto ? 'Puerto '+v.puerto : 'Puerto', v.fechaRetiro, [v.citaRetiro&&`Cita ${fd(v.citaRetiro)}`, v.fechaRetiro&&`Retiro ${fd(v.fechaRetiro)}`]],
+    ['Retiro lleno', v.puerto ? 'Puerto '+v.puerto : 'Puerto', v.fechaRetiro, [ver('Cita', v.citaRetiro), ver('Retiro', v.fechaRetiro)]],
     sub ? ['Bodega', sub.bodega && sub.bodega!==sub.patioSub ? sub.bodega : (v.bodega||'Bodega'), urbano, [`Patio ${sub.patioSub||'intermedio'} ${fd(sub.fechaDescargueSub||v.fechaCargue)}`, sub.fechaUrbano&&`Urbano ${fd(sub.fechaUrbano)}`]]
       : ['Bodega', v.bodega||'Bodega', v.fechaCargue && v.fechaCargue<=HOY ? v.fechaCargue : '', [v.fechaCargue&&`Entrega ${fd(v.fechaCargue)}`, v.destino]],
-    ['Vacío', v.patio||'Patio', hecho(v.fechaDevolucion, v.tirillaDevolucion), [v.fechaDevolucion ? `Devuelto ${fd(v.fechaDevolucion)}` : v.citaDevolucion&&`Cita ${fd(v.citaDevolucion)}`, v.fechaLimite&&`Límite ${fd(v.fechaLimite)}`, v.tirillaDevolucion&&'✔ tirilla']],
+    ['Vacío', v.patio||'Patio', hecho(v.fechaDevolucion, v.tirillaDevolucion), [ver('Cita', v.citaDevolucion), !v.fechaDevolucion && v.tirillaDevolucion ? 'Devuelto (sin fecha)' : ver('Devuelto', v.fechaDevolucion), v.fechaLimite&&`Límite ${fd(v.fechaLimite)}`, v.tirillaDevolucion&&'✔ tirilla']],
   ];
   return [
     ['Origen', 'Cali', v.fechaRetiro && v.fechaRetiro<=HOY ? v.fechaRetiro : '', ['Planta Reckitt']],
     ['Patio', v.patio||'Patio', v.fechaRetiro && v.fechaRetiro<=HOY ? v.fechaRetiro : '', [v.fechaRetiro&&`Retiro ${fd(v.fechaRetiro)}`]],
     ['Llenado', 'Reckitt', v.fechaCargue && (v.fechaCargue<HOY || dijoEntregado(v) || v.tirillaEntrega) ? v.fechaCargue : '', [v.fechaCargue&&`Llenado ${fd(v.fechaCargue)}`, v.sello&&`Sello ${v.sello}`]],
-    ['Puerto', v.puerto||'Puerto', sub ? (v.fechaEntregaPuerto || urbano) : hecho(v.fechaEntregaPuerto, v.tirillaEntrega || dijoEntregado(v)), [v.fechaEntregaPuerto ? `Entregado ${fd(v.fechaEntregaPuerto)}` : (v.tirillaEntrega || dijoEntregado(v)) ? 'Entregado' : v.citaIngreso&&`Cita ${fd(v.citaIngreso)}`, v.cierreDoc&&`Cierre ${fd(v.cierreDoc)}`, v.tirillaEntrega&&'✔ tirilla']],
+    ['Puerto', v.puerto||'Puerto', sub ? (v.fechaEntregaPuerto || urbano) : hecho(v.fechaEntregaPuerto, v.tirillaEntrega || dijoEntregado(v)), [ver('Cita', v.citaIngreso), !v.fechaEntregaPuerto && (v.tirillaEntrega || dijoEntregado(v)) ? 'Entregado (sin fecha)' : ver('Entregado', v.fechaEntregaPuerto), ver('Cierre', v.cierreDoc), v.tirillaEntrega&&'✔ tirilla']],
     ['Motonave', v.mn||'—', v.etd && v.etd<=HOY ? v.etd : '', [v.etd&&`ETD ${fd(v.etd)}`]],
     ['Destino', v.pais||'—', v.eta && v.eta<=HOY ? v.eta : '', [v.eta&&`ETA ${fd(v.eta)}`]],
   ];
