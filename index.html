@@ -915,73 +915,6 @@ const PLURAL = {Abierto:'Abiertos', Cerrado:'Cerrados', Cancelado:'Cancelados'};
 const enSituacion = (v, filtro) => !filtro || situacion(v)===filtro;
 const situacionesPresentes = () => [...SITUACIONES, ...new Set(viajes.map(situacion))].filter((s,i,a)=>a.indexOf(s)===i && (SITUACIONES.slice(0,2).includes(s) || viajes.some(v=>situacion(v)===s)));
 const sitTag = v => { const s = situacion(v); return `<span class="sit sit-${s.split(' ')[0]}">${esc(s.toUpperCase())}</span>`; };
-/* ---------- bitácora LogxIA: acciones a tomar que salen de los correos ---------- */
-const PRI = {Alta:'var(--bad)', Media:'var(--warn)', Baja:'var(--s-sin)'};
-// mismo criterio que el backend (coincide, en el dominio): id del viaje, dato fuerte y, solo si la acción no trae ninguno, la placa
-const accionesDe = v => situacion(v)==='Cerrado' ? [] : (window.BITACORA||[]).filter(b => coincide(v, b))
-  .sort((a,b)=> (a.estadoAccion==='Hecha') - (b.estadoAccion==='Hecha') || ['Alta','Media','Baja'].indexOf(a.prioridad) - ['Alta','Media','Baja'].indexOf(b.prioridad));
-const accionPendiente = v => accionesDe(v).find(b=>b.estadoAccion!=='Hecha');
-const celdaAccion = v => { const a = accionPendiente(v); const n = accionesDe(v).filter(b=>b.estadoAccion!=='Hecha').length;
-  return a ? `<div class="accion"><span class="pri" style="background:${PRI[a.prioridad]||PRI.Media}"></span>${esc(a.accion)}${n>1?` <span class="sub">(+${n-1})</span>`:''}</div>` : '<span class="sub">—</span>'; };
-// acción que no le toca a Entrapetrol (la gestiona Reckitt, el agente de carga, la aduana…): se cierra con esa marca en "resuelto por"
-const NO_ETP = 'No es para ETP';
-const noEsEtp = b => String(b.resueltoPor||'').startsWith(NO_ETP);
-const estadoCerrada = b => noEsEtp(b) ? '✖ No es para ETP' : '✔ Hecha';
-async function marcarHecha(id, noEtp, nota){
-  const b = (window.BITACORA||[]).find(x=>x.id===id); if (!b) return;
-  if (noEtp && !confirm(`¿Cerrar esta acción como "No es para ETP"?\n\n${b.accion}\n\nSale de pendientes; queda registrada como cerrada por no corresponder a Entrapetrol.`)) return;
-  const usuario = noEtp ? `${NO_ETP} · ${CFG.USUARIO}` : nota ? `${CFG.USUARIO} · ${nota}` : CFG.USUARIO;
-  b.estadoAccion = 'Hecha'; b.resueltoEn = new Date().toISOString(); b.resueltoPor = usuario;
-  if (window.CLAVE){
-    try { await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'resolver', clave:window.CLAVE, id, usuario})});
-      toast(noEtp ? 'Acción cerrada: no es para Entrapetrol' : 'Acción marcada como hecha'); }
-    catch(e){ toast('No se pudo guardar en la bitácora'); }
-  }
-  if (editId) abrir(editId);
-  render();
-}
-// "Hacer aquí": las acciones que el tablero mismo puede hacer llevan un botón que abre esa pantalla. La acción se cierra sola
-// cuando ESE paso termina bien (aplicar la programación, aprobar datos, crear el viaje o el subviaje), no con cualquier otro.
-let accionEnCurso = null;   // {id, tipo, desde}
-const ATAJOS = [
-  ['programacion', '📋 Aplicar programación', b => /programaci[oó]n/i.test(b.accion) && /programaci[oó]n/i.test(b.asunto + ' ' + b.resumen), b => atajoProgramacion(b)],
-  ['propuestas', '✔ Revisar datos', b => /Llenar datos desde correos/i.test(b.accion), () => abrirPropuestas()],
-  ['viaje', '＋ Crear viaje', b => /^crear (en el tablero )?(el )?viaje|crear viaje nuevo/i.test(b.accion), () => abrirBarrido()],
-  ['subviaje', '↪ Crear subviaje', b => /crear subviaje de [A-Z]+-[\w-]+/i.test(b.accion), b => nuevoSubviaje(b.accion.match(/crear subviaje de ([A-Z]+-[\w-]+?)(?=[:,\s]|$)/i)[1])],
-];
-const atajoDe = b => b.estadoAccion==='Hecha' || window.MODO_CLIENTE ? null : ATAJOS.find(a => a[2](b));
-const botonAtajo = b => { const a = atajoDe(b); return a ? `<button type="button" class="link" onclick="hacerAqui('${b.id}')" title="Lo hace el tablero; al terminar, la acción se cierra sola">${a[1]}</button>` : ''; };
-function hacerAqui(id){
-  const b = (window.BITACORA||[]).find(x=>x.id===id), a = b && atajoDe(b); if (!a) return;
-  accionEnCurso = {id, tipo: a[0], desde: Date.now()};
-  a[3](b);
-}
-// la llama la pantalla que terminó bien; solo cierra la acción si se abrió desde ella (y hace menos de 30 min)
-function cerrarAccionEnCurso(tipo, nota){
-  const a = accionEnCurso;
-  if (!a || a.tipo !== tipo || Date.now() - a.desde > 30*60e3) return;
-  accionEnCurso = null;
-  marcarHecha(a.id, false, nota);
-}
-// programación mensual: busca el cuadro del mes en los correos; si ya está aplicado, ofrece cerrar la acción
-async function atajoProgramacion(b){
-  toast('Buscando el cuadro de programación en los correos…');
-  try {
-    const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=correos&dias=20&clave=' + encodeURIComponent(window.CLAVE))).json();
-    const progs = (j.correos||[]).filter(c => c.programacion && c.programacion.length);
-    const nMes = MESES_LARGO.findIndex(m => minus(b.asunto + ' ' + b.accion).includes(m));
-    const c = progs.find(p => Number(p.programacion[0].fechaCargue.slice(5, 7)) === nMes + 1) || progs[0];
-    if (!c) { accionEnCurso = null; return toast('No encontré el cuadro de programación en los correos de los últimos 20 días'); }
-    const R = compararProgramacion(c), mes = nombreMes(c.programacion[0].fechaCargue.slice(0, 7));
-    if (R.filas.every(f => f.accion==='igual') && !(R.fuera||[]).length) {
-      if (confirm(`La programación de ${mes} ya está aplicada en el tablero (${R.filas.length} de ${R.filas.length} iguales).\n\n¿Marcar la acción como hecha?`))
-        cerrarAccionEnCurso('programacion', `programación de ${mes} ya aplicada en el tablero`);
-      else accionEnCurso = null;
-      return;
-    }
-    abrirProgramacion(c);
-  } catch(e) { accionEnCurso = null; toast('No se pudo leer el buzón: ' + e.message); }
-}
 const pill = e => `<span class="pill" style="background:${colorEstado(e)}">${esc(e)}</span>`;
 // último paso que marcó el conductor en la app de conductores (por viaje, o por booking + placa)
 function conductorDe(v){
@@ -1123,28 +1056,92 @@ $('#btnCopiarRep').onclick = async () => {
   catch(e){ t.classList.remove('hidden'); t.select(); toast('Selecciona el texto y cópialo (Ctrl+C)'); }
 };
 
-/* ---------- acciones LogxIA ---------- */
-let accFiltro = 'pend';
+/* ---------- acciones LogxIA: bitácora, área de Entrapetrol, "No es para ETP", "hacer aquí" y la pestaña Acciones ---------- */
+const PRI = {Alta:'var(--bad)', Media:'var(--warn)', Baja:'var(--s-sin)'};
+// mismo criterio que el backend (coincide, en el dominio): id del viaje, dato fuerte y, solo si la acción no trae ninguno, la placa
+const accionesDe = v => situacion(v)==='Cerrado' ? [] : (window.BITACORA||[]).filter(b => coincide(v, b))
+  .sort((a,b)=> (a.estadoAccion==='Hecha') - (b.estadoAccion==='Hecha') || ['Alta','Media','Baja'].indexOf(a.prioridad) - ['Alta','Media','Baja'].indexOf(b.prioridad));
+const accionPendiente = v => accionesDe(v).find(b=>b.estadoAccion!=='Hecha');
+const celdaAccion = v => { const a = accionPendiente(v); const n = accionesDe(v).filter(b=>b.estadoAccion!=='Hecha').length;
+  return a ? `<div class="accion"><span class="pri" style="background:${PRI[a.prioridad]||PRI.Media}"></span>${esc(a.accion)}${n>1?` <span class="sub">(+${n-1})</span>`:''}</div>` : '<span class="sub">—</span>'; };
+// acción que no le toca a Entrapetrol (la gestiona Reckitt, el agente de carga, la aduana…): se cierra con esa marca en "resuelto por"
+const NO_ETP = 'No es para ETP';
+const noEsEtp = b => String(b.resueltoPor||'').startsWith(NO_ETP);
+const estadoCerrada = b => noEsEtp(b) ? '✖ No es para ETP' : '✔ Hecha';
+// área de Entrapetrol que hace la acción: LogxIA la escribe al inicio ("Gerencia: …"); en las anteriores se deduce del texto
+// (Gerencia: cotizaciones, propuestas, seguridad, relación comercial; Facturación: facturar, RBHY/OBD; lo demás, Operaciones)
+const AREAS = ['Operaciones', 'Facturación', 'Gerencia'];
+function areaDe(b){
+  const t = String(b.accion||''), m = t.match(/^(Operaciones|Facturaci[oó]n|Gerencia)\b/i);
+  if (m) return AREAS.find(a => minus(a) === minus(m[1]));
+  if (/cotizaci|propuesta|\bITR\b|esquema de seguridad|tarifa|contrato/i.test(t + ' ' + (b.resumen||''))) return 'Gerencia';
+  if (/^(facturar|emitir (las )?facturas?)\b/i.test(t)) return 'Facturación';
+  return 'Operaciones';
+}
+const COLOR_AREA = {Operaciones:'var(--accent)', 'Facturación':'var(--warn)', Gerencia:'#7c3aed'};
+const tagArea = b => { const a = areaDe(b); return `<span class="tg" style="background:color-mix(in srgb, ${COLOR_AREA[a]} 15%, transparent);color:${COLOR_AREA[a]}" title="Área de Entrapetrol que la hace">${a}</span>`; };
+async function marcarHecha(id, noEtp, nota){
+  const b = (window.BITACORA||[]).find(x=>x.id===id); if (!b) return;
+  if (noEtp && !confirm(`¿Cerrar esta acción como "No es para ETP"?\n\n${b.accion}\n\nSale de pendientes; queda registrada como cerrada por no corresponder a Entrapetrol.`)) return;
+  const usuario = noEtp ? `${NO_ETP} · ${CFG.USUARIO}` : nota ? `${CFG.USUARIO} · ${nota}` : CFG.USUARIO;
+  b.estadoAccion = 'Hecha'; b.resueltoEn = new Date().toISOString(); b.resueltoPor = usuario;
+  if (window.CLAVE){
+    try { await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'resolver', clave:window.CLAVE, id, usuario})});
+      toast(noEtp ? 'Acción cerrada: no es para Entrapetrol' : 'Acción marcada como hecha'); }
+    catch(e){ toast('No se pudo guardar en la bitácora'); }
+  }
+  if (editId) abrir(editId);
+  render();
+}
+// "Hacer aquí": las acciones que el tablero mismo puede hacer llevan un botón que abre esa pantalla. La acción se cierra sola
+// cuando ESE paso termina bien (aplicar la programación, aprobar datos, crear el viaje o el subviaje), no con cualquier otro.
+let accionEnCurso = null;   // {id, tipo, desde}
+const ATAJOS = [
+  ['programacion', '📋 Aplicar programación', b => /programaci[oó]n/i.test(b.accion) && /programaci[oó]n/i.test(b.asunto + ' ' + b.resumen), b => atajoProgramacion(b)],
+  ['propuestas', '✔ Revisar datos', b => /Llenar datos desde correos/i.test(b.accion), () => abrirPropuestas()],
+  ['viaje', '＋ Crear viaje', b => /(^|:\s*)crear (en el tablero )?(el )?viaje|crear viaje nuevo/i.test(b.accion), () => abrirBarrido()],
+  ['subviaje', '↪ Crear subviaje', b => /crear subviaje de [A-Z]+-[\w-]+/i.test(b.accion), b => nuevoSubviaje(b.accion.match(/crear subviaje de ([A-Z]+-[\w-]+?)(?=[:,\s]|$)/i)[1])],
+];
+const atajoDe = b => b.estadoAccion==='Hecha' || window.MODO_CLIENTE ? null : ATAJOS.find(a => a[2](b));
+const botonAtajo = b => { const a = atajoDe(b); return a ? `<button type="button" class="link" onclick="hacerAqui('${b.id}')" title="Lo hace el tablero; al terminar, la acción se cierra sola">${a[1]}</button>` : ''; };
+function hacerAqui(id){
+  const b = (window.BITACORA||[]).find(x=>x.id===id), a = b && atajoDe(b); if (!a) return;
+  accionEnCurso = {id, tipo: a[0], desde: Date.now()};
+  a[3](b);
+}
+// la llama la pantalla que terminó bien; solo cierra la acción si se abrió desde ella (y hace menos de 30 min)
+function cerrarAccionEnCurso(tipo, nota){
+  const a = accionEnCurso;
+  if (!a || a.tipo !== tipo || Date.now() - a.desde > 30*60e3) return;
+  accionEnCurso = null;
+  marcarHecha(a.id, false, nota);
+}
+// pestaña Acciones
+let accFiltro = 'pend', accArea = '';
 function renderAcciones(){
   const B = window.BITACORA || [], ord = ['Alta','Media','Baja'];
   const pend = B.filter(b=>b.estadoAccion!=='Hecha'), altas = pend.filter(b=>b.prioridad==='Alta').length;
   $('#nAcc').textContent = pend.length || '';
   $('#accResumen').textContent = `${pend.length} pendientes (${altas} prioridad alta) · ${B.length-pend.length} hechas`;
   $('#accFiltros').innerHTML = [['pend','Pendientes',pend.length],['Alta','Alta',altas],['hecha','Hechas',B.length-pend.length],['todas','Todas',B.length]]
-    .map(([k,l,c])=>`<button class="chip ${accFiltro===k?'on':''}" data-acc="${k}">${l} · ${c}</button>`).join('');
-  const vis = B.filter(b=> accFiltro==='todas' || (accFiltro==='hecha' ? b.estadoAccion==='Hecha' : b.estadoAccion!=='Hecha' && (accFiltro!=='Alta' || b.prioridad==='Alta')))
+    .map(([k,l,c])=>`<button class="chip ${accFiltro===k?'on':''}" data-acc="${k}">${l} · ${c}</button>`).join('')
+    // área de Entrapetrol que la hace (conteo de pendientes)
+    + '<span class="sub" style="margin:0 4px 0 10px">Área:</span>' + [['', 'Todas'], ...AREAS.map(a => [a, a])]
+      .map(([k, l]) => `<button class="chip ${accArea===k?'on':''}" data-area="${k}">${l}${k ? ' · ' + pend.filter(b => areaDe(b)===k).length : ''}</button>`).join('');
+  const vis = B.filter(b=> !accArea || areaDe(b)===accArea).filter(b=> accFiltro==='todas' || (accFiltro==='hecha' ? b.estadoAccion==='Hecha' : b.estadoAccion!=='Hecha' && (accFiltro!=='Alta' || b.prioridad==='Alta')))
     .sort((a,b)=> (a.estadoAccion==='Hecha') - (b.estadoAccion==='Hecha') || ord.indexOf(a.prioridad)-ord.indexOf(b.prioridad) || String(b.fechaCorreo).localeCompare(String(a.fechaCorreo)));
   const horas = b => b.registrado ? Math.max(0, Math.round((Date.now() - new Date(b.registrado)) / 36e5)) : 0;
   $('#tblAcc').innerHTML = vis.length ? `<tr><th class="num">#</th><th>Prioridad</th><th>Viaje</th><th>Acción</th><th>Correo</th><th></th></tr>` +
     vis.map((b,i)=>{ const v = viajes.find(x=>accionesDe(x).includes(b));
-      return `<tr><td class="num">${i+1}</td><td><span class="sev sev-${b.prioridad==='Alta'?'Alta':'Media'}">${esc(String(b.prioridad||'Media').toUpperCase())}</span></td>
+      return `<tr><td class="num">${i+1}</td><td><span class="sev sev-${b.prioridad==='Alta'?'Alta':'Media'}">${esc(String(b.prioridad||'Media').toUpperCase())}</span><br>${tagArea(b)}</td>
       <td>${v?.placa||b.placa?`<span class="placa">${esc(v?.placa||b.placa)}</span>`:'<span class="sub">General</span>'}${b.booking?`<br><span class="sub">BK ${esc(b.booking)}</span>`:''}</td>
       <td class="obs" style="color:var(--text);min-width:260px"><b>${esc(b.accion)}</b>${b.estadoAccion==='Hecha'?`<br><span class="sub">${estadoCerrada(b)}${b.resueltoPor && !noEsEtp(b)?' por '+esc(b.resueltoPor):''}</span>`:`<br><span class="sub" style="${horas(b)>=24?'color:var(--bad);font-weight:600':''}">pendiente hace ${horas(b)} h</span>`}</td>
       <td class="obs" style="min-width:220px"><span class="sub">${esc(b.resumen)}<br>${esc(b.remitente)}</span></td>
       <td style="white-space:nowrap">${b.estadoAccion==='Hecha'?'':`${botonAtajo(b) ? botonAtajo(b) + '<br>' : ''}<button class="link" onclick="marcarHecha('${b.id}')">Marcar hecha</button><br><button class="link" onclick="marcarHecha('${b.id}', true)" title="La gestiona Reckitt, el agente de carga u otro: no le toca a Entrapetrol">No es para ETP</button>`}${v?`<br><button class="link" onclick="abrir('${v.id}')">Abrir viaje</button>`:''}</td></tr>`; }).join('')
     : '<tr><td class="sub" style="padding:20px">Sin acciones en este filtro 🎉</td></tr>';
 }
-$('#accFiltros').onclick = e => { const b=e.target.closest('[data-acc]'); if(!b) return; accFiltro=b.dataset.acc; renderAcciones(); };
+$('#accFiltros').onclick = e => { const a=e.target.closest('[data-area]'); if (a) { accArea=a.dataset.area; return renderAcciones(); }
+  const b=e.target.closest('[data-acc]'); if(!b) return; accFiltro=b.dataset.acc; renderAcciones(); };
 
 /* ---------- KPIs ---------- */
 function renderKpis(){ const act = activos();
@@ -1604,7 +1601,7 @@ function abrir(id){
   const h = historial.filter(x=>x.id===id).slice(-4).reverse();
   const lx = accionesDe(v);
   const bloqueLx = lx.length ? '<b>Acciones LogxIA (de los correos):</b>' + lx.map(b=>`<div class="lx-item ${b.estadoAccion==='Hecha'?'hecha':''}">
-    <span class="sev sev-${b.prioridad==='Alta'?'Alta':'Media'}">${esc(String(b.prioridad||'').toUpperCase())}</span> <b>${esc(b.accion)}</b><br>
+    <span class="sev sev-${b.prioridad==='Alta'?'Alta':'Media'}">${esc(String(b.prioridad||'').toUpperCase())}</span> ${tagArea(b)} <b>${esc(b.accion)}</b><br>
     <span class="sub">${esc(b.resumen)} · ${esc(b.remitente)} · ${esc(String(b.fechaCorreo||'').slice(0,16).replace('T',' '))}</span><br>
     ${b.estadoAccion==='Hecha' ? `<span class="sub">${estadoCerrada(b)}</span>` : `${botonAtajo(b) ? botonAtajo(b) + ' · ' : ''}<button type="button" class="link" onclick="marcarHecha('${b.id}')">Marcar como hecha</button> · <button type="button" class="link" onclick="marcarHecha('${b.id}', true)" title="La gestiona Reckitt, el agente de carga u otro: no le toca a Entrapetrol">No es para ETP</button>`}</div>`).join('') + '<br>' : '';
   $('#mHist').innerHTML = bloqueLx + lineaTiempo(v);
@@ -1922,6 +1919,31 @@ function pintarBarrido(){
     <p class="sub" style="margin-top:6px">${BARRIDO.length} correo${BARRIDO.length===1?'':'s'} · ${pend} sin viaje en la base · ${cambios} con datos por actualizar. Lo que cree o actualice queda en el Historial con su nombre.</p>`;
 }
 /* ---------- programación mensual de cargues (correo de Jhonier): crear los viajes del mes y aplicar los cambios de cada versión ---------- */
+// cuadro mensual de Reckitt en el que está el viaje; sin mes anterior escrito, el de su plan original (ej. Guatemala: de octubre pasó a noviembre)
+function textoProgramacion(v, antes, despues){
+  const d = String(despues || '').trim().slice(0, 7), a = String(antes || '').replace('—', '').trim().slice(0, 7) || String(v.planCargue || '').slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(d)) return 'Sin mes programado' + (/^\d{4}-\d{2}$/.test(a) ? ` (antes: ${nombreMes(a)})` : '');
+  return `Programado para ${nombreMes(d)}` + (/^\d{4}-\d{2}$/.test(a) && a !== d ? ` · venía de la programación de ${nombreMes(a)}` : '');
+}
+// programación mensual: busca el cuadro del mes en los correos; si ya está aplicado, ofrece cerrar la acción
+async function atajoProgramacion(b){
+  toast('Buscando el cuadro de programación en los correos…');
+  try {
+    const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=correos&dias=20&clave=' + encodeURIComponent(window.CLAVE))).json();
+    const progs = (j.correos||[]).filter(c => c.programacion && c.programacion.length);
+    const nMes = MESES_LARGO.findIndex(m => minus(b.asunto + ' ' + b.accion).includes(m));
+    const c = progs.find(p => Number(p.programacion[0].fechaCargue.slice(5, 7)) === nMes + 1) || progs[0];
+    if (!c) { accionEnCurso = null; return toast('No encontré el cuadro de programación en los correos de los últimos 20 días'); }
+    const R = compararProgramacion(c), mes = nombreMes(c.programacion[0].fechaCargue.slice(0, 7));
+    if (R.filas.every(f => f.accion==='igual') && !(R.fuera||[]).length) {
+      if (confirm(`La programación de ${mes} ya está aplicada en el tablero (${R.filas.length} de ${R.filas.length} iguales).\n\n¿Marcar la acción como hecha?`))
+        cerrarAccionEnCurso('programacion', `programación de ${mes} ya aplicada en el tablero`);
+      else accionEnCurso = null;
+      return;
+    }
+    abrirProgramacion(c);
+  } catch(e) { accionEnCurso = null; toast('No se pudo leer el buzón: ' + e.message); }
+}
 let PROG = null;
 const CAMPOS_PROG = [['mesProg','Mes programado'],['fechaCargue','Llenado'],['fechaRetiro','Retiro del vacío'],['pais','País'],['unidad','Unidad'],['mn','Motonave'],['cierreDoc','Cierre doc'],
   ['etd','ETD'],['eta','ETA'],['booking','Booking'],['fwd','FWD'],['puerto','Puerto']];
@@ -2186,12 +2208,6 @@ function listaCorta(L, titulo){
 // (más amplio que accionesDe: también el booking dentro de un texto más largo y el pedido citado en el asunto)
 const correosDe = v => (window.BITACORA||[]).filter(b => coincide(v, b) || (compacto(v.booking).length >= 6 && compacto(b.booking).includes(compacto(v.booking))) ||
   (v.pedido && String(b.asunto||'').includes(String(v.pedido).split('-')[0])));
-// cuadro mensual de Reckitt en el que está el viaje; sin mes anterior escrito, el de su plan original (ej. Guatemala: de octubre pasó a noviembre)
-function textoProgramacion(v, antes, despues){
-  const d = String(despues || '').trim().slice(0, 7), a = String(antes || '').replace('—', '').trim().slice(0, 7) || String(v.planCargue || '').slice(0, 7);
-  if (!/^\d{4}-\d{2}$/.test(d)) return 'Sin mes programado' + (/^\d{4}-\d{2}$/.test(a) ? ` (antes: ${nombreMes(a)})` : '');
-  return `Programado para ${nombreMes(d)}` + (/^\d{4}-\d{2}$/.test(a) && a !== d ? ` · venía de la programación de ${nombreMes(a)}` : '');
-}
 function eventosDe(v){
   const E = [], hijos = hijosDe(v), ids = [v.id, ...hijos.map(x => x.id)];
   const fechaHist = f => String(f||'');
