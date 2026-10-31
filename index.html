@@ -2165,9 +2165,10 @@ function pintarForm(v){
     const val = valorCampo(v, k);
     const opc = vals => [...new Set([...vals, val].filter(Boolean))].map(s=>`<option ${s===val?'selected':''}>${esc(s)}</option>`).join('');
     const ctl = t==='fecha' ? `<input type="date" data-k="${k}" value="${esc(val)}">`
-      // "Cerrado" solo lo pone facturación: se habilita con N° y fecha de factura (y entonces el viaje se cierra solo)
-      : t==='sit' ? `<select data-k="${k}">${[...new Set([...SITUACIONES, val].filter(Boolean))].map(s => { const bloq = s==='Cerrado' && val!=='Cerrado' && !(v.numFactura && v.fechaFactura);
-          return `<option ${s===val?'selected':''} ${bloq?'disabled':''}>${esc(s)}${bloq?' (solo facturación, con N° y fecha de factura)':''}</option>`; }).join('')}</select>`
+      // "Cerrado" lo pone facturación: se habilita con N° y fecha de factura (y entonces el viaje se cierra solo) o en modo
+      // Gerencia (esGerencia, turno.js). Operaciones termina con el vacío devuelto o la entrega en puerto y la tirilla.
+      : t==='sit' ? `<select data-k="${k}">${[...new Set([...SITUACIONES.slice(0, 3), val].filter(Boolean))].map(s => { const bloq = s==='Cerrado' && val!=='Cerrado' && !(v.numFactura && v.fechaFactura) && !esGerencia();
+          return `<option ${s===val?'selected':''} ${bloq?'disabled':''}>${esc(s)}${bloq?' · lo cierra facturación (con N° y fecha de factura)':''}</option>`; }).join('')}</select>`
       : t==='lista' ? `<select data-k="${k}"><option value=""></option>${opc(x)}</select>`
       : t==='num' ? `<input data-k="${k}" data-num inputmode="numeric" value="${esc(val)}" placeholder="$">`
       : `<input data-k="${k}" value="${esc(val)}"${t==='dl' ? ` list="${x}"` : ''}>`;
