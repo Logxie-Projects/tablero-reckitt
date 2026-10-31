@@ -1299,6 +1299,8 @@ $('#accFiltros').onclick = e => { const a=e.target.closest('[data-area]'); if (a
 // 1 Seguimiento: estado de cada vehículo en movimiento, en tres rondas al día (RONDAS). Cada ronda tiene 2 horas;
 //   mientras no se completa, Actualización y Planeación esperan; si vence, se bloquea todo el tablero hasta hacerla.
 //   "Saltar" deja seguir, pero queda registrado con nombre y hora y suma al contador del día.
+//   Un viaje SIN ACTUALIZAR (regla sinActualizar del dominio) bloquea el tablero de inmediato, sin esperar la ronda, y no
+//   admite "Sigue igual": sale de la lista solo cuando se actualiza el viaje (o si se salta la ronda, que queda registrado).
 // 2 Actualización: errores de datos y viajes sin actualizar.  3 Planeación: acciones de los correos, datos por aprobar
 //   y lo que viene (vehículo por asignar). Todo sale de reglas que ya existen en el dominio.
 // Las marcas ("Listo", "Revisado", "Saltar") son del día y las ve todo el equipo (bandeja compartida, D1): se guardan
@@ -1383,11 +1385,10 @@ function menusTurno(r){
   return [
     {id: 'seg', titulo: 'Seguimiento', vacio: 'Ningún vehículo en movimiento',
      ayuda: r ? `Ronda ${r.n} de ${RONDAS.length}: confirme dónde va cada vehículo (sigue igual, avanzó o pregúntele al conductor)` : `Primera ronda a las ${RONDAS[0]}:00`,
-     filas: enSeguimiento(V).map(v => ({k: `seg${r ? r.n : 0}|${v.id}`, tipo: 'seg', v, p: pulsoViaje(v)}))
+     filas: V.filter(v => enSeguimiento([v]).length || sinActualizar(v).length).map(v => ({k: `seg${r ? r.n : 0}|${v.id}`, tipo: 'seg', v, p: pulsoViaje(v)}))
        .sort((a, b) => b.p.alerta - a.p.alerta || b.p.hace - a.p.hace)},   // primero los quietos
-    {id: 'act', titulo: 'Actualización', vacio: 'Sin errores ni viajes por actualizar', ayuda: 'Cierre los errores de datos y los viajes que no avanzan',
-     filas: [...V.map(v => ({k: 's' + v.id, tipo: 'sin', v, s: sinActualizar(v)})).filter(x => x.s.length),
-       ...V.map(v => ({k: 'd' + v.id, tipo: 'dato', v, e: validar(v).filter(e => e.tipo !== 'Alerta' && e.campo !== 'Seguimiento').sort((a, b) => SEV(a) - SEV(b))}))
+    {id: 'act', titulo: 'Actualización', vacio: 'Sin errores de datos', ayuda: 'Cierre los errores de datos de los viajes',
+     filas: [...V.map(v => ({k: 'd' + v.id, tipo: 'dato', v, e: validar(v).filter(e => e.tipo !== 'Alerta' && e.campo !== 'Seguimiento').sort((a, b) => SEV(a) - SEV(b))}))
          .filter(x => x.e.length).sort((a, b) => SEV(a.e[0]) - SEV(b.e[0]))]},
     {id: 'plan', titulo: 'Planeación', vacio: 'Nada por planear', ayuda: 'Acciones de los correos, datos por aprobar y vehículos para lo que viene',
      filas: [...(nProp ? [{k: 'prop', tipo: 'prop', n: nProp}] : []),
@@ -1399,9 +1400,10 @@ function menusTurno(r){
 // estado del día: la ronda, si ya se hizo (o se saltó), cuánto falta para que venza y si el tablero queda bloqueado
 function estadoTurno(){
   const r = rondaActual(), R = revisados(), M = menusTurno(r);
-  const pend = M[0].filas.filter(x => !R.has(x.k)).length, saltada = r && R.has('saltar' + r.n);
-  const hecha = !r || !pend || saltada, resta = r ? r.vence - r.ahora : 0;
-  return {r, R, M, hecha, saltada, resta, bloqueado: !window.MODO_CLIENTE && !hecha && resta <= 0,
+  const n = r ? r.n : 0, saltada = R.has('saltar' + n), quietos = saltada ? [] : M[0].filas.filter(x => x.p.alerta);
+  const pend = M[0].filas.filter(x => x.p.alerta || !R.has(x.k)).length;
+  const hecha = saltada || (!r ? !quietos.length : !pend), resta = r ? r.vence - r.ahora : 0;
+  return {r, n, R, M, hecha, saltada, resta, quietos, bloqueado: !window.MODO_CLIENTE && !saltada && (quietos.length > 0 || (!hecha && resta <= 0)),
     saltos: [...R.values()].filter(x => x.clave.startsWith('saltar'))};
 }
 
@@ -1416,17 +1418,13 @@ function filaTurno(x, rev){
     detalle = [v.contenedor, clavesBusqueda(v).slice(0, 1).map(([k, c]) => `${k} ${c}`)[0], v.conductor].filter(Boolean).map(esc).join(' · ')
       + `<br>${esc(x.p.txt)}` + (x.p.porque ? `<br><span style="color:var(--bad);font-weight:600">⚠ ${esc(x.p.porque)}</span>` : '');
     acc = [btnT('Actualizar', `data-t-abrir="${v.id}"`, 'Abrir el viaje y registrar lo que avanzó'), lnkT('💬 Conductor', waConductor(v, '¿dónde va el vehículo? Confírmame cómo va el viaje'))];
-    marca = rev ? '↺ Deshacer' : '✓ Sigue igual';
+    marca = x.p.alerta ? '' : rev ? '↺ Deshacer' : '✓ Sigue igual';   // sin actualizar: solo sale actualizando el viaje
   } else if (x.tipo === 'prop') {
     titulo = `${x.n} dato${x.n === 1 ? '' : 's'} de los correos por aprobar`; detalle = 'Lo que LogxIA encontró en los correos: al aprobarlo pasa a la base';
     acc = [btnT('✔ Revisar datos', 'data-t-prop="1"')];
   } else if (x.tipo === 'accion') {
     titulo = esc(x.b.accion); detalle = `${esc(nombreTurno(v) || operacionDe(x.b))} · ${esc(x.b.remitente || '')}${avisoHecha(x.b)}`;
     acc = [botonAtajo(x.b), btnT('Marcar hecha', `data-t-hecha="${x.b.id}"`), btnT('No es para ETP', `data-t-noetp="${x.b.id}"`), abrirV];
-  } else if (x.tipo === 'sin') {
-    titulo = 'Sin actualizar: ' + esc(x.s.map(s => s.msg).join(' · '));
-    detalle = `${esc(nombreTurno(v))} · ${esc(x.s[0].porque)}${accionPendiente(v) ? ' · <b>hay una acción LogxIA pendiente en este viaje</b>' : ''}`;
-    acc = [abrirV, v.placa ? lnkT('💬 Conductor', waConductor(v, '¿dónde está el contenedor? Confírmame si ya se entregó')) : '', buscar];
   } else if (x.tipo === 'viene') {
     titulo = `${esc(nombreTurno(v))} · ${primerEvento(v) ? fd(primerEvento(v)) : ''}`;
     detalle = 'Falta: ' + esc(x.e.map(e => e.campo.toLowerCase()).join(', ')) + ` · ${esc(x.e[0].porque)}`;
@@ -1437,7 +1435,7 @@ function filaTurno(x, rev){
     detalle = esc(x.e[0].porque);
     acc = [btnT('Corregir', `data-t-abrir="${v.id}"`), buscar];
   }
-  if (x.tipo !== 'prop') acc.push(btnT(marca, `data-t-rev="${x.k}"`, rev ? '' : 'Lo saca de la lista de hoy para todo el equipo'));
+  if (x.tipo !== 'prop' && marca) acc.push(btnT(marca, `data-t-rev="${x.k}"`, rev ? '' : 'Lo saca de la lista de hoy para todo el equipo'));
   const quien = rev ? `<div class="sub">✓ ${esc(rev.usuario)}${rev.hora ? ' · ' + esc(rev.hora) : ''}</div>` : '';
   return `<div class="tr-fila${rev ? ' rev' : ''}"><div class="tr-txt"><b>${titulo}</b><div class="sub">${detalle}</div>${quien}</div><div class="tr-acc">${acc.filter(Boolean).join('')}</div></div>`;
 }
@@ -1450,19 +1448,20 @@ function renderTurno(){
   if (T.bloqueado) { turnoMenu = 'seg'; if ($('#v-turno').classList.contains('hidden')) $('#nav [data-v="turno"]').click(); }
   const espera = id => id !== 'seg' && !T.hecha;   // Actualización y Planeación esperan a que termine la ronda
   if (espera(turnoMenu)) turnoMenu = 'seg';
-  const cuenta = m => { const h = m.filas.filter(x => R.has(x.k)).length; return {h, t: m.filas.length, p: m.filas.length - h}; };
+  const cuenta = m => { const h = m.filas.filter(x => R.has(x.k) && !x.p?.alerta).length; return {h, t: m.filas.length, p: m.filas.length - h}; };
   $('#nTurno').textContent = M.reduce((t, m) => t + cuenta(m).p, 0) || '';
   $('#turnoMenus').innerHTML = M.map((m, i) => { const c = cuenta(m);
     return `<button class="tr-menu ${turnoMenu === m.id ? 'on' : ''}" data-t-menu="${m.id}" ${espera(m.id) ? 'disabled title="Primero termine la ronda de seguimiento"' : ''}>
       <span class="tr-n">${i + 1}</span> ${m.titulo} <b>${c.h}/${c.t}</b>${espera(m.id) ? ' 🔒' : ''}</button>`; }).join('');
   const saltos = T.saltos.length ? ` · Saltadas hoy: ${T.saltos.length} (${T.saltos.map(x => `${esc(x.usuario)} ${esc(x.hora)}`).join(', ')})` : '';
-  $('#turnoReloj').innerHTML = !r ? `Sin ronda en curso · rondas a las ${RONDAS.map(h => h + ':00').join(', ')}${saltos}`
+  $('#turnoReloj').innerHTML = T.quietos.length ? `<span class="tr-vencida">⛔ ${T.quietos.length} viaje${T.quietos.length === 1 ? '' : 's'} sin actualizar: el tablero queda bloqueado hasta actualizarlo${T.quietos.length === 1 ? '' : 's'}</span>${btnT('Saltar', `data-t-saltar="${T.n}"`, 'Deja seguir sin actualizar; queda registrado con su nombre y la hora')}${saltos}`
+    : !r ? `Sin ronda en curso · rondas a las ${RONDAS.map(h => h + ':00').join(', ')}${saltos}`
     : T.hecha ? `✓ Ronda ${r.n} de ${RONDAS.length} ${T.saltada ? 'saltada' : 'hecha'}${r.n < RONDAS.length ? ` · la siguiente a las ${RONDAS[r.n]}:00` : ''}${saltos}`
     : `<span class="${T.bloqueado ? 'tr-vencida' : T.resta <= 30 ? 'tr-urge' : ''}">${T.bloqueado ? `⛔ Ronda ${r.n} vencida a las ${hhmm(r.vence)}: el tablero queda bloqueado hasta hacer el seguimiento`
         : `⏱ Ronda ${r.n} de ${RONDAS.length} · faltan ${hhmm(T.resta)} (vence ${hhmm(r.vence)}); después se bloquea el tablero`}</span>
       ${btnT('Saltar ronda', `data-t-saltar="${r.n}"`, 'Deja seguir sin hacer el seguimiento; queda registrado con su nombre y la hora')}${saltos}`;
   const m = M.find(x => x.id === turnoMenu);
-  const pend = m.filas.filter(x => !R.has(x.k)), rev = m.filas.filter(x => R.has(x.k));
+  const pend = m.filas.filter(x => x.p?.alerta || !R.has(x.k)), rev = m.filas.filter(x => R.has(x.k) && !x.p?.alerta);
   cont.innerHTML = `<div class="sub" style="margin:10px 0 4px">${esc(m.ayuda)}</div>
     ${pend.map(x => filaTurno(x, false)).join('') || `<div class="sub tr-vacio">✓ ${m.vacio}</div>`}
     ${rev.length ? `<details class="tr-rev"><summary class="sub">Hechos hoy (${rev.length})</summary>${rev.map(x => filaTurno(x, R.get(x.k))).join('')}</details>` : ''}`;
@@ -1472,7 +1471,7 @@ $('#v-turno').onclick = e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   const d = b.dataset;
   if (d.tMenu) { turnoMenu = d.tMenu; renderTurno(); }
-  else if (d.tSaltar) { if (confirm(`¿Saltar la ronda ${d.tSaltar} de seguimiento?\n\nQueda registrado con su nombre y la hora, y lo ve todo el equipo.`)) marcarRevisado('saltar' + d.tSaltar); }
+  else if (d.tSaltar) { if (confirm(`¿Saltar ${+d.tSaltar ? 'la ronda ' + d.tSaltar + ' de' : 'el'} seguimiento?\n\nQueda registrado con su nombre y la hora, y lo ve todo el equipo.`)) marcarRevisado('saltar' + d.tSaltar); }
   else if (d.tAbrir) abrir(d.tAbrir);
   else if (d.tRev) marcarRevisado(d.tRev);
   else if (d.tHecha) marcarHecha(d.tHecha);
@@ -1886,7 +1885,7 @@ function panelFactura(v, P, n){
 function etiquetaSinActualizar(v){
   const S = window.MODO_CLIENTE ? [] : sinActualizar(v); if (!S.length) return '';
   const det = S.map(s => 'Sin actualizar: ' + s.msg + '. ' + s.porque).join('\n') + (accionPendiente(v) ? '\nHay una acción LogxIA pendiente en este viaje: revisarla' : '');
-  return `<span class="tg" style="background:color-mix(in srgb, var(--bad) 15%, transparent);color:var(--bad)" title="${esc(det)}">⚠ Sin actualizar</span>`;
+  return `<span class="tg" style="background:color-mix(in srgb, var(--bad) 15%, transparent);color:var(--bad)" title="${esc(det)}">⚠ Sin actualizar: ${esc(S[0].msg)}</span>`;
 }
 function rutaPedido(v){
   const {P, n} = avance(v);
