@@ -1963,9 +1963,16 @@ function abrir(id){
   $('#mHist').innerHTML = bloqueLx + lineaTiempo(v);
   $('#ov').classList.add('open');
 }
+// siguiente paso de cada etapa: el campo de fecha que la hace avanzar (la etapa sale de las fechas, no se elige a mano)
+const SIGUIENTE_ETAPA = {
+  EXPO: {'Asignado': ['fechaRetiro', 'Vacío retirado'], 'Vacío retirado': ['fechaCargue', 'Llenado'], 'Llenado': ['fechaEntregaPuerto', 'Entregado en puerto']},
+  IMPO: {'Asignado': ['fechaRetiro', 'Retirado de puerto'], 'Retirado de puerto': ['fechaCargue', 'Entregado en bodega'], 'Entregado en bodega': ['fechaDevolucion', 'Vacío devuelto']},
+};
 function pintarEstados(){
-  const v = viajes.find(x=>x.id===editId);
-  $('#mStates').innerHTML = `<span class="sub" style="margin-right:6px">Etapa: ${v ? pill(v.estado) : ''} <span title="Sale de las fechas del viaje: para avanzarla, ponga la fecha correspondiente">(sale de las fechas)</span> · Marcar:</span>`
+  const v = viajes.find(x=>x.id===editId), sig = v && (SIGUIENTE_ETAPA[v.operacion] || {})[v.estado];
+  $('#mStates').innerHTML = `<span class="sub" style="margin-right:6px">Etapa: ${v ? pill(v.estado) : ''} <span title="Sale de las fechas del viaje: para avanzarla, ponga la fecha correspondiente">(sale de las fechas)</span></span>`
+    + (sig ? `<button type="button" data-sig="${sig[0]}" title="Pone la fecha de hoy en el campo; se puede cambiar antes de guardar">→ ${sig[1]} (hoy)</button>` : '')
+    + '<span class="sub" style="margin:0 6px">· Marcar:</span>'
     + MARCAS.map(e=>`<button type="button" class="${estadoSel===e.k?'on':''}" data-e="${e.k}"><i style="background:${e.c}"></i>${e.k}</button>`).join('');
 }
 // Campos que se editan en la ventana del viaje: los mismos de las pestañas Seguimiento EXPO / IMPO (ver SEGUIMIENTO en apps-script/Base.gs)
@@ -2060,7 +2067,13 @@ function marcarCambios(){
   $('#mNCambios').textContent = n ? `${n} dato${n===1?'':'s'} por guardar` : '';
 }
 function cerrar(){ $('#ov').classList.remove('open'); editId=null; }
-$('#mStates').onclick = e => { const b=e.target.closest('button'); if(!b) return; estadoSel = estadoSel===b.dataset.e ? '' : b.dataset.e; pintarEstados();
+$('#mStates').onclick = e => { const b=e.target.closest('button'); if(!b) return;
+  if (b.dataset.sig) {   // siguiente paso: pone hoy en la fecha que hace avanzar la etapa y lleva al campo para revisarla y guardar
+    const i = $(`#mForm [data-k="${b.dataset.sig}"]`); if (!i) return;
+    i.value = HOY; i.dispatchEvent(new Event('input', {bubbles: true})); i.scrollIntoView({block: 'center', behavior: 'smooth'}); i.focus();
+    return toast('Fecha de hoy puesta: revísela y guarde');
+  }
+  estadoSel = estadoSel===b.dataset.e ? '' : b.dataset.e; pintarEstados();
   // el viaje solo se cierra a mano (STATUS = Cerrado) o al registrar N° y fecha de factura; marcar "Entregado" no lo cierra
   const sit = $('#mForm [data-k=situacion]');
   if (sit && estadoSel==='Cancelado') sit.value = 'Cancelado';
