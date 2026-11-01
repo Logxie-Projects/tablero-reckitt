@@ -1100,10 +1100,11 @@ async function guardarCambio(id, cambios, usuario){
   if (window.CLAVE && Object.keys(enBase).length){
     render();
     try{
-      const r = await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'update', clave:window.CLAVE, id, cambios:enBase, usuario})});
+      const r = await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'update', clave:window.CLAVE, id, cambios:enBase, usuario, telefono: telefonoPara(id)})});
       const j = await r.json();
       toast(j.ok ? (j.cambios ? `Guardado en la base: ${j.cambios} dato${j.cambios===1?'':'s'}` : 'Sin cambios en la base') : 'No se guardó: ' + (j.error||'error'));
-      if (j.ok && j.cambios) ofrecerAviso(v, cambios, usuario);   // F2 (avisos.js)
+      // F2: aviso del hito (avisos.js); asignación única: enlace del conductor (asignacion.js)
+      if (j.ok && j.cambios) ofrecerAviso(v, cambios, usuario).then(() => ofrecerEnlaceConductor(v, j.asignacion));
     }catch(e){ toast('No se pudo guardar en la base, intente de nuevo'); }
   }
   render();
@@ -1398,7 +1399,8 @@ function sugeridos(v){
     .filter(x => !vistos.has(x.placa) && vistos.add(x.placa)).slice(0, 3);
 }
 // abre la ventana del viaje con la placa y el conductor ya puestos: el coordinador revisa y guarda con su nombre
-function asignarSugerido(id, placa, conductor){
+function asignarSugerido(id, placa, conductor, telefono){
+  if (telefono) telefonosElegidos[id] = telefono;   // asignacion.js: el enlace del conductor le llega a ese celular
   abrir(id);
   [['placa', placa], ['conductor', conductor]].forEach(([k, x]) => { const i = $(`#mForm [data-k="${k}"]`); if (i) { i.value = x; i.dispatchEvent(new Event('input', {bubbles: true})); } });
 }
@@ -1529,7 +1531,7 @@ function filaTurno(x, rev){
       + (sug.length ? '<br>Ya hicieron esta ruta: elija uno, revise y guarde' : '<br>Nadie ha hecho esta ruta: elija placa y conductor en el viaje');
     const ent = enturnadosDe(v), disp = disponiblesPara(v).filter(d => !ent.some(e => e.placa === d.placa));
     if (ent.length || disp.length) detalle += `<br>${ent.length ? `🙋 ${ent.length} enturnado${ent.length === 1 ? '' : 's'} en la app` : ''}${ent.length && disp.length ? ' · ' : ''}${disp.length ? `🟢 ${disp.length} disponible${disp.length === 1 ? '' : 's'}` : ''}`;
-    const boton = (s, icono, t) => btnT(`${icono} ${esc(s.placa)} · ${esc(String(s.conductor).split(' ').slice(0, 2).join(' '))}`, `data-t-asignar="${v.id}" data-placa="${esc(s.placa)}" data-conductor="${esc(s.conductor)}"`, t);
+    const boton = (s, icono, t) => btnT(`${icono} ${esc(s.placa)} · ${esc(String(s.conductor).split(' ').slice(0, 2).join(' '))}`, `data-t-asignar="${v.id}" data-placa="${esc(s.placa)}" data-conductor="${esc(s.conductor)}" data-telefono="${esc(s.telefono || '')}"`, t);
     acc = [...ent.map(s => boton(s, '🙋', `Se enturnó en la app ${s.creado ? haceTxt(s.creado) : ''} · cel ${s.telefono}`)), ...disp.slice(0, 3).map(s => boton(s, '🟢', `Disponible${s.desde ? ' desde ' + fd(s.desde) : ''}${s.ciudad ? ' en ' + s.ciudad : ''} · cel ${s.telefono}`)),
       ...sug.filter(s => !ent.concat(disp).some(e => e.placa === s.placa)).map(s => boton(s, '🚚', 'Ya hizo esta ruta: ponerlo en el viaje (se revisa y se guarda)')), btnT('Asignar en el viaje', `data-t-abrir="${v.id}"`)];
     marca = '';
@@ -1656,7 +1658,7 @@ $('#v-turno').onclick = e => {   // incluye el reloj de la ronda (#turnoReloj)
   else if (d.tRev) marcarRevisado(d.tRev);
   else if (d.tHecha) marcarHecha(d.tHecha);
   else if (d.tNoetp) marcarHecha(d.tNoetp, true);
-  else if (d.tAsignar) asignarSugerido(d.tAsignar, d.placa, d.conductor);
+  else if (d.tAsignar) asignarSugerido(d.tAsignar, d.placa, d.conductor, d.telefono);
   else if (d.tProp) abrirPropuestas();
   else if (d.tNota) { const txt = $('#turnoNota').value.replace(/\s+/g, ' ').trim(); if (txt) marcarRevisado('nota|' + txt.slice(0, 180)); }
 };
@@ -1672,6 +1674,20 @@ async function ofrecerAviso(v, cambios, usuario){
     const j = await r.json();
     toast(j.ok ? `Aviso enviado a ${j.enviadoA.length} correos de Entrapetrol` : 'No se envió el aviso: ' + (j.error || 'error'));
   } catch(e) { toast('No se pudo enviar el aviso'); }
+}
+/* ---------- asignación única: el vehículo guardado en el tablero queda asignado en Despacho ---------- */
+// Al guardar placa o conductor, el backend crea o actualiza la asignación de Despacho (Conductores.gs) y devuelve el enlace
+// del conductor (la pantalla de pasos, fotos y novedades). Aquí se ofrece enviárselo por WhatsApp. El celular sale del
+// conductor que se eligió en Cobertura (app Viajes ETP) o, si no, del directorio de conductores.
+const telefonosElegidos = {};   // viajeId → celular del conductor elegido en Cobertura (se manda al guardar)
+const telefonoPara = id => telefonosElegidos[id] || '';
+function ofrecerEnlaceConductor(v, a){
+  if (!a || !a.enlace || window.MODO_CLIENTE) return;
+  const nombre = String(v.conductor || '').split(' ')[0];
+  const texto = `Hola${nombre ? ' ' + nombre : ''}, Entrapetrol le asignó un viaje (${v.operacion}${primerEvento(v) ? ', ' + fd(primerEvento(v)) : ''}). `
+    + `Ábralo aquí para ver la cita y marcar cada paso: ${a.enlace}\nTambién lo encuentra en la app Viajes ETP, en "Mis viajes".`;
+  if (!confirm(`${v.placa} quedó asignado en Despacho.\n¿Enviar el enlace del viaje al conductor por WhatsApp${a.telefono ? ' (' + a.telefono + ')' : ''}?`)) return;
+  window.open(`https://wa.me/${a.telefono || ''}?text=${encodeURIComponent(texto)}`, '_blank', 'noopener');
 }
 /* ---------- KPIs ---------- */
 function renderKpis(){ const act = activos();
