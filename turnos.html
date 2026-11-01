@@ -114,8 +114,7 @@ async function cargar(){
       $('#registro').classList.add('hidden'); $('#app').classList.remove('hidden'); $('#quien').textContent = `${yo.conductor} · ${yo.placa}`;
     }
     if (!yo) { $('#registro').classList.remove('hidden'); return; }
-    // sin celular (operaciones no lo registró): se le pide solo para enturnarse; sus viajes se ven igual
-    if (!yo.telefono) { $('#rPlaca').value = yo.placa; $('#rNombre').value = yo.conductor; $('#registro').classList.remove('hidden'); }
+    // sin celular (operaciones no lo registró): sus viajes se ven igual; el celular se pide solo al enturnarse (enviar)
   } catch(e) { datos = guardado('etp-turnos-ultimo'); if (datos) aviso('Sin señal: se muestra la última lista que cargó'); }
   pintar();
 }
@@ -148,6 +147,12 @@ function pintar(){
   if (datos.telefonoOperaciones) { const a = $('#ayuda'); a.href = 'https://wa.me/' + datos.telefonoOperaciones; a.classList.remove('hidden'); }
 }
 async function enviar(cuerpo, ok){
+  if (!yo.telefono) {   // entró con el código del viaje sin celular registrado: se pide aquí, una sola vez
+    $('#rPlaca').value = yo.placa; $('#rNombre').value = yo.conductor; $('#registro').classList.remove('hidden');
+    $('#registro').scrollIntoView({behavior: 'smooth'}); $('#rTel').focus();
+    document.querySelectorAll('#viajes button, #dEnviar').forEach(b => b.disabled = false);
+    return aviso('Escriba su celular para que operaciones lo pueda llamar');
+  }
   try {
     const r = await fetch(API, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify({...cuerpo, ...yo})});
     const j = await r.json();
