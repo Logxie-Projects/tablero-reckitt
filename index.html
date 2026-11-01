@@ -1681,15 +1681,27 @@ async function ofrecerAviso(v, cambios, usuario){
 // conductor que se eligió en Cobertura (app Viajes ETP) o, si no, del directorio de conductores.
 const telefonosElegidos = {};   // viajeId → celular del conductor elegido en Cobertura (se manda al guardar)
 const telefonoPara = id => telefonosElegidos[id] || '';
-function ofrecerEnlaceConductor(v, a){
+function ofrecerEnlaceConductor(v, a, sinPreguntar){
   if (!a || !a.enlace || window.MODO_CLIENTE) return;
   const nombre = String(v.conductor || '').split(' ')[0];
   const texto = `Hola${nombre ? ' ' + nombre : ''}, Entrapetrol le asignó un viaje (${v.operacion}${primerEvento(v) ? ', ' + fd(primerEvento(v)) : ''}). `
     + `Ábralo aquí para ver la cita y marcar cada paso: ${a.enlace}\n\n`
     + `📲 Todos sus viajes en la app Viajes ETP: ${APP_TURNOS}\nPara instalarla, ábrala en Chrome (Android: ⋮ › Abrir en Chrome) o en Safari (iPhone) y toque "Instalar" o "Agregar a inicio".`;
-  if (!confirm(`${v.placa} quedó asignado en Despacho.\n¿Enviar el enlace del viaje al conductor por WhatsApp${a.telefono ? ' (' + a.telefono + ')' : ''}?`)) return;
+  if (!sinPreguntar && !confirm(`${v.placa} quedó asignado en Despacho.\n¿Enviar el enlace del viaje al conductor por WhatsApp${a.telefono ? ' (' + a.telefono + ')' : ''}?`)) return;
   window.open(`https://wa.me/${a.telefono || ''}?text=${encodeURIComponent(texto)}`, '_blank', 'noopener');
 }
+// botón "Enviar enlace al conductor" de la ventana del viaje: reenviar sin tocar el viaje (crea la asignación si faltaba)
+async function enviarEnlaceConductor(id){
+  const v = viajes.find(x => x.id === id); if (!v || !v.placa) return toast('Primero guarde la placa del viaje');
+  try {
+    const r = await fetch(CFG.SHEETS_API_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'},
+      body: JSON.stringify({action: 'enlaceConductor', clave: window.CLAVE, id, telefono: telefonoPara(id), usuario: CFG.USUARIO || 'tablero'})});
+    const j = await r.json();
+    if (!j.ok) return toast(j.error || 'No se pudo crear el enlace');
+    ofrecerEnlaceConductor(v, j.asignacion, true);
+  } catch(e) { toast('No se pudo crear el enlace'); }
+}
+
 /* ---------- KPIs ---------- */
 function renderKpis(){ const act = activos();
   const total = act.length;
@@ -2183,6 +2195,7 @@ const SIGUIENTE_ETAPA = {
 function pintarEstados(){
   const v = viajes.find(x=>x.id===editId), sig = v && (SIGUIENTE_ETAPA[v.operacion] || {})[v.estado];
   $('#mStates').innerHTML = `<span class="sub" style="margin-right:6px">Etapa: ${v ? pill(v.estado) : ''} <span title="Sale de las fechas del viaje: para avanzarla, ponga la fecha correspondiente">(sale de las fechas)</span></span>`
+    + (v && v.placa && !window.MODO_CLIENTE ? `<button type="button" data-enlace="1" title="Abre WhatsApp con el enlace del viaje para el conductor (asignacion.js)">💬 Enviar enlace al conductor</button>` : '')
     + (sig ? `<button type="button" data-sig="${sig[0]}" title="Pone la fecha de hoy en el campo; se puede cambiar antes de guardar">→ ${sig[1]} (hoy)</button>` : '')
     + '<span class="sub" style="margin:0 6px">· Marcar:</span>'
     + MARCAS.map(e=>`<button type="button" class="${estadoSel===e.k?'on':''}" data-e="${e.k}"><i style="background:${e.c}"></i>${e.k}</button>`).join('');
@@ -2281,6 +2294,7 @@ function marcarCambios(){
 }
 function cerrar(){ $('#ov').classList.remove('open'); editId=null; }
 $('#mStates').onclick = e => { const b=e.target.closest('button'); if(!b) return;
+  if (b.dataset.enlace) return enviarEnlaceConductor(editId);   // asignacion.js
   if (b.dataset.sig) {   // siguiente paso: pone hoy en la fecha que hace avanzar la etapa y lleva al campo para revisarla y guardar
     const i = $(`#mForm [data-k="${b.dataset.sig}"]`); if (!i) return;
     i.value = HOY; i.dispatchEvent(new Event('input', {bubbles: true})); i.scrollIntoView({block: 'center', behavior: 'smooth'}); i.focus();
