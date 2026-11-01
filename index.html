@@ -3016,7 +3016,7 @@ async function preguntar(q){
 const pintarSugerencias = () => $('#chatSug').innerHTML = sugerencias().map(s=>`<button type="button" class="chip">${esc(s)}</button>`).join('');
 $('#chatSug').onclick = e => { const c=e.target.closest('.chip'); if(c) preguntar(c.textContent); };
 $('#chatForm').onsubmit = e => { e.preventDefault(); preguntar($('#chatIn').value); };
-$('#btnChat').onclick = () => { $('#chat').classList.add('open'); document.body.classList.add('chat-on'); pintarPreguntas(); marcarLeidas(); $('#btnChat').dataset.nuevas = ''; $('#chatIn').focus(); };
+$('#btnChat').onclick = () => { $('#chat').classList.add('open'); document.body.classList.add('chat-on'); pintarPreguntas(); refrescarPreguntas().then(marcarLeidas); $('#btnChat').dataset.nuevas = ''; $('#chatIn').focus(); };
 $('#chatClose').onclick = () => { $('#chat').classList.remove('open'); document.body.classList.remove('chat-on'); };
 burbuja('Hola 👋 Soy <b>LogxIA</b>. Pregúntame el status de un viaje por placa, booking o conductor, o por destino y motonave.<span class="solo-interno"><br>También actualizo y filtro: <i>“el booking … ya está en puerto”</i>, <i>“pedido … entregado en bodega ayer”</i>, <i>“placa ABC123 conductor … para el booking …”</i>, <i>“factura FE-123 del 30/10 del booking …”</i>, <i>“filtra los pendientes por facturar”</i>. Siempre le muestro el cambio y solo lo guardo cuando confirma.</span>', 'bot');
 
@@ -3064,6 +3064,16 @@ function pintarPreguntas(){
   const nuevas = P.filter(p => p.estado === 'Respondida' && !leida(p.id)).length;
   $('#btnChat').dataset.nuevas = nuevas || '';
 }
+// el chat trae de nuevo las preguntas (solo esa lista, sin recargar el tablero): cada minuto mientras haya alguna
+// pendiente y cada vez que se abre el chat; así la respuesta aparece apenas LogxIA la deja en la base
+async function refrescarPreguntas(){
+  if (!window.CLAVE || window.MODO_CLIENTE) return;
+  try {
+    const j = await (await fetch(`${CFG.SHEETS_API_URL}?formato=json&que=preguntas&clave=${encodeURIComponent(window.CLAVE)}`)).json();
+    if (j.ok) { window.PREGUNTAS = j.preguntas || []; pintarPreguntas(); }
+  } catch(e) {}
+}
+setInterval(() => { if ((window.PREGUNTAS || []).some(p => p.estado === 'Pendiente')) refrescarPreguntas(); }, 60e3);
 const leida = id => { try { return (localStorage.getItem('rkt-preg-leidas') || '').split(',').includes(id); } catch(e){ return true; } };
 function marcarLeidas(){ const ids = (window.PREGUNTAS || []).filter(p => p.estado === 'Respondida').map(p => p.id);
   try { localStorage.setItem('rkt-preg-leidas', ids.join(',')); } catch(e){} }
