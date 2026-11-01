@@ -83,8 +83,16 @@ const DIAS = ['dom','lun','mar','mié','jue','vie','sáb'], MES = ['ene','feb','
 const fd = iso => { const d = new Date(iso + 'T12:00'); return `${DIAS[d.getDay()]} ${d.getDate()} ${MES[d.getMonth()]}`; };
 const aviso = t => { const m = $('#msg'); m.textContent = t; m.style.display = 'block'; clearTimeout(aviso.t); aviso.t = setTimeout(() => m.style.display = 'none', 3500); };
 let yo = guardado('etp-conductor'), datos = null;
+// enlace que manda operaciones: turnos.html?t=CÓDIGO del viaje (con él la app reconoce al conductor y abre su viaje)
+// el código se guarda: al abrir la app instalada (sin el enlace) sigue mostrando sus viajes
+const codigo = new URLSearchParams(location.search).get('t') || guardado('etp-codigo') || '';
+if (codigo) guardar('etp-codigo', codigo);
+// celular de prueba del equipo: ve también los viajes de prueba en Disponibles
+if (new URLSearchParams(location.search).get('prueba') === '1') guardar('etp-prueba', '1');
+const prueba = guardado('etp-prueba') === '1';
 
 function mostrar(){
+  if (!yo && codigo) return cargar();   // con el código del viaje no hace falta registrarse
   $('#registro').classList.toggle('hidden', !!yo); $('#app').classList.toggle('hidden', !yo);
   $('#quien').textContent = yo ? `${yo.conductor} · ${yo.placa}` : 'Enturnarse y reportar disponibilidad';
   if (yo) cargar();
@@ -98,8 +106,16 @@ $('#cambiar').onclick = () => { if (yo) { $('#rPlaca').value = yo.placa; $('#rNo
 
 async function cargar(){
   try {
-    const r = await fetch(`${API}?app=turnos&placa=${encodeURIComponent(yo.placa)}&tel=${encodeURIComponent(yo.telefono)}`);
+    const r = await fetch(`${API}?app=turnos&placa=${encodeURIComponent(yo ? yo.placa : '')}&tel=${encodeURIComponent(yo ? yo.telefono : '')}${codigo ? '&t=' + encodeURIComponent(codigo) : ''}${prueba ? '&prueba=1' : ''}`);
     datos = await r.json(); guardar('etp-turnos-ultimo', datos);
+    // el código del viaje dice quién es: se guarda en el celular y queda como su app
+    if (datos.identidad && (!yo || yo.placa !== datos.identidad.placa)) {
+      yo = {placa: datos.identidad.placa, conductor: datos.identidad.conductor || 'Conductor', telefono: String(datos.identidad.telefono || '').replace(/^57/, '')}; guardar('etp-conductor', yo);
+      $('#registro').classList.add('hidden'); $('#app').classList.remove('hidden'); $('#quien').textContent = `${yo.conductor} · ${yo.placa}`;
+    }
+    if (!yo) { $('#registro').classList.remove('hidden'); return; }
+    // sin celular (operaciones no lo registró): se le pide solo para enturnarse; sus viajes se ven igual
+    if (!yo.telefono) { $('#rPlaca').value = yo.placa; $('#rNombre').value = yo.conductor; $('#registro').classList.remove('hidden'); }
   } catch(e) { datos = guardado('etp-turnos-ultimo'); if (datos) aviso('Sin señal: se muestra la última lista que cargó'); }
   pintar();
 }
@@ -109,7 +125,7 @@ function pintar(){
   // Mis viajes: solo si la placa y el celular coinciden con lo que registró operaciones (si no, null y no se muestra)
   const M = datos.misViajes;
   $('#misViajesBloque').classList.toggle('hidden', !M);
-  if (M) $('#misViajes').innerHTML = M.length ? M.map(v => `<div class="card">
+  if (M) $('#misViajes').innerHTML = M.length ? M.map(v => `<div class="card" ${datos.identidad && datos.identidad.viajeId === v.viajeId ? 'style="border:2px solid var(--accent)"' : ''}>
     <div class="tags"><span class="tag ${v.operacion === 'IMPO' ? 'impo' : ''}">${esc(v.operacion)}${v.fecha ? ' · ' + fd(v.fecha) : ''}</span>${v.avance ? `<span class="sub">${esc(v.avance)}</span>` : ''}</div>
     ${v.ultimo ? `<div><b>${esc(v.ultimo)}</b></div>` : ''}
     ${v.pasos.map((p, i) => `<div class="paso"><div class="num">${i + 1}</div><div><b>${esc(p.que)} · ${p.cuando ? fd(p.cuando) : p.antesDe ? 'antes del ' + fd(p.antesDe) : 'fecha por confirmar'}</b><span>${esc(p.donde)}</span></div></div>`).join('')}

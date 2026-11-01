@@ -979,6 +979,10 @@ function coincide(v, d){
 }
 // viajes del dato: primero los vigentes (con el mismo booking puede haber una versión cerrada y la vigente)
 const vigente = v => !['Cerrado','Cancelado'].includes(situacion(v));
+// viaje de prueba (empresa "PRUEBA ETP"): para probar el tablero y las apps sin tocar los reales. No cuenta en Mi turno ni
+// en los correos, no lo ve el cliente ni sale en los viajes disponibles de los conductores (salvo turnos.html?prueba=1)
+const EMPRESA_PRUEBA = 'PRUEBA ETP';
+const esPrueba = v => minus(v.empresa) === minus(EMPRESA_PRUEBA);
 const viajesDe = (d, lista) => (lista || viajes).filter(v => coincide(v, d)).sort((a, b) => vigente(b) - vigente(a));
 const viajeDe = (d, lista) => (d && d.viajeId && (lista || viajes).find(v => v.id === d.viajeId)) || viajesDe(d, lista)[0];
 function distancia(a, b){
@@ -1464,7 +1468,7 @@ function excepcionDe(k, R){
 }
 
 function menusTurno(r){
-  const V = viajes.filter(v => vigente(v) && v.estado !== 'Cancelado' && !v.padre);
+  const V = viajes.filter(v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre);   // los de prueba no cuentan
   const SEV = e => e.sev === 'Alta' ? 0 : 1;
   const nProp = Number($('#nProp')?.textContent) || 0;
   const sinVehiculo = V.filter(v => !tieneVehiculo(v) && primerEvento(v)).sort((a, b) => primerEvento(a).localeCompare(primerEvento(b)));
@@ -1579,7 +1583,7 @@ const APP_TURNOS = 'https://logxie-projects.github.io/tablero-reckitt/turnos.htm
 // mensaje para el grupo de WhatsApp de conductores: los viajes sin vehículo de los próximos 7 días (sin datos del cliente);
 // WhatsApp no deja publicar en grupos desde un sistema: se abre con el texto listo y el coordinador elige el grupo
 function mensajeGrupo(){
-  const L = viajes.filter(v => vigente(v) && v.estado !== 'Cancelado' && !v.padre && !tieneVehiculo(v) && primerEvento(v) && diffDias(primerEvento(v)) >= -1 && diffDias(primerEvento(v)) <= 7)
+  const L = viajes.filter(v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre && !tieneVehiculo(v) && primerEvento(v) && diffDias(primerEvento(v)) >= -1 && diffDias(primerEvento(v)) <= 7)
     .sort((a, b) => primerEvento(a).localeCompare(primerEvento(b)));
   const puerto = v => ({BUN: 'Buenaventura', CTG: 'Cartagena'})[String(v.puerto || '').toUpperCase()] || v.puerto || 'por confirmar';
   const ruta = v => v.operacion === 'IMPO' ? `puerto ${puerto(v)} → ${v.bodega || v.destino || 'bodega'}` : `vacío → cargue Reckitt Cali → puerto ${puerto(v)}`;
@@ -1687,8 +1691,8 @@ function ofrecerEnlaceConductor(v, a, sinPreguntar){
   if (!a || !a.enlace || window.MODO_CLIENTE) return;
   const nombre = String(v.conductor || '').split(' ')[0];
   const texto = `Hola${nombre ? ' ' + nombre : ''}, Entrapetrol le asignó un viaje (${v.operacion}${primerEvento(v) ? ', ' + fd(primerEvento(v)) : ''}). `
-    + `Ábralo aquí para ver la cita y marcar cada paso: ${a.enlace}\n\n`
-    + `📲 Todos sus viajes en la app Viajes ETP: ${APP_TURNOS}\nPara instalarla, ábrala en Chrome (Android: ⋮ › Abrir en Chrome) o en Safari (iPhone) y toque "Instalar" o "Agregar a inicio".`;
+    + `Ábralo en la app Viajes ETP para ver la cita y marcar cada paso: ${APP_TURNOS}?t=${encodeURIComponent(String(a.enlace).split('t=').pop())}\n`
+    + `Para tenerla como app: ábrala en Chrome (Android: ⋮ › Abrir en Chrome) o en Safari (iPhone) y toque "Instalar" o "Agregar a inicio".`;
   if (!sinPreguntar && !confirm(`${v.placa} quedó asignado en Despacho.\n¿Enviar el enlace del viaje al conductor por WhatsApp${a.telefono ? ' (' + a.telefono + ')' : ''}?`)) return;
   window.open(`https://wa.me/${a.telefono || ''}?text=${encodeURIComponent(texto)}`, '_blank', 'noopener');
 }
