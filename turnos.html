@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Viajes Entrapetrol</title>
+<title>Viajes ETP</title>
 <meta name="theme-color" content="#d4006f">
 <link rel="manifest" href="turnos.webmanifest">
 <link rel="icon" href="turnos-icono.svg" type="image/svg+xml">
@@ -40,7 +40,7 @@ h2{font-size:17px;margin:18px 0 8px}
 </style>
 </head>
 <body>
-<header><h1>Viajes Entrapetrol</h1><div class="sub" id="quien">Enturnarse y reportar disponibilidad</div></header>
+<header><h1>Viajes ETP</h1><div class="sub" id="quien">Enturnarse y reportar disponibilidad</div></header>
 <main>
   <!-- primera vez: datos del conductor (se guardan en este celular) -->
   <section id="registro" class="card hidden">
@@ -53,6 +53,7 @@ h2{font-size:17px;margin:18px 0 8px}
   </section>
   <section id="app" class="hidden">
     <button id="instalar" class="sec hidden">📲 Instalar la app en este celular</button>
+    <section id="misViajesBloque" class="hidden"><h2>Mis viajes</h2><div id="misViajes"></div></section>
     <h2>Viajes disponibles</h2>
     <div class="sub" id="actualizado"></div>
     <div id="viajes"></div>
@@ -70,7 +71,7 @@ h2{font-size:17px;margin:18px 0 8px}
 </main>
 <div id="msg" role="status"></div>
 <script>
-// App de turnos de conductores · Entrapetrol. Los datos los sirve el Apps Script (Conductores.gs: app=turnos):
+// App de conductores "Viajes ETP": mis viajes (asignados), viajes disponibles para enturnarse y disponibilidad. Los datos los sirve el Apps Script (Conductores.gs: app=turnos):
 // solo viajes sin vehículo de los próximos días, con fechas y lugares; nunca cliente, booking, contenedor ni tarifa.
 const API = 'https://script.google.com/macros/s/AKfycbz_st7NWwfY57QfMyTBLGxnufoIMgvlh3wKIwgi2PuzcrT409dFKI7iPsz3hOhUFKQ0/exec';
 const $ = s => document.querySelector(s);
@@ -96,7 +97,7 @@ $('#cambiar').onclick = () => { if (yo) { $('#rPlaca').value = yo.placa; $('#rNo
 
 async function cargar(){
   try {
-    const r = await fetch(`${API}?app=turnos&placa=${encodeURIComponent(yo.placa)}`);
+    const r = await fetch(`${API}?app=turnos&placa=${encodeURIComponent(yo.placa)}&tel=${encodeURIComponent(yo.telefono)}`);
     datos = await r.json(); guardar('etp-turnos-ultimo', datos);
   } catch(e) { datos = guardado('etp-turnos-ultimo'); if (datos) aviso('Sin señal: se muestra la última lista que cargó'); }
   pintar();
@@ -104,7 +105,16 @@ async function cargar(){
 // "Nuevo": viajes que no estaban la última vez que abrió la app
 function pintar(){
   if (!datos || !datos.ok) { $('#viajes').innerHTML = '<div class="card vacio">No se pudieron cargar los viajes. Intente de nuevo.</div>'; return; }
-  const vistos = new Set(guardado('etp-turnos-vistos') || []);
+  // Mis viajes: solo si la placa y el celular coinciden con lo que registró operaciones (si no, null y no se muestra)
+  const M = datos.misViajes;
+  $('#misViajesBloque').classList.toggle('hidden', !M);
+  if (M) $('#misViajes').innerHTML = M.length ? M.map(v => `<div class="card">
+    <div class="tags"><span class="tag ${v.operacion === 'IMPO' ? 'impo' : ''}">${esc(v.operacion)}${v.fecha ? ' · ' + fd(v.fecha) : ''}</span>${v.avance ? `<span class="sub">${esc(v.avance)}</span>` : ''}</div>
+    ${v.ultimo ? `<div><b>${esc(v.ultimo)}</b></div>` : ''}
+    ${v.pasos.map((p, i) => `<div class="paso"><div class="num">${i + 1}</div><div><b>${esc(p.que)} · ${p.cuando ? fd(p.cuando) : p.antesDe ? 'antes del ' + fd(p.antesDe) : 'fecha por confirmar'}</b><span>${esc(p.donde)}</span></div></div>`).join('')}
+    ${v.enlace ? `<a class="btn" href="${esc(v.enlace)}">Abrir viaje · pasos, fotos y novedades</a>` : '<div class="sub">Operaciones le enviará la cita y los detalles de este viaje.</div>'}</div>`).join('')
+    : '<div class="card vacio">No tiene viajes asignados en este momento.</div>';
+  const vistos = new Set(guardado('etp-turnos-vistos') || []), miTurno = datos.viajes.find(v => v.yo);
   $('#actualizado').textContent = `Actualizado ${new Date().toLocaleTimeString('es-CO', {hour: 'numeric', minute: '2-digit'})} · ${datos.viajes.length} viaje${datos.viajes.length === 1 ? '' : 's'} sin vehículo`;
   $('#viajes').innerHTML = datos.viajes.length ? datos.viajes.map(v => `<div class="card">
     <div class="tags"><span class="tag ${v.operacion === 'IMPO' ? 'impo' : ''}">${esc(v.operacion)}${v.unidad ? ' · ' + esc(v.unidad.replace('1X', '')) + "'" : ''}</span>
@@ -112,11 +122,12 @@ function pintar(){
     ${v.pasos.map((p, i) => `<div class="paso"><div class="num">${i + 1}</div><div><b>${esc(p.que)} · ${p.cuando ? fd(p.cuando) : p.antesDe ? 'antes del ' + fd(p.antesDe) : 'fecha por confirmar'}</b><span>${esc(p.donde)}</span></div></div>`).join('')}
     <div class="sub">Las condiciones (cita, documentos, sello) se le confirman al asignarle el viaje.</div>
     ${v.yo ? `<div class="ok" style="margin-top:10px">✓ Usted está enturnado</div><button class="sec" data-retirar="${esc(v.id)}">Retirarme de este viaje</button>`
+      : miTurno ? `<button disabled>Ya está enturnado en el viaje del ${fd(miTurno.primero)}: retírese de ese primero</button>`
       : `<button data-enturnar="${esc(v.id)}">Me enturno</button>`}</div>`).join('')
     : '<div class="card vacio">Por ahora no hay viajes sin vehículo. Vuelva a mirar más tarde.</div>';
   guardar('etp-turnos-vistos', datos.viajes.map(v => v.id));
   $('#mios').innerHTML = datos.mios.length ? datos.mios.map(t => `<div class="card"><b>${t.tipo === 'Turno' ? esc(t.resumen || t.viajeId) : 'Disponible' + (t.desde ? ' desde el ' + fd(t.desde) : '') + (t.ciudad ? ' en ' + esc(t.ciudad) : '')}</b>
-    <div class="${t.estado === 'Asignado a usted' ? 'ok' : 'sub'}">${esc(t.estado)}</div></div>`).join('') : '<div class="sub">Todavía no se ha enturnado.</div>';
+    <div class="${t.estado === 'Asignado a usted' ? 'ok' : 'sub'}">${esc(t.estado)}${t.estado === 'Asignado a usted' ? ' · para cambiarlo hable con operaciones' : ''}</div></div>`).join('') : '<div class="sub">Todavía no se ha enturnado.</div>';
   if (datos.telefonoOperaciones) { const a = $('#ayuda'); a.href = 'https://wa.me/' + datos.telefonoOperaciones; a.classList.remove('hidden'); }
 }
 async function enviar(cuerpo, ok){

@@ -1,7 +1,7 @@
 {
-  "name": "Viajes Entrapetrol",
+  "name": "Viajes ETP",
   "short_name": "Viajes ETP",
-  "description": "Viajes disponibles para enturnarse y reportar disponibilidad",
+  "description": "Mis viajes, viajes disponibles para enturnarse y disponibilidad",
   "start_url": "turnos.html",
   "scope": "./",
   "display": "standalone",
