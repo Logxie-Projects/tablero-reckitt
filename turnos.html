@@ -129,7 +129,7 @@ function pintar(){
     <div class="tags"><span class="tag ${v.operacion === 'IMPO' ? 'impo' : ''}">${esc(v.operacion)}${v.fecha ? ' · ' + fd(v.fecha) : ''}</span>${v.avance ? `<span class="sub">${esc(v.avance)}</span>` : ''}</div>
     ${v.ultimo ? `<div><b>${esc(v.ultimo)}</b></div>` : ''}
     ${v.pasos.map((p, i) => `<div class="paso"><div class="num">${i + 1}</div><div><b>${esc(p.que)} · ${p.cuando ? fd(p.cuando) : p.antesDe ? 'antes del ' + fd(p.antesDe) : 'fecha por confirmar'}</b><span>${esc(p.donde)}</span></div></div>`).join('')}
-    ${v.enlace ? `<a class="btn" href="${esc(v.enlace)}">Abrir viaje · pasos, fotos y novedades</a>` : '<div class="sub">Operaciones le enviará la cita y los detalles de este viaje.</div>'}</div>`).join('')
+    ${v.enlace ? `<a class="btn" href="${esc(v.enlace)}">${v.aceptado === false ? '✅ Aceptar el viaje · cédula y selfie' : 'Abrir viaje · pasos, fotos y novedades'}</a>` : '<div class="sub">Operaciones le enviará la cita y los detalles de este viaje.</div>'}</div>`).join('')
     : '<div class="card vacio">No tiene viajes asignados en este momento.</div>';
   const vistos = new Set(guardado('etp-turnos-vistos') || []), miTurno = datos.viajes.find(v => v.yo);
   $('#actualizado').textContent = `Actualizado ${new Date().toLocaleTimeString('es-CO', {hour: 'numeric', minute: '2-digit'})} · ${datos.viajes.length} viaje${datos.viajes.length === 1 ? '' : 's'} sin vehículo`;

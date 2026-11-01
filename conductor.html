@@ -244,13 +244,13 @@ function pintar() {
     <div class="progreso"><span>${i >= total ? 'Viaje terminado' : `Paso ${i + 1} de ${total}`}</span><small>${i} de ${total} listos</small></div>
     <div class="barra"><i style="width:${Math.round(100 * i / total)}%"></i></div>
 
-    ${falta ? `<div class="card verif"><h2>🪪 Antes de seguir</h2>
-        ${idEstado === 'Rechazada' ? '<p class="rechazo">Operaciones no pudo confirmar su identidad. Tómese las fotos otra vez, con buena luz.</p>' : ''}
-        <p>Verifique que es usted: <b>una selfie</b> y <b>una foto de su cédula o licencia</b>.</p>
-        <button class="siguiente" onclick="verificar()"><span class="ico">📸</span><span>Verificar mi identidad<span class="toca">👆 Toque aquí</span></span></button></div>`
+    ${falta ? `<div class="card verif"><h2>✅ Acepte el viaje</h2>
+        ${idEstado === 'Rechazada' ? '<p class="rechazo">Operaciones no pudo confirmar su identidad. Acéptelo otra vez y tómese las fotos con buena luz.</p>' : ''}
+        <p>Para confirmar que usted hace este viaje: <b>su número de cédula</b>, <b>una selfie</b> y <b>una foto de su cédula</b>.</p>
+        <button class="siguiente" onclick="verificar()"><span class="ico">✅</span><span>Aceptar el viaje<span class="toca">👆 Toque aquí</span></span></button></div>`
     : sig ? `<button class="siguiente" onclick="confirmar(${i})"><span class="ico">${sig.icono}</span><span>${esc(sig.texto)}<span class="toca">👆 Toque aquí cuando esté listo</span></span></button>`
           : `<div class="listo"><b>🏁 ¡Viaje terminado!</b>Gracias. Operaciones ya fue avisado.</div>`}
-    ${idEstado === 'Por revisar' ? '<div class="idok">🪪 Identidad enviada · operaciones la está revisando</div>' : idEstado === 'Aprobada' ? '<div class="idok">🪪 Identidad verificada ✔</div>' : ''}
+    ${idEstado === 'Por revisar' ? '<div class="idok">✅ Viaje aceptado · operaciones está revisando su identidad</div>' : idEstado === 'Aprobada' ? '<div class="idok">✅ Viaje aceptado · identidad verificada ✔</div>' : ''}
     ${ultimo ? `<div class="ultimo">✔ ${esc(pasos[i - 1].corto)} · ${hora(ultimo.fecha)}${ultimo.pendiente ? ' (sin enviar)' : ''}
       ${puedeDeshacer ? `<button onclick="deshacer()">Me equivoqué</button>` : ''}</div>` : ''}
 
@@ -389,17 +389,21 @@ function deshacer() {
     <button class="btn-no" onclick="cerrarHoja()">No, está bien</button>`);
 }
 
-/* ---------- verificación de identidad: selfie + documento ---------- */
+/* ---------- aceptar el viaje: cédula + selfie + foto de la cédula (con la ubicación de ese momento) ---------- */
 const fotosV = {};
 function verificar() {
   ubicar(); delete fotosV.selfie; delete fotosV.documento;
-  hoja(`<p class="grande"><span>🪪</span>Verificar mi identidad</p>
+  const A = S.asignacion;
+  hoja(`<p class="grande"><span>✅</span>Aceptar el viaje</p>
+    <p class="sub" style="margin:-4px 0 10px">${esc(A.operacion)} · placa <b>${esc(A.placa)}</b>${A.cita ? ` · cita ${esc(String(A.cita).replace('T', ' '))}` : ''}${A.lugarCita ? ` · ${esc(A.lugarCita)}` : ''}</p>
+    <input id="cedula" inputmode="numeric" autocomplete="off" placeholder="Número de cédula" oninput="listoV()"
+      style="width:100%;box-sizing:border-box;font-size:22px;padding:14px;border-radius:14px;border:2px solid #a5b4fc;margin-bottom:10px;letter-spacing:1px">
     <div class="fotosv">
       <button id="v-selfie" onclick="tomarV('selfie')"><span class="ico">🤳</span>1. Tomarme una selfie</button>
-      <button id="v-documento" onclick="tomarV('documento')"><span class="ico">🪪</span>2. Foto de mi cédula o licencia</button>
+      <button id="v-documento" onclick="tomarV('documento')"><span class="ico">🪪</span>2. Foto de mi cédula</button>
     </div>
     <label class="acepto"><input type="checkbox" id="acepto" onchange="listoV()"><span>${esc(S.avisoDatos)}</span></label>
-    <button class="btn-si" id="bsi" disabled onclick="enviarV()">Enviar y empezar</button>
+    <button class="btn-si" id="bsi" disabled onclick="enviarV()">✅ Acepto el viaje</button>
     <button class="btn-no" onclick="cerrarHoja()">Ahora no</button>`);
 }
 function tomarV(slot) {
@@ -416,11 +420,12 @@ function tomarV(slot) {
   };
   inp.click();
 }
-function listoV() { const b = $('#bsi'); if (b) b.disabled = !(fotosV.selfie && fotosV.documento && $('#acepto').checked); }
+const cedulaV = () => ($('#cedula') ? $('#cedula').value : '').replace(/\D/g, '');
+function listoV() { const b = $('#bsi'); if (b) b.disabled = !(fotosV.selfie && fotosV.documento && $('#acepto').checked && cedulaV().length >= 5 && cedulaV().length <= 12); }
 function enviarV() {
-  const item = Object.assign({ action: 'verificar', selfie: fotosV.selfie, documento: fotosV.documento, acepta: true }, pos || {});
+  const item = Object.assign({ action: 'verificar', cedula: cedulaV(), selfie: fotosV.selfie, documento: fotosV.documento, acepta: true }, pos || {});
   cerrarHoja(); encolar(item);
-  toast('✅ Identidad enviada. Ya puede empezar');
+  toast('✅ Viaje aceptado. Ya puede empezar');
 }
 
 let tipoNovedad = '';
