@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Viajes Entrapetrol</title>
+<meta name="theme-color" content="#d4006f">
+<link rel="manifest" href="turnos.webmanifest">
+<link rel="icon" href="turnos-icono.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="turnos-icono.svg">
+<style>
+:root{--accent:#d4006f;--bg:#f4f5f7;--card:#fff;--text:#1b1f27;--muted:#667085;--border:#e4e7ec;--ok:#15803d;--warn:#b45309;--bad:#dc2626}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#181b21;--text:#eef0f3;--muted:#98a2b3;--border:#2a2f38}}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text);font-size:16px;line-height:1.45}
+header{position:sticky;top:0;z-index:2;background:var(--accent);color:#fff;padding:12px 16px calc(12px) 16px;padding-top:max(12px,env(safe-area-inset-top))}
+header h1{margin:0;font-size:19px}
+header .sub{font-size:13px;opacity:.9}
+main{padding:12px 16px 90px;max-width:560px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px}
+.tags{display:flex;gap:6px;justify-content:space-between;align-items:center;margin-bottom:8px}
+.tag{font-size:12px;font-weight:700;padding:3px 9px;border-radius:99px;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent)}
+.tag.impo{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)}
+.tag.nuevo{background:color-mix(in srgb,var(--ok) 14%,transparent);color:var(--ok)}
+.paso{display:flex;gap:10px;padding:5px 0}
+.paso b{display:block;font-size:15px}
+.paso span{color:var(--muted);font-size:14px}
+.num{flex:none;width:24px;height:24px;border-radius:99px;background:var(--border);display:grid;place-items:center;font-size:13px;font-weight:700}
+button,.btn{font:inherit;font-weight:700;border:0;border-radius:12px;padding:13px 16px;width:100%;background:var(--accent);color:#fff;cursor:pointer;margin-top:10px;text-align:center;display:block;text-decoration:none}
+button.sec{background:transparent;color:var(--accent);border:1.5px solid var(--accent)}
+button:disabled{opacity:.6}
+.sub{color:var(--muted);font-size:14px}
+label{display:block;font-size:14px;color:var(--muted);margin:10px 0 4px}
+input{font:inherit;width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--card);color:var(--text)}
+h2{font-size:17px;margin:18px 0 8px}
+.ok{color:var(--ok);font-weight:700}
+.vacio{text-align:center;padding:28px 12px;color:var(--muted)}
+#msg{position:fixed;left:16px;right:16px;bottom:max(16px,env(safe-area-inset-bottom));background:#1b1f27;color:#fff;padding:12px 14px;border-radius:12px;display:none;z-index:5}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<header><h1>Viajes Entrapetrol</h1><div class="sub" id="quien">Enturnarse y reportar disponibilidad</div></header>
+<main>
+  <!-- primera vez: datos del conductor (se guardan en este celular) -->
+  <section id="registro" class="card hidden">
+    <b>Antes de empezar</b>
+    <div class="sub">Se guardan en este celular para no volver a escribirlos.</div>
+    <label for="rPlaca">Placa del vehículo</label><input id="rPlaca" autocapitalize="characters" placeholder="TKP402">
+    <label for="rNombre">Nombre completo</label><input id="rNombre" autocomplete="name" placeholder="Juan Pérez">
+    <label for="rTel">Celular (WhatsApp)</label><input id="rTel" inputmode="tel" autocomplete="tel" placeholder="3001234567">
+    <button id="rGuardar">Guardar</button>
+  </section>
+  <section id="app" class="hidden">
+    <button id="instalar" class="sec hidden">📲 Instalar la app en este celular</button>
+    <h2>Viajes disponibles</h2>
+    <div class="sub" id="actualizado"></div>
+    <div id="viajes"></div>
+    <h2>¿Está libre sin un viaje en particular?</h2>
+    <div class="card">
+      <label for="dDesde">Disponible desde</label><input id="dDesde" type="date">
+      <label for="dCiudad">Ciudad donde está</label><input id="dCiudad" placeholder="Buenaventura">
+      <button id="dEnviar" class="sec">Estoy disponible</button>
+    </div>
+    <h2>Mis turnos</h2>
+    <div id="mios"></div>
+    <a id="ayuda" class="btn sec hidden" target="_blank" rel="noopener">💬 Escribir a operaciones</a>
+    <button id="cambiar" class="sec">Cambiar placa o datos</button>
+  </section>
+</main>
+<div id="msg" role="status"></div>
+<script>
+// App de turnos de conductores · Entrapetrol. Los datos los sirve el Apps Script (Conductores.gs: app=turnos):
+// solo viajes sin vehículo de los próximos días, con fechas y lugares; nunca cliente, booking, contenedor ni tarifa.
+const API = 'https://script.google.com/macros/s/AKfycbz_st7NWwfY57QfMyTBLGxnufoIMgvlh3wKIwgi2PuzcrT409dFKI7iPsz3hOhUFKQ0/exec';
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const guardado = k => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch(e){ return null; } };
+const guardar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} };
+const DIAS = ['dom','lun','mar','mié','jue','vie','sáb'], MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const fd = iso => { const d = new Date(iso + 'T12:00'); return `${DIAS[d.getDay()]} ${d.getDate()} ${MES[d.getMonth()]}`; };
+const aviso = t => { const m = $('#msg'); m.textContent = t; m.style.display = 'block'; clearTimeout(aviso.t); aviso.t = setTimeout(() => m.style.display = 'none', 3500); };
+let yo = guardado('etp-conductor'), datos = null;
+
+function mostrar(){
+  $('#registro').classList.toggle('hidden', !!yo); $('#app').classList.toggle('hidden', !yo);
+  $('#quien').textContent = yo ? `${yo.conductor} · ${yo.placa}` : 'Enturnarse y reportar disponibilidad';
+  if (yo) cargar();
+}
+$('#rGuardar').onclick = () => {
+  const placa = $('#rPlaca').value.toUpperCase().replace(/[^A-Z0-9]/g, ''), conductor = $('#rNombre').value.trim(), telefono = $('#rTel').value.replace(/\D/g, '');
+  if (placa.length < 5 || conductor.length < 3 || telefono.length < 10) return aviso('Revise la placa, el nombre y el celular (10 números)');
+  yo = {placa, conductor, telefono}; guardar('etp-conductor', yo); mostrar();
+};
+$('#cambiar').onclick = () => { if (yo) { $('#rPlaca').value = yo.placa; $('#rNombre').value = yo.conductor; $('#rTel').value = yo.telefono; } yo = null; mostrar(); };
+
+async function cargar(){
+  try {
+    const r = await fetch(`${API}?app=turnos&placa=${encodeURIComponent(yo.placa)}`);
+    datos = await r.json(); guardar('etp-turnos-ultimo', datos);
+  } catch(e) { datos = guardado('etp-turnos-ultimo'); if (datos) aviso('Sin señal: se muestra la última lista que cargó'); }
+  pintar();
+}
+// "Nuevo": viajes que no estaban la última vez que abrió la app
+function pintar(){
+  if (!datos || !datos.ok) { $('#viajes').innerHTML = '<div class="card vacio">No se pudieron cargar los viajes. Intente de nuevo.</div>'; return; }
+  const vistos = new Set(guardado('etp-turnos-vistos') || []);
+  $('#actualizado').textContent = `Actualizado ${new Date().toLocaleTimeString('es-CO', {hour: 'numeric', minute: '2-digit'})} · ${datos.viajes.length} viaje${datos.viajes.length === 1 ? '' : 's'} sin vehículo`;
+  $('#viajes').innerHTML = datos.viajes.length ? datos.viajes.map(v => `<div class="card">
+    <div class="tags"><span class="tag ${v.operacion === 'IMPO' ? 'impo' : ''}">${esc(v.operacion)}${v.unidad ? ' · ' + esc(v.unidad.replace('1X', '')) + "'" : ''}</span>
+      ${vistos.has(v.id) ? `<span class="sub">${v.enturnados ? v.enturnados + ' enturnado' + (v.enturnados > 1 ? 's' : '') : ''}</span>` : '<span class="tag nuevo">Nuevo</span>'}</div>
+    ${v.pasos.map((p, i) => `<div class="paso"><div class="num">${i + 1}</div><div><b>${esc(p.que)} · ${p.cuando ? fd(p.cuando) : p.antesDe ? 'antes del ' + fd(p.antesDe) : 'fecha por confirmar'}</b><span>${esc(p.donde)}</span></div></div>`).join('')}
+    <div class="sub">Las condiciones (cita, documentos, sello) se le confirman al asignarle el viaje.</div>
+    ${v.yo ? `<div class="ok" style="margin-top:10px">✓ Usted está enturnado</div><button class="sec" data-retirar="${esc(v.id)}">Retirarme de este viaje</button>`
+      : `<button data-enturnar="${esc(v.id)}">Me enturno</button>`}</div>`).join('')
+    : '<div class="card vacio">Por ahora no hay viajes sin vehículo. Vuelva a mirar más tarde.</div>';
+  guardar('etp-turnos-vistos', datos.viajes.map(v => v.id));
+  $('#mios').innerHTML = datos.mios.length ? datos.mios.map(t => `<div class="card"><b>${t.tipo === 'Turno' ? esc(t.resumen || t.viajeId) : 'Disponible' + (t.desde ? ' desde el ' + fd(t.desde) : '') + (t.ciudad ? ' en ' + esc(t.ciudad) : '')}</b>
+    <div class="${t.estado === 'Asignado a usted' ? 'ok' : 'sub'}">${esc(t.estado)}</div></div>`).join('') : '<div class="sub">Todavía no se ha enturnado.</div>';
+  if (datos.telefonoOperaciones) { const a = $('#ayuda'); a.href = 'https://wa.me/' + datos.telefonoOperaciones; a.classList.remove('hidden'); }
+}
+async function enviar(cuerpo, ok){
+  try {
+    const r = await fetch(API, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify({...cuerpo, ...yo})});
+    const j = await r.json();
+    if (!j.ok) return aviso(j.error || 'No se pudo enviar');
+    aviso(ok); cargar();
+  } catch(e) { aviso('Sin señal: intente de nuevo'); }
+}
+$('#viajes').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return; b.disabled = true;
+  if (b.dataset.enturnar) enviar({action: 'enturnar', viajeId: b.dataset.enturnar}, 'Listo: quedó enturnado. Operaciones le confirma si se lo asignan.');
+  else if (b.dataset.retirar) enviar({action: 'retirarTurno', viajeId: b.dataset.retirar}, 'Se retiró de ese viaje');
+};
+$('#dEnviar').onclick = () => enviar({action: 'disponible', desde: $('#dDesde').value, ciudad: $('#dCiudad').value}, 'Listo: operaciones ya sabe que está disponible');
+$('#dDesde').value = new Date().toLocaleDateString('en-CA', {timeZone: 'America/Bogota'});
+// instalar como app (Android / Chrome): el navegador lo ofrece cuando la página cumple los requisitos
+let instalar = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); instalar = e; $('#instalar').classList.remove('hidden'); });
+$('#instalar').onclick = async () => { if (!instalar) return; instalar.prompt(); await instalar.userChoice; instalar = null; $('#instalar').classList.add('hidden'); };
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('turnos-sw.js').catch(() => {});
+document.addEventListener('visibilitychange', () => { if (!document.hidden && yo) cargar(); });   // al volver a la app, lista al día
+mostrar();
+</script>
+</body>
+</html>
