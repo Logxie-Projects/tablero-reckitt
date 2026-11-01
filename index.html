@@ -339,6 +339,10 @@ body.turno-bloqueado #nav button:not([data-v="turno"]), body.turno-bloqueado #gb
 .tr-rev summary{cursor:pointer;padding:4px 10px}
 @media (max-width:700px){.tr-fila{flex-direction:column}.tr-acc{max-width:none;justify-content:flex-start}}
 body.en-turno #gbar{display:none}
+/* preguntas al agente LogxIA: lista en el chat y aviso de respuestas nuevas en el botón */
+.chat-preg details{padding:4px 12px}
+.chat-preg summary{cursor:pointer;padding:4px 0}
+#btnChat[data-nuevas]:not([data-nuevas=""])::after{content:attr(data-nuevas);position:absolute;top:-4px;right:-4px;min-width:20px;height:20px;padding:0 5px;border-radius:99px;background:var(--bad);color:#fff;font-size:12px;font-weight:700;display:grid;place-items:center}
 </style>
 </head>
 <body>
@@ -517,6 +521,7 @@ body.en-turno #gbar{display:none}
   <div class="chat-head"><div class="logo" style="width:30px;height:30px"><svg viewBox="0 0 48 48" width="26" height="26" aria-hidden="true"><line x1="20" y1="5" x2="20" y2="11" stroke="#cbd5e1" stroke-width="2"/><circle cx="20" cy="5" r="3" fill="#4ade80"/><path d="M33 2l-5 9h4l-3 7 8-10h-4l3-6z" fill="#4ade80"/><g fill="none" stroke="#eef2f7" stroke-width="3.2" stroke-linecap="round"><path d="M13 30v7c0 4-3 5-5 4"/><path d="M19 31v10c0 3-2 4-4 3"/><path d="M24 31v13"/><path d="M29 31v10c0 3 2 4 4 3"/><path d="M35 30v7c0 4 3 5 5 4"/></g><rect x="8" y="10" width="32" height="22" rx="11" fill="#eef2f7"/><rect x="12.5" y="15" width="23" height="11" rx="5.5" fill="#1e293b"/><circle cx="19" cy="20.5" r="3.2" fill="#7dd3fc"/><circle cx="29" cy="20.5" r="3.2" fill="#7dd3fc"/><circle cx="20" cy="19.5" r="1" fill="#fff"/><circle cx="30" cy="19.5" r="1" fill="#fff"/></svg></div>
     <div style="flex:1"><b class="lx-name">Logx<b>IA</b></b><div class="sub">Consulta, actualiza y filtra viajes</div></div>
     <button class="btn" id="chatClose" aria-label="Cerrar">✕</button></div>
+  <div class="chat-preg" id="chatPreg"></div>
   <div class="chat-msgs" id="chatMsgs"></div>
   <div class="chat-sug" id="chatSug"></div>
   <form class="chat-form" id="chatForm"><input id="chatIn" placeholder="Ej: el booking 123456789 ya está en puerto · filtra los pendientes por facturar" autocomplete="off"><button class="btn primary">Enviar</button></form>
@@ -1071,7 +1076,8 @@ async function cargar(){
     historial = j.historial || [];
     window.MODO_CLIENTE = !j.interno;
     window.BITACORA = j.bitacora || [];
-    window.TURNO = j.turno || [];   // "Revisado" de hoy en Mi turno (compartido)
+    window.TURNO = j.turno || [];
+    window.PREGUNTAS = j.preguntas || [];   // preguntas al agente LogxIA (preguntas.js)   // "Revisado" de hoy en Mi turno (compartido)
     window.CONDUCTORES = j.conductores || [];
     window.SEG_INICIO = j.seguimiento || '';
     window.CLAVE = clave;
@@ -1575,8 +1581,9 @@ function renderTurno(){
   document.body.classList.toggle('turno-bloqueado', T.bloqueado);
   const primeraRoja = M.findIndex((m, i) => T.rojas[i]);
   if (T.bloqueado && $('#v-turno').classList.contains('hidden')) $('#nav [data-v="turno"]').click();
-  // un paso se abre cuando los anteriores no tienen líneas rojas; Gerencia ve todos los pasos sin orden
-  const abierto = i => esGerencia() || primeraRoja < 0 || i <= primeraRoja;
+  // un paso se abre cuando los anteriores no tienen líneas rojas; los que TIENEN líneas rojas están siempre abiertos (son
+  // igual de urgentes: ej. Cobertura con viajes sin vehículo a 72 h); Gerencia ve todos los pasos sin orden
+  const abierto = i => esGerencia() || primeraRoja < 0 || i <= primeraRoja || T.rojas[i] > 0;
   if (!abierto(M.findIndex(m => m.id === turnoMenu))) turnoMenu = M[primeraRoja].id;
   const cuenta = m => { const h = m.filas.filter(x => x.hecha || (x.exc && ['pendiente', 'aprobada'].includes(x.exc.estado))).length; return {h, t: m.filas.length}; };
   $('#nTurno').textContent = T.rojas.reduce((a, b) => a + b, 0) || '';
@@ -1588,7 +1595,7 @@ function renderTurno(){
     : T.rondaHecha ? `✓ Ronda ${r.n} de ${RONDAS.length} ${T.rondaExc ? 'con excepción (' + ({pendiente: 'esperando a Gerencia', aprobada: 'aprobada hasta las ' + T.rondaExc.vence}[T.rondaExc.estado] || '') + ')' : 'hecha'}${r.n < RONDAS.length ? ` · la siguiente a las ${RONDAS[r.n]}:00` : ''}`
     : T.rondaVencida ? `<span class="tr-vencida">⛔ Ronda ${r.n} vencida a las ${hhmm(r.vence)}: falta el seguimiento</span>${btnT('No se puede: excepción', `data-t-exc="ronda${r.n}"`)}`
     : `<span class="${T.resta <= 30 ? 'tr-urge' : ''}">⏱ Ronda ${r.n} de ${RONDAS.length} · faltan ${hhmm(T.resta)} (vence ${hhmm(r.vence)})</span>`;
-  const rojas = T.rojas.map((n, i) => n ? `${n} en ${M[i].titulo}` : '').filter(Boolean);
+  const rojas = T.rojas.map((n, i) => n ? `<button type="button" class="link" data-t-menu="${M[i].id}">${n} en ${M[i].titulo}</button>` : '').filter(Boolean);
   // arriba a la derecha: entrar o salir del modo Gerencia
   $('#turnoLlave').innerHTML = window.MODO_CLIENTE ? '' : esGerencia() ? `<span class="tr-ger">🔓 Modo Gerencia</span> <button type="button" class="btn" data-t-gsalir="1">Salir</button>`
     : '<button type="button" class="btn" data-t-gerencia="1" title="Con la clave de Gerencia el tablero no se bloquea y se pueden aprobar excepciones">🔑 Entrar como Gerencia</button>';
@@ -2985,7 +2992,8 @@ function respuestaLocal(q){
     const n = viajes.filter(v=>v.novedad);
     return n.length ? `Hay ${n.length} viaje(s) con novedad:` + n.map(tarjetaViaje).join('') : 'No hay viajes con novedad en este momento.';
   }
-  return 'No encontré ese viaje. Pregúntame por <b>placa</b>, <b>booking</b>, <b>conductor</b>, <b>destino</b> o <b>motonave</b>, o por “retiros de hoy” y “qué falta por asignar”.';
+  // lo que las reglas no responden lo contesta el agente LogxIA en su próxima revisión (preguntas.js)
+  return 'Eso no lo respondo con mis reglas. Pregúntame por <b>placa</b>, <b>booking</b>, <b>conductor</b>, <b>destino</b> o <b>motonave</b>, o por “retiros de hoy” y “qué falta por asignar”.' + botonPreguntaLogxia(q);
 }
 function burbuja(html, quien){
   const d = document.createElement('div'); d.className = 'msg ' + quien; d.innerHTML = html;
@@ -3001,16 +3009,66 @@ async function preguntar(q){
   const b = burbuja('<span class="typing">Consultando…</span>', 'bot');
   // respuesta con los datos cargados: un viaje, una lista corta para elegir, el reporte o los pendientes
   b.innerHTML = respuestaLocal(q);
+  // si la respuesta de las reglas no era lo que buscaba, puede pasársela al agente LogxIA (preguntas.js)
+  if (!b.querySelector('[data-preguntar]')) b.insertAdjacentHTML('beforeend', botonPreguntaLogxia(q).replace('🤖 Preguntarle a LogxIA', '¿No es lo que buscabas? Preguntarle a LogxIA'));
   chatLog.push({r:'u',t:q},{r:'b',t:b.innerText});
 }
 const pintarSugerencias = () => $('#chatSug').innerHTML = sugerencias().map(s=>`<button type="button" class="chip">${esc(s)}</button>`).join('');
 $('#chatSug').onclick = e => { const c=e.target.closest('.chip'); if(c) preguntar(c.textContent); };
 $('#chatForm').onsubmit = e => { e.preventDefault(); preguntar($('#chatIn').value); };
-$('#btnChat').onclick = () => { $('#chat').classList.add('open'); document.body.classList.add('chat-on'); $('#chatIn').focus(); };
+$('#btnChat').onclick = () => { $('#chat').classList.add('open'); document.body.classList.add('chat-on'); pintarPreguntas(); marcarLeidas(); $('#btnChat').dataset.nuevas = ''; $('#chatIn').focus(); };
 $('#chatClose').onclick = () => { $('#chat').classList.remove('open'); document.body.classList.remove('chat-on'); };
 burbuja('Hola 👋 Soy <b>LogxIA</b>. Pregúntame el status de un viaje por placa, booking o conductor, o por destino y motonave.<span class="solo-interno"><br>También actualizo y filtro: <i>“el booking … ya está en puerto”</i>, <i>“pedido … entregado en bodega ayer”</i>, <i>“placa ABC123 conductor … para el booking …”</i>, <i>“factura FE-123 del 30/10 del booking …”</i>, <i>“filtra los pendientes por facturar”</i>. Siempre le muestro el cambio y solo lo guardo cuando confirma.</span>', 'bot');
 
-function render(){ pintarSugerencias(); renderGbar(); renderTurno(); renderLean(); renderErrores(); renderAcciones(); renderKpis(); renderChartDias(); renderChartEstados(); renderChartPais(); renderChartMix(); renderAlertas(); renderProximos(); renderFeed(); renderChips(); renderTabla(); renderMotonaves(); }
+/* ---------- preguntas al agente LogxIA (cola): lo que el chat no responde con sus reglas lo contesta la rutina ---------- */
+// La rutina LogxIA corre a los 5 minutos de cada hora, de 7 a 18 h, de lunes a sábado (cron "5 12-23 * * 1-6" en UTC):
+// ahí lee las preguntas pendientes, busca en la base y en los correos, y deja la respuesta en la base.
+const LOGXIA_CORRE = {desde: 7, hasta: 18, minuto: 5};
+// próxima revisión de LogxIA, en palabras ("hoy a las 11:05", "el lunes a las 7:05")
+function proximaRevision(){
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {timeZone: 'America/Bogota', hour12: false, weekday: 'short', hour: 'numeric', minute: 'numeric'})
+    .formatToParts(new Date()).map(x => [x.type, x.value]));
+  const dia = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.weekday), ahora = (+p.hour % 24) * 60 + +p.minute;
+  const hora = h => `${h}:${String(LOGXIA_CORRE.minuto).padStart(2, '0')}`;
+  if (dia >= 1) {   // lunes a sábado
+    for (let h = LOGXIA_CORRE.desde; h <= LOGXIA_CORRE.hasta; h++) if (h * 60 + LOGXIA_CORRE.minuto > ahora) return `hoy a las ${hora(h)}`;
+  }
+  return `${dia === 6 ? 'el lunes' : dia === 0 ? 'mañana lunes' : 'mañana'} a las ${hora(LOGXIA_CORRE.desde)}`;
+}
+const quienSoy = () => { let u = ''; try { u = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
+  if (!u) { u = (prompt('¿Quién pregunta? (queda con su nombre)') || '').trim(); if (u) try { localStorage.setItem('rkt-usuario', u); } catch(e){} } return u; };
+const botonPreguntaLogxia = q => window.MODO_CLIENTE ? '' :
+  `<div style="margin-top:8px"><button type="button" class="btn" data-preguntar="${esc(q)}">🤖 Preguntarle a LogxIA</button> <span class="sub">responde ${proximaRevision()}</span></div>`;
+async function preguntarALogxia(q){
+  const usuario = quienSoy(); if (!usuario) return;
+  const b = burbuja('<span class="typing">Pasándole la pregunta a LogxIA…</span>', 'bot');
+  try {
+    const r = await fetch(CFG.SHEETS_API_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'},
+      body: JSON.stringify({action: 'pregunta', clave: window.CLAVE, pregunta: q, usuario})});
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'error');
+    window.PREGUNTAS = j.preguntas || window.PREGUNTAS;
+    b.innerHTML = `Listo, ${esc(usuario.split(' ')[0])}: le pasé tu pregunta a LogxIA (${esc(j.id)}).<br><b>Se responderá ${proximaRevision()}</b>, en su próxima revisión de la base y los correos. La respuesta aparece aquí, en "Tus preguntas a LogxIA".`;
+    pintarPreguntas();
+  } catch(e) { b.innerHTML = 'No pude pasarle la pregunta a LogxIA: ' + esc(e.message); }
+}
+// las preguntas de quien usa este navegador (o de todo el equipo, en modo Gerencia): pendientes con su hora y las respondidas
+function pintarPreguntas(){
+  const cont = $('#chatPreg'); if (!cont) return;
+  let yo = ''; try { yo = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
+  const P = (window.PREGUNTAS || []).filter(p => esGerencia() || (yo && p.usuario === yo)).slice(-6).reverse();
+  cont.innerHTML = P.length ? `<details ${P.some(p => p.estado === 'Respondida' && !leida(p.id)) ? 'open' : ''}><summary class="sub">Tus preguntas a LogxIA (${P.length})</summary>${P.map(p => `<div class="msg bot">
+    <div class="sub">${esc(p.id)} · ${esc(p.usuario)}: «${esc(p.pregunta)}»</div>
+    ${p.estado === 'Respondida' ? `<div style="margin-top:4px;white-space:pre-wrap">${esc(p.respuesta)}</div>${p.evidencia ? `<div class="sub" style="margin-top:4px">Fuente: ${esc(p.evidencia)}</div>` : ''}`
+      : `<div class="sub" style="margin-top:4px">⏳ Se responderá ${proximaRevision()}</div>`}</div>`).join('')}</details>` : '';
+  const nuevas = P.filter(p => p.estado === 'Respondida' && !leida(p.id)).length;
+  $('#btnChat').dataset.nuevas = nuevas || '';
+}
+const leida = id => { try { return (localStorage.getItem('rkt-preg-leidas') || '').split(',').includes(id); } catch(e){ return true; } };
+function marcarLeidas(){ const ids = (window.PREGUNTAS || []).filter(p => p.estado === 'Respondida').map(p => p.id);
+  try { localStorage.setItem('rkt-preg-leidas', ids.join(',')); } catch(e){} }
+$('#chatMsgs').addEventListener('click', e => { const b = e.target.closest('[data-preguntar]'); if (b) { b.disabled = true; preguntarALogxia(b.dataset.preguntar); } });
+function render(){ pintarSugerencias(); pintarPreguntas(); renderGbar(); renderTurno(); renderLean(); renderErrores(); renderAcciones(); renderKpis(); renderChartDias(); renderChartEstados(); renderChartPais(); renderChartMix(); renderAlertas(); renderProximos(); renderFeed(); renderChips(); renderTabla(); renderMotonaves(); }
 // pantalla de acceso cuando la página trae los datos de la hoja con clave
 function pedirClave(errada){
   document.body.insertAdjacentHTML('beforeend', `<div class="ov open" style="background:var(--bg)"><form class="modal" style="width:min(380px,100%)" onsubmit="event.preventDefault(); location.search='?clave='+encodeURIComponent(this.clave.value.trim())">
