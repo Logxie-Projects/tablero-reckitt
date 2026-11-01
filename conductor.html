@@ -237,6 +237,7 @@ function pintar() {
   <div class="wrap">
     ${nuevo ? `<div class="aviso">🔔 Operaciones le envió información nueva<button onclick="verNuevo()">Ver</button></div>` : ''}
     ${a.estado === 'Anulada' ? `<div class="aviso" style="background:#fee2e2;border-color:#f87171">⛔ Este viaje fue cancelado por operaciones</div>` : ''}
+    <a class="aviso" style="display:block;text-decoration:none;color:inherit" href="turnos.html">📲 Tenga todos sus viajes y los disponibles en la app <b>Viajes ETP</b> · instálela aquí</a>
 
     <div class="progreso"><span>${i >= total ? 'Viaje terminado' : `Paso ${i + 1} de ${total}`}</span><small>${i} de ${total} listos</small></div>
     <div class="barra"><i style="width:${Math.round(100 * i / total)}%"></i></div>

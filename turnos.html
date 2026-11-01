@@ -53,6 +53,7 @@ h2{font-size:17px;margin:18px 0 8px}
   </section>
   <section id="app" class="hidden">
     <button id="instalar" class="sec hidden">📲 Instalar la app en este celular</button>
+    <div id="guiaInstalar" class="card hidden"></div>
     <section id="misViajesBloque" class="hidden"><h2>Mis viajes</h2><div id="misViajes"></div></section>
     <h2>Viajes disponibles</h2>
     <div class="sub" id="actualizado"></div>
@@ -150,6 +151,20 @@ let instalar = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); instalar = e; $('#instalar').classList.remove('hidden'); });
 $('#instalar').onclick = async () => { if (!instalar) return; instalar.prompt(); await instalar.userChoice; instalar = null; $('#instalar').classList.add('hidden'); };
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('turnos-sw.js').catch(() => {});
+// sin "Instalar" (navegador de WhatsApp u otra app, o iPhone): se explica cómo hacerlo; ya instalada, no se muestra nada
+const instalada = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+const dentroDeApp = /WhatsApp|FBAN|FBAV|Instagram|; wv\)/i.test(navigator.userAgent), iphone = /iPhone|iPad/i.test(navigator.userAgent);
+setTimeout(() => {
+  if (instalada || instalar) return;
+  const g = $('#guiaInstalar');
+  g.innerHTML = '<b>📲 Para tener Viajes ETP como app</b><div class="sub" style="margin-top:6px">' + (dentroDeApp
+    ? (iphone ? 'Está dentro de WhatsApp. Toque <b>⋯</b> o <b>Compartir</b> y elija <b>Abrir en Safari</b>; ahí toque <b>Compartir › Agregar a inicio</b>.'
+              : 'Está dentro de WhatsApp. Toque <b>⋮</b> (arriba a la derecha) y elija <b>Abrir en Chrome</b>; ahí toque <b>⋮ › Instalar app</b> o <b>Agregar a pantalla de inicio</b>.')
+    : (iphone ? 'En Safari toque <b>Compartir</b> (el cuadrito con flecha) y luego <b>Agregar a inicio</b>.'
+              : 'En Chrome toque <b>⋮</b> (arriba a la derecha) y luego <b>Instalar app</b> o <b>Agregar a pantalla de inicio</b>.'))
+    + '</div>';
+  g.classList.remove('hidden');
+}, 2500);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && yo) cargar(); });   // al volver a la app, lista al día
 mostrar();
 </script>

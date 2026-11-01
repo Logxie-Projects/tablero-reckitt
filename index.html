@@ -1685,7 +1685,8 @@ function ofrecerEnlaceConductor(v, a){
   if (!a || !a.enlace || window.MODO_CLIENTE) return;
   const nombre = String(v.conductor || '').split(' ')[0];
   const texto = `Hola${nombre ? ' ' + nombre : ''}, Entrapetrol le asignó un viaje (${v.operacion}${primerEvento(v) ? ', ' + fd(primerEvento(v)) : ''}). `
-    + `Ábralo aquí para ver la cita y marcar cada paso: ${a.enlace}\nTambién lo encuentra en la app Viajes ETP, en "Mis viajes".`;
+    + `Ábralo aquí para ver la cita y marcar cada paso: ${a.enlace}\n\n`
+    + `📲 Todos sus viajes en la app Viajes ETP: ${APP_TURNOS}\nPara instalarla, ábrala en Chrome (Android: ⋮ › Abrir en Chrome) o en Safari (iPhone) y toque "Instalar" o "Agregar a inicio".`;
   if (!confirm(`${v.placa} quedó asignado en Despacho.\n¿Enviar el enlace del viaje al conductor por WhatsApp${a.telefono ? ' (' + a.telefono + ')' : ''}?`)) return;
   window.open(`https://wa.me/${a.telefono || ''}?text=${encodeURIComponent(texto)}`, '_blank', 'noopener');
 }
