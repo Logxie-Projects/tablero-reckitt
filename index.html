@@ -2732,7 +2732,8 @@ function compararProgramacion(c){
   const fuera = libres().filter(x => enMes(x) && /programaci/i.test(x.observacion||'') && !terminado(x));
   const cuenta = k => filas.filter(f => f.accion===k).length;
   const cuadre = {filas: c.programacion.length, contenedores: prog.length, enBase: filas.filter(f => f.v && f.accion!=='anulado').length,
-    nuevos: cuenta('crear'), anulados: filas.filter(f => f.accion==='anulado').map(f => f.v)};
+    nuevos: cuenta('crear'), anulados: filas.filter(f => f.accion==='anulado').map(f => f.v),
+    sinFecha: contenedoresDe(c.programacionSinFecha || [])};   // filas sin fecha de cargue válida: contenedores que aún no se pueden crear
   return {filas, fuera, cuadre};
 }
 function abrirProgramacion(c){
@@ -2763,6 +2764,7 @@ function pintarProgramacion(){
   const cuadreHtml = `<p style="margin:0 0 6px;color:${cuadra ? 'var(--ok)' : 'var(--bad)'}"><b>Cuadre:</b> Jhonier lista <b>${Q.contenedores}</b> contenedores`
     + `${Q.contenedores !== Q.filas ? ` (${Q.filas} filas)` : ''} = ${Q.enBase} en la base + ${Q.nuevos} nuevos${Q.anulados.length ? ` + ${Q.anulados.length} anulados por el equipo` : ''}`
     + `${cuadra ? ' ✔' : ' ✖ revise: hay contenedores sin viaje'}</p>`
+    + (Q.sinFecha.length ? `<p style="margin:0 0 6px;color:var(--bad)">✖ ${Q.sinFecha.length} contenedor${Q.sinFecha.length===1 ? '' : 'es'} sin fecha de cargue en el cuadro (no tienen viaje): ${Q.sinFecha.map(r => esc([r.pais, r.unidad, r.fecha || 'sin fecha', r.booking].filter(Boolean).join(' · '))).join(' | ')}. Pídale la fecha a Jhonier.</p>` : '')
     + (Q.anulados.length ? `<p style="margin:0 0 6px;color:var(--warn)">⚠ Jhonier sigue listando contenedores que el equipo anuló: ${Q.anulados.map(v => `<button class="link" onclick="abrir('${v.id}')">${esc(v.id)} ${esc(v.pais||'')} ${esc(v.booking||'')}</button>`).join(' · ')}. Confírmelo con él: si es un contenedor real, reabra el viaje.</p>` : '');
   $('#progLista').innerHTML = cuadreHtml + `<p class="sub">${n('crear')} nuevos · ${n('cambiar')} con cambios · ${n('reusar')} por reutilizar · ${n('igual')} al día</p>
     <div class="tbl-wrap"><table class="prop prog"><tr><th></th><th>#</th><th>Cargue</th><th>Destino</th><th>Motonave</th><th>Booking</th><th>En la base · qué se hará</th></tr>${PROG.filas.map(fila).join('')}</table></div>
