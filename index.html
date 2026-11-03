@@ -2660,6 +2660,11 @@ function compararProgramacion(c){
     if (v) usados.add(v.id);
     return v || null;
   });
+  // un viaje de la programación anterior que ya no viene con su fecha y motonave de antes se corrió: la fila nueva del mismo
+  // destino que quedaría por crear lo toma (Jhonier mueve cargues de fecha y de nave; no son viajes nuevos)
+  const movido = r => libres().filter(x => enMes(x) && eq(x.pais, r.pais) && /programaci/i.test(x.observacion||'') && !terminado(x))
+    .sort((a, b) => Math.abs(new Date(a.fechaCargue) - new Date(r.fechaCargue)) - Math.abs(new Date(b.fechaCargue) - new Date(r.fechaCargue)))[0];
+  const pendientes = [];
   const filas = c.programacion.map((r, i) => {
     let v = porBooking[i]
       || libres().find(x => enMes(x) && eq(x.pais, r.pais) && x.fechaCargue===r.fechaCargue && eq(x.mn, r.mn))
@@ -2668,7 +2673,12 @@ function compararProgramacion(c){
     let reusar = false;
     // un viaje que esperaba fecha (reprogramado, sin booking) del mismo destino se reutiliza en lugar de crear otro
     if (!v) { v = libres().find(x => eq(x.pais, r.pais) && (!x.booking || /sin info|pend/i.test(x.booking)) && /reprogram/i.test(x.observacion||'')); reusar = !!v; }
-    if (!v) return {r, accion:'crear'};
+    if (!v) { pendientes.push(i); return {r, accion:'crear'}; }
+    return emparejar(r, v, reusar);
+  });
+  // segunda vuelta: una fila sin viaje toma el viaje movido del mismo destino antes de crear uno nuevo
+  pendientes.forEach(i => { const v = movido(filas[i].r); if (v) filas[i] = emparejar(filas[i].r, v, false); });
+  function emparejar(r, v, reusar){
     usados.add(v.id);
     // ya ejecutado: solo se le anota el mes de la programación
     if (terminado(v) && !reusar) return String(v.mesProg||'').slice(0, 7)===mes ? {r, v, accion:'igual', cambios:{}} : {r, v, accion:'cambiar', cambios:{mesProg: mes}};
@@ -2681,7 +2691,7 @@ function compararProgramacion(c){
     if (reusar) cambios.situacion = 'Abierto';
     if (String(v.mesProg||'').slice(0, 7) !== mes) cambios.mesProg = mes;   // la hoja lo guarda como fecha (1.º del mes)
     return {r, v, accion: reusar ? 'reusar' : Object.keys(cambios).length ? 'cambiar' : 'igual', cambios};
-  });
+  }
   const fuera = libres().filter(x => enMes(x) && /programaci/i.test(x.observacion||'') && !terminado(x));
   return {filas, fuera};
 }
