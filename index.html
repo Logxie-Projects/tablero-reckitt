@@ -1601,7 +1601,7 @@ function filaTurno(x, rev){
     detalle = `📍 <b>${esc(p.donde)}</b>${p.quieto ? ` · <span style="${x.roja ? 'color:var(--bad);font-weight:600' : ''}">${esc(p.quieto)}</span>` : ''}`
       + (p.espera ? `<br>${x.roja ? '<span style="color:var(--bad);font-weight:600">⚠ ' + esc(p.espera) + '</span> · ' + esc(p.porque) : esc(p.espera)}` : '')
       + (p.app ? `<br>${esc(p.app)}` : '');
-    acc = [btnT('✓ Ya llegó', `data-t-llego="${v.id}"`, 'Abre el viaje con la fecha de hoy en el siguiente paso; revise y guarde'),
+    acc = [btnT('✏️ Actualizar', `data-t-actualizar="${v.id}"`, 'Abre el viaje para registrar el paso que cumplió o lo nuevo; revise y guarde'),
       btnT('⚠ Novedad / retraso', `data-t-novedad="${v.id}"`, 'Abre el viaje marcado con Novedad: escriba qué pasó y la nueva fecha'),
       lnkT(ICONO_WA + 'Preguntar dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas'))];
     marca = rev ? '↺ Deshacer' : '📍 Sigue igual';   // sin actualizar (roja): no se ofrece; hay que registrar dónde está
@@ -1737,7 +1737,7 @@ $('#v-turno').onclick = e => {   // incluye el reloj de la ronda (#turnoReloj)
   else if ((d.tAprobar || d.tRechazar) && esGerencia()) { const k = d.tAprobar || d.tRechazar;
     if (confirm(`¿${d.tAprobar ? 'Aprobar' : 'Rechazar'} esta excepción como Gerencia?\n\nQueda registrado con su nombre y la hora.`)) marcarRevisado((d.tAprobar ? 'ok|' : 'no|') + k); }
   else if (d.tAbrir) abrir(d.tAbrir);
-  else if (d.tLlego) { abrir(d.tLlego); const b = $('#mStates [data-sig]'); if (b) b.click(); }
+  else if (d.tActualizar) abrir(d.tActualizar);   // la ventana del viaje ofrece el siguiente paso (→ etapa hoy) y los datos
   else if (d.tNovedad) { abrir(d.tNovedad); const b = $('#mStates [data-e="Novedad"]'); if (b && !b.classList.contains('on')) b.click(); const o = $('#mForm [data-k="observacion"]'); if (o) { o.scrollIntoView({block: 'center'}); o.focus(); } }
   else if (d.tRev) marcarRevisado(d.tRev);
   else if (d.tHecha) marcarHecha(d.tHecha);
