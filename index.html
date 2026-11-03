@@ -1693,16 +1693,17 @@ $('#v-turno').onclick = e => {   // incluye el reloj de la ronda (#turnoReloj)
   else if (d.tNota) { const txt = $('#turnoNota').value.replace(/\s+/g, ' ').trim(); if (txt) marcarRevisado('nota|' + txt.slice(0, 180)); }
 };
 /* ---------- avisos de hitos (F2): al guardar un hito, el coordinador ve el aviso y decide si sale ---------- */
-// EN PRUEBA (D2): el aviso va solo a correos de Entrapetrol (AVISO_HITOS en Código.gs); al cliente, cuando Entrapetrol lo libere.
+// Llega a Entrapetrol y al solicitante del viaje (AVISO_HITOS y CORREOS_SOLICITANTE en Código.gs; cliente liberado el 3-nov).
 async function ofrecerAviso(v, cambios, usuario){
   const H = hitosDelCambio(v, cambios); if (!H.length || !window.CLAVE || window.MODO_CLIENTE) return;
   const viaje = `${refCliente(v) || v.placa || 'Sin referencia'} · ${v.operacion} ${v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || '')}`;
-  if (!confirm(`¿Avisar este hito al equipo de Entrapetrol?\n(prueba: todavía no le llega al cliente)\n\n${viaje}\n${H.map(h => '• ' + h.txt).join('\n')}`)) return;
+  if (!confirm(`¿Avisar este hito a Entrapetrol${v.solicitante ? ' y al cliente (' + v.solicitante + ')' : ''}?\n\n${viaje}\n${H.map(h => '• ' + h.txt).join('\n')}`)) return;
   try {
     const r = await fetch(CFG.SHEETS_API_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'},
       body: JSON.stringify({action: 'avisoHito', clave: window.CLAVE, id: v.id, cambios, usuario})});
     const j = await r.json();
-    toast(j.ok ? `Aviso enviado a ${j.enviadoA.length} correos de Entrapetrol` : 'No se envió el aviso: ' + (j.error || 'error'));
+    toast(!j.ok ? 'No se envió el aviso: ' + (j.error || 'error')
+      : `Aviso enviado a Entrapetrol${j.cliente ? ' y a ' + j.cliente : ''}${j.sinCorreo ? ` · no hay correo de ${j.sinCorreo}: no le llegó` : ''}`);
   } catch(e) { toast('No se pudo enviar el aviso'); }
 }
 /* ---------- asignación única: el vehículo guardado en el tablero queda asignado en Despacho ---------- */
