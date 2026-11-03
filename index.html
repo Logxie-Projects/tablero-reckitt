@@ -1232,8 +1232,9 @@ function enTexto(v){
 const enListas = v => !v.padre && FILTROS_LISTA.every(([k, campo, , vacio]) => !G[k] || valorFiltro(v, campo, vacio)===G[k]) && enTexto(v) && (!G.fact || cobro(v).fact===G.fact);
 // Todos los filtros se suman: un viaje se ve solo si cumple cada filtro activo. STATUS no se salta; al elegir Mes, Foco,
 // Facturación o escribir en Buscar, STATUS pasa solo a "Todos" (se ve en su lista) y se puede volver a acotar.
-// Los cancelados (STATUS o marca) solo se ven con STATUS "Cancelados" o "Todos".
-const enGlobal = v => (!G.op || v.operacion===G.op) && enSituacion(v, G.sit) && (v.estado!=='Cancelado' || ['', 'Cancelado'].includes(G.sit)) && enListas(v)
+// Los cancelados y anulados (STATUS o marca) no se ven, ni con "Todos" ni al buscar: solo con STATUS "Cancelados".
+const cancelado = v => situacion(v)==='Cancelado' || v.estado==='Cancelado';
+const enGlobal = v => (!G.op || v.operacion===G.op) && enSituacion(v, G.sit) && (!cancelado(v) || G.sit==='Cancelado') && enListas(v)
   && (!G.mes || mesDe(v)===(G.mes==='sin' ? '' : G.mes)) && (!G.mesSol || mesSolDe(v)===(G.mesSol==='sin' ? '' : G.mesSol))
   && (!G.foco || (G.foco===FOCO_OPS ? pendientesOps(v).length > 0 : focoDe(v)===G.foco));
 // cuántos viajes se verían al elegir esa opción, con los demás filtros como están y con el mismo ajuste de STATUS que
