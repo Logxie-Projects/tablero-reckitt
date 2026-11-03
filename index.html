@@ -1320,13 +1320,15 @@ async function marcarHecha(id, noEtp, nota){
 // cuando ESE paso termina bien (aplicar la programación, aprobar datos, crear el viaje o el subviaje), no con cualquier otro.
 let accionEnCurso = null;   // {id, tipo, desde}
 const ATAJOS = [
+  // la acción trae datos de su correo por aprobar (propuestas.js): se aplican y la acción se cierra, sin abrir el viaje
+  ['aplicar', b => `✔ Aplicar ${datosDeAccion(b).length} dato${datosDeAccion(b).length === 1 ? '' : 's'}`, b => datosDeAccion(b).length > 0, b => aplicarAccion(b)],
   ['programacion', '📋 Aplicar programación', b => /programaci[oó]n/i.test(b.accion) && /programaci[oó]n/i.test(b.asunto + ' ' + b.resumen), b => atajoProgramacion(b)],
-  ['propuestas', '✔ Revisar datos', b => /Llenar datos desde correos/i.test(b.accion), () => abrirPropuestas()],
+  ['propuestas', '✔ Revisar datos', b => /Llenar datos desde correos/i.test(b.accion) && !pareceHecha(b), () => abrirPropuestas()],   // si ya están en el viaje, no queda nada que revisar
   ['viaje', '＋ Crear viaje', b => pideCrearViaje(b) && !yaCreado(b), () => abrirBarrido()],   // si ya existe, no (yaCreado)
   ['subviaje', '↪ Crear subviaje', b => /crear subviaje de [A-Z]+-[\w-]+/i.test(b.accion), b => nuevoSubviaje(b.accion.match(/crear subviaje de ([A-Z]+-[\w-]+?)(?=[:,\s]|$)/i)[1])],
 ];
 const atajoDe = b => b.estadoAccion==='Hecha' || window.MODO_CLIENTE ? null : ATAJOS.find(a => a[2](b));
-const botonAtajo = b => { const a = atajoDe(b); return a ? `<button type="button" class="link" onclick="hacerAqui('${b.id}')" title="Lo hace el tablero; al terminar, la acción se cierra sola">${a[1]}</button>` : ''; };
+const botonAtajo = b => { const a = atajoDe(b); return a ? `<button type="button" class="link" onclick="hacerAqui('${b.id}')" title="${a[0] === 'aplicar' ? esc(datosDeAccion(b).map(p => p.etiqueta + ': ' + p.valor).join(' · ')) : 'Lo hace el tablero; al terminar, la acción se cierra sola'}">${typeof a[1] === 'function' ? a[1](b) : a[1]}</button>` : ''; };
 function hacerAqui(id){
   const b = (window.BITACORA||[]).find(x=>x.id===id), a = b && atajoDe(b); if (!a) return;
   accionEnCurso = {id, tipo: a[0], desde: Date.now()};
@@ -2462,6 +2464,28 @@ $('#propLista').addEventListener('click', e => { const b = e.target.closest('[da
 $('#propTodos').onchange = e => $('#propLista').querySelectorAll('input[data-i]').forEach(x => { x.checked = e.target.checked; });
 $('#propAprobar').onclick = () => decidirPropuestas(true);
 $('#propRechazar').onclick = () => decidirPropuestas(false);
+// "Aplicar" en una acción de LogxIA: los datos que trajo su correo (origen "Correo LX-…") se guardan en el viaje y la acción se
+// cierra, sin abrir el viaje ni pasar por la ventana de revisión
+const datosDeAccion = b => PROP.filter(p => p.origen === 'Correo ' + b.id);
+async function aplicarAccion(b){
+  const P = datosDeAccion(b); if (!P.length) return;
+  const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
+  if (!confirm(`¿Guardar en ${P[0].viajeId} (${P[0].placa || 'sin placa'}) estos datos del correo y cerrar la acción?\n\n${P.map(p => `• ${p.etiqueta}: ${p.actual ? fx(p.actual) : 'vacío'} → ${fx(p.valor)}`).join('\n')}`)) return;
+  let usuario = ''; try { usuario = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
+  if (!usuario) { usuario = (prompt('¿Quién eres? Queda como quien aprobó los datos') || '').trim(); if (!usuario) return; try { localStorage.setItem('rkt-usuario', usuario); } catch(e){} }
+  try {
+    const r = await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({action:'decidir', clave:window.CLAVE, usuario, aprobar: P.map(({clave, viajeId, campo, valor, evidencia, origen}) => ({clave, viajeId, campo, valor, evidencia, origen})), rechazar: []})});
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'error');
+    const usados = new Set(P.map(p => p.clave));
+    PROP = PROP.filter(p => !usados.has(p.clave));
+    P.forEach(p => { const v = viajes.find(x => x.id === p.viajeId); if (v) v[p.campo] = p.valor; });
+    $('#nProp').textContent = PROP.length || '';
+    accionEnCurso = null;
+    await marcarHecha(b.id, false, `aplicó ${j.aprobadas} dato${j.aprobadas === 1 ? '' : 's'} del correo`);
+  } catch(e) { toast('No se pudo guardar: ' + e.message); }
+}
 
 /* ---------- viajes nuevos: arriba y con letrero verde hasta la primera acción del equipo ---------- */
 // "Visto por" vacío = nadie lo ha tomado; solo cuenta cuando la base ya tiene la columna (algún viaje la trae llena)
@@ -3205,7 +3229,7 @@ cargar().then(ok => { if (ok === false) return; if (window.MODO_CLIENTE) documen
   // cuántos datos de LogxIA esperan revisión: número en el botón "Llenar datos desde correos"
   if (!window.MODO_CLIENTE && window.CLAVE)
     fetch(CFG.SHEETS_API_URL + '?formato=json&que=propuestas&clave=' + encodeURIComponent(window.CLAVE)).then(r => r.json())
-      .then(j => { if (j.ok) { $('#nProp').textContent = (j.propuestas || []).length || ''; renderTurno(); } }).catch(() => {});
+      .then(j => { if (j.ok) { PROP = j.propuestas || []; $('#nProp').textContent = PROP.length || ''; render(); renderTurno(); } }).catch(() => {});
   // enlace "Abrir viaje" de un correo (?viaje=FILA-9): el equipo ve la ventana del viaje; el cliente (solo lectura) ve la lista
   // Viajes filtrada por ese viaje. Se usa una sola vez: se quita de la dirección para que recargar o guardar el enlace no lo reabra
   const vid = new URLSearchParams(location.search).get('viaje'), vv = vid && viajes.find(x => x.id === vid);
