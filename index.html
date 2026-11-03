@@ -363,6 +363,7 @@ body.en-turno #gbar{display:none}
     <a class="btn solo-interno" id="lnkDespacho" style="text-decoration:none;color:inherit" href="despacho.html" target="_blank" rel="noopener" title="Asignaciones de conductores: cita, instrucciones, imágenes, enlace por WhatsApp y revisión de la aceptación (cédula y selfie)">🚛 Despacho</a>
     <button class="btn primary solo-interno" id="btnBarrido" title="Lee ya mismo el buzón de calidad@ (últimos 2 días) y muestra qué correos de Reckitt y sus agentes no están en la base">⟳ Buscar correos ahora</button>
     <button class="btn correo solo-interno" id="btnCorreos" title="Datos que LogxIA encontró en los correos, para revisar y aprobar">✉ Llenar datos desde correos<span class="badge" id="nProp"></span></button>
+    <button class="btn solo-interno" id="btnDocs" title="Confirmaciones de booking y cartas de retiro que llegan con la programación de Jhonier, archivadas en Drive por mes; marca lo que falta">📎 Documentos de contenedores</button>
     <button class="btn" id="btnCsv">Exportar CSV</button>
   </div>
 </header>
@@ -461,6 +462,17 @@ body.en-turno #gbar{display:none}
   </section>
 </main>
 
+<div class="ov" id="ovDocs">
+  <div class="modal" role="dialog" aria-modal="true" style="width:min(1150px,100%)">
+    <h3>Documentos de contenedores</h3>
+    <div class="sub">Adjuntos de la programación de Jhonier archivados en Drive (carpeta "Documentos programación Reckitt", por mes). Se actualiza cada hora.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px"><select id="docsMes"></select>
+      <input id="docsBuscar" placeholder="Buscar booking, destino, viaje o nave" style="flex:1;min-width:200px">
+      <label class="sub"><input type="checkbox" id="docsFalta"> Solo los que tienen algo pendiente</label></div>
+    <div id="docsLista" style="margin-top:10px"></div>
+    <div class="mfoot"><button class="btn" id="docsCerrar">Cerrar</button></div>
+  </div>
+</div>
 <div class="ov" id="ovProg">
   <div class="modal" role="dialog" aria-modal="true" style="width:min(1150px,100%)">
     <h3 id="progTitulo">Programación de cargues</h3>
@@ -2869,6 +2881,49 @@ $('#ovBarrido').onclick = e => {
   else crearDesdeCorreo(c);
 };
 
+// documentos.js · "Documentos de contenedores": los adjuntos de la programación de Jhonier (confirmación del booking, carta de
+// retiro…) que Apps Script archiva en Drive por mes (pestañas Documentos y Documentos por booking). Busca por booking, destino o
+// viaje y marca lo que falta. Solo lee.
+let DOCS = null;
+const TIPOS_CLAVE = ['Confirmación de booking', 'Carta de retiro'];
+
+async function abrirDocumentos(){
+  $('#ovDocs').classList.add('open');
+  if (!DOCS) {
+    $('#docsLista').innerHTML = '<p class="sub">Cargando los documentos…</p>';
+    try {
+      const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=documentos&clave=' + encodeURIComponent(window.CLAVE))).json();
+      if (!j.ok) throw new Error(j.error || 'error');
+      DOCS = j;
+    } catch(e) { $('#docsLista').innerHTML = `<p class="sub">No se pudieron leer los documentos: ${esc(e.message)}</p>`; return; }
+    const meses = [...new Set(DOCS.porBooking.map(r => r.mes).concat(DOCS.archivos.map(a => a.mes)))].filter(Boolean).sort().reverse();
+    $('#docsMes').innerHTML = meses.map(m => `<option value="${esc(m)}">${esc(nombreMes(m))}</option>`).join('');
+  }
+  pintarDocumentos();
+}
+function pintarDocumentos(){
+  const mes = $('#docsMes').value, q = minus($('#docsBuscar').value.trim()), soloFalta = $('#docsFalta').checked;
+  const deBooking = bk => DOCS.archivos.filter(a => bk && a.booking.toUpperCase() === bk.toUpperCase());
+  const enlaces = (bk, tipo) => deBooking(bk).filter(a => a.tipo === tipo).map(a => `<a href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.nombre)}">📄</a>`).join(' ');
+  const filas = DOCS.porBooking.filter(r => r.mes === mes && (!soloFalta || r.falta)
+    && (!q || minus([r.booking, r.pais, r.viaje, r.mn].join(' ')).includes(q)));
+  const marca = (r, tipo, ok) => !r.booking || r.booking === 'PTE' ? '<span class="sub">—</span>'
+    : ok === '✔' ? `<span style="color:var(--ok)">✔</span> ${enlaces(r.booking, tipo)}` : '<b style="color:var(--bad)">✖ falta</b>';
+  const otros = bk => deBooking(bk).filter(a => !TIPOS_CLAVE.includes(a.tipo)).map(a => `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.tipo)}</a>`).join(' · ');
+  const sinBk = DOCS.archivos.filter(a => a.mes === mes && !a.booking);
+  const faltan = DOCS.porBooking.filter(r => r.mes === mes && r.falta).length;
+  $('#docsLista').innerHTML = `<p class="sub">${filas.length} contenedores · <b style="color:${faltan ? 'var(--bad)' : 'var(--ok)'}">${faltan} con documentos o booking pendientes</b></p>
+    <div class="tbl-wrap"><table class="prop"><tr><th>Cargue</th><th>Destino</th><th>Motonave</th><th>Booking</th><th>Viaje</th><th>Confirmación</th><th>Carta de retiro</th><th>Otros</th><th>Falta</th></tr>
+    ${filas.map(r => `<tr><td style="white-space:nowrap">${fd(r.fechaCargue)}</td><td>${esc(r.pais)}<br><span class="sub">${esc(r.unidad)}</span></td><td>${esc(r.mn || '—')}</td>
+      <td><b>${esc(r.booking)}</b></td><td>${r.viaje ? r.viaje.split(', ').map(id => `<button class="link" onclick="$('#ovDocs').classList.remove('open');abrir('${esc(id)}')">${esc(id)}</button>`).join(' ') : '<span class="sub">—</span>'}</td>
+      <td>${marca(r, 'Confirmación de booking', r.confirmacion)}</td><td>${marca(r, 'Carta de retiro', r.carta)}</td><td class="sub">${otros(r.booking)}</td>
+      <td>${r.falta ? `<span style="color:var(--bad)">${esc(r.falta)}</span>` : '<span style="color:var(--ok)">Completo</span>'}</td></tr>`).join('')}</table></div>
+    ${sinBk.length ? `<p class="sub" style="margin-top:8px">Archivos sin booking en el nombre (revisarlos y renombrarlos en Drive): ${sinBk.map(a => `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.nombre)}</a>`).join(' · ')}</p>` : ''}`;
+}
+$('#btnDocs').onclick = abrirDocumentos;
+$('#docsCerrar').onclick = () => $('#ovDocs').classList.remove('open');
+['docsMes', 'docsFalta'].forEach(id => $('#' + id).onchange = pintarDocumentos);
+$('#docsBuscar').oninput = pintarDocumentos;
 /* ---------- navegación y eventos ---------- */
 $('#nav').onclick = e => { const b=e.target.closest('button'); if(!b) return;
   document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on', x===b));
