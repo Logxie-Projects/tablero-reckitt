@@ -1266,6 +1266,14 @@ const estadoCerrada = b => noEsEtp(b) ? '✖ No es para ETP' : '✔ Hecha';
 // operación de la acción: la de su viaje; sin viaje, la deducida del correo (dominio); si no se sabe, General
 const viajeDeAccion = b => viajes.find(x => accionesDe(x).includes(b));
 const operacionDe = b => viajeDeAccion(b)?.operacion || operacionAccion(b) || 'General';
+// acción que pide crear un viaje que ya está en la base (mismo booking, contenedor, DO, RBHY, OBD o pedido; nunca solo la
+// placa): no se ofrece crearlo otra vez (quedaría repetido); la acción dice cuál es y el equipo la cierra con un clic
+const pideCrearViaje = b => /(^|:\s*)crear (en el tablero )?(el )?viaje|crear viaje nuevo/i.test(b.accion);
+function yaCreado(b){
+  if (!pideCrearViaje(b)) return null;
+  const fuerte = b.viajeId || compacto(b.pedido) || CLAVES_VIAJE.some(k => compacto(b[k]));
+  return fuerte ? viajeDeAccion(b) || null : null;
+}
 // acción que el avance del viaje ya muestra hecha (la operación siguió, pero nadie la marcó). Cada paso que pide se
 // compara con lo que el viaje registra; debe pedir al menos un hito (retiro, entrega, devolución, factura) y estar
 // TODO hecho. Tener vehículo solo cuenta junto a un hito. Nada se cierra solo: el equipo confirma con un clic.
@@ -1273,6 +1281,7 @@ function pareceHecha(b){
   const v = b.estadoAccion !== 'Hecha' && viajeDeAccion(b); if (!v) return '';
   const t = minus(b.accion), ya = f => !!f && f <= HOY, impo = v.operacion === 'IMPO';
   const pasos = [
+    [true, /crear (en el tablero )?(el )?viaje|crear viaje nuevo/, !!yaCreado(b), `el viaje ya está creado (${v.id})`],
     [true, /cita de retiro|retiro en puerto|retirar .*(del )?puerto|programar (el )?retiro/, impo && ya(v.fechaRetiro), `el contenedor se retiró del puerto el ${fd(v.fechaRetiro)}`],
     [true, /cita de ingreso|ingreso a puerto|entrega(r)? en puerto/, !impo && (ya(v.fechaEntregaPuerto) || !!v.tirillaEntrega), 'el contenedor ya se entregó en puerto'],
     [true, /descargue|entrega(r)? en bodega/, impo && ya(v.fechaCargue), `se entregó en bodega el ${fd(v.fechaCargue)}`],
@@ -1305,7 +1314,7 @@ let accionEnCurso = null;   // {id, tipo, desde}
 const ATAJOS = [
   ['programacion', '📋 Aplicar programación', b => /programaci[oó]n/i.test(b.accion) && /programaci[oó]n/i.test(b.asunto + ' ' + b.resumen), b => atajoProgramacion(b)],
   ['propuestas', '✔ Revisar datos', b => /Llenar datos desde correos/i.test(b.accion), () => abrirPropuestas()],
-  ['viaje', '＋ Crear viaje', b => /(^|:\s*)crear (en el tablero )?(el )?viaje|crear viaje nuevo/i.test(b.accion), () => abrirBarrido()],
+  ['viaje', '＋ Crear viaje', b => pideCrearViaje(b) && !yaCreado(b), () => abrirBarrido()],   // si ya existe, no (yaCreado)
   ['subviaje', '↪ Crear subviaje', b => /crear subviaje de [A-Z]+-[\w-]+/i.test(b.accion), b => nuevoSubviaje(b.accion.match(/crear subviaje de ([A-Z]+-[\w-]+?)(?=[:,\s]|$)/i)[1])],
 ];
 const atajoDe = b => b.estadoAccion==='Hecha' || window.MODO_CLIENTE ? null : ATAJOS.find(a => a[2](b));
