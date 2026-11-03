@@ -2397,6 +2397,10 @@ $('#mForm').addEventListener('click', e => {
 
 /* ---------- llenar datos desde correos (con revisión y aprobación) ---------- */
 let PROP = [];
+// cada área revisa lo suyo: los datos de cobro (relación de Pedro y aprobación de Reckitt) son de Facturación; el resto, de Operaciones
+const CAMPOS_FACTURA = ['tarifa', 'extracostos', 'conceptoExtra', 'aprobacionExtra', 'facturacion', 'rbhy', 'obd'];
+const areaProp = p => CAMPOS_FACTURA.includes(p.campo) ? 'Facturación' : 'Operaciones';
+let propArea = '';
 async function abrirPropuestas(){
   if (!CFG.SHEETS_API_URL) return toast('Funciona desde el tablero publicado');
   if (!window.CLAVE) return toast('Espere a que carguen los datos e intente de nuevo');
@@ -2415,14 +2419,18 @@ async function abrirPropuestas(){
 function pintarPropuestas(){
   $('#nProp').textContent = PROP.length || '';
   if (!PROP.length) { $('#propLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">No hay datos nuevos de los correos por revisar. ✔</div>'; return; }
+  const n = a => PROP.filter(p => areaProp(p) === a).length;
+  if (!propArea || !n(propArea)) propArea = n('Operaciones') ? 'Operaciones' : 'Facturación';
+  const chips = `<div class="chips" style="margin-bottom:8px">${['Operaciones', 'Facturación'].map(a => `<button type="button" class="chip ${propArea === a ? 'on' : ''}" data-parea="${a}">${a} · ${n(a)}</button>`).join('')}</div>`;
+  const ver = PROP.map((p, i) => [p, i]).filter(([p]) => areaProp(p) === propArea);
   let previo = '';
-  $('#propLista').innerHTML = `<div class="tbl-wrap"><table class="prop"><colgroup><col class="c-sel"><col class="c-dato"><col class="c-hoy"><col class="c-correo"><col></colgroup><tr><th></th><th>Dato</th><th>En la base hoy</th><th>Del correo</th><th>Evidencia</th></tr>${PROP.map((p, i) => {
+  $('#propLista').innerHTML = chips + `<div class="tbl-wrap"><table class="prop"><colgroup><col class="c-sel"><col class="c-dato"><col class="c-hoy"><col class="c-correo"><col></colgroup><tr><th></th><th>Dato</th><th>En la base hoy</th><th>Del correo</th><th>Evidencia</th></tr>${ver.map(([p, i]) => {
     const g = p.viajeId !== previo ? `<tr class="grupo"><td colspan="5">${esc(p.operacion)} · ${esc(p.placa || 'Sin placa')} · ${esc(p.ref)} <span class="sub">(${esc(p.viajeId)})</span></td></tr>` : '';
     previo = p.viajeId;
     const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
     return g + `<tr><td><input type="checkbox" data-i="${i}"></td><td>${esc(p.etiqueta)}</td><td>${p.actual ? `<span class="antes">${esc(fx(p.actual))}</span>` : '<span class="sub">vacío</span>'}</td>
       <td class="nuevo">${esc(fx(p.valor))}</td><td class="sub">${esc(p.evidencia)}${p.fecha ? ' · ' + esc(String(p.fecha).slice(0,10)) : ''}</td></tr>`;
-  }).join('')}</table></div><p class="sub" style="margin-top:6px">${PROP.length} dato${PROP.length===1?'':'s'} por revisar · lo rechazado no vuelve a aparecer.</p>`;
+  }).join('')}</table></div><p class="sub" style="margin-top:6px">${ver.length} dato${ver.length===1?'':'s'} de ${propArea} por revisar · lo rechazado no vuelve a aparecer.</p>`;
 }
 async function decidirPropuestas(aprobar){
   const sel = [...$('#propLista').querySelectorAll('input[data-i]:checked')].map(x => PROP[+x.dataset.i]);
@@ -2450,6 +2458,7 @@ async function decidirPropuestas(aprobar){
 $('#btnCorreos').onclick = abrirPropuestas;
 $('#propCerrar').onclick = () => $('#ovProp').classList.remove('open');
 $('#ovProp').onclick = e => { if (e.target.id === 'ovProp') $('#ovProp').classList.remove('open'); };
+$('#propLista').addEventListener('click', e => { const b = e.target.closest('[data-parea]'); if (!b) return; propArea = b.dataset.parea; $('#propTodos').checked = false; pintarPropuestas(); });
 $('#propTodos').onchange = e => $('#propLista').querySelectorAll('input[data-i]').forEach(x => { x.checked = e.target.checked; });
 $('#propAprobar').onclick = () => decidirPropuestas(true);
 $('#propRechazar').onclick = () => decidirPropuestas(false);
