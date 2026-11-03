@@ -1264,7 +1264,8 @@ const NO_ETP = 'No es para ETP';
 const noEsEtp = b => String(b.resueltoPor||'').startsWith(NO_ETP);
 const estadoCerrada = b => noEsEtp(b) ? '✖ No es para ETP' : '✔ Hecha';
 // operación de la acción: la de su viaje; sin viaje, la deducida del correo (dominio); si no se sabe, General
-const viajeDeAccion = b => viajes.find(x => accionesDe(x).includes(b));
+// primero el viaje al que LogxIA ligó la acción (un booking puede tener varios viajes); si no, el que coincida por sus datos
+const viajeDeAccion = b => (b.viajeId && viajes.find(x => x.id === b.viajeId && accionesDe(x).includes(b))) || viajes.find(x => accionesDe(x).includes(b));
 const operacionDe = b => viajeDeAccion(b)?.operacion || operacionAccion(b) || 'General';
 // acción que pide crear un viaje que ya está en la base (mismo booking, contenedor, DO, RBHY, OBD o pedido; nunca solo la
 // placa): no se ofrece crearlo otra vez (quedaría repetido); la acción dice cuál es y el equipo la cierra con un clic
@@ -1280,6 +1281,13 @@ function yaCreado(b){
 function pareceHecha(b){
   const v = b.estadoAccion !== 'Hecha' && viajeDeAccion(b); if (!v) return '';
   const t = minus(b.accion), ya = f => !!f && f <= HOY, impo = v.operacion === 'IMPO';
+  // "revisar los datos del correo": si todo lo que trajo el correo ya está en el viaje (alguien lo aprobó o lo escribió), no queda
+  // nada por revisar
+  if (/llenar datos desde correos/.test(t)) {
+    let d = {}; try { d = JSON.parse(b.datosNuevos || '{}'); } catch(e) {}
+    const ks = Object.keys(d).filter(k => d[k]);
+    return ks.length && ks.every(k => mismoDato(v[k], d[k])) ? 'los datos del correo ya están en el viaje' : '';
+  }
   const pasos = [
     [true, /crear (en el tablero )?(el )?viaje|crear viaje nuevo/, !!yaCreado(b), `el viaje ya está creado (${v.id})`],
     [true, /cita de retiro|retiro en puerto|retirar .*(del )?puerto|programar (el )?retiro/, impo && ya(v.fechaRetiro), `el contenedor se retiró del puerto el ${fd(v.fechaRetiro)}`],
