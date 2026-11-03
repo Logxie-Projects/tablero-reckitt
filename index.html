@@ -2689,7 +2689,10 @@ function compararProgramacion(c){
     return emparejar(r, v, reusar);
   });
   // segunda vuelta: una fila sin viaje toma el viaje movido del mismo destino antes de crear uno nuevo
-  pendientes.forEach(i => { const v = movido(filas[i].r); if (v) filas[i] = emparejar(filas[i].r, v, false); });
+  // antes de crear se verifica también fuera del mes: un viaje abierto del mismo destino y la misma nave (Jhonier lo pasó de mes)
+  const deOtroMes = r => r.mn && libres().filter(x => eq(x.pais, r.pais) && eq(x.mn, r.mn) && compatible(x, r) && !terminado(x))
+    .sort((a, b) => cerca(a, r) - cerca(b, r))[0];
+  pendientes.forEach(i => { const v = movido(filas[i].r) || deOtroMes(filas[i].r); if (v) filas[i] = emparejar(filas[i].r, v, false); });
   function emparejar(r, v, reusar){
     usados.add(v.id);
     // ya ejecutado: solo se le anota el mes de la programación
