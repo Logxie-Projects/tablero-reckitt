@@ -1272,14 +1272,17 @@ const operacionDe = b => viajeDeAccion(b)?.operacion || operacionAccion(b) || 'G
 const pideCrearViaje = b => /(^|:\s*)crear (en el tablero )?(el )?viaje|crear viaje nuevo/i.test(b.accion);
 function yaCreado(b){
   if (!pideCrearViaje(b)) return null;
-  const fuerte = b.viajeId || compacto(b.pedido) || CLAVES_VIAJE.some(k => compacto(b[k]));
-  return fuerte ? viajeDeAccion(b) || null : null;
+  // el pedido, DO o contenedor del viaje nuevo vienen en los datos del correo (datosNuevos), no en la acción
+  let dn = {}; try { dn = JSON.parse(b.datosNuevos || '{}'); } catch(e) {}
+  const d = Object.assign({}, dn, b, {pedido: b.pedido || dn.pedido});
+  const fuerte = d.viajeId || compacto(d.pedido) || CLAVES_VIAJE.some(k => compacto(d[k] || dn[k]));
+  return fuerte ? viajeDeAccion(b) || viajes.find(v => vigente(v) && coincide(v, Object.assign({}, d, dn, {viajeId: d.viajeId}))) || null : null;
 }
 // acción que el avance del viaje ya muestra hecha (la operación siguió, pero nadie la marcó). Cada paso que pide se
 // compara con lo que el viaje registra; debe pedir al menos un hito (retiro, entrega, devolución, factura) y estar
 // TODO hecho. Tener vehículo solo cuenta junto a un hito. Nada se cierra solo: el equipo confirma con un clic.
 function pareceHecha(b){
-  const v = b.estadoAccion !== 'Hecha' && viajeDeAccion(b); if (!v) return '';
+  const v = b.estadoAccion !== 'Hecha' && (viajeDeAccion(b) || yaCreado(b)); if (!v) return '';
   const t = minus(b.accion), ya = f => !!f && f <= HOY, impo = v.operacion === 'IMPO';
   // "revisar los datos del correo": si todo lo que trajo el correo ya está en el viaje (alguien lo aprobó o lo escribió), no queda
   // nada por revisar
