@@ -2092,13 +2092,22 @@ function paradas(v){
     ['Vacío', v.patio||'Patio', hecho(v.fechaDevolucion, v.tirillaDevolucion), [ver('Cita', v.citaDevolucion), !v.fechaDevolucion && v.tirillaDevolucion ? 'Devuelto (sin fecha)' : ver('Devuelto', v.fechaDevolucion), v.fechaLimite&&`Límite ${fd(v.fechaLimite)}`, v.tirillaDevolucion&&'✔ tirilla']],
   ];
   return [
-    ['Origen', 'Cali', v.fechaRetiro && v.fechaRetiro<=HOY ? v.fechaRetiro : '', ['Planta Reckitt']],
+    ['Origen', 'Cali', v.fechaRetiro && v.fechaRetiro<=HOY ? v.fechaRetiro : '', [bodegaCargue(v) || 'Planta Reckitt']],
     ['Patio', v.patio||'Patio', v.fechaRetiro && v.fechaRetiro<=HOY ? v.fechaRetiro : '', [v.fechaRetiro&&`Retiro ${fd(v.fechaRetiro)}`]],
-    ['Llenado', 'Reckitt', v.fechaCargue && (v.fechaCargue<HOY || dijoEntregado(v) || v.tirillaEntrega) ? v.fechaCargue : '', [v.fechaCargue&&`Llenado ${fd(v.fechaCargue)}`, v.sello&&`Sello ${v.sello}`]],
+    ['Llenado', bodegaCargue(v) || 'Reckitt', v.fechaCargue && (v.fechaCargue<HOY || dijoEntregado(v) || v.tirillaEntrega) ? v.fechaCargue : '', [v.fechaCargue&&`Llenado ${fd(v.fechaCargue)}`, v.sello&&`Sello ${v.sello}`]],
     ['Puerto', v.puerto||'Puerto', sub ? (v.fechaEntregaPuerto || urbano) : hecho(v.fechaEntregaPuerto, v.tirillaEntrega || dijoEntregado(v)), [ver('Cita', v.citaIngreso), !v.fechaEntregaPuerto && (v.tirillaEntrega || dijoEntregado(v)) ? 'Entregado (sin fecha)' : ver('Entregado', v.fechaEntregaPuerto), ver('Cierre', v.cierreDoc), v.tirillaEntrega&&'✔ tirilla']],
     ['Motonave', v.mn||'—', v.etd && v.etd<=HOY ? v.etd : '', [v.etd&&`ETD ${fd(v.etd)}`]],
     ['Destino', v.pais||'—', v.eta && v.eta<=HOY ? v.eta : '', [v.eta&&`ETA ${fd(v.eta)}`]],
   ];
+}
+// dónde se llena el contenedor EXPO: la programación lo anota como "cargue en DHL" cuando no es la planta
+function bodegaCargue(v){ return ((String(v.observacion||'').match(/cargue en ([^·(]+)/i) || [])[1] || '').trim(); }
+// un booking con varios contenedores: cuál es este (por fecha de llenado) para que no parezcan duplicados
+function contenedorDeBooking(v){
+  if (!v.booking || /^(pte|sin info|pend)/i.test(v.booking) || v.padre) return '';
+  const mismos = viajes.filter(x => x.booking===v.booking && !x.padre && situacion(x)!=='Cancelado')
+    .sort((a, b) => String(a.fechaCargue).localeCompare(String(b.fechaCargue)) || String(a.id).localeCompare(String(b.id)));
+  return mismos.length > 1 ? `contenedor ${mismos.indexOf(v) + 1} de ${mismos.length}` : '';
 }
 // cumplidas en orden: una parada cuenta si ella y todas las anteriores tienen fecha cumplida
 function avance(v){ const P = paradas(v); let n = 0; while (n < P.length && P[n][2]) n++;
@@ -2202,7 +2211,7 @@ function rutaPedido(v){
     : et;
   // el color sigue a la etapa (no a las paradas cumplidas): sin vehículo gris, en curso rosado, cerrado verde
   const col = sit==='Cerrado' ? 'var(--ok)' : et==='Sin asignar' ? 'var(--muted)' : 'var(--accent)';
-  const ref = v.operacion==='IMPO' ? (v.pedido ? 'Pedido '+v.pedido : v.id) : (v.booking ? 'Booking '+v.booking : v.id);
+  const ref = v.operacion==='IMPO' ? (v.pedido ? 'Pedido '+v.pedido : v.id) : (v.booking ? ['Booking '+v.booking, contenedorDeBooking(v)].filter(Boolean).join(' · ') : v.id);
   return `<div class="ruta"><div class="dos"><div class="izq">
     <div class="cab"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
       ${tagNuevo(v)}<span class="op ${v.operacion}">${v.operacion}</span><b>${esc(v.empresa||'Empresa sin definir')} · ${esc(ref)}</b>
@@ -2656,7 +2665,7 @@ function compararProgramacion(c){
   const terminado = v => terminoTransporte(v) || situacion(v)==='Cerrado' && !/reprogram/i.test(v.observacion||'');
   // primero se emparejan las filas que traen un booking que ya está en un viaje (así una fila sin booking no se lleva ese viaje)
   // varios contenedores con el mismo booking: primero el de la misma bodega de cargue (planta o DHL…), luego el de fecha más cercana
-  const bodegaDe = x => ((String(x.observacion||'').match(/cargue en ([^·]+)/i) || [])[1] || 'planta').trim();
+  const bodegaDe = x => bodegaCargue(x) || 'planta';   // viaje.js
   const bodegaFila = r => r.bodega && !/planta/i.test(r.bodega) ? r.bodega : 'planta';
   const cerca = (x, r) => Math.abs(new Date(x.fechaCargue) - new Date(r.fechaCargue));
   const porBooking = c.programacion.map(r => {
