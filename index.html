@@ -1069,7 +1069,8 @@ function celdaConductor(v){
   return `<div class="cond" title="${esc(c.siguiente ? 'Sigue: ' + c.siguiente : 'Viaje terminado')}">${c.icono} ${esc(c.paso)}${c.fecha?` <span class="sub">· ${haceTxt(c.fecha)}</span>`:''} <span class="sub">· ${c.n}/${c.total}</span></div>`;
 }
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2200); }
-
+// quien usa el tablero: el nombre que escribió (o el que trae el enlace de su correo); si no, el genérico de la configuración
+const usuarioActual = () => { try { return localStorage.getItem('rkt-usuario') || CFG.USUARIO || ''; } catch(e) { return CFG.USUARIO || ''; } };
 /* ---------- datos: la base en Google Sheets, por la API de Apps Script ---------- */
 async function cargar(){
   // la clave llega en el enlace (?clave=...) o se pide en pantalla
@@ -1309,7 +1310,8 @@ async function marcarHecha(id, noEtp, nota){
   const b = (window.BITACORA||[]).find(x=>x.id===id); if (!b) return;
   if (noEtp && !confirm(`¿Cerrar esta acción como "No es para ETP"?\n\n${b.accion}\n\nSale de pendientes; queda registrada como cerrada por no corresponder a Entrapetrol.`)) return;
   nota = nota || (!noEtp && pareceHecha(b) ? 'el viaje ya muestra que ' + pareceHecha(b) : '');
-  const usuario = noEtp ? `${NO_ETP} · ${CFG.USUARIO}` : nota ? `${CFG.USUARIO} · ${nota}` : CFG.USUARIO;
+  const yo = usuarioActual();
+  const usuario = noEtp ? `${NO_ETP} · ${yo}` : nota ? `${yo} · ${nota}` : yo;
   b.estadoAccion = 'Hecha'; b.resueltoEn = new Date().toISOString(); b.resueltoPor = usuario;
   if (window.CLAVE){
     try { await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'resolver', clave:window.CLAVE, id, usuario})});
@@ -1387,7 +1389,9 @@ $('#accFiltros').onclick = e => { const a=e.target.closest('[data-area]'); if (a
 // la base (pestaña Turno revisado) con quién y a qué hora; no cambian el viaje.
 const RONDAS = [8, 12, 16], HORAS_RONDA = 2;
 let turnoMenu = 'seg', excAbierta = '';
-const esGerencia = () => { try { return sessionStorage.getItem('rkt-gerencia') === '1'; } catch(e){ return false; } };   // paso en pantalla · fila con el selector de motivo abierto
+const esGerencia = () => { try { return sessionStorage.getItem('rkt-gerencia') === '1'; } catch(e){ return false; } };
+// quien entra desde el correo de Facturación no se bloquea: las líneas rojas de Mi turno son de los coordinadores
+const esFacturacion = () => { try { return sessionStorage.getItem('rkt-area') === 'Facturación'; } catch(e){ return false; } };   // paso en pantalla · fila con el selector de motivo abierto
 const revisados = () => new Map((window.TURNO || []).map(x => [x.clave, x]));
 async function marcarRevisado(k){
   let usuario = ''; try { usuario = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
@@ -1557,7 +1561,7 @@ function estadoTurno(){
   const rondaHecha = !r || rondaSaltada || !segPend, rondaVencida = !!r && !rondaHecha && resta <= 0;
   const rojas = M.map((m, i) => m.filas.filter(x => x.bloquea).length + (i === 0 && rondaVencida ? 1 : 0));
   const excepciones = [...R.values()].filter(x => x.clave.startsWith('exc|')).map(x => { const k = x.clave.slice(4).split('|').slice(0, -1).join('|'); return {k, ...excepcionDe(k, R)}; });
-  return {r, n, R, M, resta, rondaHecha, rondaVencida, rondaExc, rojas, excepciones, bloqueado: !window.MODO_CLIENTE && !esGerencia() && !enPausa() && rojas.some(Boolean)};
+  return {r, n, R, M, resta, rondaHecha, rondaVencida, rondaExc, rojas, excepciones, bloqueado: !window.MODO_CLIENTE && !esGerencia() && !esFacturacion() && !enPausa() && rojas.some(Boolean)};
 }
 
 const nombreTurno = v => v ? `${v.placa || 'Sin vehículo'} · ${v.operacion} ${v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || '')}${v.padre ? ' · subviaje' : ''}` : '';
@@ -2406,6 +2410,18 @@ let PROP = [];
 const CAMPOS_FACTURA = ['tarifa', 'extracostos', 'conceptoExtra', 'aprobacionExtra', 'facturacion', 'rbhy', 'obd'];
 const areaProp = p => CAMPOS_FACTURA.includes(p.campo) ? 'Facturación' : 'Operaciones';
 let propArea = '';
+// los datos por aprobar se traen en un solo lugar (al cargar el tablero y al abrir la ventana); si Apps Script está ocupado
+// se reintenta, porque sin ellos no salen los botones "Aplicar" de las acciones
+async function cargarPropuestas(intentos = 3){
+  for (let i = 0; i < intentos; i++) {
+    try {
+      const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=propuestas&clave=' + encodeURIComponent(window.CLAVE))).json();
+      if (j.ok) { PROP = j.propuestas || []; $('#nProp').textContent = PROP.length || ''; return true; }
+    } catch(e) {}
+    await new Promise(r => setTimeout(r, 3000 * (i + 1)));
+  }
+  return false;
+}
 async function abrirPropuestas(){
   if (!CFG.SHEETS_API_URL) return toast('Funciona desde el tablero publicado');
   if (!window.CLAVE) return toast('Espere a que carguen los datos e intente de nuevo');
@@ -2413,12 +2429,7 @@ async function abrirPropuestas(){
   try { $('#propUsuario').value = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
   $('#propTodos').checked = false;
   $('#ovProp').classList.add('open');
-  try {
-    const r = await fetch(CFG.SHEETS_API_URL + '?formato=json&que=propuestas&clave=' + encodeURIComponent(window.CLAVE));
-    const j = await r.json();
-    if (!j.ok) throw new Error(j.error || 'error');
-    PROP = j.propuestas || [];
-  } catch(e) { $('#propLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">No se pudieron traer los datos. Intente de nuevo.</div>'; return; }
+  if (!await cargarPropuestas()) { $('#propLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">No se pudieron traer los datos. Intente de nuevo.</div>'; return; }
   pintarPropuestas();
 }
 function pintarPropuestas(){
@@ -3229,10 +3240,8 @@ function pedirClave(errada){
 }
 // la página publicada para el cliente (Reckitt) es de solo lectura
 cargar().then(ok => { if (ok === false) return; if (window.MODO_CLIENTE) document.body.classList.add('cliente'); render();
-  // cuántos datos de LogxIA esperan revisión: número en el botón "Llenar datos desde correos"
-  if (!window.MODO_CLIENTE && window.CLAVE)
-    fetch(CFG.SHEETS_API_URL + '?formato=json&que=propuestas&clave=' + encodeURIComponent(window.CLAVE)).then(r => r.json())
-      .then(j => { if (j.ok) { PROP = j.propuestas || []; $('#nProp').textContent = PROP.length || ''; render(); renderTurno(); } }).catch(() => {});
+  // datos de LogxIA por aprobar (propuestas.js): número del botón "Llenar datos desde correos" y botones "Aplicar" de las acciones
+  if (!window.MODO_CLIENTE && window.CLAVE) cargarPropuestas().then(ok => { if (ok) render(); });
   // enlace "Abrir viaje" de un correo (?viaje=FILA-9): el equipo ve la ventana del viaje; el cliente (solo lectura) ve la lista
   // Viajes filtrada por ese viaje. Se usa una sola vez: se quita de la dirección para que recargar o guardar el enlace no lo reabra
   const vid = new URLSearchParams(location.search).get('viaje'), vv = vid && viajes.find(x => x.id === vid);
@@ -3240,7 +3249,12 @@ cargar().then(ok => { if (ok === false) return; if (window.MODO_CLIENTE) documen
   else if (vv) { const [, clave] = clavesBusqueda(vv).find(([k]) => k !== 'Placa') || ['', vv.placa || ''];
     document.querySelector('#nav [data-v="viajes"]')?.click(); $('#q').value = clave; renderTabla(); }
   if (vid) { const u = new URL(location.href); u.searchParams.delete('viaje'); history.replaceState(null, '', u); }
-  const vista = new URLSearchParams(location.search).get('vista') || 'turno';
+  // enlace de un correo por área (ej. el de Facturación): ?vista=acciones&area=Facturación&usuario=Pedro González
+  const qp = new URLSearchParams(location.search);
+  if (qp.get('usuario')) try { localStorage.setItem('rkt-usuario', qp.get('usuario').slice(0, 60)); } catch(e){}
+  if (AREAS.includes(qp.get('area'))) { accArea = qp.get('area'); renderAcciones();
+    if (accArea === 'Facturación') try { sessionStorage.setItem('rkt-area', accArea); } catch(e){} renderTurno(); }
+  const vista = qp.get('vista') || 'turno';
   if (vista && !window.MODO_CLIENTE && !vid) document.querySelector('#nav [data-v="'+vista.replace(/[^a-z]/g,'')+'"]')?.click();
 });
 </script>
