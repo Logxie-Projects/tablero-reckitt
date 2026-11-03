@@ -2668,17 +2668,20 @@ function compararProgramacion(c){
   const bodegaDe = x => bodegaCargue(x) || 'planta';   // viaje.js
   const bodegaFila = r => r.bodega && !/planta/i.test(r.bodega) ? r.bodega : 'planta';
   const cerca = (x, r) => Math.abs(new Date(x.fechaCargue) - new Date(r.fechaCargue));
-  const porBooking = c.programacion.map(r => {
-    const v = r.booking && libres().filter(x => eq(x.booking, r.booking))
-      .sort((a, b) => (eq(bodegaDe(b), bodegaFila(r)) - eq(bodegaDe(a), bodegaFila(r))) || cerca(a, r) - cerca(b, r))[0];
-    if (v) usados.add(v.id);
-    return v || null;
-  });
+  const sinBk = x => !x || /^(pte|sin info|pend)/i.test(String(x).trim());
+  const anuladoDe = r => !sinBk(r.booking) && viajes.find(v => v.operacion==='EXPO' && situacion(v)==='Cancelado' && eq(v.booking, r.booking) && eq(bodegaDe(v), bodegaFila(r)));
+  // dos vueltas: primero cada fila con el viaje de su misma bodega, después las que queden con el más cercano en fecha
+  const porBooking = c.programacion.map(() => null);
+  [true, false].forEach(misma => c.programacion.forEach((r, i) => {
+    if (porBooking[i] || !r.booking) return;
+    const v = libres().filter(x => eq(x.booking, r.booking) && (!misma || eq(bodegaDe(x), bodegaFila(r)))).sort((a, b) => cerca(a, r) - cerca(b, r))[0];
+    if (!v || !misma && anuladoDe(r)) return;   // la fila que el equipo anuló no se lleva el viaje de otra bodega
+    usados.add(v.id); porBooking[i] = v;
+  }));
   // un viaje de la programación anterior que ya no viene con su fecha y motonave de antes se corrió: la fila nueva del mismo
   // destino que quedaría por crear lo toma (Jhonier mueve cargues de fecha y de nave; no son viajes nuevos)
   // la programación inicial es tentativa: el booking define qué viaje es cuál y, mientras no hay, la motonave. Un viaje con otro
   // booking es otra exportación y nunca se empareja con la fila; entre candidatos, primero la misma nave y luego la fecha más cercana
-  const sinBk = x => !x || /^(pte|sin info|pend)/i.test(String(x).trim());
   const compatible = (x, r) => sinBk(x.booking) || sinBk(r.booking) || eq(x.booking, r.booking);
   const candidatos = (r, f) => libres().filter(x => enMes(x) && eq(x.pais, r.pais) && compatible(x, r) && f(x))
     .sort((a, b) => (eq(b.mn, r.mn) - eq(a.mn, r.mn)) || (iguales(b, r) - iguales(a, r)) || cerca(a, r) - cerca(b, r));
@@ -2702,6 +2705,8 @@ function compararProgramacion(c){
   const deOtroMes = r => r.mn && libres().filter(x => eq(x.pais, r.pais) && eq(x.mn, r.mn) && compatible(x, r) && !terminado(x))
     .sort((a, b) => cerca(a, r) - cerca(b, r))[0];
   pendientes.forEach(i => { const v = movido(filas[i].r) || deOtroMes(filas[i].r); if (v) filas[i] = emparejar(filas[i].r, v, false); });
+  // una fila que el equipo ya anuló (mismo booking y bodega, viaje Cancelado) no se vuelve a crear aunque Jhonier la siga listando
+  filas.forEach((f, i) => { const v = f.accion==='crear' && anuladoDe(f.r); if (v) filas[i] = {r: f.r, v, accion:'anulado', cambios:{}}; });
   function emparejar(r, v, reusar){
     usados.add(v.id);
     // ya ejecutado: solo se le anota el mes de la programación
@@ -2730,13 +2735,13 @@ function abrirProgramacion(c){
 // fecha legible si es fecha; si no, el texto tal cual (ej. "sin informacion")
 const fv = x => /^\d{4}-\d{2}-\d{2}/.test(x||'') ? fd(x) : (x || '—');
 function pintarProgramacion(){
-  const ET = {crear:['Nuevo','var(--ok)'], cambiar:['Cambió','var(--warn)'], reusar:['Reutilizar','var(--accent)'], igual:['Al día','var(--muted)']};
+  const ET = {crear:['Nuevo','var(--ok)'], cambiar:['Cambió','var(--warn)'], reusar:['Reutilizar','var(--accent)'], igual:['Al día','var(--muted)'], anulado:['Anulado: no se crea','var(--muted)']};
   const fila = (f, i) => {
     const [txt, col] = ET[f.accion], movFecha = f.v && ['fechaCargue','fechaRetiro'].some(k => k in (f.cambios||{}) && f.v[k]);
     const det = f.accion==='crear' ? `<span class="sub">Retiro del vacío ${fd(addDias(f.r.fechaCargue, -1))}${f.r.bodega && !/planta/i.test(f.r.bodega) ? ' · bodega '+esc(f.r.bodega) : ''}</span>`
       : `<b>${esc(f.v.id)}</b> ${f.v.placa ? `<span class="sub">${esc(f.v.placa)}</span>` : ''}${f.accion==='reusar' ? ' <span class="sub">(esperaba fecha: se reabre)</span>' : ''}<br>`
         + Object.entries(f.cambios||{}).filter(([k]) => k!=='situacion').map(([k, x]) => `<span class="sub">${esc((CAMPOS_PROG.find(c => c[0]===k)||[k,k])[1])}: ${esc(k==='mesProg' ? (f.v[k] ? nombreMes(String(f.v[k]).slice(0, 7)) : '—') : fv(f.v[k]))} → <b>${esc(k==='mesProg' ? nombreMes(x) : fv(x))}</b></span>`).join('<br>');
-    return `<tr><td><input type="checkbox" data-pi="${i}" ${f.accion==='igual' ? 'disabled' : 'checked'}></td><td>${f.r.n}</td><td style="white-space:nowrap">${fd(f.r.fechaCargue)}</td>
+    return `<tr><td><input type="checkbox" data-pi="${i}" ${['igual', 'anulado'].includes(f.accion) ? 'disabled' : 'checked'}></td><td>${f.r.n}</td><td style="white-space:nowrap">${fd(f.r.fechaCargue)}</td>
       <td>${esc(f.r.pais)}<br><span class="sub">${esc(f.r.unidad)}</span></td><td>${esc(f.r.mn||'—')}<br><span class="sub">cierre ${fd(f.r.cierreDoc)} · ETD ${fd(f.r.etd)}</span></td>
       <td>${esc(f.r.booking || 'PTE')}<br><span class="sub">${esc(f.r.fwd)} · ${esc(f.r.puerto)}</span></td>
       <td><span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${txt}</span><br>${det}
