@@ -1604,7 +1604,7 @@ function filaTurno(x, rev){
     acc = [btnT('✓ Ya llegó', `data-t-llego="${v.id}"`, 'Abre el viaje con la fecha de hoy en el siguiente paso; revise y guarde'),
       btnT('⚠ Novedad / retraso', `data-t-novedad="${v.id}"`, 'Abre el viaje marcado con Novedad: escriba qué pasó y la nueva fecha'),
       lnkT(ICONO_WA + 'Preguntar dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas'))];
-    marca = rev ? '↺ Deshacer' : '📍 Sigue en camino';   // sin actualizar (roja): no se ofrece; hay que registrar dónde está
+    marca = rev ? '↺ Deshacer' : '📍 Sigue igual';   // sin actualizar (roja): no se ofrece; hay que registrar dónde está
   } else if (x.tipo === 'cob') {
     const d = diffDias(primerEvento(v)), sug = sugeridos(v);
     titulo = `${esc(nombreTurno(v))} · ${d < 0 ? 'debió arrancar el ' : d === 0 ? 'hoy, ' : d === 1 ? 'mañana, ' : ''}${fd(primerEvento(v))}`;
