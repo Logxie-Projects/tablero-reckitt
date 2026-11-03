@@ -2711,7 +2711,7 @@ function pintarProgramacion(){
   const n = k => PROG.filas.filter(f => f.accion===k).length;
   $('#progLista').innerHTML = `<p class="sub">${n('crear')} nuevos · ${n('cambiar')} con cambios · ${n('reusar')} por reutilizar · ${n('igual')} al día</p>
     <div class="tbl-wrap"><table class="prop prog"><tr><th></th><th>#</th><th>Cargue</th><th>Destino</th><th>Motonave</th><th>Booking</th><th>En la base · qué se hará</th></tr>${PROG.filas.map(fila).join('')}</table></div>
-    ${PROG.fuera.length ? `<p style="margin-top:8px;color:var(--warn)">⚠ Ya no aparecen en esta versión: ${PROG.fuera.map(v => `<button class="link" onclick="abrir('${v.id}')">${esc(v.id)} ${esc(v.pais||'')} ${fd(v.fechaCargue)}</button>`).join(' · ')}. Revíselos con Jhonier antes de cancelarlos.</p>` : ''}`;
+    ${PROG.fuera.length ? `<p style="margin-top:8px;color:var(--warn)">ℹ No vienen en este envío: ${PROG.fuera.map(v => `<button class="link" onclick="abrir('${v.id}')">${esc(v.id)} ${esc(v.pais||'')} ${fd(v.fechaCargue)}</button>`).join(' · ')}. Jhonier manda la programación por partes: se dejan como están (no se cancelan) hasta que él los mueva o los cancele.</p>` : ''}`;
 }
 async function aplicarProgramacion(){
   const usuario = $('#progUsuario').value.trim();
