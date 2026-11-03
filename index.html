@@ -2640,8 +2640,14 @@ function compararProgramacion(c){
   const libres = () => expo.filter(v => !usados.has(v.id));
   const enMes = v => [v.fechaCargue, v.planCargue].some(f => String(f||'').slice(0, 7) === mes);
   const terminado = v => terminoTransporte(v) || situacion(v)==='Cerrado' && !/reprogram/i.test(v.observacion||'');
-  const filas = c.programacion.map(r => {
-    let v = (r.booking && libres().filter(x => eq(x.booking, r.booking)).sort((a, b) => String(a.fechaCargue).localeCompare(String(b.fechaCargue)))[0])
+  // primero se emparejan las filas que traen un booking que ya está en un viaje (así una fila sin booking no se lleva ese viaje)
+  const porBooking = c.programacion.map(r => {
+    const v = r.booking && libres().filter(x => eq(x.booking, r.booking)).sort((a, b) => String(a.fechaCargue).localeCompare(String(b.fechaCargue)))[0];
+    if (v) usados.add(v.id);
+    return v || null;
+  });
+  const filas = c.programacion.map((r, i) => {
+    let v = porBooking[i]
       || libres().find(x => enMes(x) && eq(x.pais, r.pais) && x.fechaCargue===r.fechaCargue && eq(x.mn, r.mn))
       || libres().find(x => enMes(x) && eq(x.pais, r.pais) && r.mn && eq(x.mn, r.mn) && /programaci/i.test(x.observacion||''))
       || libres().find(x => enMes(x) && eq(x.pais, r.pais) && x.fechaCargue===r.fechaCargue);
