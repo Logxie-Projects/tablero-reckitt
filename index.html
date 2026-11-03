@@ -1760,19 +1760,15 @@ async function ofrecerAviso(v, cambios, usuario){
   } catch(e) { toast('No se pudo enviar el aviso'); }
 }
 /* ---------- asignación única: el vehículo guardado en el tablero queda asignado en Despacho ---------- */
-// Al guardar placa o conductor, el backend crea o actualiza la asignación de Despacho (Conductores.gs) y devuelve el enlace
-// del conductor (la pantalla de pasos, fotos y novedades). Aquí se ofrece enviárselo por WhatsApp. El celular sale del
+// Al guardar placa o conductor, el backend crea o actualiza la asignación de Despacho (Conductores.gs) y devuelve el mensaje
+// para el conductor (el mismo de Despacho: la app Viajes ETP con su código). Aquí se ofrece enviárselo por WhatsApp. El celular sale del
 // conductor que se eligió en Cobertura (app Viajes ETP) o, si no, del directorio de conductores.
 const telefonosElegidos = {};   // viajeId → celular del conductor elegido en Cobertura (se manda al guardar)
 const telefonoPara = id => telefonosElegidos[id] || '';
 function ofrecerEnlaceConductor(v, a, sinPreguntar){
-  if (!a || !a.enlace || window.MODO_CLIENTE) return;
-  const nombre = String(v.conductor || '').split(' ')[0];
-  const texto = `Hola${nombre ? ' ' + nombre : ''}, Entrapetrol le asignó un viaje (${v.operacion}${primerEvento(v) ? ', ' + fd(primerEvento(v)) : ''}). `
-    + `Ábralo en la app Viajes ETP para ver la cita y marcar cada paso: ${APP_TURNOS}?t=${encodeURIComponent(String(a.enlace).split('t=').pop())}\n`
-    + `Para tenerla como app: ábrala en Chrome (Android: ⋮ › Abrir en Chrome) o en Safari (iPhone) y toque "Instalar" o "Agregar a inicio".`;
+  if (!a || !a.mensaje || window.MODO_CLIENTE) return;
   if (!sinPreguntar && !confirm(`${v.placa} quedó asignado en Despacho.\n¿Enviar el enlace del viaje al conductor por WhatsApp${a.telefono ? ' (' + a.telefono + ')' : ''}?`)) return;
-  window.open(waLink(a.telefono, texto), '_blank', 'noopener');
+  window.open(waLink(a.telefono, a.mensaje), '_blank', 'noopener');
 }
 // botón "Enviar enlace al conductor" de la ventana del viaje: reenviar sin tocar el viaje (crea la asignación si faltaba)
 async function enviarEnlaceConductor(id){

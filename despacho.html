@@ -310,17 +310,10 @@ async function guardarAsig(e, token) {
   } catch (err) { b.disabled = false; b.textContent = 'Reintentar'; toast('Error: ' + err.message); }
 }
 
-// un solo enlace para el conductor: la app Viajes ETP con el código del viaje (lo reconoce y abre en su viaje)
-const enlaceApp = a => String(D.conductorUrl || '').replace(/conductor\.html.*$/, 'turnos.html') + '?t=' + encodeURIComponent(a.token);
-function mensaje(a, actualizacion) {
-  const cita = a.cita ? `📅 Cita: ${citaTxt(a.cita)}${a.lugarCita ? ' – ' + a.lugarCita : ''}` : '';
-  if (actualizacion) return [`🔔 *Actualización* booking ${a.booking} (${a.placa})`, cita, a.archivos.length ? '📎 Hay documentos o imágenes nuevos.' : '',
-    '', '👉 Revise aquí:', enlaceApp(a)].filter((x, i) => x || i === 3).join('\n');
-  return [`Hola${a.conductor ? ' ' + a.conductor.split(' ')[0] : ''} 👋`, 'Entrapetrol le asignó un viaje para Reckitt:',
-    `*${a.operacion === 'IMPO' ? 'IMPORTACIÓN' : 'EXPORTACIÓN'} · Booking ${a.booking}*`, a.placa ? `🚛 Placa ${a.placa}` : '', cita, '',
-    '👉 Abra este enlace (app Viajes ETP), acepte el viaje y toque el botón verde en cada paso:', enlaceApp(a), '',
-    'Para tenerla como app: ábrala en Chrome (Android: ⋮ › Abrir en Chrome) o en Safari (iPhone) y toque "Instalar" o "Agregar a inicio".'].filter((x, i, arr) => x || arr[i - 1]).join('\n');
-}
+// el enlace (app Viajes ETP con el código) y el mensaje los arma el servidor (Conductores.gs: mensajeConductor_), iguales a los del
+// tablero; sin datos del cliente. actualizacion = mensaje corto cuando cambió la cita o hay documentos nuevos
+const enlaceApp = a => a.enlaceApp;
+const mensaje = (a, actualizacion) => actualizacion ? a.mensajeAct : a.mensaje;
 function whatsapp(token, actualizacion) {
   const a = D.asignaciones.find(x => x.token === token);
   if (actualizacion === undefined) actualizacion = a.hechos.length > 0 || Number(a.version) > 1;
