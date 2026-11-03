@@ -919,7 +919,7 @@ function areaDe(b){
 /* ---------- Mi turno: las líneas rojas (las usan el tablero y el resumen diario del backend) ---------- */
 const HORAS_COBERTURA = 72, HORAS_CLIENTE = 4;
 // viaje sin vehículo que arranca en HORAS_COBERTURA o menos (o que ya debió arrancar)
-const sinCobertura = v => vigente(v) && v.estado !== 'Cancelado' && !v.padre && !tieneVehiculo(v) && !!primerEvento(v) && diffDias(primerEvento(v)) * 24 <= HORAS_COBERTURA;
+const sinCobertura = v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre && !tieneVehiculo(v) && !!primerEvento(v) && diffDias(primerEvento(v)) * 24 <= HORAS_COBERTURA;
 // pedido del cliente (acción de Operaciones) de prioridad alta con más de HORAS_CLIENTE horas sin atender
 const pedidoVencido = b => b.estadoAccion !== 'Hecha' && b.prioridad === 'Alta' && areaDe(b) === 'Operaciones' && !!b.registrado && (Date.now() - new Date(b.registrado)) / 36e5 > HORAS_CLIENTE;
 /* ---------- avisos de hitos (F2): qué cambio de un viaje se cuenta al equipo y, más adelante, al cliente ---------- */
@@ -950,7 +950,6 @@ const ACTORES_NACIONAL = [
   ['valentina zamudio', 'Reckitt · en copia de las solicitudes'],
   ['ercol', 'ERCOL Cali (ercolcali@ercol.com.co): proveedor de estibas, entrega el certificado'],
 ];
-const OPERACIONES = ['IMPO', 'EXPO', 'NACIONAL'];
 function operacionAccion(b){
   const quien = minus(b.remitente) + ' ' + minus(b.asunto), t = minus(`${b.asunto} ${b.accion} ${b.resumen}`);
   if (ACTORES_NACIONAL.some(([a]) => quien.includes(a)) || /\bestibas?\b|traslado entre bodegas|despacho nacional/.test(t)) return 'NACIONAL';
@@ -1069,8 +1068,28 @@ function celdaConductor(v){
   return `<div class="cond" title="${esc(c.siguiente ? 'Sigue: ' + c.siguiente : 'Viaje terminado')}">${c.icono} ${esc(c.paso)}${c.fecha?` <span class="sub">· ${haceTxt(c.fecha)}</span>`:''} <span class="sub">· ${c.n}/${c.total}</span></div>`;
 }
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2200); }
-// quien usa el tablero: el nombre que escribió (o el que trae el enlace de su correo); si no, el genérico de la configuración
-const usuarioActual = () => { try { return localStorage.getItem('rkt-usuario') || CFG.USUARIO || ''; } catch(e) { return CFG.USUARIO || ''; } };
+/* ---------- servidor, usuario, hora de Colombia y WhatsApp: un solo lugar para todo el tablero ---------- */
+// POST al Apps Script con la clave del equipo; devuelve la respuesta (JSON)
+async function api(action, datos = {}){
+  const r = await fetch(CFG.SHEETS_API_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'},
+    body: JSON.stringify({action, clave: window.CLAVE, ...datos})});
+  return r.json();
+}
+// quien usa este navegador: el nombre que escribió una vez (o el que trae el enlace de su correo); queda en lo que guarda,
+// aprueba o cierra. usuarioActual cae al genérico de la configuración; pedirUsuario lo pregunta si aún no lo hay
+const usuarioGuardado = () => { try { return localStorage.getItem('rkt-usuario') || ''; } catch(e) { return ''; } };
+const usuarioActual = () => usuarioGuardado() || CFG.USUARIO || '';
+const guardarUsuario = u => { u = String(u || '').trim().slice(0, 60); if (u) try { localStorage.setItem('rkt-usuario', u); } catch(e){} return u; };
+const pedirUsuario = pregunta => usuarioGuardado() || guardarUsuario(prompt(pregunta) || '');
+// hora de Colombia, sin depender del reloj ni de la zona del computador: fecha, minutos del día, "HH:MM" y día ('Mon'…)
+function ahoraBogota(){
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {timeZone: 'America/Bogota', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit',
+    weekday: 'short', hour: 'numeric', minute: '2-digit'}).formatToParts(new Date()).map(x => [x.type, x.value]));
+  const min = (+p.hour % 24) * 60 + +p.minute;
+  return {fecha: `${p.year}-${p.month}-${p.day}`, min, hhmm: `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`, dia: p.weekday};
+}
+// enlace de WhatsApp con el mensaje listo (sin número: WhatsApp pide elegir el chat o el grupo)
+const waLink = (tel, texto) => `https://wa.me/${String(tel || '').replace(/\D/g, '')}?text=${encodeURIComponent(texto || '')}`;
 /* ---------- datos: la base en Google Sheets, por la API de Apps Script ---------- */
 async function cargar(){
   // la clave llega en el enlace (?clave=...) o se pide en pantalla
@@ -1086,7 +1105,7 @@ async function cargar(){
     window.BITACORA = j.bitacora || [];
     window.TURNO = j.turno || [];
     window.PREGUNTAS = j.preguntas || [];   // preguntas al agente LogxIA (preguntas.js)
-    window.TURNOS_C = j.turnosConductores || [];   // conductores enturnados y disponibles (app de turnos)   // "Revisado" de hoy en Mi turno (compartido)
+    window.TURNOS_C = j.turnosConductores || [];   // conductores enturnados y disponibles (app Viajes ETP)
     window.CONDUCTORES = j.conductores || [];
     window.SEG_INICIO = j.seguimiento || '';
     window.CLAVE = clave;
@@ -1109,8 +1128,7 @@ async function guardarCambio(id, cambios, usuario){
   if (window.CLAVE && Object.keys(enBase).length){
     render();
     try{
-      const r = await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'update', clave:window.CLAVE, id, cambios:enBase, usuario, telefono: telefonoPara(id)})});
-      const j = await r.json();
+      const j = await api('update', {id, cambios:enBase, usuario, telefono: telefonoPara(id)});
       toast(j.ok ? (j.cambios ? `Guardado en la base: ${j.cambios} dato${j.cambios===1?'':'s'}` : 'Sin cambios en la base') : 'No se guardó: ' + (j.error||'error'));
       // F2: aviso del hito (avisos.js); asignación única: enlace del conductor (asignacion.js)
       if (j.ok && j.cambios) ofrecerAviso(v, cambios, usuario).then(() => ofrecerEnlaceConductor(v, j.asignacion));
@@ -1314,7 +1332,7 @@ async function marcarHecha(id, noEtp, nota){
   const usuario = noEtp ? `${NO_ETP} · ${yo}` : nota ? `${yo} · ${nota}` : yo;
   b.estadoAccion = 'Hecha'; b.resueltoEn = new Date().toISOString(); b.resueltoPor = usuario;
   if (window.CLAVE){
-    try { await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'resolver', clave:window.CLAVE, id, usuario})});
+    try { await api('resolver', {id, usuario});
       toast(noEtp ? 'Acción cerrada: no es para Entrapetrol' : 'Acción marcada como hecha'); }
     catch(e){ toast('No se pudo guardar en la bitácora'); }
   }
@@ -1374,7 +1392,7 @@ $('#accFiltros').onclick = e => { const a=e.target.closest('[data-area]'); if (a
   const b=e.target.closest('[data-acc]'); if(!b) return; accFiltro=b.dataset.acc; renderAcciones(); };
 
 /* ---------- Mi turno: el flujo del coordinador, un paso a la vez ---------- */
-// En cada ronda (RONDAS, 2 horas cada una) el coordinador recorre 4 pasos en orden:
+// En cada ronda (RONDAS, 2 horas cada una) el coordinador recorre los pasos en orden (el último, Cierre del día, al final):
 //   1 Seguimiento: dónde va cada vehículo en movimiento.     2 Cobertura: viajes sin vehículo a 72 h o menos.
 //   3 Cliente: pedidos de Reckitt (acciones) y datos de los correos.     4 Datos: errores y lo que viene.
 //   5 Cierre del día (desde la última ronda): lo de mañana listo (vehículo, conductor avisado) y la nota de entrega de turno.
@@ -1388,26 +1406,19 @@ $('#accFiltros').onclick = e => { const a=e.target.closest('[data-area]'); if (a
 // Las marcas ("Sigue igual", "Revisado", excepciones y su aprobación) son del día y las ve todo el equipo: se guardan en
 // la base (pestaña Turno revisado) con quién y a qué hora; no cambian el viaje.
 const RONDAS = [8, 12, 16], HORAS_RONDA = 2;
-let turnoMenu = 'seg', excAbierta = '';
+let turnoMenu = 'seg', excAbierta = '';   // paso en pantalla · fila con el selector de motivo abierto
 const esGerencia = () => { try { return sessionStorage.getItem('rkt-gerencia') === '1'; } catch(e){ return false; } };
 // quien entra desde el correo de Facturación no se bloquea: las líneas rojas de Mi turno son de los coordinadores
-const esFacturacion = () => { try { return sessionStorage.getItem('rkt-area') === 'Facturación'; } catch(e){ return false; } };   // paso en pantalla · fila con el selector de motivo abierto
+const esFacturacion = () => { try { return sessionStorage.getItem('rkt-area') === 'Facturación'; } catch(e){ return false; } };
 const revisados = () => new Map((window.TURNO || []).map(x => [x.clave, x]));
 async function marcarRevisado(k){
-  let usuario = ''; try { usuario = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
-  if (!usuario) {
-    usuario = (prompt('¿Quién eres? Queda como "Revisado por …" para todo el equipo') || '').trim();
-    if (!usuario) return;
-    try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
-  }
+  const usuario = pedirUsuario('¿Quién eres? Queda como "Revisado por …" para todo el equipo'); if (!usuario) return;
   const antes = window.TURNO || [], revisado = !revisados().has(k);
-  const hora = new Date().toLocaleTimeString('es-CO', {hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Bogota'});
+  const hora = ahoraBogota().hhmm;
   window.TURNO = revisado ? [...antes, {clave: k, estado: 'Revisado', usuario, hora}] : antes.filter(x => x.clave !== k);
   renderTurno();
   try {
-    const r = await fetch(CFG.SHEETS_API_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'},
-      body: JSON.stringify({action: 'turno', clave: window.CLAVE, k, revisado, usuario})});
-    const j = await r.json();
+    const j = await api('turno', {k, revisado, usuario});
     if (!j.ok) throw new Error(j.error || 'error');
     window.TURNO = j.turno || window.TURNO; renderTurno();
   } catch(e) { window.TURNO = antes; renderTurno(); toast('No se guardó la marca: ' + e.message); }
@@ -1422,7 +1433,7 @@ function hitosDe(v){
     .filter(([f]) => f).map(([f, que, donde]) => ({f: String(f).slice(0, 10), que, donde}));
 }
 // WhatsApp con el mensaje armado; el coordinador elige el contacto (la base aún no guarda el teléfono del conductor)
-const waConductor = (v, pregunta) => 'https://wa.me/?text=' + encodeURIComponent(
+const waConductor = (v, pregunta) => waLink('', 
   `Hola${v.conductor ? ' ' + v.conductor.split(' ')[0] : ''}, ${pregunta} · ${v.placa || ''} ${clavesBusqueda(v).slice(0, 1).map(([k, x]) => k + ' ' + x).join('')}`.trim());
 // placas y conductores que ya hicieron esa ruta (misma operación y destino), los más recientes primero
 function sugeridos(v){
@@ -1441,10 +1452,8 @@ function asignarSugerido(id, placa, conductor, telefono){
 
 // ronda de seguimiento en curso (hora de Colombia, lunes a sábado): número, inicio y vencimiento en minutos del día
 function rondaActual(){
-  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {timeZone: 'America/Bogota', hour12: false, weekday: 'short', hour: 'numeric', minute: 'numeric'})
-    .formatToParts(new Date()).map(x => [x.type, x.value]));
-  const ahora = (+p.hour % 24) * 60 + +p.minute, n = RONDAS.filter(h => h * 60 <= ahora).length;
-  if (p.weekday === 'Sun' || !n) return null;
+  const {min: ahora, dia} = ahoraBogota(), n = RONDAS.filter(h => h * 60 <= ahora).length;
+  if (dia === 'Sun' || !n) return null;
   const inicio = RONDAS[n - 1] * 60;
   return {n, ahora, inicio, vence: inicio + HORAS_RONDA * 60};
 }
@@ -1454,28 +1463,23 @@ const hhmm = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 6
 // al terminar la pausa. Gerencia también puede terminarla antes.
 const HORAS_PAUSA = 3;
 let horaPausa = '';   // hora que Gerencia escribió (se conserva cuando Mi turno se repinta cada minuto)
-const minutoBogota = () => { const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {timeZone: 'America/Bogota', hour12: false, hour: 'numeric', minute: 'numeric'})
-  .formatToParts(new Date()).map(x => [x.type, x.value])); return (+p.hour % 24) * 60 + +p.minute; };
 const pausaHasta = () => [...revisados().keys()].filter(k => k.startsWith('pausa|')).map(k => k.slice(6)).sort().pop() || '';
-const enPausa = () => pausaHasta() > hhmm(minutoBogota());
-const pausaSugerida = () => hhmm(Math.min(minutoBogota() + HORAS_PAUSA * 60, 23 * 60 + 59));
+const enPausa = () => pausaHasta() > hhmm(ahoraBogota().min);
+const pausaSugerida = () => hhmm(Math.min(ahoraBogota().min + HORAS_PAUSA * 60, 23 * 60 + 59));
 function pausarBloqueo(){
   const hasta = horaPausa || pausaSugerida();
-  if (!/^\d{2}:\d{2}$/.test(hasta) || hasta <= hhmm(minutoBogota())) return toast('Elija una hora de hoy más tarde que ahora');
+  if (!/^\d{2}:\d{2}$/.test(hasta) || hasta <= hhmm(ahoraBogota().min)) return toast('Elija una hora de hoy más tarde que ahora');
   if (confirm(`¿Quitar el bloqueo a todo el equipo hasta las ${hasta}?\n\nLas líneas rojas siguen a la vista; a esa hora, si siguen sin resolver, el tablero se vuelve a bloquear.`))
     { horaPausa = ''; marcarRevisado('pausa|' + hasta); }
 }
 // terminar la pausa antes de tiempo: se quitan las marcas de pausa que siguen vigentes
 async function terminarPausa(){
   if (!confirm('¿Volver a bloquear el tablero ya? Las líneas rojas pendientes bloquean a todo el equipo.')) return;
-  const ahora = hhmm(minutoBogota());
+  const ahora = hhmm(ahoraBogota().min);
   for (const k of [...revisados().keys()].filter(k => k.startsWith('pausa|') && k.slice(6) > ahora)) await marcarRevisado(k);
 }
 // vehículos en movimiento: con placa, el transporte sin terminar y que ya arrancó o arranca mañana
 const TERMINADO = ['Entregado en puerto', 'Zarpó', 'Vacío devuelto', 'Cancelado'];
-// qué debería pasar después según la etapa (para decir qué se espera del vehículo)
-const SIGUE = {'Asignado': 'el retiro', 'Vacío retirado': 'el llenado en planta', 'Llenado': 'la entrega en puerto', 'Retirado de puerto': 'la entrega en bodega',
-  'Entregado en bodega': 'la devolución del vacío', 'En bodega de paso': 'el urbano al destino final'};
 // dónde está el vehículo según la etapa del viaje (sale de las fechas): dónde quedó, hacia dónde va y desde cuándo
 // no cambia de estado ni de lugar; además, qué se esperaba y lo último que reportó el conductor en su app
 const UBICACION = {
@@ -1509,10 +1513,9 @@ const MOTIVOS = {
 // La aprobación vale HORAS_EXCEPCION: Gerencia queda enterada, pero si sigue sin resolverse vuelven la alerta y el bloqueo.
 const HORAS_EXCEPCION = 4;
 const minutosDe = hhmm => { const [h, m] = String(hhmm || '').split(':').map(Number); return h * 60 + (m || 0); };
-const minutosAhora = () => minutosDe(new Date().toLocaleTimeString('es-CO', {hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Bogota'}));
 function excepcionDe(k, R){
   const x = [...R.values()].find(y => y.clave.startsWith('exc|' + k + '|')); if (!x) return null;
-  const ok = R.get('ok|' + k), no = R.get('no|' + k), vencida = ok && minutosAhora() - minutosDe(ok.hora) >= HORAS_EXCEPCION * 60;
+  const ok = R.get('ok|' + k), no = R.get('no|' + k), vencida = ok && ahoraBogota().min - minutosDe(ok.hora) >= HORAS_EXCEPCION * 60;
   return {...x, motivo: x.clave.slice(('exc|' + k + '|').length), estado: no ? 'rechazada' : vencida ? 'vencida' : ok ? 'aprobada' : 'pendiente', aprobo: ok || no,
     vence: ok ? hhmm(minutosDe(ok.hora) + HORAS_EXCEPCION * 60) : ''};
 }
@@ -1684,16 +1687,14 @@ function renderTurno(){
   cont.innerHTML = bloqueGerencia(T) + `<div class="tr-meta"><b>Meta:</b> ${esc(m.meta)}</div><div class="sub" style="margin:2px 0 6px">${esc(m.ayuda)}</div>
     ${pend.map(x => filaTurno(x, false)).join('') || `<div class="tr-vacio">✓ ${esc(m.vacio)}${M[M.indexOf(m) + 1] ? ` · ${btnT('Siguiente: ' + M[M.indexOf(m) + 1].titulo + ' →', `data-t-menu="${M[M.indexOf(m) + 1].id}"`)}` : ''}</div>`}
     ${m.despues ? `<div class="sub tr-vacio">ℹ ${esc(m.despues)}</div>` : ''}
-    ${m.id === 'cob' ? `<div class="tr-vacio"><a class="btn" href="https://wa.me/?text=${encodeURIComponent(mensajeGrupo())}" target="_blank" rel="noopener">${ICONO_WA}Publicar viajes en el grupo de conductores</a> <span class="sub">Abre WhatsApp con el mensaje listo: elija el grupo y envíe. Los conductores responden en la app de turnos.</span></div>` : ''}
+    ${m.id === 'cob' ? `<div class="tr-vacio"><a class="btn" href="${waLink('', mensajeGrupo())}" target="_blank" rel="noopener">${ICONO_WA}Publicar viajes en el grupo de conductores</a> <span class="sub">Abre WhatsApp con el mensaje listo: elija el grupo y envíe. Los conductores responden en la app de turnos.</span></div>` : ''}
     ${hechos.length ? `<details class="tr-rev"><summary class="sub">Hechos hoy (${hechos.length})</summary>${hechos.map(x => filaTurno(x, R.get(x.k))).join('')}</details>` : ''}`;
 }
 // la clave se escribe aquí y la comprueba el Apps Script; el tablero solo guarda "es Gerencia" mientras la pestaña esté abierta
 async function entrarGerencia(){
   const codigo = prompt('Clave de Gerencia'); if (!codigo) return;
   try {
-    const r = await fetch(CFG.SHEETS_API_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'},
-      body: JSON.stringify({action: 'gerencia', clave: window.CLAVE, codigo})});
-    const j = await r.json();
+    const j = await api('gerencia', {codigo});
     if (!j.ok) return toast(j.error || 'Clave de Gerencia incorrecta');
     try { sessionStorage.setItem('rkt-gerencia', '1'); } catch(e){}
     toast('Modo Gerencia: el tablero no se bloquea en esta pestaña'); renderTurno();
@@ -1731,9 +1732,7 @@ async function ofrecerAviso(v, cambios, usuario){
   const viaje = `${refCliente(v) || v.placa || 'Sin referencia'} · ${v.operacion} ${v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || '')}`;
   if (!confirm(`¿Avisar este hito a Entrapetrol${v.solicitante ? ' y al cliente (' + v.solicitante + ')' : ''}?\n\n${viaje}\n${H.map(h => '• ' + h.txt).join('\n')}`)) return;
   try {
-    const r = await fetch(CFG.SHEETS_API_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'},
-      body: JSON.stringify({action: 'avisoHito', clave: window.CLAVE, id: v.id, cambios, usuario})});
-    const j = await r.json();
+    const j = await api('avisoHito', {id: v.id, cambios, usuario});
     toast(!j.ok ? 'No se envió el aviso: ' + (j.error || 'error')
       : `Aviso enviado a Entrapetrol${j.cliente ? ' y a ' + j.cliente : ''}${j.sinCorreo ? ` · no hay correo de ${j.sinCorreo}: no le llegó` : ''}`);
   } catch(e) { toast('No se pudo enviar el aviso'); }
@@ -1751,15 +1750,13 @@ function ofrecerEnlaceConductor(v, a, sinPreguntar){
     + `Ábralo en la app Viajes ETP para ver la cita y marcar cada paso: ${APP_TURNOS}?t=${encodeURIComponent(String(a.enlace).split('t=').pop())}\n`
     + `Para tenerla como app: ábrala en Chrome (Android: ⋮ › Abrir en Chrome) o en Safari (iPhone) y toque "Instalar" o "Agregar a inicio".`;
   if (!sinPreguntar && !confirm(`${v.placa} quedó asignado en Despacho.\n¿Enviar el enlace del viaje al conductor por WhatsApp${a.telefono ? ' (' + a.telefono + ')' : ''}?`)) return;
-  window.open(`https://wa.me/${a.telefono || ''}?text=${encodeURIComponent(texto)}`, '_blank', 'noopener');
+  window.open(waLink(a.telefono, texto), '_blank', 'noopener');
 }
 // botón "Enviar enlace al conductor" de la ventana del viaje: reenviar sin tocar el viaje (crea la asignación si faltaba)
 async function enviarEnlaceConductor(id){
   const v = viajes.find(x => x.id === id); if (!v || !v.placa) return toast('Primero guarde la placa del viaje');
   try {
-    const r = await fetch(CFG.SHEETS_API_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'},
-      body: JSON.stringify({action: 'enlaceConductor', clave: window.CLAVE, id, telefono: telefonoPara(id), usuario: CFG.USUARIO || 'tablero'})});
-    const j = await r.json();
+    const j = await api('enlaceConductor', {id, telefono: telefonoPara(id), usuario: CFG.USUARIO || 'tablero'});
     if (!j.ok) return toast(j.error || 'No se pudo crear el enlace');
     ofrecerEnlaceConductor(v, j.asignacion, true);
   } catch(e) { toast('No se pudo crear el enlace'); }
@@ -1828,7 +1825,7 @@ function hbars(el, pares, colorFn){
 }
 function contar(campo){ const act = activos(); const c={}; act.forEach(v=>{ const k=v[campo]||'Sin dato'; c[k]=(c[k]||0)+1; }); return Object.entries(c).sort((a,b)=>b[1]-a[1]); }
 function renderChartEstados(){ hbars('#chartEstados', ESTADOS.map(e=>[e.k, visibles().filter(v=>v.estado===e.k).length]), colorEstado); }
-function renderChartPais(){ const act = activos(); hbars('#chartPais', contar('pais'), ()=> 'var(--accent)'); }
+function renderChartPais(){ hbars('#chartPais', contar('pais'), ()=> 'var(--accent)'); }
 function renderChartMix(){ const act = activos();
   const ex = act.filter(v=>v.operacion==='EXPO').length, im = act.length-ex;
   const r=42, C=2*Math.PI*r, f=ex/Math.max(1,act.length);
@@ -1857,7 +1854,7 @@ function renderAlertas(){ const act = activos();
   a.sort((x,y)=>x.p-y.p);
   $('#alertas').innerHTML = a.length ? a.slice(0,7).map(x=>`<div class="alert"><span class="tag" style="background:${x.c}">${x.t}</span><span>${x.m}</span></div>`).join('') : '<div class="sub">Sin alertas 🎉</div>';
 }
-// filtros de la programación: actividad, día y si se muestran cancelados
+// filtros de la programación: actividad y día
 let agAct = '', agDia = '';
 function renderProximos(){ const act = viajes;
   const ev = [];
@@ -1917,7 +1914,7 @@ const COLS = [
   ['unidad','Unidad'],['bodega','Bodega'],['mn','Motonave (MN)'],['cierreDoc','Cierre doc'],['etd','ETD'],['eta','ETA'],
   ['booking','Booking'],['contenedor','Contenedor'],['cierreOp','Cita puerto / Devolución'],['fwd','FWD'],['puerto','Puerto'],['patio','Patio'],['observacion','Observación']
 ];
-// cobro del viaje: tarifa + extracostos aprobados por Reckitt; sin dato de facturación, el viaje cerrado queda pendiente por facturar
+// valores en pesos colombianos (la regla del cobro está en el dominio: cobro)
 const pesos = n => n ? '$' + Number(n).toLocaleString('es-CO') : '—';
 const COLOR_COBRO = {'Aprobado':'var(--ok)', 'Facturado':'var(--ok)', 'Rechazado':'var(--bad)', 'Pendiente':'var(--warn)', 'Pendiente por facturar':'var(--warn)', 'En aprobación Reckitt':'var(--accent)', 'Aprobado por Reckitt':'var(--ok)', 'Aún no facturable':'var(--muted)', 'Sin servicio':'var(--muted)'};
 const tagCobro = (s, pre='') => s ? `<span class="tg" style="background:color-mix(in srgb, ${COLOR_COBRO[s]||'var(--muted)'} 15%, transparent);color:${COLOR_COBRO[s]||'var(--muted)'}">${esc(pre+s)}</span>` : '';
@@ -2063,9 +2060,7 @@ function renderMotonaves(){
     </div>`; }).join('');
 }
 
-/* ---------- modal de actualización ---------- */
-
-/* ---------- Modo lean: ruta del pedido ---------- */
+/* ---------- ventana del viaje (actualización) y modo lean: ruta del pedido ---------- */
 // paradas según la operación: [etiqueta, lugar, fecha que la cumple, detalle]
 // el equipo anota la entrega en la observación o en la tirilla aunque no llene la fecha
 const dijoEntregado = v => /descargad|entregad/i.test(v.observacion||'');
@@ -2154,7 +2149,7 @@ function panelFactura(v, P, n){
     + (hijos.length ? lnR(`<span title="${esc(hijos.flatMap(s => itemsExtra(s).map(([k, x]) => k+' '+pesos(x))).join(', '))}">Subviaje${hijos.length>1?'s':''}</span>`, pesos(costoHijos)) : '')
     + granR('Total', pesos(totalViaje))
     + (c.extra ? `<div class="nota">${lnR('Extracostos', `<span style="color:${COLOR_COBRO[c.aprob]};font-weight:600">● ${c.aprob==='Pendiente' ? 'Por aprobar' : c.aprob}</span>`)}${c.aprob!=='Aprobado' ? lnR('Aprobado para facturar', pesos(c.total)) : ''}</div>` : '');
-  const fin = finTransporte(v, P, n), lf = fin ? leadFactura(v) : null;
+  const fin = finTransporte(v), lf = fin ? leadFactura(v) : null;
   const leadF = !fin ? '' : `<div class="pieF"><h4>Lead time facturación</h4>${!lf ? `<span class="sub">Falta la fecha de ${v.operacion==='EXPO' ? 'entrega en puerto' : 'devolución del vacío'}</span>`
     : `<b style="${!lf.hecho && lf.dias>5 ? 'color:var(--bad)' : ''}">${lf.dias} d</b> <span class="sub">${lf.hecho ? 'facturado'+(v.fechaFactura ? ' '+fd(v.fechaFactura) : '') : 'sin facturar'}</span>`}</div>`;
   // datos que facturación necesita para la relación a Reckitt
@@ -2239,7 +2234,7 @@ function abrir(id){
   if (v.mesProg && !v.padre) $('#mSub').textContent += ' · 📋 ' + textoProgramacion(v, '', v.mesProg);
   if (v.padre) $('#mSub').textContent = `Subviaje de ${v.padre} · ${[v.motivoSub, v.patioSub && 'patio '+v.patioSub].filter(Boolean).join(' · ') || 'sin motivo'}`;
   pintarForm(v);
-  try { $('#mUsuario').value = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
+  $('#mUsuario').value = usuarioGuardado() || '';
   pintarEstados();
   const h = historial.filter(x=>x.id===id).slice(-4).reverse();
   const lx = accionesDe(v);
@@ -2384,7 +2379,7 @@ $('#mSave').onclick = () => {
   const marcaAntes = MARCAS.some(m=>m.k===v.estadoHoja) ? v.estadoHoja : '';
   if ((estadoSel||'') !== marcaAntes) cambios.estado = estadoSel || '';
   if (Object.keys(cambios).length && !usuario) { $('#mUsuario').focus(); return toast('Escriba su nombre para guardar en la base'); }
-  try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
+  guardarUsuario(usuario);
   if (Object.keys(cambios).length) guardarCambio(editId, cambios, usuario);
   cerrar();
 };
@@ -2426,7 +2421,7 @@ async function abrirPropuestas(){
   if (!CFG.SHEETS_API_URL) return toast('Funciona desde el tablero publicado');
   if (!window.CLAVE) return toast('Espere a que carguen los datos e intente de nuevo');
   $('#propLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">Buscando datos en los correos…</div>';
-  try { $('#propUsuario').value = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
+  $('#propUsuario').value = usuarioGuardado() || '';
   $('#propTodos').checked = false;
   $('#ovProp').classList.add('open');
   if (!await cargarPropuestas()) { $('#propLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">No se pudieron traer los datos. Intente de nuevo.</div>'; return; }
@@ -2453,13 +2448,11 @@ async function decidirPropuestas(aprobar){
   if (!sel.length) return toast('Seleccione al menos un dato');
   const usuario = $('#propUsuario').value.trim();
   if (!usuario) { $('#propUsuario').focus(); return toast('Escriba su nombre'); }
-  try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
+  guardarUsuario(usuario);
   const datos = sel.map(({clave, viajeId, campo, valor, evidencia, origen}) => ({clave, viajeId, campo, valor, evidencia, origen}));
   $('#propAprobar').disabled = $('#propRechazar').disabled = true;
   try {
-    const r = await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({action:'decidir', clave:window.CLAVE, usuario, aprobar: aprobar ? datos : [], rechazar: aprobar ? [] : datos})});
-    const j = await r.json();
+    const j = await api('decidir', {usuario, aprobar: aprobar ? datos : [], rechazar: aprobar ? [] : datos});
     if (!j.ok) throw new Error(j.error || 'error');
     if (aprobar) cerrarAccionEnCurso('propuestas', `${j.aprobadas} dato${j.aprobadas===1?'':'s'} aprobado${j.aprobadas===1?'':'s'} en el tablero`);
     toast(aprobar ? `${j.aprobadas} dato${j.aprobadas===1?'':'s'} guardado${j.aprobadas===1?'':'s'} en la base` : `${j.rechazadas} rechazado${j.rechazadas===1?'':'s'}`);
@@ -2485,12 +2478,9 @@ async function aplicarAccion(b){
   const P = datosDeAccion(b); if (!P.length) return;
   const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
   if (!confirm(`¿Guardar en ${P[0].viajeId} (${P[0].placa || 'sin placa'}) estos datos del correo y cerrar la acción?\n\n${P.map(p => `• ${p.etiqueta}: ${p.actual ? fx(p.actual) : 'vacío'} → ${fx(p.valor)}`).join('\n')}`)) return;
-  let usuario = ''; try { usuario = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
-  if (!usuario) { usuario = (prompt('¿Quién eres? Queda como quien aprobó los datos') || '').trim(); if (!usuario) return; try { localStorage.setItem('rkt-usuario', usuario); } catch(e){} }
+  const usuario = pedirUsuario('¿Quién eres? Queda como quien aprobó los datos'); if (!usuario) return;
   try {
-    const r = await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({action:'decidir', clave:window.CLAVE, usuario, aprobar: P.map(({clave, viajeId, campo, valor, evidencia, origen}) => ({clave, viajeId, campo, valor, evidencia, origen})), rechazar: []})});
-    const j = await r.json();
+    const j = await api('decidir', {usuario, aprobar: P.map(({clave, viajeId, campo, valor, evidencia, origen}) => ({clave, viajeId, campo, valor, evidencia, origen})), rechazar: []});
     if (!j.ok) throw new Error(j.error || 'error');
     const usados = new Set(P.map(p => p.clave));
     PROP = PROP.filter(p => !usados.has(p.clave));
@@ -2509,8 +2499,8 @@ const tagNuevo = v => esNuevo(v) ? '<span class="tag-nuevo" title="Nadie del equ
 $('#mTomar').onclick = () => {
   const usuario = $('#mUsuario').value.trim();
   if (!usuario) { $('#mUsuario').focus(); return toast('Escriba su nombre para tomar el viaje'); }
-  try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
-  const ahora = new Date(), f = `${ahora.getFullYear()}-${String(ahora.getMonth()+1).padStart(2,'0')}-${String(ahora.getDate()).padStart(2,'0')} ${String(ahora.getHours()).padStart(2,'0')}:${String(ahora.getMinutes()).padStart(2,'0')}`;
+  guardarUsuario(usuario);
+  const a = ahoraBogota(), f = `${a.fecha} ${a.hhmm}`;   // hora de Colombia, no la del computador
   guardarCambio(editId, {vistoPor: `${usuario} · ${f}`}, usuario);
   cerrar();
 };
@@ -2523,7 +2513,7 @@ function nuevoSubviaje(id){
   $('#subPadre').textContent = `${v.operacion} · ${v.booking || v.pedido || v.id} · ${v.placa || 'sin placa'}`;
   $('#subMotivo').innerHTML = MOTIVOS_SUBVIAJE.map(m=>`<option>${esc(m)}</option>`).join('');
   $('#subPatio').value = ''; $('#subFecha').value = HOY;
-  try { $('#subUsuario').value = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
+  $('#subUsuario').value = usuarioGuardado() || '';
   $('#dlPatio').innerHTML = [...new Set(viajes.map(x=>x.patio).concat(viajes.map(x=>x.patioSub)).filter(Boolean))].sort().map(x=>`<option value="${esc(x)}">`).join('');
   $('#ovSub').classList.add('open');
 }
@@ -2533,12 +2523,10 @@ $('#subCrear').onclick = async () => {
   const usuario = $('#subUsuario').value.trim();
   if (!usuario) { $('#subUsuario').focus(); return toast('Escriba su nombre'); }
   if (!CFG.SHEETS_API_URL || !window.CLAVE) return toast('Funciona desde el tablero publicado');
-  try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
+  guardarUsuario(usuario);
   $('#subCrear').disabled = true;
   try {
-    const r = await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({action:'subviaje', clave:window.CLAVE, id:subPadreId, usuario, campos:{motivoSub:$('#subMotivo').value, patioSub:$('#subPatio').value.trim(), fechaDescargueSub:$('#subFecha').value}})});
-    const j = await r.json();
+    const j = await api('subviaje', {id:subPadreId, usuario, campos:{motivoSub:$('#subMotivo').value, patioSub:$('#subPatio').value.trim(), fechaDescargueSub:$('#subFecha').value}});
     if (!j.ok) throw new Error(j.error || 'error');
     $('#ovSub').classList.remove('open');
     toast('Subviaje creado: complete el vehículo y los costos');
@@ -2555,7 +2543,7 @@ const BODEGAS_CORREO = [[/cortijo/i, 'DHL Cortijo'], [/agecolda/i, 'Agecolda'], 
 async function abrirBarrido(){
   if (!CFG.SHEETS_API_URL || !window.CLAVE) return toast('Funciona desde el tablero publicado');
   $('#barridoLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">Leyendo el buzón de calidad@…</div>';
-  try { $('#barridoUsuario').value = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
+  $('#barridoUsuario').value = usuarioGuardado() || '';
   $('#ovBarrido').classList.add('open');
   try {
     const r = await fetch(CFG.SHEETS_API_URL + '?formato=json&que=correos&dias=2&clave=' + encodeURIComponent(window.CLAVE));
@@ -2679,7 +2667,7 @@ function compararProgramacion(c){
 }
 function abrirProgramacion(c){
   PROG = {c, ...compararProgramacion(c)};
-  try { $('#progUsuario').value = localStorage.getItem('rkt-usuario') || $('#barridoUsuario').value || ''; } catch(e){}
+  $('#progUsuario').value = usuarioGuardado() || $('#barridoUsuario').value || '';
   $('#progTitulo').textContent = `Programación de cargues · ${c.asunto.replace(/^(RE|RV|FW|FWD)\s*:\s*/i, '').replace(/\[EXTERNAL\]\s*/i, '')}`;
   $('#progSub').innerHTML = `Versión del ${esc(c.fecha.replace('T', ' '))} · ${esc(c.firma || c.remitente.replace(/<.*>/, ''))} · ${c.programacion.length} cargues. Se crean los viajes que faltan y se proponen los cambios de esta versión; los cambios de fecha quedan como reprogramación con su causa. Nada se guarda sin “Aplicar”.`;
   pintarProgramacion();
@@ -2708,11 +2696,11 @@ function pintarProgramacion(){
 async function aplicarProgramacion(){
   const usuario = $('#progUsuario').value.trim();
   if (!usuario) { $('#progUsuario').focus(); return toast('Escriba su nombre: queda en el Historial'); }
-  try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
+  guardarUsuario(usuario);
   const sel = [...document.querySelectorAll('#progLista [data-pi]:checked')].map(x => PROG.filas[+x.dataset.pi]);
   if (!sel.length) return toast('No hay filas seleccionadas');
   const c = PROG.c, mesTxt = MES[Number(c.programacion[0].fechaCargue.slice(5, 7)) - 1], quien = `${usuario} (programación ${mesTxt}, correo ${c.fecha.slice(0, 10)})`;
-  const post = async b => { const r = await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({...b, clave: window.CLAVE, usuario: quien})}); return r.json(); };
+  const post = b => api(b.action, {...b, usuario: quien});
   $('#progAplicar').disabled = true;
   try {
     const crear = sel.filter(f => f.accion==='crear');
@@ -2743,7 +2731,7 @@ async function aplicarProgramacion(){
 async function aplicarDesdeCorreo(c){
   const usuario = $('#barridoUsuario').value.trim();
   if (!usuario) { $('#barridoUsuario').focus(); return toast('Escriba su nombre para actualizar el viaje'); }
-  try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
+  guardarUsuario(usuario);
   const ch = cambiosDeCorreo(c);
   await guardarCambio(c.viajeId, ch, usuario + ' (desde correo ' + c.tipo + ')');
   Object.assign(c.enBase, ch); pintarBarrido();
@@ -2751,15 +2739,13 @@ async function aplicarDesdeCorreo(c){
 async function crearExpoDesdeCorreo(c){
   const usuario = $('#barridoUsuario').value.trim();
   if (!usuario) { $('#barridoUsuario').focus(); return toast('Escriba su nombre para crear la exportación'); }
-  try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
+  guardarUsuario(usuario);
   const pais = c.pais ? c.pais.charAt(0) + c.pais.slice(1).toLowerCase() : '';
   const campos = {situacion:'Abierto', estado:'Sin asignar', booking:c.booking, pais, do:c.do,
     rbhy: c.rbhy, empresa: c.rbhy ? 'Reckitt Hygiene' : c.empresa, solicitante: /jhonier/i.test(c.firma + c.remitente) ? 'Jhonier Gómez' : '',
     observacion: `Correo ${c.fecha.slice(0,10)}: nueva exportación ${[pais, c.rbhy, c.booking && 'BK '+c.booking].filter(Boolean).join(' · ')}`};
   try {
-    const r = await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({action:'nuevo', clave:window.CLAVE, operacion:'EXPO', campos, usuario: usuario + ' (desde correo)'})});
-    const j = await r.json();
+    const j = await api('nuevo', {operacion:'EXPO', campos, usuario: usuario + ' (desde correo)'});
     if (!j.ok) throw new Error(j.error || 'error');
     c.viajeId = j.id; c.enBase = {operacion:'EXPO'}; pintarBarrido();
     toast(`Exportación ${j.id} creada: queda arriba como NUEVO; complete patio, fechas y vehículo`);
@@ -2770,7 +2756,7 @@ async function crearExpoDesdeCorreo(c){
 async function crearDesdeCorreo(c){
   const usuario = $('#barridoUsuario').value.trim();
   if (!usuario) { $('#barridoUsuario').focus(); return toast('Escriba su nombre para crear el viaje'); }
-  try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
+  guardarUsuario(usuario);
   const bodega = bodegaDeCorreo(c.lugar);
   const puerto = /buenaventura/i.test(c.puerto) ? 'Buenaventura' : /cartagena/i.test(c.puerto) ? 'Cartagena' : '';
   const campos = {situacion:'Abierto', estado:'Sin asignar', pedido:c.pedido, do:c.do, contenedor:c.contenedor, puerto, bodega,
@@ -2779,9 +2765,7 @@ async function crearDesdeCorreo(c){
     fechaLevante: c.tipo==='Orden de retiro' ? c.fecha.slice(0,10) : '',
     observacion: `Correo ${c.tipo} ${c.fecha.slice(0,10)}: ${[c.lugar, c.fechaDescargue && fd(c.fechaDescargue), c.hora, c.terminal && 'terminal '+c.terminal, c.devolucion && 'devolución '+c.devolucion].filter(Boolean).join(' · ')}`};
   try {
-    const r = await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({action:'nuevo', clave:window.CLAVE, operacion:'IMPO', campos, usuario: usuario + ' (desde correo)'})});
-    const j = await r.json();
+    const j = await api('nuevo', {operacion:'IMPO', campos, usuario: usuario + ' (desde correo)'});
     if (!j.ok) throw new Error(j.error || 'error');
     c.viajeId = j.id; pintarBarrido();
     toast(`Viaje ${j.id} creado: queda arriba como NUEVO hasta que alguien lo tome`);
@@ -2833,8 +2817,6 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => { const s=e.target.closest('[data-gsel]'); if(!s) return; const antes = {...G}; G[s.dataset.gsel] = s.value;
   ajustarStatus(antes);   // filtros.js
   render(); });
-document.addEventListener('click', e => { const b=e.target.closest('[data-g]'); if(!b) return; G[b.dataset.g] = b.dataset.val;
-  render(); });
 window.addEventListener('resize', ()=> document.documentElement.style.setProperty('--hh', document.querySelector('header').offsetHeight + 'px'));
 $('#fEstados').onclick = e => { const b=e.target.closest('.chip'); if(!b) return; filtroEstado=b.dataset.e; renderChips(); renderTabla(); };
 $('#tbl').onclick = e => { const th=e.target.closest('th[data-k]'); if(!th) return; const k=th.dataset.k; orden = {k, asc: orden.k===k ? !orden.asc : true}; renderTabla(); };
@@ -2871,15 +2853,6 @@ function buscarViajes(q){
     const palabras = campos.flatMap(c=>c.split(/\s+/));
     return toks.some(t=> palabras.includes(t) || campos.some(c=> c===t || (t.length>=5 && c.includes(t)))) || campos.some(c=> c.length>=6 && Q.includes(c));
   });
-}
-function resumenGrupo(L){
-  const asig = L.filter(tieneVehiculo).length;
-  const est = ESTADOS.map(e=>[e.k, L.filter(v=>v.estado===e.k).length]).filter(x=>x[1]).map(([k,n])=>`${n} ${k.toLowerCase()}`).join(' · ');
-  const naves = [...new Map(L.filter(v=>v.mn).map(v=>[v.mn,v])).values()].sort((a,b)=>(a.etd||'9').localeCompare(b.etd||'9'));
-  const destinos = [...new Set(L.map(v=>v.pais).filter(Boolean))];
-  return `<b>${L.length} viaje${L.length>1?'s':''}</b> · ${asig} con vehículo · ${L.length-asig} sin asignar<br>${est}<br>
-    ${destinos.length?`Destinos: <b>${destinos.map(esc).join(', ')}</b><br>`:''}
-    ${naves.map(v=>`🚢 <b>${esc(v.mn)}</b> → ${esc(v.pais||'—')} · cierre doc ${fd(v.cierreDoc)} · ETD ${fd(v.etd)} · ETA ${fd(v.eta)}`).join('<br>')}`;
 }
 // Varios resultados: primero una lista corta numerada y se pregunta cuál ver
 let ultimaLista = [];
@@ -2968,8 +2941,7 @@ async function enviarReporteCorreo(){
   if (!confirm(`Se enviará el reporte de errores y acciones pendientes a:\n${para.join('\n')}\n\n¿Confirmas?`)) return;
   const b = burbuja('<span class="typing">Enviando…</span>', 'bot');
   try {
-    const r = await fetch(CFG.SHEETS_API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'enviarReporte', clave:window.CLAVE, para})});
-    const j = await r.json().catch(()=>({ok:true}));
+    const j = await api('enviarReporte', {para}).catch(() => ({ok: true}));
     b.innerHTML = j.ok ? `✅ Reporte enviado a ${para.map(esc).join(', ')}.` : `No se pudo enviar: ${esc(j.error||'error')}`;
   } catch(e){ b.innerHTML = 'No se pudo enviar el correo. Intente de nuevo.'; }
 }
@@ -3028,7 +3000,7 @@ function proponerCambio(v, q){
   const {ch, notas} = cambiosDeTexto(q, v);
   const ref = `${v.operacion} · ${v.placa || 'sin placa'} · ${v.operacion==='IMPO' ? (v.pedido ? 'pedido '+v.pedido : v.id) : (v.booking ? 'booking '+v.booking : v.id)}`;
   if (!Object.keys(ch).length) return `Encontré <b>${esc(ref)}</b>${notas.length ? ', pero ' + notas.join(' ') : ', pero no entendí qué dato cambiar.'}<br><span class="sub">Ej: “ya está en puerto”, “retiró el vacío ayer”, “placa ABC123 conductor JUAN PÉREZ”, “RBHY28700”, “factura FE-1234 del 30/10”.</span>`;
-  let usuario = ''; try { usuario = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
+  let usuario = usuarioGuardado();
   const filas = Object.entries(ch).map(([k, x]) => `<div class="pc-row"><span>${esc(etiquetaCampo(v, k))}</span><span class="sub">${esc((k.startsWith('fecha') || k==='etd') && v[k] ? fd(v[k]) : (v[k] || '—'))} →</span>
     ${k.startsWith('fecha') || k==='etd' ? `<input type="date" data-pc="${k}" value="${esc(x)}">` : `<input data-pc="${k}" value="${esc(x)}">`}</div>`).join('');
   const mov = fechasMovidas(v, ch);
@@ -3041,7 +3013,7 @@ async function confirmarChat(btn){
   const caja = btn.closest('.pc'), v = viajes.find(x => x.id === caja.dataset.vid);
   const usuario = caja.querySelector('.pc-user').value.trim();
   if (!usuario) { caja.querySelector('.pc-user').focus(); return toast('Escriba su nombre: queda en el Historial'); }
-  try { localStorage.setItem('rkt-usuario', usuario); } catch(e){}
+  guardarUsuario(usuario);
   let ch = {}; caja.querySelectorAll('[data-pc]').forEach(i => { ch[i.dataset.pc] = i.value.trim(); });
   const mov = fechasMovidas(v, ch);
   if (mov.length) {
@@ -3177,26 +3149,21 @@ burbuja('Hola 👋 Soy <b>LogxIA</b>. Pregúntame el status de un viaje por plac
 const LOGXIA_CORRE = {desde: 7, hasta: 18, minuto: 5};
 // próxima revisión de LogxIA, en palabras ("hoy a las 11:05", "el lunes a las 7:05")
 function proximaRevision(){
-  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {timeZone: 'America/Bogota', hour12: false, weekday: 'short', hour: 'numeric', minute: 'numeric'})
-    .formatToParts(new Date()).map(x => [x.type, x.value]));
-  const dia = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.weekday), ahora = (+p.hour % 24) * 60 + +p.minute;
+  const b = ahoraBogota(), dia = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(b.dia), ahora = b.min;
   const hora = h => `${h}:${String(LOGXIA_CORRE.minuto).padStart(2, '0')}`;
   if (dia >= 1) {   // lunes a sábado
     for (let h = LOGXIA_CORRE.desde; h <= LOGXIA_CORRE.hasta; h++) if (h * 60 + LOGXIA_CORRE.minuto > ahora) return `hoy a las ${hora(h)}`;
   }
   return `${dia === 6 ? 'el lunes' : dia === 0 ? 'mañana lunes' : 'mañana'} a las ${hora(LOGXIA_CORRE.desde)}`;
 }
-const quienSoy = () => { let u = ''; try { u = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
-  if (!u) { u = (prompt('¿Quién pregunta? (queda con su nombre)') || '').trim(); if (u) try { localStorage.setItem('rkt-usuario', u); } catch(e){} } return u; };
+const quienSoy = () => pedirUsuario('¿Quién pregunta? (queda con su nombre)');
 const botonPreguntaLogxia = q => window.MODO_CLIENTE ? '' :
   `<div style="margin-top:8px"><button type="button" class="btn" data-preguntar="${esc(q)}">🤖 Preguntarle a LogxIA</button> <span class="sub">responde ${proximaRevision()}</span></div>`;
 async function preguntarALogxia(q){
   const usuario = quienSoy(); if (!usuario) return;
   const b = burbuja('<span class="typing">Pasándole la pregunta a LogxIA…</span>', 'bot');
   try {
-    const r = await fetch(CFG.SHEETS_API_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'},
-      body: JSON.stringify({action: 'pregunta', clave: window.CLAVE, pregunta: q, usuario})});
-    const j = await r.json();
+    const j = await api('pregunta', {pregunta: q, usuario});
     if (!j.ok) throw new Error(j.error || 'error');
     window.PREGUNTAS = j.preguntas || window.PREGUNTAS;
     b.innerHTML = `Listo, ${esc(usuario.split(' ')[0])}: le pasé tu pregunta a LogxIA (${esc(j.id)}).<br><b>Se responderá ${proximaRevision()}</b>, en su próxima revisión de la base y los correos. La respuesta aparece aquí, en "Tus preguntas a LogxIA".`;
@@ -3206,7 +3173,7 @@ async function preguntarALogxia(q){
 // las preguntas de quien usa este navegador (o de todo el equipo, en modo Gerencia): pendientes con su hora y las respondidas
 function pintarPreguntas(){
   const cont = $('#chatPreg'); if (!cont) return;
-  let yo = ''; try { yo = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
+  const yo = usuarioGuardado();
   const P = (window.PREGUNTAS || []).filter(p => esGerencia() || (yo && p.usuario === yo)).slice(-6).reverse();
   cont.innerHTML = P.length ? `<details ${P.some(p => p.estado === 'Respondida' && !leida(p.id)) ? 'open' : ''}><summary class="sub">Tus preguntas a LogxIA (${P.length})</summary>${P.map(p => `<div class="msg bot">
     <div class="sub">${esc(p.id)} · ${esc(p.usuario)}: «${esc(p.pregunta)}»</div>
@@ -3251,7 +3218,7 @@ cargar().then(ok => { if (ok === false) return; if (window.MODO_CLIENTE) documen
   if (vid) { const u = new URL(location.href); u.searchParams.delete('viaje'); history.replaceState(null, '', u); }
   // enlace de un correo por área (ej. el de Facturación): ?vista=acciones&area=Facturación&usuario=Pedro González
   const qp = new URLSearchParams(location.search);
-  if (qp.get('usuario')) try { localStorage.setItem('rkt-usuario', qp.get('usuario').slice(0, 60)); } catch(e){}
+  if (qp.get('usuario')) guardarUsuario(qp.get('usuario'));
   if (AREAS.includes(qp.get('area'))) { accArea = qp.get('area'); renderAcciones();
     if (accArea === 'Facturación') try { sessionStorage.setItem('rkt-area', accArea); } catch(e){} renderTurno(); }
   const vista = qp.get('vista') || 'turno';
