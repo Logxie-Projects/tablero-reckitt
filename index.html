@@ -2667,14 +2667,21 @@ function compararProgramacion(c){
   });
   // un viaje de la programación anterior que ya no viene con su fecha y motonave de antes se corrió: la fila nueva del mismo
   // destino que quedaría por crear lo toma (Jhonier mueve cargues de fecha y de nave; no son viajes nuevos)
-  const movido = r => libres().filter(x => enMes(x) && eq(x.pais, r.pais) && /programaci/i.test(x.observacion||'') && !terminado(x))
-    .sort((a, b) => Math.abs(new Date(a.fechaCargue) - new Date(r.fechaCargue)) - Math.abs(new Date(b.fechaCargue) - new Date(r.fechaCargue)))[0];
+  // la programación inicial es tentativa: el booking define qué viaje es cuál y, mientras no hay, la motonave. Un viaje con otro
+  // booking es otra exportación y nunca se empareja con la fila; entre candidatos, primero la misma nave y luego la fecha más cercana
+  const sinBk = x => !x || /^(pte|sin info|pend)/i.test(String(x).trim());
+  const compatible = (x, r) => sinBk(x.booking) || sinBk(r.booking) || eq(x.booking, r.booking);
+  const candidatos = (r, f) => libres().filter(x => enMes(x) && eq(x.pais, r.pais) && compatible(x, r) && f(x))
+    .sort((a, b) => (eq(b.mn, r.mn) - eq(a.mn, r.mn)) || (iguales(b, r) - iguales(a, r)) || cerca(a, r) - cerca(b, r));
+  // filas gemelas (mismo destino, fecha y nave, sin booking): cada una se queda con el viaje que ya tiene su cierre, ETD y ETA
+  function iguales(x, r){ return ['cierreDoc', 'etd', 'eta'].filter(k => r[k] && String(x[k]||'') === r[k]).length; }
+  const movido = r => candidatos(r, x => /programaci/i.test(x.observacion||'') && !terminado(x))[0];
   const pendientes = [];
   const filas = c.programacion.map((r, i) => {
     let v = porBooking[i]
-      || libres().find(x => enMes(x) && eq(x.pais, r.pais) && x.fechaCargue===r.fechaCargue && eq(x.mn, r.mn))
-      || libres().find(x => enMes(x) && eq(x.pais, r.pais) && r.mn && eq(x.mn, r.mn) && /programaci/i.test(x.observacion||''))
-      || libres().find(x => enMes(x) && eq(x.pais, r.pais) && x.fechaCargue===r.fechaCargue);
+      || candidatos(r, x => x.fechaCargue===r.fechaCargue && eq(x.mn, r.mn))[0]
+      || candidatos(r, x => r.mn && eq(x.mn, r.mn) && /programaci/i.test(x.observacion||''))[0]
+      || candidatos(r, x => x.fechaCargue===r.fechaCargue)[0];
     let reusar = false;
     // un viaje que esperaba fecha (reprogramado, sin booking) del mismo destino se reutiliza en lugar de crear otro
     if (!v) { v = libres().find(x => eq(x.pais, r.pais) && (!x.booking || /sin info|pend/i.test(x.booking)) && /reprogram/i.test(x.observacion||'')); reusar = !!v; }
