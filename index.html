@@ -2657,7 +2657,15 @@ const CAMPOS_PROG = [['mesProg','Mes programado'],['fechaCargue','Llenado'],['fe
   ['etd','ETD'],['eta','ETA'],['booking','Booking'],['fwd','FWD'],['puerto','Puerto']];
 const datosProg = r => ({fechaCargue: r.fechaCargue, fechaRetiro: addDias(r.fechaCargue, -1), pais: r.pais, unidad: r.unidad, mn: r.mn,
   cierreDoc: r.cierreDoc, etd: r.etd, eta: r.eta, booking: r.booking, fwd: r.fwd, puerto: r.puerto});
+// cada contenedor de la programación es un viaje: una fila "2X40" son dos contenedores ("1X40" cada uno)
+function contenedoresDe(prog){
+  return prog.flatMap(r => {
+    const m = String(r.unidad||'').match(/^\s*(\d+)\s*X\s*(\d+)/i), k = m ? Math.max(1, +m[1]) : 1;
+    return k === 1 ? [r] : Array.from({length: k}, (_, j) => ({...r, unidad: `1X${m[2]}`, n: `${r.n}.${j + 1}`}));
+  });
+}
 function compararProgramacion(c){
+  const prog = contenedoresDe(c.programacion);
   const mes = c.programacion[0].fechaCargue.slice(0, 7), eq = (a, b) => compacto(a) === compacto(b);
   const expo = viajes.filter(v => v.operacion==='EXPO' && !v.padre && situacion(v)!=='Cancelado'), usados = new Set();
   const libres = () => expo.filter(v => !usados.has(v.id));
@@ -2671,8 +2679,8 @@ function compararProgramacion(c){
   const sinBk = x => !x || /^(pte|sin info|pend)/i.test(String(x).trim());
   const anuladoDe = r => !sinBk(r.booking) && viajes.find(v => v.operacion==='EXPO' && situacion(v)==='Cancelado' && eq(v.booking, r.booking) && eq(bodegaDe(v), bodegaFila(r)));
   // dos vueltas: primero cada fila con el viaje de su misma bodega, después las que queden con el más cercano en fecha
-  const porBooking = c.programacion.map(() => null);
-  [true, false].forEach(misma => c.programacion.forEach((r, i) => {
+  const porBooking = prog.map(() => null);
+  [true, false].forEach(misma => prog.forEach((r, i) => {
     if (porBooking[i] || !r.booking) return;
     const v = libres().filter(x => eq(x.booking, r.booking) && (!misma || eq(bodegaDe(x), bodegaFila(r)))).sort((a, b) => cerca(a, r) - cerca(b, r))[0];
     if (!v || !misma && anuladoDe(r)) return;   // la fila que el equipo anuló no se lleva el viaje de otra bodega
@@ -2689,7 +2697,7 @@ function compararProgramacion(c){
   function iguales(x, r){ return ['cierreDoc', 'etd', 'eta'].filter(k => r[k] && String(x[k]||'') === r[k]).length; }
   const movido = r => candidatos(r, x => /programaci/i.test(x.observacion||'') && !terminado(x))[0];
   const pendientes = [];
-  const filas = c.programacion.map((r, i) => {
+  const filas = prog.map((r, i) => {
     let v = porBooking[i]
       || candidatos(r, x => x.fechaCargue===r.fechaCargue && eq(x.mn, r.mn))[0]
       || candidatos(r, x => r.mn && eq(x.mn, r.mn) && /programaci/i.test(x.observacion||''))[0]
@@ -2722,13 +2730,16 @@ function compararProgramacion(c){
     return {r, v, accion: reusar ? 'reusar' : Object.keys(cambios).length ? 'cambiar' : 'igual', cambios};
   }
   const fuera = libres().filter(x => enMes(x) && /programaci/i.test(x.observacion||'') && !terminado(x));
-  return {filas, fuera};
+  const cuenta = k => filas.filter(f => f.accion===k).length;
+  const cuadre = {filas: c.programacion.length, contenedores: prog.length, enBase: filas.filter(f => f.v && f.accion!=='anulado').length,
+    nuevos: cuenta('crear'), anulados: filas.filter(f => f.accion==='anulado').map(f => f.v)};
+  return {filas, fuera, cuadre};
 }
 function abrirProgramacion(c){
   PROG = {c, ...compararProgramacion(c)};
   $('#progUsuario').value = usuarioGuardado() || $('#barridoUsuario').value || '';
   $('#progTitulo').textContent = `Programación de cargues · ${c.asunto.replace(/^(RE|RV|FW|FWD)\s*:\s*/i, '').replace(/\[EXTERNAL\]\s*/i, '')}`;
-  $('#progSub').innerHTML = `Versión del ${esc(c.fecha.replace('T', ' '))} · ${esc(c.firma || c.remitente.replace(/<.*>/, ''))} · ${c.programacion.length} cargues. Se crean los viajes que faltan y se proponen los cambios de esta versión; los cambios de fecha quedan como reprogramación con su causa. Nada se guarda sin “Aplicar”.`;
+  $('#progSub').innerHTML = `Versión del ${esc(c.fecha.replace('T', ' '))} · ${esc(c.firma || c.remitente.replace(/<.*>/, ''))} · ${PROG.cuadre.contenedores} contenedores. Se crean los viajes que faltan y se proponen los cambios de esta versión; los cambios de fecha quedan como reprogramación con su causa. Nada se guarda sin “Aplicar”.`;
   pintarProgramacion();
   $('#ovProg').classList.add('open');
 }
@@ -2748,7 +2759,12 @@ function pintarProgramacion(){
       ${movFecha || f.accion==='reusar' ? `<div style="margin-top:4px">${htmlCausas('prog-causa').replace('<select class="prog-causa">', `<select class="prog-causa" data-pc="${i}">`).replace('value="Cliente (Reckitt)"', 'value="Cliente (Reckitt)" selected')}</div>` : ''}</td></tr>`;
   };
   const n = k => PROG.filas.filter(f => f.accion===k).length;
-  $('#progLista').innerHTML = `<p class="sub">${n('crear')} nuevos · ${n('cambiar')} con cambios · ${n('reusar')} por reutilizar · ${n('igual')} al día</p>
+  const Q = PROG.cuadre, cuadra = Q.enBase + Q.nuevos + Q.anulados.length === Q.contenedores;
+  const cuadreHtml = `<p style="margin:0 0 6px;color:${cuadra ? 'var(--ok)' : 'var(--bad)'}"><b>Cuadre:</b> Jhonier lista <b>${Q.contenedores}</b> contenedores`
+    + `${Q.contenedores !== Q.filas ? ` (${Q.filas} filas)` : ''} = ${Q.enBase} en la base + ${Q.nuevos} nuevos${Q.anulados.length ? ` + ${Q.anulados.length} anulados por el equipo` : ''}`
+    + `${cuadra ? ' ✔' : ' ✖ revise: hay contenedores sin viaje'}</p>`
+    + (Q.anulados.length ? `<p style="margin:0 0 6px;color:var(--warn)">⚠ Jhonier sigue listando contenedores que el equipo anuló: ${Q.anulados.map(v => `<button class="link" onclick="abrir('${v.id}')">${esc(v.id)} ${esc(v.pais||'')} ${esc(v.booking||'')}</button>`).join(' · ')}. Confírmelo con él: si es un contenedor real, reabra el viaje.</p>` : '');
+  $('#progLista').innerHTML = cuadreHtml + `<p class="sub">${n('crear')} nuevos · ${n('cambiar')} con cambios · ${n('reusar')} por reutilizar · ${n('igual')} al día</p>
     <div class="tbl-wrap"><table class="prop prog"><tr><th></th><th>#</th><th>Cargue</th><th>Destino</th><th>Motonave</th><th>Booking</th><th>En la base · qué se hará</th></tr>${PROG.filas.map(fila).join('')}</table></div>
     ${PROG.fuera.length ? `<p style="margin-top:8px;color:var(--warn)">ℹ No vienen en este envío: ${PROG.fuera.map(v => `<button class="link" onclick="abrir('${v.id}')">${esc(v.id)} ${esc(v.pais||'')} ${fd(v.fechaCargue)}</button>`).join(' · ')}. Jhonier manda la programación por partes: se dejan como están (no se cancelan) hasta que él los mueva o los cancele.</p>` : ''}`;
 }
