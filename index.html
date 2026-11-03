@@ -925,6 +925,10 @@ const HORAS_COBERTURA = 72, HORAS_CLIENTE = 4;
 // viaje sin vehículo que arranca en HORAS_COBERTURA o menos (o que ya debió arrancar)
 const sinCobertura = v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre && !tieneVehiculo(v) && !!primerEvento(v) && diffDias(primerEvento(v)) * 24 <= HORAS_COBERTURA;
 // pedido del cliente (acción de Operaciones) de prioridad alta con más de HORAS_CLIENTE horas sin atender
+// prioridad de una acción de LogxIA: la programación de cargues de Reckitt cambia bookings y fechas de muchos viajes, así que
+// siempre es Alta (el coordinador la aplica en la ronda y, si pasan HORAS_CLIENTE sin hacerlo, bloquea como un pedido del cliente)
+const ES_PROGRAMACION = /programaci[oó]n/i;
+const prioridadAccion = b => b.prioridad !== 'Ninguna' && ES_PROGRAMACION.test(String(b.asunto || '')) && ES_PROGRAMACION.test(String(b.accion || '')) ? 'Alta' : (b.prioridad || 'Media');
 const pedidoVencido = b => b.estadoAccion !== 'Hecha' && b.prioridad === 'Alta' && areaDe(b) === 'Operaciones' && !!b.registrado && (Date.now() - new Date(b.registrado)) / 36e5 > HORAS_CLIENTE;
 /* ---------- avisos de hitos (F2): qué cambio de un viaje se cuenta al equipo y, más adelante, al cliente ---------- */
 const HITOS_AVISO = {
@@ -1174,6 +1178,16 @@ async function cargar(){
     return;
   }catch(e){ console.error(e); toast('No se pudo conectar con la hoja, intente recargar'); return false; }
 }
+
+// el tablero se actualiza solo cada REFRESCO_MIN minutos (acciones nuevas de LogxIA, lo que guardan otros): solo con la pestaña a la
+// vista y sin ninguna ventana abierta, para no perder lo que alguien está escribiendo
+const REFRESCO_MIN = 5;
+setInterval(async () => {
+  if (document.hidden || document.querySelector('.ov.open, #chat.open')) return;
+  if (await cargar() === false) return;
+  if (!window.MODO_CLIENTE) await cargarPropuestas(1);   // propuestas.js
+  render();
+}, REFRESCO_MIN * 60e3);
 
 // todo, también el estado (Asignado, En tránsito…), se escribe en la pestaña Seguimiento EXPO / IMPO de la base
 async function guardarCambio(id, cambios, usuario){
