@@ -1432,6 +1432,18 @@ function rondaActual(){
   return {n, ahora, inicio, vence: inicio + HORAS_RONDA * 60};
 }
 const hhmm = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+// PAUSA DEL BLOQUEO (Gerencia): la marca "pausa|HH:MM" en Turno revisado deja trabajar a todo el equipo sin bloqueo hasta esa
+// hora de hoy; las líneas rojas siguen a la vista y vuelven a bloquear al terminar la pausa. Dura HORAS_PAUSA.
+const HORAS_PAUSA = 3;
+const minutoBogota = () => { const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {timeZone: 'America/Bogota', hour12: false, hour: 'numeric', minute: 'numeric'})
+  .formatToParts(new Date()).map(x => [x.type, x.value])); return (+p.hour % 24) * 60 + +p.minute; };
+const pausaHasta = () => [...revisados().keys()].filter(k => k.startsWith('pausa|')).map(k => k.slice(6)).sort().pop() || '';
+const enPausa = () => pausaHasta() > hhmm(minutoBogota());
+function pausarBloqueo(){
+  const hasta = hhmm(Math.min(minutoBogota() + HORAS_PAUSA * 60, 23 * 60 + 59));
+  if (confirm(`¿Quitar el bloqueo a todo el equipo hasta las ${hasta}?\n\nLas líneas rojas siguen a la vista; a esa hora, si siguen sin resolver, el tablero se vuelve a bloquear.`))
+    marcarRevisado('pausa|' + hasta);
+}
 // vehículos en movimiento: con placa, el transporte sin terminar y que ya arrancó o arranca mañana
 const TERMINADO = ['Entregado en puerto', 'Zarpó', 'Vacío devuelto', 'Cancelado'];
 // qué debería pasar después según la etapa (para decir qué se espera del vehículo)
@@ -1522,7 +1534,7 @@ function estadoTurno(){
   const rondaHecha = !r || rondaSaltada || !segPend, rondaVencida = !!r && !rondaHecha && resta <= 0;
   const rojas = M.map((m, i) => m.filas.filter(x => x.bloquea).length + (i === 0 && rondaVencida ? 1 : 0));
   const excepciones = [...R.values()].filter(x => x.clave.startsWith('exc|')).map(x => { const k = x.clave.slice(4).split('|').slice(0, -1).join('|'); return {k, ...excepcionDe(k, R)}; });
-  return {r, n, R, M, resta, rondaHecha, rondaVencida, rondaExc, rojas, excepciones, bloqueado: !window.MODO_CLIENTE && !esGerencia() && rojas.some(Boolean)};
+  return {r, n, R, M, resta, rondaHecha, rondaVencida, rondaExc, rojas, excepciones, bloqueado: !window.MODO_CLIENTE && !esGerencia() && !enPausa() && rojas.some(Boolean)};
 }
 
 const nombreTurno = v => v ? `${v.placa || 'Sin vehículo'} · ${v.operacion} ${v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || '')}${v.padre ? ' · subviaje' : ''}` : '';
@@ -1634,9 +1646,9 @@ function renderTurno(){
     : `<span class="${T.resta <= 30 ? 'tr-urge' : ''}">⏱ Ronda ${r.n} de ${RONDAS.length} · faltan ${hhmm(T.resta)} (vence ${hhmm(r.vence)})</span>`;
   const rojas = T.rojas.map((n, i) => n ? `<button type="button" class="link" data-t-menu="${M[i].id}">${n} en ${M[i].titulo}</button>` : '').filter(Boolean);
   // arriba a la derecha: entrar o salir del modo Gerencia
-  $('#turnoLlave').innerHTML = window.MODO_CLIENTE ? '' : esGerencia() ? `<span class="tr-ger">🔓 Modo Gerencia</span> <button type="button" class="btn" data-t-gsalir="1">Salir</button>`
+  $('#turnoLlave').innerHTML = window.MODO_CLIENTE ? '' : esGerencia() ? `<span class="tr-ger">🔓 Modo Gerencia</span> <button type="button" class="btn" data-t-pausa="1" title="Nadie del equipo se bloquea durante ${HORAS_PAUSA} horas">⏸ Quitar bloqueo ${HORAS_PAUSA} h</button> <button type="button" class="btn" data-t-gsalir="1">Salir</button>`
     : '<button type="button" class="btn" data-t-gerencia="1" title="Con la clave de Gerencia el tablero no se bloquea y se pueden aprobar excepciones">🔑 Entrar como Gerencia</button>';
-  $('#turnoReloj').innerHTML = `${ronda}${rojas.length ? ` · <span class="tr-vencida">⛔ Tablero bloqueado: ${rojas.join(', ')}</span>` : ''}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}`;
+  $('#turnoReloj').innerHTML = `${ronda}${rojas.length ? enPausa() ? ` · <span class="tr-urge">⏸ Bloqueo en pausa hasta las ${pausaHasta()} (Gerencia) · pendientes: ${rojas.join(', ')}</span>` : ` · <span class="tr-vencida">⛔ Tablero bloqueado: ${rojas.join(', ')}</span>` : ''}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}`;
   const m = M.find(x => x.id === turnoMenu);
   const pend = m.filas.filter(x => !x.hecha), hechos = m.filas.filter(x => x.hecha);
   cont.innerHTML = bloqueGerencia(T) + `<div class="tr-meta"><b>Meta:</b> ${esc(m.meta)}</div><div class="sub" style="margin:2px 0 6px">${esc(m.ayuda)}</div>
@@ -1666,6 +1678,7 @@ $('#v-turno').onclick = e => {   // incluye el reloj de la ronda (#turnoReloj)
   else if (d.tExccancel) { excAbierta = ''; renderTurno(); }
   else if (d.tExcok) { const motivo = $(`[data-t-motivo="${CSS.escape(d.tExcok)}"]`).value; excAbierta = ''; marcarRevisado(`exc|${d.tExcok}|${motivo}`); }
   else if (d.tGerencia) entrarGerencia();
+  else if (d.tPausa && esGerencia()) pausarBloqueo();
   else if (d.tGsalir) { try { sessionStorage.removeItem('rkt-gerencia'); } catch(e){} renderTurno(); }
   else if ((d.tAprobar || d.tRechazar) && esGerencia()) { const k = d.tAprobar || d.tRechazar;
     if (confirm(`¿${d.tAprobar ? 'Aprobar' : 'Rechazar'} esta excepción como Gerencia?\n\nQueda registrado con su nombre y la hora.`)) marcarRevisado((d.tAprobar ? 'ok|' : 'no|') + k); }
