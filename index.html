@@ -2655,8 +2655,13 @@ function compararProgramacion(c){
   const enMes = v => [v.fechaCargue, v.planCargue].some(f => String(f||'').slice(0, 7) === mes);
   const terminado = v => terminoTransporte(v) || situacion(v)==='Cerrado' && !/reprogram/i.test(v.observacion||'');
   // primero se emparejan las filas que traen un booking que ya está en un viaje (así una fila sin booking no se lleva ese viaje)
+  // varios contenedores con el mismo booking: primero el de la misma bodega de cargue (planta o DHL…), luego el de fecha más cercana
+  const bodegaDe = x => ((String(x.observacion||'').match(/cargue en ([^·]+)/i) || [])[1] || 'planta').trim();
+  const bodegaFila = r => r.bodega && !/planta/i.test(r.bodega) ? r.bodega : 'planta';
+  const cerca = (x, r) => Math.abs(new Date(x.fechaCargue) - new Date(r.fechaCargue));
   const porBooking = c.programacion.map(r => {
-    const v = r.booking && libres().filter(x => eq(x.booking, r.booking)).sort((a, b) => String(a.fechaCargue).localeCompare(String(b.fechaCargue)))[0];
+    const v = r.booking && libres().filter(x => eq(x.booking, r.booking))
+      .sort((a, b) => (eq(bodegaDe(b), bodegaFila(r)) - eq(bodegaDe(a), bodegaFila(r))) || cerca(a, r) - cerca(b, r))[0];
     if (v) usados.add(v.id);
     return v || null;
   });
