@@ -3170,13 +3170,17 @@ function pedirClave(errada){
 }
 // la página publicada para el cliente (Reckitt) es de solo lectura
 cargar().then(ok => { if (ok === false) return; if (window.MODO_CLIENTE) document.body.classList.add('cliente'); render();
-  // enlace directo desde el correo (?viaje=FILA-9): abre la ventana de ese viaje para corregirlo
   // cuántos datos de LogxIA esperan revisión: número en el botón "Llenar datos desde correos"
   if (!window.MODO_CLIENTE && window.CLAVE)
     fetch(CFG.SHEETS_API_URL + '?formato=json&que=propuestas&clave=' + encodeURIComponent(window.CLAVE)).then(r => r.json())
       .then(j => { if (j.ok) { $('#nProp').textContent = (j.propuestas || []).length || ''; renderTurno(); } }).catch(() => {});
-  const vid = new URLSearchParams(location.search).get('viaje');
-  if (vid && !window.MODO_CLIENTE && viajes.some(x=>x.id===vid)) abrir(vid);
+  // enlace "Abrir viaje" de un correo (?viaje=FILA-9): el equipo ve la ventana del viaje; el cliente (solo lectura) ve la lista
+  // Viajes filtrada por ese viaje. Se usa una sola vez: se quita de la dirección para que recargar o guardar el enlace no lo reabra
+  const vid = new URLSearchParams(location.search).get('viaje'), vv = vid && viajes.find(x => x.id === vid);
+  if (vv && !window.MODO_CLIENTE) abrir(vid);
+  else if (vv) { const [, clave] = clavesBusqueda(vv).find(([k]) => k !== 'Placa') || ['', vv.placa || ''];
+    document.querySelector('#nav [data-v="viajes"]')?.click(); $('#q').value = clave; renderTabla(); }
+  if (vid) { const u = new URL(location.href); u.searchParams.delete('viaje'); history.replaceState(null, '', u); }
   const vista = new URLSearchParams(location.search).get('vista') || 'turno';
   if (vista && !window.MODO_CLIENTE && !vid) document.querySelector('#nav [data-v="'+vista.replace(/[^a-z]/g,'')+'"]')?.click();
 });
