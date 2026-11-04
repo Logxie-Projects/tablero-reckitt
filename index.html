@@ -1792,7 +1792,8 @@ function filaTurno(x, rev){
     titulo = `${esc(v.placa)} · ${esc(v.operacion)} ${esc(v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || ''))} <span class="sub">· ${esc([v.conductor, refCliente(v), v.id].filter(Boolean).join(' · '))}</span>`;
     detalle = `📍 <b>${esc(p.donde)}</b>${p.quieto ? ` · <span style="${x.roja ? 'color:var(--bad);font-weight:600' : ''}">${esc(p.quieto)}</span>` : ''}`
       + (p.espera ? `<br>${x.roja ? '<span style="color:var(--bad);font-weight:600">⚠ ' + esc(p.espera) + '</span> · ' + esc(p.porque) : esc(p.espera)}` : '')
-      + (p.app ? `<br>${esc(p.app)}` : '');
+      + (p.app ? `<br>${esc(p.app)}` : '')
+      + (ultimoComentario(v) ? `<br><span class="sub">${ultimoComentario(v)}</span>` : '');   // novedades.js: lo último que escribió el equipo
     acc = [btnT('✏️ Actualizar', `data-t-actualizar="${v.id}"`, 'Abre el viaje para registrar el paso que cumplió o lo nuevo; revise y guarde'),
       btnT('⚠ Novedad / retraso', `data-t-novedad="${v.id}"`, 'Abre el viaje marcado con Novedad: escriba qué pasó y la nueva fecha'),
       lnkT(ICONO_WA + 'Preguntar dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas'))];
@@ -2484,6 +2485,17 @@ function lineaNovedad(v){
   return v.observacion ? `<div class="sub" ${estilo}>💬 ${esc(v.observacion)}</div>` : '';
 }
 const fechaNovedad = n => { const f = fechaLocal(n.fecha); return f ? `${fd(f)}${f.length > 10 ? ' ' + f.slice(11, 16) : ''}` : 'sin hora'; };
+// el último comentario del viaje (Mi turno): lo más nuevo entre la última novedad de la operación y la última vez que alguien editó
+// la Observación (Historial). La observación es acumulada ("…- DESCARGA 4 NOV- VEHICULOS EN SOLISTICA"): se muestra el final, que
+// es lo más reciente. En un subviaje, los comentarios son los del viaje padre.
+function ultimoComentario(v){
+  const base = (v.padre && viajes.find(x => x.id === v.padre)) || v, n = ultimaNovedad(base);
+  const h = historial.filter(x => x.id === base.id && /Observaci[oó]n:/.test(x.observacion || '')).sort((a, b) => fechaLocal(b.fecha).localeCompare(fechaLocal(a.fecha)))[0];
+  const obs = String(base.observacion || '').trim(), cola = obs.length > 160 ? '…' + obs.slice(-160) : obs;
+  if (n && (!h || fechaLocal(n.fecha) >= fechaLocal(h.fecha))) return `🕑 ${esc(haceCuanto(fechaLocal(n.fecha)))} · ${esc(n.usuario)}: ${esc(textoNovedad(n))}`;
+  if (!obs) return '';
+  return `💬 ${h ? esc(haceCuanto(fechaLocal(h.fecha))) + ' · ' + esc(String(h.usuario || '').replace(/ \(tablero\)$/, '')) + ': ' : ''}${esc(cola)}`;
+}
 // columna Observación de la tabla: la última novedad (con cuándo y quién) o la observación
 const textoObservacion = v => { const n = ultimaNovedad(v); return n ? `${haceCuanto(n.fecha)} · ${n.usuario}: ${textoNovedad(n)}` : (v.observacion || ''); };
 
