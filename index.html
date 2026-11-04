@@ -359,6 +359,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
 .nov-nota{opacity:.85}
 .nov-ult b{color:var(--text)}
 .nov-filtros{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 4px}
+.nov-lx{margin-top:10px;padding:8px 10px;border-radius:8px;background:var(--accent-soft);font-size:13px}
 #novLista{max-height:340px}
 .nov-Cambio .nov-ic,.nov-Cambio > div{color:var(--muted)}
 </style>
@@ -804,7 +805,33 @@ function sinActualizar(v){
     if (v.citaDevolucion && v.citaDevolucion < HOY && !v.fechaDevolucion && !v.tirillaDevolucion) S.push({sev: 'Alta', msg: `la cita de devolución del vacío era el ${fd(v.citaDevolucion)} y no hay devolución registrada`,
       porque: 'Si se devolvió, faltan la fecha y la tirilla; si no, el plazo de devolución sigue corriendo'});
   }
+  // con una novedad de hoy el viaje sí tiene seguimiento: no sale como "sin actualizar" (la novedad explica dónde va).
+  // ultimaNovedad la pone quien carga los viajes (backend: leerViajes_; tablero: datos.js / novedades.js)
+  if (S.length && String(v.ultimaNovedad || '').slice(0, 10) === HOY) return [];
   return S;
+}
+/* ---------- LogxIA lee las novedades del viaje (fase 3): qué fecha propone y qué acción abre ----------
+ * Solo propone: las fechas quedan en "Llenar datos desde correos" para que el equipo las apruebe (el sistema las escribe al
+ * aprobar); "Pendiente" e "Incidente" abren una acción de Operaciones (Acciones y Mi turno) hasta que alguien la marca hecha.
+ * Si el texto niega o habla de después ("no", "sin", "falta", "aún no", "mañana", "esperando"), no se propone ninguna fecha.
+ * La fecha propuesta es la del día de la novedad ("ayer" = el día anterior) y solo si en el viaje falta o estaba más adelante. */
+const LECTURA_NOVEDAD = {
+  EXPO: [['fechaRetiro', /(retir|recog)\w*\s+(el\s+|del\s+)?(vacio|contenedor)|vacio\s+retirad/, 'Vacío retirado'],
+    ['fechaCargue', /\b(cargad|llenad|cargando|llenando)|termin\w*\s+(de\s+)?(cargar|llenar)/, 'Llenado en planta'],
+    ['fechaEntregaPuerto', /(entreg|ingres|descarg)\w*\s+(a|en|al)\s+(el\s+)?puerto/, 'Entregado en puerto']],
+  IMPO: [['fechaRetiro', /(retir|sali)\w*\s+(de|del|en)\s+(el\s+)?puerto/, 'Retirado de puerto'],
+    ['fechaCargue', /(entreg|descarg)\w*\s+(en\s+|a\s+)?(la\s+)?(bodega|cliente)|\bdescargad/, 'Entregado en bodega'],
+    ['fechaDevolucion', /\bdevolvi|vacio\s+devuelt|devolucion\s+(del\s+vacio\s+)?(hecha|realizada|lista)/, 'Vacío devuelto']],
+};
+const NOVEDAD_NIEGA = /\b(no|sin|falta|faltan|aun no|todavia no|pendiente|manana|esperando)\b|programad|reprogram/;
+function interpretarNovedad(v, tipo, texto, fecha){
+  const t = minus(texto), dia = String(fecha || HOY).slice(0, 10), cuando = /\bayer\b/.test(t) ? addDias(dia, -1) : dia;
+  const fechas = tipo === 'Interna' || tipo === 'Cambio' || NOVEDAD_NIEGA.test(t) ? [] : (LECTURA_NOVEDAD[v.operacion] || [])
+    .filter(([k, re]) => re.test(t) && (!v[k] || String(v[k]).slice(0, 10) > cuando))
+    .map(([campo, , etiqueta]) => ({campo, valor: cuando, etiqueta}));
+  const accion = tipo === 'Incidente' ? {prioridad: 'Alta', accion: 'Operaciones: atender el incidente reportado · ' + String(texto).trim()}
+    : tipo === 'Pendiente' ? {prioridad: 'Media', accion: 'Operaciones: ' + String(texto).trim()} : null;
+  return {fechas, accion};
 }
 // con qué se busca el viaje en los correos: EXPO por booking (y factura RBHY); IMPO por pedido, DO y contenedor; si no, la placa
 function clavesBusqueda(v){
@@ -2241,8 +2268,16 @@ async function agregarNovedad(id){
     if (!j.ok) throw new Error(j.error || 'error');
     window.NOVEDADES = j.novedades || window.NOVEDADES;
     const v = viajes.find(x => x.id === id);
+    v.ultimaNovedad = ahoraBogota().fecha + 'T' + ahoraBogota().hhmm;   // "sin actualizar" (dominio) ya la cuenta
     $('#mNovedades').innerHTML = bloqueNovedades(v);
-    render(); toast('Novedad guardada');
+    // fase 3: lo que LogxIA dedujo de la novedad (Correos.gs propuestasDeNovedad_): fechas por aprobar y acción abierta
+    const lx = j.logxia || {}, fechas = lx.fechas || [];
+    const dijo = [fechas.length && `propone ${fechas.map(f => `${f.etiqueta.toLowerCase()} el ${fd(f.valor)}`).join(' y ')} (apruébalo en ✉ Llenar datos desde correos)`,
+      lx.accion && `abrió una acción: ${lx.accion.accion.replace(/^Operaciones: /, '')}`].filter(Boolean);
+    render(); toast(dijo.length ? 'Novedad guardada · LogxIA ' + dijo.join(' · ') : 'Novedad guardada');
+    if (dijo.length) { $('#novLista').insertAdjacentHTML('beforebegin', `<div class="nov-lx">🤖 <b>LogxIA</b> ${esc(dijo.join(' · '))}</div>`);
+      if (lx.accion && await cargar() !== false) render();   // trae la acción nueva (Acciones y Mi turno)
+      if (fechas.length) { await cargarPropuestas(1); render(); } }   // propuestas.js: el contador del botón
   } catch(e) { toast('No se guardó la novedad: ' + e.message); btn.disabled = false; btn.textContent = 'Agregar novedad'; }
 }
 /* ---------- ventana del viaje (actualización) y modo lean: ruta del pedido ---------- */
