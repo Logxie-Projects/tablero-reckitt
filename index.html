@@ -2382,8 +2382,12 @@ const delSistema = n => n.origen === 'Sistema';
 // las del viaje y sus subviajes, la más nueva primero
 const novedadesDe = v => { const ids = [v.id, ...viajes.filter(x => x.padre === v.id).map(x => x.id)];
   return (window.NOVEDADES || []).filter(n => ids.includes(String(n.viaje))).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))); };
-// la de la tarjeta: la última que escribió el equipo; si no hay, el último cambio guardado
-const ultimaNovedad = v => { const L = novedadesDe(v); return L.find(n => !delSistema(n)) || L[0]; };
+// la de la tarjeta: la última que escribió el equipo o el conductor; si no hay, el último cambio del sistema que dice algo de la
+// operación (una fecha, una cita, el vehículo, el estado). Un cambio de datos de oficina (observación, BL, FWD, motonave…) no:
+// entonces la tarjeta muestra la observación del viaje, que es lo que el cliente quiere saber de su operación
+const CAMBIO_OPERATIVO = /fecha|cita|retir|entrega|cargue|llenado|devoluci|descargue|placa|conductor|estado|status|bodega|patio/i;
+const cambioOperativo = n => CAMBIO_OPERATIVO.test(sinObservacion(n.texto).replace(/Observación actualizada/g, ''));
+const ultimaNovedad = v => { const L = novedadesDe(v); return L.find(n => !delSistema(n)) || L.find(cambioOperativo); };
 // cualquier fecha (ISO con zona del Historial o local de las novedades) como "AAAA-MM-DDTHH:mm" de Bogotá, para ordenar y mostrar
 function fechaLocal(f){
   const s = String(f || ''); if (!s) return '';
