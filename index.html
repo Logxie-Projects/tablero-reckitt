@@ -2387,7 +2387,9 @@ const novedadesDe = v => { const ids = [v.id, ...viajes.filter(x => x.padre === 
 // entonces la tarjeta muestra la observación del viaje, que es lo que el cliente quiere saber de su operación
 const CAMBIO_OPERATIVO = /fecha|cita|retir|entrega|cargue|llenado|devoluci|descargue|placa|conductor|estado|status|bodega|patio/i;
 const cambioOperativo = n => CAMBIO_OPERATIVO.test(sinObservacion(n.texto).replace(/Observación actualizada/g, ''));
-const ultimaNovedad = v => { const L = novedadesDe(v); return L.find(n => !delSistema(n)) || L.find(cambioOperativo); };
+// una nota Interna (solo para el equipo) o una prueba del sistema tampoco: no son el status del viaje
+const notaDelViaje = n => n.tipo !== 'Interna' && !/prueba/i.test(n.usuario || '');
+const ultimaNovedad = v => { const L = novedadesDe(v).filter(notaDelViaje); return L.find(n => !delSistema(n)) || L.find(cambioOperativo); };
 // cualquier fecha (ISO con zona del Historial o local de las novedades) como "AAAA-MM-DDTHH:mm" de Bogotá, para ordenar y mostrar
 function fechaLocal(f){
   const s = String(f || ''); if (!s) return '';
