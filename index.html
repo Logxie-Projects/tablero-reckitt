@@ -1823,15 +1823,16 @@ $('#v-turno').onclick = e => {   // incluye el reloj de la ronda (#turnoReloj)
 };
 $('#v-turno').addEventListener('input', e => { if (e.target.id === 'tPausaHora') horaPausa = e.target.value; });   // hora de la pausa (Gerencia)
 /* ---------- avisos de hitos (F2): al guardar un hito, el coordinador ve el aviso y decide si sale ---------- */
-// Llega a Entrapetrol y al solicitante del viaje (AVISO_HITOS y CORREOS_SOLICITANTE en Código.gs; cliente liberado el 3-nov).
+// A Entrapetrol sale al momento; al solicitante del viaje (CORREOS_SOLICITANTE) no: queda en cola y le llega en el resumen de
+// las 10 a. m. y las 3 p. m. (AVISO_CLIENTE en Código.gs), para no saturar al cliente con un correo por hito.
 async function ofrecerAviso(v, cambios, usuario){
   const H = hitosDelCambio(v, cambios); if (!H.length || !window.CLAVE || window.MODO_CLIENTE) return;
   const viaje = `${refCliente(v) || v.placa || 'Sin referencia'} · ${v.operacion} ${v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || '')}`;
-  if (!confirm(`¿Avisar este hito a Entrapetrol${v.solicitante ? ' y al cliente (' + v.solicitante + ')' : ''}?\n\n${viaje}\n${H.map(h => '• ' + h.txt).join('\n')}`)) return;
+  if (!confirm(`¿Avisar este hito?\n\n${viaje}\n${H.map(h => '• ' + h.txt).join('\n')}\n\nEntrapetrol: ahora${v.solicitante ? `\n${v.solicitante} (cliente): en el resumen de las 10 a. m. o las 3 p. m.` : ''}`)) return;
   try {
     const j = await api('avisoHito', {id: v.id, cambios, usuario});
     toast(!j.ok ? 'No se envió el aviso: ' + (j.error || 'error')
-      : `Aviso enviado a Entrapetrol${j.cliente ? ' y a ' + j.cliente : ''}${j.sinCorreo ? ` · no hay correo de ${j.sinCorreo}: no le llegó` : ''}`);
+      : `Aviso enviado a Entrapetrol${j.cliente ? ` · a ${j.cliente} le llega en el próximo resumen (10 a. m. / 3 p. m.)` : ''}${j.sinCorreo ? ` · no hay correo de ${j.sinCorreo}: no le llegará` : ''}`);
   } catch(e) { toast('No se pudo enviar el aviso'); }
 }
 /* ---------- asignación única: el vehículo guardado en el tablero queda asignado en Despacho ---------- */
