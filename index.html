@@ -2803,7 +2803,7 @@ $('#mForm').addEventListener('click', e => {
 /* ---------- llenar datos desde correos (con revisión y aprobación) ---------- */
 let PROP = [];
 // cada área revisa lo suyo: los datos de cobro (relación de Pedro y aprobación de Reckitt) son de Facturación; el resto, de Operaciones
-const CAMPOS_FACTURA = ['tarifa', 'extracostos', 'conceptoExtra', 'aprobacionExtra', 'facturacion', 'rbhy', 'obd'];
+const CAMPOS_FACTURA = ['tarifa', 'extracostos', 'conceptoExtra', 'aprobacionExtra', 'facturacion', 'rbhy', 'obd', 'numFactura', 'fechaFactura'];
 const areaProp = p => CAMPOS_FACTURA.includes(p.campo) ? 'Facturación' : 'Operaciones';
 let propArea = '';
 // los datos por aprobar se traen en un solo lugar (al cargar el tablero y al abrir la ventana); si Apps Script está ocupado
