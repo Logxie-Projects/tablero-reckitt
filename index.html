@@ -3094,7 +3094,7 @@ function pintarBarrido(){
     botones += btn('Ver correo', 'ver', i);
     const D = c.docs || {};
     const datos = [c.booking && 'BK '+c.booking, c.rbhy, c.pais, c.do && 'DO '+c.do, c.pedido && 'PO '+c.pedido, c.contenedor].filter(Boolean).map(esc).join(' · ')
-      + (c.docs ? `<br><span class="sub" title="Leído en los PDF del correo">📎 ${esc([D.unidad, D.puerto, c.docTrans || D.bl].filter(Boolean).join(' · ') || 'documentos archivados')}</span>` : '');
+      + (c.docs ? `<br><span class="sub" title="Leído en los PDF del correo">📎 ${esc([D.unidad, D.bultos, D.peso, D.puerto, c.docTrans || D.bl, c.levante && 'levante ' + fd(c.levante), c.solicitante].filter(Boolean).join(' · ') || 'documentos archivados')}</span>` : '');
     const desc = [c.lugar, c.fechaDescargue && fd(c.fechaDescargue), c.hora, c.puerto && (c.puerto+(c.terminal?' ('+c.terminal+')':'')), c.devolucion && 'devol. '+c.devolucion].filter(Boolean).map(esc).join(' · ');
     return `<tr><td class="sub" style="white-space:nowrap">${esc(c.fecha.slice(5,16).replace('T',' '))}</td><td><b>${esc(c.tipo)}</b><br><span class="sub">${esc(c.firma || c.remitente.replace(/<.*>/,''))}</span></td>
       <td>${datos || '—'}<br><span class="sub" title="${esc(c.asunto)}">${esc(c.asunto.slice(0,70))}${c.asunto.length>70?'…':''}</span></td><td>${desc || '—'}</td><td>${estado}<div>${botones}</div></td></tr>`;
@@ -3140,9 +3140,10 @@ async function crearDesdeCorreo(c){
   const campos = {situacion:'Abierto', estado:'Sin asignar', pedido:c.pedido, do:c.do, contenedor, puerto, bodega,
     unidad: D.unidad || '', booking: c.docTrans || D.bl || '',
     destino: /cortijo|agecolda/i.test(bodega) ? 'Yumbo' : '', fechaCargue:c.fechaDescargue, ciudadDevolucion: c.devolucion==='CLO' ? 'Cali' : '',
-    empresa:c.empresa, solicitante: /diana/i.test(c.firma) ? 'Diana Carolina Toro' : '',
+    empresa:c.empresa, solicitante: c.solicitante || (/diana/i.test(c.firma) ? 'Diana Carolina Toro' : ''),
     fechaLevante: c.tipo==='Orden de retiro' ? c.fecha.slice(0,10) : '',
-    observacion: `Correo ${c.tipo} ${c.fecha.slice(0,10)}: ${[c.lugar, c.fechaDescargue && fd(c.fechaDescargue), c.hora, c.terminal && 'terminal '+c.terminal, c.devolucion && 'devolución '+c.devolucion].filter(Boolean).join(' · ')}`};
+    // la base no tiene columnas de peso ni de fecha del levante: van en la observación, con la carga suelta
+    observacion: `Correo ${c.tipo} ${c.fecha.slice(0,10)}: ${[lcl && 'carga suelta (LCL)', D.bultos, D.peso, c.levante && 'levante '+fd(c.levante), c.lugar, c.fechaDescargue && fd(c.fechaDescargue), c.hora, c.terminal && 'terminal '+c.terminal, c.devolucion && 'devolución '+c.devolucion].filter(Boolean).join(' · ')}`};
   Object.keys(campos).forEach(k => { if (campos[k] === '') delete campos[k]; });
   try {
     const j = await api('nuevo', {operacion:'IMPO', campos, usuario: usuario + ' (desde correo)'});
