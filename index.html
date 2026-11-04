@@ -1252,7 +1252,7 @@ function haceTxt(iso){
   const h = Math.floor(m/60); return h < 24 ? `hace ${h} h` : `hace ${Math.floor(h/24)} d`;
 }
 function celdaConductor(v){
-  const c = conductorDe(v); if (!c) return '';
+  const c = conductorDe(v); if (!c || window.MODO_CLIENTE) return '';   // estado de la app del conductor: solo el equipo
   return `<div class="cond" title="${esc(c.siguiente ? 'Sigue: ' + c.siguiente : 'Viaje terminado')}">${c.icono} ${esc(c.paso)}${c.fecha?` <span class="sub">· ${haceTxt(c.fecha)}</span>`:''} <span class="sub">· ${c.n}/${c.total}</span></div>`;
 }
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2200); }
@@ -1397,9 +1397,9 @@ function chipsGlobales(){
       .map(([k, titulo, f, ayuda]) => `<select class="gsel ${G[k]?'on':''}" data-gsel="${k}" aria-label="${titulo}" title="${ayuda}"><option value="">${titulo}: todos · ${cuentaCon({[k]:''})}</option>${
         [...new Set(viajes.filter(v=>!v.padre).map(f))].sort().reverse().map(m => `<option value="${m||'sin'}" ${G[k]===(m||'sin')?'selected':''}>${nombreMes(m)} · ${cuentaCon({[k]: m||'sin'})}</option>`).join('')}</select>`).join('')
     + `<span class="sub">|</span><input type="search" class="gsel gbus ${G.q.trim()?'on':''}" data-gq aria-label="Buscar en los viajes" placeholder="🔍 Buscar: placa, contenedor, RBHY, DO…" value="${esc(G.q)}">
-    <select class="gsel ${G.foco?'on':''}" data-gsel="foco" aria-label="Foco del equipo" title="En qué está cada viaje y qué le falta"><option value="">🎯 Foco: todos · ${conFoco()}</option>${(() => { const op = x => `<option value="${esc(x)}" ${G.foco===x?'selected':''}>${esc(x)} · ${cuentaCon({foco:x})}</option>`;
+    ${window.MODO_CLIENTE ? '' : `    <select class="gsel ${G.foco?'on':''}" data-gsel="foco" aria-label="Foco del equipo" title="En qué está cada viaje y qué le falta"><option value="">🎯 Foco: todos · ${conFoco()}</option>${(() => { const op = x => `<option value="${esc(x)}" ${G.foco===x?'selected':''}>${esc(x)} · ${cuentaCon({foco:x})}</option>`;
       return op(FOCO_OPS) + '<option disabled>──────────</option>' + FOCOS.map(op).join(''); })()}</select>
-    <select class="gsel ${G.fact?'on':''}" data-gsel="fact" aria-label="Facturación"><option value="">Facturación: todos · ${cuentaCon({fact:''})}</option>${ETAPAS_FACTURACION.map(x=>`<option value="${esc(x)}" ${G.fact===x?'selected':''}>${esc(x)} · ${cuentaCon({fact:x})}</option>`).join('')}</select>
+    <select class="gsel ${G.fact?'on':''}" data-gsel="fact" aria-label="Facturación"><option value="">Facturación: todos · ${cuentaCon({fact:''})}</option>${ETAPAS_FACTURACION.map(x=>`<option value="${esc(x)}" ${G.fact===x?'selected':''}>${esc(x)} · ${cuentaCon({fact:x})}</option>`).join('')}</select>`}
     ${FILTROS_LISTA.map(([k, campo, titulo, vacio]) => {
       const vals = [...new Set(viajes.map(v=>valorFiltro(v, campo, vacio)))].sort((a,b)=> (a===vacio)-(b===vacio) || a.localeCompare(b));
       return `<select class="gsel ${G[k]?'on':''}" data-gsel="${k}" aria-label="${titulo}"><option value="">${titulo}: todos · ${cuentaCon({[k]:''})}</option>${vals.map(x=>`<option value="${esc(x)}" ${G[k]===x?'selected':''}>${esc(x)} · ${cuentaCon({[k]:x})}</option>`).join('')}</select>`; }).join('')}`;
@@ -1838,7 +1838,8 @@ function renderTurno(){
       <button type="button" class="btn" data-t-gsalir="1">Salir</button>`
     : '<button type="button" class="btn" data-t-gerencia="1" title="Con la clave de Gerencia el tablero no se bloquea y se pueden aprobar excepciones">🔑 Entrar como Gerencia</button>';
   $('#turnoReloj').innerHTML = `${ronda}${rojas.length ? enPausa() ? ` · <span class="tr-urge">⏸ Bloqueo en pausa hasta las ${pausaHasta()} (Gerencia) · pendientes: ${rojas.join(', ')}</span>` : ` · <span class="tr-vencida">⛔ Tablero bloqueado: ${rojas.join(', ')}</span>` : ''}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}`;
-  const m = M.find(x => x.id === turnoMenu);
+  let m = M.find(x => x.id === turnoMenu);
+  if (!m) { m = M[0]; turnoMenu = m.id; }   // el paso elegido ya no existe (ej. "Cierre del día" pasada la medianoche)
   const pend = m.filas.filter(x => !x.hecha), hechos = m.filas.filter(x => x.hecha);
   cont.innerHTML = bloqueGerencia(T) + `<div class="tr-meta"><b>Meta:</b> ${esc(m.meta)}</div><div class="sub" style="margin:2px 0 6px">${esc(m.ayuda)}</div>
     ${pend.map(x => filaTurno(x, false)).join('') || `<div class="tr-vacio">✓ ${esc(m.vacio)}${M[M.indexOf(m) + 1] ? ` · ${btnT('Siguiente: ' + M[M.indexOf(m) + 1].titulo + ' →', `data-t-menu="${M[M.indexOf(m) + 1].id}"`)}` : ''}</div>`}
@@ -1936,7 +1937,7 @@ function renderKpis(){ const act = activos();
     {l:'Sin vehículo (próx. 72 h)', v:pendVentana, h:pendVentana? 'requieren asignación urgente':'todo cubierto', bad:pendVentana>0},
     {l:'En ruta ahora', v:enRuta, h:`${entregados} entregados · ${novedades} novedades`},
     {l:'Cierres doc. próx. 7 días', v:cierres, h:'viajes con cierre documental próximo'},
-    leadKpi(), reprogKpi(), cobroKpi(),
+    leadKpi(), ...(window.MODO_CLIENTE ? [] : [reprogKpi(), cobroKpi()]),   // costos y reprogramaciones: solo el equipo
   ];
   $('#kpis').innerHTML = k.map(x=>`<div class="card kpi ${x.hl?'hl':''}"><div class="lbl">${x.l}</div><div class="val" style="${x.bad?'color:var(--bad)':''}">${x.v}</div><div class="hint">${x.h}</div>${x.m!==undefined?`<div class="meter"><i style="width:${x.m}%"></i></div>`:''}</div>`).join('');
 }
@@ -2197,6 +2198,8 @@ document.addEventListener('click', e => { const b = e.target.closest('[data-modo
   try { localStorage.setItem('rkt-modo', MODO); } catch(e){}
   renderGbar(); renderLean(); });
 function renderTabla(){
+  // el cliente no ve la columna de precio y facturación
+  const C = COLS.filter(([k]) => !(window.MODO_CLIENTE && k === 'cobro'));
   const q = $('#q').value.toLowerCase();
   let rows = visibles().filter(v=> (!filtroEstado || v.estado===filtroEstado) && (!q || Object.values(v).join(' ').toLowerCase().includes(q)));
   // sin columna elegida: por lo que hay que hacer primero; al tocar un encabezado, por esa columna
@@ -2204,9 +2207,9 @@ function renderTabla(){
   const fechas = ['fechaRetiro','fechaCargue','cierreDoc','etd','eta'];
   // con 📆 Reunión (y sin columna elegida): una fila de título por día y, bajo Actualizar, lo que pasa en el viaje esos días
   const porDia = G.dia && !orden.k;
-  const titulo = (v, n) => porDia && diaReunion(v) !== diaReunion(rows[n - 1] || {}) ? `<tr class="dia-reunion"><td colspan="${COLS.length+2}">${tituloDia(diaReunion(v))}</td></tr>` : '';
-  $('#tbl').innerHTML = `<thead><tr><th class="num">#</th><th></th>${COLS.map(([k,l])=>`<th data-k="${k}">${l}${orden.k===k?(orden.asc?' ▲':' ▼'):''}</th>`).join('')}</tr></thead>
-  <tbody>${rows.map((v, n)=>`${titulo(v, n)}<tr><td class="num">${n+1}</td><td><button class="link" onclick="abrir('${v.id}')">Actualizar</button>${G.dia ? `<div class="pasos-reunion">${esc(textoPasos(v))}</div>` : ''}</td>${COLS.map(([k])=>{
+  const titulo = (v, n) => porDia && diaReunion(v) !== diaReunion(rows[n - 1] || {}) ? `<tr class="dia-reunion"><td colspan="${C.length+2}">${tituloDia(diaReunion(v))}</td></tr>` : '';
+  $('#tbl').innerHTML = `<thead><tr><th class="num">#</th><th></th>${C.map(([k,l])=>`<th data-k="${k}">${l}${orden.k===k?(orden.asc?' ▲':' ▼'):''}</th>`).join('')}</tr></thead>
+  <tbody>${rows.map((v, n)=>`${titulo(v, n)}<tr><td class="num">${n+1}</td><td><button class="link" onclick="abrir('${v.id}')">Actualizar</button>${G.dia ? `<div class="pasos-reunion">${esc(textoPasos(v))}</div>` : ''}</td>${C.map(([k])=>{
     const val = v[k];
     if (k==='situacion') return `<td>${tagNuevo(v)}${sitTag(v)}</td>`;
     if (k==='estado') return `<td>${pill(val)}${celdaConductor(v)}</td>`;
@@ -2220,7 +2223,7 @@ function renderTabla(){
     if (k==='pais') return `<td>${esc(v.pais||v.destino||'—')}</td>`;
     if (fechas.includes(k)) return `<td>${fd(val)}</td>`;
     return `<td>${esc(val||'—')}</td>`; }).join('')}</tr>`).join('')}</tbody>`;
-  if (!rows.length) $('#tbl').innerHTML += `<tr><td colspan="${COLS.length+2}" class="sub" style="text-align:center;padding:24px">Sin resultados</td></tr>`;
+  if (!rows.length) $('#tbl').innerHTML += `<tr><td colspan="${C.length+2}" class="sub" style="text-align:center;padding:24px">Sin resultados</td></tr>`;
 }
 
 /* ---------- motonaves ---------- */
@@ -2360,7 +2363,7 @@ function tarjetaHijo(s, padre){
     <div class="hijo-f"><span class="sub">Descargue</span> ${fd(s.fechaDescargueSub)}</div>
     <div class="hijo-f"><span class="sub">Urbano</span> ${s.fechaUrbano ? fd(s.fechaUrbano) : '—'}${hecho ? ' ✓' : ''}</div>
     <div class="hijo-f"><span class="sub">${esc(s.conductor || 'Sin conductor')}</span> ${s.placa ? `<span class="placa">${esc(s.placa)}</span>` : '<span class="missing">Sin placa</span>'}</div>
-    <div class="hijo-f" style="text-align:right"><b>${pesos(costoViaje(s))}</b></div>
+    <div class="hijo-f" style="text-align:right">${window.MODO_CLIENTE ? '' : `<b>${pesos(costoViaje(s))}</b>`}</div>
   </div>`;
 }
 // etiqueta de facturación del viaje (arriba del resumen de gastos): la etapa de facturación del viaje completo
@@ -2447,11 +2450,12 @@ function rutaPedido(v){
       ${hijosDe(v).map(s => tarjetaHijo(s, v)).join('')}
       <div class="pie">${tiemposOperacion(v)}${v.operacion==='IMPO' && demora(v) ? `<span style="color:var(--bad)">${demora(v)} d de demora del vacío</span>`:''}</div>
     </div></div></div>
-    <div class="der">${panelFactura(v, P, n)}</div></div></div>`;
+    <div class="der">${window.MODO_CLIENTE ? '' : panelFactura(v, P, n)}</div></div></div>`;   // costos y facturación: solo el equipo
 }
 
 function abrir(id){
-  const v = viajes.find(x=>x.id===id); editId = id; estadoSel = MARCAS.some(m=>m.k===v.estadoHoja) ? v.estadoHoja : '';
+  const v = viajes.find(x=>x.id===id); if (!v) { toast('No se encontró el viaje ' + id); return; }
+  editId = id; estadoSel = MARCAS.some(m=>m.k===v.estadoHoja) ? v.estadoHoja : '';
   $('#mCausa').classList.add('hidden'); $('#mCausaSel').innerHTML = ''; $('#mCausaDet').value = ''; $('#mCausaCosto').value = ''; $('#mCausaInc').value = '';
   $('#mTitle').textContent = `${v.placa || 'Sin vehículo'} · ${v.operacion} ${v.pais||''}`;
   $('#mSub').textContent = `${v.id} · ${v.fechaRetiro?`Retiro en patio ${fd(v.fechaRetiro)} · Llenado planta ${fd(v.fechaCargue)}`:`Cargue ${fd(v.fechaCargue)}`} · Última actualización ${new Date(v.actualizado).toLocaleString('es-CO')}`;
@@ -3249,20 +3253,6 @@ function resumenEventos(E){
     costo && `costo extra <b>${pesos(costo)}</b>`, inc && `<b style="color:var(--bad)">${inc}</b> incidente${inc===1?'':'s'}`].filter(Boolean).join(' · ');
 }
 const ICONO_EVENTO = {'Programación':'📋', 'Cambio de plan':'⟲', 'Correo':'✉', 'Edición':'✎', 'Excel':'▦', 'Subviaje':'↪', 'Incidente':'⚠'};
-function lineaTiempo(v){
-  const E = eventosDe(v); if (!E.length) return '';
-  const cp = E.filter(e => e.tipo==='Cambio de plan'), por = {};
-  cp.forEach(e => { por[e.resp] = (por[e.resp]||0) + 1; });
-  const costo = cp.reduce((t, e) => t + (e.costo||0), 0), inc = cp.filter(e => e.incidente).length + E.filter(e => e.tipo==='Incidente').length;
-  const resumen = [cp.length && `<b>${cp.length}</b> cambio${cp.length===1?'':'s'} de plan (${Object.entries(por).map(([r, n]) => `${esc(r)} ${n}`).join(', ')})`,
-    `<b>${E.filter(e => e.tipo==='Correo').length}</b> correos`, `<b>${E.filter(e => e.tipo==='Edición').length}</b> ediciones`,
-    costo && `costo extra <b>${pesos(costo)}</b>`, inc && `<b style="color:var(--bad)">${inc}</b> incidente${inc===1?'':'s'}`].filter(Boolean).join(' · ');
-  const cuando = f => !f ? '' : /T/.test(f) ? new Date(f).toLocaleString('es-CO', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'}) : fd(f);
-  return `<details class="tl" open><summary><b>Línea de tiempo del viaje</b> <span class="sub">${resumen}</span></summary>
-    ${E.map(e => `<div class="tl-it tl-${e.tipo.replace(/\s/g,'')}"><span class="tl-ic">${ICONO_EVENTO[e.tipo]||'•'}</span><div><span class="sub">${esc(cuando(e.fecha))}${e.quien ? ' · '+esc(e.quien) : ''}</span>
-      <div>${e.tipo==='Cambio de plan' ? `<b>Cambio de plan</b> · ${esc(e.causa||'Sin causa')}${e.resp && e.resp!=='Sin causa' ? ` <span class="sub">(responde ${esc(e.resp)})</span>` : ''}<br>` : e.tipo==='Programación' ? '<b>Programación de Reckitt</b><br>' : e.tipo==='Correo' ? `<b>Correo</b>${e.prioridad ? ` <span class="sub">· ${esc(e.prioridad)}${e.hecha ? ' · ✔ hecha' : ''}</span>` : ''}<br>` : ''}${esc(e.texto)}
-      ${e.costo ? `<br><span style="color:var(--warn)">Costo extra ${pesos(e.costo)}</span>` : ''}${e.incidente ? `<br><span style="color:var(--bad)">⚠ Incidente: ${esc(e.incidente)}</span>` : ''}</div></div></div>`).join('')}</details>`;
-}
 
 function verDeLista(i){
   const v = ultimaLista[i]; if (!v) return;
@@ -3295,7 +3285,7 @@ async function enviarReporteCorreo(){
   if (!confirm(`Se enviará el reporte de errores y acciones pendientes a:\n${para.join('\n')}\n\n¿Confirmas?`)) return;
   const b = burbuja('<span class="typing">Enviando…</span>', 'bot');
   try {
-    const j = await api('enviarReporte', {para}).catch(() => ({ok: true}));
+    const j = await api('enviarReporte', {para}).catch(() => ({ok: false, error: 'sin conexión'}));
     b.innerHTML = j.ok ? `✅ Reporte enviado a ${para.map(esc).join(', ')}.` : `No se pudo enviar: ${esc(j.error||'error')}`;
   } catch(e){ b.innerHTML = 'No se pudo enviar el correo. Intente de nuevo.'; }
 }
