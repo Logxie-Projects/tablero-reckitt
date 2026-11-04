@@ -2409,7 +2409,10 @@ function haceCuanto(f){
 }
 // en los cambios, una observación editada sale como "Observación actualizada" (el texto completo está en la Observación del viaje):
 // se corta hasta el siguiente dato cambiado (" · Etiqueta: … →" o " | Etiqueta: … →")
-const sinObservacion = t => String(t || '').replace(/Observaci[oó]n: [\s\S]*?(?=(?: · | \| )[A-ZÁÉÍÓÚÑ][^:·|]{1,40}: [^·|]*→|$)/g, 'Observación actualizada');
+const SIGUIENTE_DATO = '(?=(?: · | \\| )[A-ZÁÉÍÓÚÑ][^:·|]{1,40}: [^·|]*→|$)';
+const sinObservacion = t => String(t || '').replace(new RegExp('Observaci[oó]n: [\\s\\S]*?' + SIGUIENTE_DATO, 'g'), 'Observación actualizada')
+  // columnas de control (las reprogramaciones ya salen como "Cambio de plan" con su causa; "Visto por" es del equipo): no van
+  .replace(new RegExp('(?:^|(?: · | \\| ))(?:Reprogramaciones|Visto por): [\\s\\S]*?' + SIGUIENTE_DATO, 'g'), '').replace(/^(?: · | \| )/, '');
 const textoNovedad = n => n.tipo === 'Cambio' ? sinObservacion(n.texto) : n.texto;
 // la línea de la tarjeta: la última novedad con hora y autor; sin novedades, la observación como antes
 function lineaNovedad(v){
@@ -2503,7 +2506,8 @@ function eventosDe(v){
     const partes = t.split(' | '), prog = partes.find(p => /^Mes programado: /.test(p)), resto = partes.filter(p => p !== prog).join(' | ');
     if (prog) { const [antes, despues] = prog.replace(/^Mes programado: /, '').split(' → ');
       E.push({fecha: fechaHist(x.fecha), tipo: 'Programación', quien: x.usuario || '', texto: textoProgramacion(v, antes, despues)}); }
-    if (resto) E.push({fecha: fechaHist(x.fecha), tipo: /^Versión anterior/.test(resto) ? 'Excel' : 'Edición', quien: x.usuario || '', texto: (x.id!==v.id ? `Subviaje ${x.id}: ` : '') + sinObservacion(resto)});
+    const limpio = sinObservacion(resto);
+    if (limpio) E.push({fecha: fechaHist(x.fecha), tipo: /^Versión anterior/.test(resto) ? 'Excel' : 'Edición', quien: x.usuario || '', texto: (x.id!==v.id ? `Subviaje ${x.id}: ` : '') + limpio});
   });
   reprogsDe(v).forEach(r => {
     const hito = ((HITOS_PLAN[v.operacion]||[]).find(([, , cs]) => cs.includes(r.campo)) || [r.campo])[0];
