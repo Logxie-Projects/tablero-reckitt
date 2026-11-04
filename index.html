@@ -862,6 +862,18 @@ function datoMalEscrito(campo, valor){
   return '';
 }
 
+// IMPO: el patio de devolución (donde se entrega el contenedor VACÍO: patio de la naviera o del puerto) no es la bodega donde se
+// descarga la mercancía (confirmado por Entrapetrol el 4-nov: IMPO-006/007 quedaron con "AGV bodega 11", el sitio de descargue)
+const BODEGAS_CONOCIDAS = /\bbodega\b|solistica|suppla|cortijo|agecolda/i;
+function patioPareceBodega(patio, v, evidencia){
+  const p = String(patio || '').trim(); if (!p) return false;
+  if (v && v.bodega && compacto(p) === compacto(v.bodega)) return true;
+  if (BODEGAS_CONOCIDAS.test(p)) return true;
+  // el correo da ese lugar como sitio de descargue o entrega
+  const e = minus(evidencia || ''), q = minus(p);
+  return !!e && new RegExp('(descargue|entrega|descarga)[^.;]{0,40}' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(e);
+}
+
 // cada hallazgo dice "por qué": qué fecha o qué hecho hace que haya que llenarlo ya
 function validar(v){
   const e = [], add = (sev, campo, msg, tipo = 'Error', porque = '') => e.push({v, sev, campo, msg, tipo, porque});
@@ -942,6 +954,8 @@ function validar(v){
      ['fechaLevante','Fecha entrega documentos','Sin fecha de entrega de documentos']].forEach(([k,campo,msg])=>{ if(!v[k]) add('Media',campo,msg, 'Error', 'Reckitt pregunta este dato de cada importación; viene en la instrucción o en la orden de retiro'); });
     if (v.fechaRetiro && v.eta && v.fechaRetiro < v.eta) add('Alta','Fecha de retiro',`Retiro del lleno (${fd(v.fechaRetiro)}) antes de la ETA (${fd(v.eta)})`, 'Error', choque);
     const descargado = v.fechaCargue && v.fechaCargue <= HOY;
+    if (!esLCL(v) && patioPareceBodega(v.patio, v)) add('Media','Patio de devolución',`"${v.patio}" parece la bodega de entrega, no el patio donde se devuelve el vacío`, 'Error',
+      'El vacío se devuelve en un patio de la naviera o del puerto; la bodega es donde se descarga la mercancía');
     if (esLCL(v)) { /* carga suelta: no hay vacío que devolver */ }
     else if (!v.fechaDevolucion){
       const yaDescargo = `Se descargó el ${fd(v.fechaCargue)}: el vacío hay que devolverlo`;
@@ -2802,8 +2816,11 @@ function pintarPropuestas(){
     const g = p.viajeId !== previo ? `<tr class="grupo"><td colspan="5">${esc(p.operacion)} · ${esc(p.placa || 'Sin placa')} · ${esc(p.ref)} <span class="sub">(${esc(p.viajeId)})</span></td></tr>` : '';
     previo = p.viajeId;
     const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
+    // IMPO: el patio de devolución (donde se entrega el VACÍO) no es la bodega donde se descarga la mercancía (dominio.js patioPareceBodega)
+    const ojo = p.campo === 'patio' && p.operacion === 'IMPO' && patioPareceBodega(p.valor, viajes.find(x => x.id === p.viajeId), p.evidencia)
+      ? '<div style="color:var(--bad);font-weight:600">⚠ Parece la bodega de entrega, no el patio donde se devuelve el vacío. Revise antes de aprobar.</div>' : '';
     return g + `<tr><td><input type="checkbox" data-i="${i}"></td><td>${esc(p.etiqueta)}</td><td>${p.actual ? `<span class="antes">${esc(fx(p.actual))}</span>` : '<span class="sub">vacío</span>'}</td>
-      <td class="nuevo">${esc(fx(p.valor))}</td><td class="sub">${esc(p.evidencia)}${p.fecha ? ' · ' + esc(String(p.fecha).slice(0,10)) : ''}</td></tr>`;
+      <td class="nuevo">${esc(fx(p.valor))}${ojo}</td><td class="sub">${esc(p.evidencia)}${p.fecha ? ' · ' + esc(String(p.fecha).slice(0,10)) : ''}</td></tr>`;
   }).join('')}</table></div><p class="sub" style="margin-top:6px">${ver.length} dato${ver.length===1?'':'s'} de ${propArea} por revisar · lo rechazado no vuelve a aparecer.</p>`;
 }
 async function decidirPropuestas(aprobar){
