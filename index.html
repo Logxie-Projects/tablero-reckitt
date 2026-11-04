@@ -2217,7 +2217,7 @@ function haceCuanto(f){
 // la línea de la tarjeta: la última novedad con hora y autor; sin novedades, la observación como antes
 function lineaNovedad(v){
   const n = ultimaNovedad(v), estilo = 'style="margin:-4px 0 10px"';
-  if (n) return `<div class="sub nov-ult" ${estilo} title="${esc(fechaNovedad(n))}">🕑 <b>${esc(haceCuanto(n.fecha))}</b> · ${esc(n.usuario)} · ${iconoNovedad(n.tipo)} ${esc(n.tipo)}: ${esc(n.texto)}${novedadesDe(v).length > 1 ? ` <span class="sub">(+${novedadesDe(v).length - 1})</span>` : ''}</div>`;
+  if (n) return `<div class="sub nov-ult" ${estilo} title="${esc(fechaNovedad(n))}">🕑 <b>${esc(haceCuanto(n.fecha))}</b> · ${esc(n.usuario)} · ${n.origen === 'Conductor' ? '🚛 Conductor' : iconoNovedad(n.tipo) + ' ' + esc(n.tipo)}: ${esc(n.texto)}${novedadesDe(v).length > 1 ? ` <span class="sub">(+${novedadesDe(v).length - 1})</span>` : ''}</div>`;
   return v.observacion ? `<div class="sub" ${estilo}>💬 ${esc(v.observacion)}</div>` : '';
 }
 const fechaNovedad = n => { const f = fechaLocal(n.fecha); return f ? `${fd(f)}${f.length > 10 ? ' ' + f.slice(11, 16) : ''}` : 'sin hora'; };
@@ -2227,13 +2227,13 @@ const textoObservacion = v => { const n = ultimaNovedad(v); return n ? `${haceCu
 // en la ventana del viaje: agregar (equipo) y la línea de tiempo única del viaje (fase 2): novedades del equipo, cambios
 // guardados, correos de LogxIA, reprogramaciones y programación (eventosDe, linea-tiempo.js), con filtros; la nota fija al final
 let tipoNovedad = 'Status', filtroLinea = '';
-const FILTROS_LINEA = [['', 'Todo'], ['Novedad', 'Equipo'], ['Cambio', 'Cambios'], ['Correo', 'Correos'], ['Reprogramación', 'Reprogramaciones']];
-// a qué filtro va cada tipo de evento
-const grupoEvento = t => ({'Novedad': 'Novedad', 'Correo': 'Correo', 'Cambio de plan': 'Reprogramación', 'Incidente': 'Reprogramación'})[t] || 'Cambio';
+const FILTROS_LINEA = [['', 'Todo'], ['Novedad', 'Equipo'], ['Conductor', 'Conductor'], ['Cambio', 'Cambios'], ['Correo', 'Correos'], ['Reprogramación', 'Reprogramaciones']];
+// a qué filtro va cada tipo de evento ("Conductor": lo que marca el conductor en su app, Base.gs novedadDeConductor_)
+const grupoEvento = t => ({'Novedad': 'Novedad', 'Conductor': 'Conductor', 'Correo': 'Correo', 'Cambio de plan': 'Reprogramación', 'Incidente': 'Reprogramación'})[t] || 'Cambio';
 function itemEvento(e){
-  const titulo = e.tipo === 'Novedad' ? e.sub : e.tipo === 'Cambio de plan' ? `Cambio de plan · ${e.causa || 'Sin causa'}${e.resp && e.resp !== 'Sin causa' ? ` (responde ${e.resp})` : ''}`
+  const titulo = e.tipo === 'Novedad' ? e.sub : e.tipo === 'Conductor' ? `Conductor · ${e.sub}` : e.tipo === 'Cambio de plan' ? `Cambio de plan · ${e.causa || 'Sin causa'}${e.resp && e.resp !== 'Sin causa' ? ` (responde ${e.resp})` : ''}`
     : e.tipo === 'Programación' ? 'Programación de Reckitt' : e.tipo === 'Correo' ? `Correo${e.prioridad ? ' · ' + e.prioridad : ''}${e.hecha ? ' · ✔ hecha' : ''}` : e.tipo;
-  const ic = e.tipo === 'Novedad' ? iconoNovedad(e.sub) : e.tipo === 'Cambio' ? '⚙' : (ICONO_EVENTO[e.tipo] || '•');
+  const ic = e.tipo === 'Novedad' ? iconoNovedad(e.sub) : e.tipo === 'Conductor' ? '🚛' : e.tipo === 'Cambio' ? '⚙' : (ICONO_EVENTO[e.tipo] || '•');
   return `<div class="nov-it nov-${grupoEvento(e.tipo)}"><span class="nov-ic">${ic}</span><div><span class="sub">${esc(fechaNovedad({fecha: e.fecha}))}${e.quien ? ' · ' + esc(e.quien) : ''}</span>
     <div><b>${esc(titulo)}</b> · ${esc(e.texto)}${e.costo ? ` <span style="color:var(--warn)">· costo extra ${pesos(e.costo)}</span>` : ''}${e.incidente ? ` <span style="color:var(--bad)">· ⚠ ${esc(e.incidente)}</span>` : ''}</div></div></div>`;
 }
@@ -3205,7 +3205,7 @@ function eventosDe(v){
   // novedades (novedades.js): las del equipo y los cambios que el sistema anota solo desde la fase 2
   const novs = novedadesDe(v);
   novs.forEach(n => E.push(delSistema(n) ? {fecha: fechaLocal(n.fecha), tipo: 'Cambio', quien: n.usuario, texto: n.texto}
-    : {fecha: fechaLocal(n.fecha), tipo: 'Novedad', sub: n.tipo, quien: n.usuario, texto: n.texto}));
+    : {fecha: fechaLocal(n.fecha), tipo: n.origen === 'Conductor' ? 'Conductor' : 'Novedad', sub: n.tipo, quien: n.usuario, texto: n.texto}));
   // un cambio del Historial que ya tiene su novedad automática (misma hora ±3 min) no se repite
   const minutos = f => { const s = fechaLocal(f); return s.length > 10 ? Date.parse(s + ':00Z') / 6e4 : NaN; };
   const cambios = novs.filter(delSistema).map(n => minutos(n.fecha));
