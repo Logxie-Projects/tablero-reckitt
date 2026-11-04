@@ -2170,33 +2170,6 @@ function renderChips(){
 // Vista del tablero principal: Modo tabla (indicadores, programación y gráficas) o Modo lean (la ruta de cada pedido); se recuerda en este navegador
 let MODO = 'tabla';
 try { MODO = localStorage.getItem('rkt-modo') === 'lean' ? 'lean' : 'tabla'; } catch(e){}
-// orden de las listas por lo que hay que hacer primero: los que no avanzan (sin actualizar), luego por la fecha de su
-// próximo paso (el más cercano primero, sea NUEVO o no) y al final los que ya terminaron el transporte (el más reciente primero)
-function claveUrgencia(v){
-  if (fueraDeRuta(v)) return [2, String(9e12 - new Date(fechaFinTransporte(v) || 0)).padStart(14, '0')];   // fueraDeRuta: dominio
-  if (sinActualizar(v).length) return [0, ''];
-  const prox = hitosDe(v).map(h => h.f).filter(f => f >= HOY).sort()[0];
-  return [1, prox || primerEvento(v) || '9999'];
-}
-const ordenUrgencia = (a, b) => { const x = claveUrgencia(a), y = claveUrgencia(b); return x[0] - y[0] || x[1].localeCompare(y[1]); };
-// con el filtro 📆 Reunión: por el día y la hora del primer paso en esos días (reunion.js)
-const ordenReunion = (a, b) => claveReunion(a).localeCompare(claveReunion(b)) || ordenUrgencia(a, b);
-function renderLean(){
-  const lean = MODO === 'lean';
-  [...$('#v-tablero').children].forEach(el => el.classList.toggle('hidden', lean ? el.id !== 'leanTablero' : el.id === 'leanTablero'));
-  if (!lean) return;
-  const L = visibles().sort(G.dia ? ordenReunion : ordenUrgencia);
-  const clic = !window.MODO_CLIENTE;
-  // con 📆 Reunión: un título por día y, sobre cada ruta, lo que pasa en el viaje esos días (reunion.js)
-  $('#leanTablero').innerHTML = L.length ? L.map((v, i) => (G.dia && diaReunion(v) !== diaReunion(L[i - 1] || {}) ? `<h3 class="dia-reunion">${tituloDia(diaReunion(v))}</h3>` : '')
-      + (G.dia ? `<div class="pasos-reunion">${esc(textoPasos(v))}</div>` : '')
-      + rutaPedido(v).replace('<div class="ruta">', clic ? `<div class="ruta clic" onclick="abrir('${v.id}')">` : '<div class="ruta">')).join('')
-    : '<div class="card sub" style="text-align:center;padding:24px">No hay viajes con estos filtros.</div>';
-}
-document.addEventListener('click', e => { const b = e.target.closest('[data-modo]'); if (!b) return;
-  MODO = b.dataset.modo;
-  try { localStorage.setItem('rkt-modo', MODO); } catch(e){}
-  renderGbar(); renderLean(); });
 function renderTabla(){
   // el cliente no ve la columna de precio y facturación
   const C = COLS.filter(([k]) => !(window.MODO_CLIENTE && k === 'cobro'));
@@ -2244,7 +2217,158 @@ function renderMotonaves(){
       ${L.map(v=>`<div class="unit"><span>${tieneVehiculo(v)?`<span class="placa">${esc(v.placa)}</span>`:'<span class="missing">Sin vehículo</span>'} <span class="sub">Retiro ${fd(v.fechaRetiro)} · Llenado ${fd(v.fechaCargue)} · ${esc(v.booking||'')}</span></span><span>${sitTag(v)} ${pill(v.estado)}${v.novedad?' '+pill('Novedad'):''} <button class="link" onclick="abrir('${v.id}')">✎</button></span></div>`).join('')}
     </div>`; }).join('');
 }
+/* ---------- Modo lean: la tarjeta de cada viaje (camión, ruta con paradas, etapa, costos para el equipo) y su orden ----------
+ * paradas / avance / etapaAhora están en el dominio (dominio.js): la misma ruta la usa el resumen al cliente (Cliente.gs). */
+/* ---------- ventana del viaje (actualización) y modo lean: ruta del pedido ---------- */
+// paradas, avance, bodegaCargue y contenedorDeBooking están en el dominio (dominio.js): también los usa el correo al cliente
+function miniAvance(v){ const {P,n} = avance(v); return `<span class="mini" title="${esc(n<P.length ? 'En: '+P[n][0] : 'Completo')}">${P.map((_,i)=>`<i class="${i<n?'ok':i===n?'ya':''}"></i>`).join('')}</span>`; }
 
+function leadFactura(v){
+  const fin = fechaFinTransporte(v);
+  if (!fin) return null;
+  return v.fechaFactura ? {dias: dDias(fin, v.fechaFactura), hecho: true} : {dias: dDias(fin, HOY), hecho: false};
+}
+
+const costoViaje = v => { const c = cobro(v); return c.tarifa + (c.aprob==='Rechazado' ? 0 : c.extra); };
+
+function tarjetaHijo(s, padre){
+  // el subviaje guarda su destino final en Bodega; si no lo tiene, el del viaje padre
+  const destino = s.bodega && s.bodega !== s.patioSub ? s.bodega : padre.operacion==='EXPO' ? (padre.puerto ? 'Puerto '+padre.puerto : 'Puerto') : (padre.bodega || padre.destino || 'Bodega');
+  const hecho = s.fechaUrbano && s.fechaUrbano <= HOY;
+  const clic = window.MODO_CLIENTE ? '' : ` onclick="event.stopPropagation();abrir('${s.id}')"`;
+  return `<div class="hijo${clic ? ' clic' : ''}"${clic}>
+    <span class="hijo-tg">↳ Subviaje</span>
+    <div class="hijo-ruta"><b>${esc(s.motivoSub || 'Sin motivo')}</b><span class="sub">${esc(s.patioSub || 'Patio por definir')} → ${esc(destino)}</span></div>
+    <div class="hijo-f"><span class="sub">Descargue</span> ${fd(s.fechaDescargueSub)}</div>
+    <div class="hijo-f"><span class="sub">Urbano</span> ${s.fechaUrbano ? fd(s.fechaUrbano) : '—'}${hecho ? ' ✓' : ''}</div>
+    <div class="hijo-f"><span class="sub">${esc(s.conductor || 'Sin conductor')}</span> ${s.placa ? `<span class="placa">${esc(s.placa)}</span>` : '<span class="missing">Sin placa</span>'}</div>
+    <div class="hijo-f" style="text-align:right">${window.MODO_CLIENTE ? '' : `<b>${pesos(costoViaje(s))}</b>`}</div>
+  </div>`;
+}
+
+// etiqueta de facturación del viaje (arriba del resumen de gastos): la etapa de facturación del viaje completo
+function finTransporte(v){
+  if (situacion(v)==='Cancelado' || v.estado==='Cancelado') return '';
+  const s = cobro(v).fact, col = COLOR_COBRO[s] || 'var(--muted)', fin = transporteFinalizado(v);
+  // en facturación sin la fecha de fin: se muestra la etapa y se avisa la fecha que falta
+  if (!fin && !['En aprobación Reckitt','Aprobado por Reckitt','Facturado'].includes(s)) return '';
+  const cab = fin ? `<span class="hecho">✓ Transporte finalizado ${fd(fechaFinTransporte(v))}</span>`
+    : `<span class="hecho" style="color:var(--warn)">⚠ Falta la fecha de ${v.operacion==='EXPO' ? 'entrega en puerto' : 'devolución del vacío'}</span>`;
+  return `<div class="fin">${cab}<span class="est" style="background:color-mix(in srgb, ${col} 14%, transparent);color:${col}">${s}${v.numFactura?' · '+esc(v.numFactura):''}</span></div>`;
+}
+
+const lnR = (a, b) => `<div class="ln"><span>${a}</span><span>${b}</span></div>`;
+
+const granR = (a, b, extra='') => `<div class="gran"><span>${a}</span><span><b>${b}</b>${extra ? `<small>${extra}</small>` : ''}</span></div>`;
+
+// pie de la tarjeta (operación): días de cada tramo frente al plan y lead time de la operación
+function tiemposOperacion(v){
+  const H = hitosPlan(v), L = leadTime(v);
+  const tramos = H.slice(1).map((x, i) => {
+    const real = H[i][2] && x[2] ? dDias(H[i][2], x[2]) : null, plan = dDias(H[i][1], x[1]);
+    const val = real!==null ? `<b>${real} d</b>${plan!==null && real!==plan ? ` <span class="${real>plan?'tarde':'antes'}">plan ${plan}</span>` : ''}` : plan!==null ? `<span class="sub">plan ${plan} d</span>` : '—';
+    return `<span class="tramo">${esc(x[0])} ${val}</span>`;
+  }).join('');
+  const lead = L.real!==null ? `<b>${L.real} d</b> ${L.plan!==null ? desv(L.real-L.plan) : ''}` : L.enCurso!==null ? `<b>${L.enCurso} d</b> <span class="sub">en curso</span>` : L.plan!==null ? `<span class="sub">plan ${L.plan} d</span>` : '—';
+  return `${tramos}<span class="lt">Lead time operación ${lead}</span>`;
+}
+
+// panel derecho (facturación): gastos y, abajo, el lead time de facturación
+function panelFactura(v, P, n){
+  const c = cobro(v);
+  // total del viaje sin extracostos rechazados; lo aprobado para facturar aparte mientras Reckitt no aprueba los extras
+  const hijos = hijosDe(v), costoHijos = hijos.reduce((a, s) => a + costoViaje(s), 0);
+  const totalViaje = c.tarifa + (c.aprob==='Rechazado' ? 0 : c.extra) + costoHijos;
+  // siempre las mismas líneas: Fletes, Citas, Standby y Otros (los demás conceptos de extracostos sumados)
+  const grupo = k => /^cita/i.test(k) ? 'cita' : /stand\s*-?by/i.test(k) ? 'standby' : /^retorno/i.test(k) ? 'retorno' : /^cargue/i.test(k) ? 'cargue' : 'otros';
+  const sum = {cita:0, standby:0, retorno:0, cargue:0, otros:0}, otros = [];
+  itemsExtra(v).forEach(([k, x]) => { sum[grupo(k)] += x; if (grupo(k)==='otros' && x) otros.push(k); });
+  const gastos = lnR('Fletes', pesos(c.tarifa)) + lnR('Citas', pesos(sum.cita)) + lnR('Standby', pesos(sum.standby))
+    + (sum.retorno ? lnR('Retorno', pesos(sum.retorno)) : '') + (sum.cargue ? lnR('Cargue', pesos(sum.cargue)) : '')
+    + lnR(otros.length ? `<span title="${esc(otros.join(', '))}">Otros</span>` : 'Otros', pesos(sum.otros))
+    + (hijos.length ? lnR(`<span title="${esc(hijos.flatMap(s => itemsExtra(s).map(([k, x]) => k+' '+pesos(x))).join(', '))}">Subviaje${hijos.length>1?'s':''}</span>`, pesos(costoHijos)) : '')
+    + granR('Total', pesos(totalViaje))
+    + (c.extra ? `<div class="nota">${lnR('Extracostos', `<span style="color:${COLOR_COBRO[c.aprob]};font-weight:600">● ${c.aprob==='Pendiente' ? 'Por aprobar' : c.aprob}</span>`)}${c.aprob!=='Aprobado' ? lnR('Aprobado para facturar', pesos(c.total)) : ''}</div>` : '');
+  const fin = finTransporte(v), lf = fin ? leadFactura(v) : null;
+  const leadF = !fin ? '' : `<div class="pieF"><h4>Lead time facturación</h4>${!lf ? `<span class="sub">Falta la fecha de ${v.operacion==='EXPO' ? 'entrega en puerto' : 'devolución del vacío'}</span>`
+    : `<b style="${!lf.hecho && lf.dias>5 ? 'color:var(--bad)' : ''}">${lf.dias} d</b> <span class="sub">${lf.hecho ? 'facturado'+(v.fechaFactura ? ' '+fd(v.fechaFactura) : '') : 'sin facturar'}</span>`}</div>`;
+  // datos que facturación necesita para la relación a Reckitt
+  // lo que pide facturación: EXPO → RBHY y OBD; IMPO → N° de pedido y contenedor
+  const expo = v.operacion==='EXPO';
+  const datosF = expo ? [[v.rbhy, 'RBHY', x => esc(x)], [v.obd, 'OBD', x => 'OBD '+esc(x)]] : [[v.pedido, 'N° de pedido', x => 'Pedido '+esc(x)], [v.contenedor, 'contenedor', x => esc(x)]];
+  const tiene = datosF.filter(d => d[0]), falta = datosF.filter(d => !d[0]).map(d => d[1]);
+  const docs = (tiene.length || fin) ? `<div class="sub" style="margin:4px 0 2px">${tiene.map(d => d[2](d[0])).join(' · ')}${falta.length && fin ? `${tiene.length ? ' · ' : ''}<span style="color:var(--warn)">Falta ${falta.join(' y ')}</span>` : ''}</div>` : '';
+  return `${fin}${docs}<div class="resumen"><div><h4>Resumen de gastos</h4>${gastos}</div></div>${leadF}`;
+}
+
+// viaje que no avanza: etiqueta roja junto a la etapa (el detalle, al pasar el mouse)
+function etiquetaSinActualizar(v){
+  const S = window.MODO_CLIENTE ? [] : sinActualizar(v); if (!S.length) return '';
+  const det = S.map(s => 'Sin actualizar: ' + s.msg + '. ' + s.porque).join('\n') + (accionPendiente(v) ? '\nHay una acción LogxIA pendiente en este viaje: revisarla' : '');
+  return `<span class="tg" style="background:color-mix(in srgb, var(--bad) 15%, transparent);color:var(--bad)" title="${esc(det)}">⚠ Sin actualizar: ${esc(S[0].msg)}</span>`;
+}
+
+function rutaPedido(v){
+  const {P, n} = avance(v);
+  const ini = s => String(s||'').split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]).join('').toUpperCase() || '—';
+  const iso = x => /^\d{4}-\d{2}-\d{2}$/.test(x||'');
+  const dif = (a,b) => iso(a) && iso(b) ? Math.round((new Date(b+'T12:00')-new Date(a+'T12:00'))/864e5) : null;
+  const esperas = P.slice(1).map((p,i)=> P[i][2] && p[2] ? dif(P[i][2], p[2]) : null);
+  // la etapa con su detalle y el color (dominio: etapaAhora, la misma del correo al cliente)
+  const {ahora, tono} = etapaAhora(v, P, n, window.MODO_CLIENTE), col = {cerrado: 'var(--ok)', gris: 'var(--muted)', curso: 'var(--accent)'}[tono];
+  const ref = v.operacion==='IMPO' ? (v.pedido ? 'Pedido '+v.pedido : v.id) : (v.booking ? ['Booking '+v.booking, contenedorDeBooking(v)].filter(Boolean).join(' · ') : v.id);
+  return `<div class="ruta"><div class="dos"><div class="izq">
+    <div class="cab"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
+      ${tagNuevo(v)}<span class="op ${v.operacion}">${v.operacion}</span><b>${esc(v.empresa||'Empresa sin definir')} · ${esc(ref)}</b>
+      <span class="sub">${esc([v.solicitante && 'Solicita '+v.solicitante, v.fwd].filter(Boolean).join(' · '))}</span></div>
+      <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span>${etiquetaSinActualizar(v)}${!window.MODO_CLIENTE && pendientesOps(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)" title="Lo que operaciones debe completar">Falta (operaciones): ${esc(pendientesOps(v).join(' · '))}</span>` : ''}${!window.MODO_CLIENTE && pendientesFact(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--muted) 15%, transparent);color:var(--muted)" title="Para poder facturarlo">Falta (facturación): ${esc(pendientesFact(v).join(' · '))}</span>` : ''}</div>
+    ${lineaNovedad(v)}
+    <div class="cuerpo"><div>
+      <div style="display:flex;align-items:flex-end;gap:2px"><div class="cont"><b style="font-size:12px">${esc(v.contenedor||'—')}</b><div class="sub">${esc(v.unidad||'')}</div></div><div class="cabina"></div></div>
+      <div class="ruedas"><i></i><i></i><i></i><i></i></div>
+      <div class="cond"><div class="ini">${esc(ini(v.conductor))}</div><div style="min-width:0"><b style="font-size:12px;display:block">${esc(v.conductor||'Sin conductor')}</b><span class="sub">${esc(v.placa||'Sin placa')}</span></div></div>
+      ${window.MODO_CLIENTE ? '' : `<button type="button" class="subv" onclick="event.stopPropagation();nuevoSubviaje('${v.id}')"><span>+</span> Subviaje</button>`}
+    </div><div>
+      <div class="linea"><div class="hecho" style="width:${P.length>1 ? Math.min(86, 86*Math.max(0,n-1)/(P.length-1)) : 0}%"></div>
+        ${P.map(([et, lugar, , det], i)=>`<div class="par ${i<n?'ok':i===n?'ya':''}"><div class="pt"></div>${i===n?'<span class="camion">🚚</span>':''}
+          <div class="caja">${et}<b>${esc(lugar)}</b>${det.filter(Boolean).map(esc).join('<br>')}</div></div>`).join('')}</div>
+      <div class="esp"><span></span>${esperas.map(d=> `<span>${d===null?'':d+' d'}</span>`).join('')}</div>
+      ${hijosDe(v).map(s => tarjetaHijo(s, v)).join('')}
+      <div class="pie">${tiemposOperacion(v)}${v.operacion==='IMPO' && demora(v) ? `<span style="color:var(--bad)">${demora(v)} d de demora del vacío</span>`:''}</div>
+    </div></div></div>
+    <div class="der">${window.MODO_CLIENTE ? '' : panelFactura(v, P, n)}</div></div></div>`;   // costos y facturación: solo el equipo
+}
+
+// orden de las listas por lo que hay que hacer primero: los que no avanzan (sin actualizar), luego por la fecha de su
+// próximo paso (el más cercano primero, sea NUEVO o no) y al final los que ya terminaron el transporte (el más reciente primero)
+function claveUrgencia(v){
+  if (fueraDeRuta(v)) return [2, String(9e12 - new Date(fechaFinTransporte(v) || 0)).padStart(14, '0')];   // fueraDeRuta: dominio
+  if (sinActualizar(v).length) return [0, ''];
+  const prox = hitosDe(v).map(h => h.f).filter(f => f >= HOY).sort()[0];
+  return [1, prox || primerEvento(v) || '9999'];
+}
+
+const ordenUrgencia = (a, b) => { const x = claveUrgencia(a), y = claveUrgencia(b); return x[0] - y[0] || x[1].localeCompare(y[1]); };
+
+// con el filtro 📆 Reunión: por el día y la hora del primer paso en esos días (reunion.js)
+const ordenReunion = (a, b) => claveReunion(a).localeCompare(claveReunion(b)) || ordenUrgencia(a, b);
+
+function renderLean(){
+  const lean = MODO === 'lean';
+  [...$('#v-tablero').children].forEach(el => el.classList.toggle('hidden', lean ? el.id !== 'leanTablero' : el.id === 'leanTablero'));
+  if (!lean) return;
+  const L = visibles().sort(G.dia ? ordenReunion : ordenUrgencia);
+  const clic = !window.MODO_CLIENTE;
+  // con 📆 Reunión: un título por día y, sobre cada ruta, lo que pasa en el viaje esos días (reunion.js)
+  $('#leanTablero').innerHTML = L.length ? L.map((v, i) => (G.dia && diaReunion(v) !== diaReunion(L[i - 1] || {}) ? `<h3 class="dia-reunion">${tituloDia(diaReunion(v))}</h3>` : '')
+      + (G.dia ? `<div class="pasos-reunion">${esc(textoPasos(v))}</div>` : '')
+      + rutaPedido(v).replace('<div class="ruta">', clic ? `<div class="ruta clic" onclick="abrir('${v.id}')">` : '<div class="ruta">')).join('')
+    : '<div class="card sub" style="text-align:center;padding:24px">No hay viajes con estos filtros.</div>';
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-modo]'); if (!b) return;
+  MODO = b.dataset.modo;
+  try { localStorage.setItem('rkt-modo', MODO); } catch(e){}
+  renderGbar(); renderLean(); });
 /* ---------- novedades del viaje: la bitácora con hora y autor (fase 1) y la línea de tiempo única (fase 2) ----------
  * Cada novedad es una fila de la pestaña "Novedades del viaje" (Base.gs): cuándo, viaje, quién, tipo, texto y origen. No se
  * editan ni se borran: así queda el seguimiento. El campo Observación sigue siendo la nota fija del viaje (programación,
@@ -2343,116 +2467,56 @@ async function agregarNovedad(id){
       if (fechas.length) { await cargarPropuestas(1); render(); } }   // propuestas.js: el contador del botón
   } catch(e) { toast('No se guardó la novedad: ' + e.message); btn.disabled = false; btn.textContent = 'Agregar novedad'; }
 }
-/* ---------- ventana del viaje (actualización) y modo lean: ruta del pedido ---------- */
-// paradas, avance, bodegaCargue y contenedorDeBooking están en el dominio (dominio.js): también los usa el correo al cliente
-function miniAvance(v){ const {P,n} = avance(v); return `<span class="mini" title="${esc(n<P.length ? 'En: '+P[n][0] : 'Completo')}">${P.map((_,i)=>`<i class="${i<n?'ok':i===n?'ya':''}"></i>`).join('')}</span>`; }
-function leadFactura(v){
-  const fin = fechaFinTransporte(v);
-  if (!fin) return null;
-  return v.fechaFactura ? {dias: dDias(fin, v.fechaFactura), hecho: true} : {dias: dDias(fin, HOY), hecho: false};
-}
-const costoViaje = v => { const c = cobro(v); return c.tarifa + (c.aprob==='Rechazado' ? 0 : c.extra); };
-function tarjetaHijo(s, padre){
-  // el subviaje guarda su destino final en Bodega; si no lo tiene, el del viaje padre
-  const destino = s.bodega && s.bodega !== s.patioSub ? s.bodega : padre.operacion==='EXPO' ? (padre.puerto ? 'Puerto '+padre.puerto : 'Puerto') : (padre.bodega || padre.destino || 'Bodega');
-  const hecho = s.fechaUrbano && s.fechaUrbano <= HOY;
-  const clic = window.MODO_CLIENTE ? '' : ` onclick="event.stopPropagation();abrir('${s.id}')"`;
-  return `<div class="hijo${clic ? ' clic' : ''}"${clic}>
-    <span class="hijo-tg">↳ Subviaje</span>
-    <div class="hijo-ruta"><b>${esc(s.motivoSub || 'Sin motivo')}</b><span class="sub">${esc(s.patioSub || 'Patio por definir')} → ${esc(destino)}</span></div>
-    <div class="hijo-f"><span class="sub">Descargue</span> ${fd(s.fechaDescargueSub)}</div>
-    <div class="hijo-f"><span class="sub">Urbano</span> ${s.fechaUrbano ? fd(s.fechaUrbano) : '—'}${hecho ? ' ✓' : ''}</div>
-    <div class="hijo-f"><span class="sub">${esc(s.conductor || 'Sin conductor')}</span> ${s.placa ? `<span class="placa">${esc(s.placa)}</span>` : '<span class="missing">Sin placa</span>'}</div>
-    <div class="hijo-f" style="text-align:right">${window.MODO_CLIENTE ? '' : `<b>${pesos(costoViaje(s))}</b>`}</div>
-  </div>`;
-}
-// etiqueta de facturación del viaje (arriba del resumen de gastos): la etapa de facturación del viaje completo
-function finTransporte(v){
-  if (situacion(v)==='Cancelado' || v.estado==='Cancelado') return '';
-  const s = cobro(v).fact, col = COLOR_COBRO[s] || 'var(--muted)', fin = transporteFinalizado(v);
-  // en facturación sin la fecha de fin: se muestra la etapa y se avisa la fecha que falta
-  if (!fin && !['En aprobación Reckitt','Aprobado por Reckitt','Facturado'].includes(s)) return '';
-  const cab = fin ? `<span class="hecho">✓ Transporte finalizado ${fd(fechaFinTransporte(v))}</span>`
-    : `<span class="hecho" style="color:var(--warn)">⚠ Falta la fecha de ${v.operacion==='EXPO' ? 'entrega en puerto' : 'devolución del vacío'}</span>`;
-  return `<div class="fin">${cab}<span class="est" style="background:color-mix(in srgb, ${col} 14%, transparent);color:${col}">${s}${v.numFactura?' · '+esc(v.numFactura):''}</span></div>`;
-}
-const lnR = (a, b) => `<div class="ln"><span>${a}</span><span>${b}</span></div>`;
-const granR = (a, b, extra='') => `<div class="gran"><span>${a}</span><span><b>${b}</b>${extra ? `<small>${extra}</small>` : ''}</span></div>`;
-// pie de la tarjeta (operación): días de cada tramo frente al plan y lead time de la operación
-function tiemposOperacion(v){
-  const H = hitosPlan(v), L = leadTime(v);
-  const tramos = H.slice(1).map((x, i) => {
-    const real = H[i][2] && x[2] ? dDias(H[i][2], x[2]) : null, plan = dDias(H[i][1], x[1]);
-    const val = real!==null ? `<b>${real} d</b>${plan!==null && real!==plan ? ` <span class="${real>plan?'tarde':'antes'}">plan ${plan}</span>` : ''}` : plan!==null ? `<span class="sub">plan ${plan} d</span>` : '—';
-    return `<span class="tramo">${esc(x[0])} ${val}</span>`;
-  }).join('');
-  const lead = L.real!==null ? `<b>${L.real} d</b> ${L.plan!==null ? desv(L.real-L.plan) : ''}` : L.enCurso!==null ? `<b>${L.enCurso} d</b> <span class="sub">en curso</span>` : L.plan!==null ? `<span class="sub">plan ${L.plan} d</span>` : '—';
-  return `${tramos}<span class="lt">Lead time operación ${lead}</span>`;
-}
-// panel derecho (facturación): gastos y, abajo, el lead time de facturación
-function panelFactura(v, P, n){
-  const c = cobro(v);
-  // total del viaje sin extracostos rechazados; lo aprobado para facturar aparte mientras Reckitt no aprueba los extras
-  const hijos = hijosDe(v), costoHijos = hijos.reduce((a, s) => a + costoViaje(s), 0);
-  const totalViaje = c.tarifa + (c.aprob==='Rechazado' ? 0 : c.extra) + costoHijos;
-  // siempre las mismas líneas: Fletes, Citas, Standby y Otros (los demás conceptos de extracostos sumados)
-  const grupo = k => /^cita/i.test(k) ? 'cita' : /stand\s*-?by/i.test(k) ? 'standby' : /^retorno/i.test(k) ? 'retorno' : /^cargue/i.test(k) ? 'cargue' : 'otros';
-  const sum = {cita:0, standby:0, retorno:0, cargue:0, otros:0}, otros = [];
-  itemsExtra(v).forEach(([k, x]) => { sum[grupo(k)] += x; if (grupo(k)==='otros' && x) otros.push(k); });
-  const gastos = lnR('Fletes', pesos(c.tarifa)) + lnR('Citas', pesos(sum.cita)) + lnR('Standby', pesos(sum.standby))
-    + (sum.retorno ? lnR('Retorno', pesos(sum.retorno)) : '') + (sum.cargue ? lnR('Cargue', pesos(sum.cargue)) : '')
-    + lnR(otros.length ? `<span title="${esc(otros.join(', '))}">Otros</span>` : 'Otros', pesos(sum.otros))
-    + (hijos.length ? lnR(`<span title="${esc(hijos.flatMap(s => itemsExtra(s).map(([k, x]) => k+' '+pesos(x))).join(', '))}">Subviaje${hijos.length>1?'s':''}</span>`, pesos(costoHijos)) : '')
-    + granR('Total', pesos(totalViaje))
-    + (c.extra ? `<div class="nota">${lnR('Extracostos', `<span style="color:${COLOR_COBRO[c.aprob]};font-weight:600">● ${c.aprob==='Pendiente' ? 'Por aprobar' : c.aprob}</span>`)}${c.aprob!=='Aprobado' ? lnR('Aprobado para facturar', pesos(c.total)) : ''}</div>` : '');
-  const fin = finTransporte(v), lf = fin ? leadFactura(v) : null;
-  const leadF = !fin ? '' : `<div class="pieF"><h4>Lead time facturación</h4>${!lf ? `<span class="sub">Falta la fecha de ${v.operacion==='EXPO' ? 'entrega en puerto' : 'devolución del vacío'}</span>`
-    : `<b style="${!lf.hecho && lf.dias>5 ? 'color:var(--bad)' : ''}">${lf.dias} d</b> <span class="sub">${lf.hecho ? 'facturado'+(v.fechaFactura ? ' '+fd(v.fechaFactura) : '') : 'sin facturar'}</span>`}</div>`;
-  // datos que facturación necesita para la relación a Reckitt
-  // lo que pide facturación: EXPO → RBHY y OBD; IMPO → N° de pedido y contenedor
-  const expo = v.operacion==='EXPO';
-  const datosF = expo ? [[v.rbhy, 'RBHY', x => esc(x)], [v.obd, 'OBD', x => 'OBD '+esc(x)]] : [[v.pedido, 'N° de pedido', x => 'Pedido '+esc(x)], [v.contenedor, 'contenedor', x => esc(x)]];
-  const tiene = datosF.filter(d => d[0]), falta = datosF.filter(d => !d[0]).map(d => d[1]);
-  const docs = (tiene.length || fin) ? `<div class="sub" style="margin:4px 0 2px">${tiene.map(d => d[2](d[0])).join(' · ')}${falta.length && fin ? `${tiene.length ? ' · ' : ''}<span style="color:var(--warn)">Falta ${falta.join(' y ')}</span>` : ''}</div>` : '';
-  return `${fin}${docs}<div class="resumen"><div><h4>Resumen de gastos</h4>${gastos}</div></div>${leadF}`;
-}
-// viaje que no avanza: etiqueta roja junto a la etapa (el detalle, al pasar el mouse)
-function etiquetaSinActualizar(v){
-  const S = window.MODO_CLIENTE ? [] : sinActualizar(v); if (!S.length) return '';
-  const det = S.map(s => 'Sin actualizar: ' + s.msg + '. ' + s.porque).join('\n') + (accionPendiente(v) ? '\nHay una acción LogxIA pendiente en este viaje: revisarla' : '');
-  return `<span class="tg" style="background:color-mix(in srgb, var(--bad) 15%, transparent);color:var(--bad)" title="${esc(det)}">⚠ Sin actualizar: ${esc(S[0].msg)}</span>`;
-}
-function rutaPedido(v){
-  const {P, n} = avance(v);
-  const ini = s => String(s||'').split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]).join('').toUpperCase() || '—';
-  const iso = x => /^\d{4}-\d{2}-\d{2}$/.test(x||'');
-  const dif = (a,b) => iso(a) && iso(b) ? Math.round((new Date(b+'T12:00')-new Date(a+'T12:00'))/864e5) : null;
-  const esperas = P.slice(1).map((p,i)=> P[i][2] && p[2] ? dif(P[i][2], p[2]) : null);
-  // la etapa con su detalle y el color (dominio: etapaAhora, la misma del correo al cliente)
-  const {ahora, tono} = etapaAhora(v, P, n, window.MODO_CLIENTE), col = {cerrado: 'var(--ok)', gris: 'var(--muted)', curso: 'var(--accent)'}[tono];
-  const ref = v.operacion==='IMPO' ? (v.pedido ? 'Pedido '+v.pedido : v.id) : (v.booking ? ['Booking '+v.booking, contenedorDeBooking(v)].filter(Boolean).join(' · ') : v.id);
-  return `<div class="ruta"><div class="dos"><div class="izq">
-    <div class="cab"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
-      ${tagNuevo(v)}<span class="op ${v.operacion}">${v.operacion}</span><b>${esc(v.empresa||'Empresa sin definir')} · ${esc(ref)}</b>
-      <span class="sub">${esc([v.solicitante && 'Solicita '+v.solicitante, v.fwd].filter(Boolean).join(' · '))}</span></div>
-      <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span>${etiquetaSinActualizar(v)}${!window.MODO_CLIENTE && pendientesOps(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)" title="Lo que operaciones debe completar">Falta (operaciones): ${esc(pendientesOps(v).join(' · '))}</span>` : ''}${!window.MODO_CLIENTE && pendientesFact(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--muted) 15%, transparent);color:var(--muted)" title="Para poder facturarlo">Falta (facturación): ${esc(pendientesFact(v).join(' · '))}</span>` : ''}</div>
-    ${lineaNovedad(v)}
-    <div class="cuerpo"><div>
-      <div style="display:flex;align-items:flex-end;gap:2px"><div class="cont"><b style="font-size:12px">${esc(v.contenedor||'—')}</b><div class="sub">${esc(v.unidad||'')}</div></div><div class="cabina"></div></div>
-      <div class="ruedas"><i></i><i></i><i></i><i></i></div>
-      <div class="cond"><div class="ini">${esc(ini(v.conductor))}</div><div style="min-width:0"><b style="font-size:12px;display:block">${esc(v.conductor||'Sin conductor')}</b><span class="sub">${esc(v.placa||'Sin placa')}</span></div></div>
-      ${window.MODO_CLIENTE ? '' : `<button type="button" class="subv" onclick="event.stopPropagation();nuevoSubviaje('${v.id}')"><span>+</span> Subviaje</button>`}
-    </div><div>
-      <div class="linea"><div class="hecho" style="width:${P.length>1 ? Math.min(86, 86*Math.max(0,n-1)/(P.length-1)) : 0}%"></div>
-        ${P.map(([et, lugar, , det], i)=>`<div class="par ${i<n?'ok':i===n?'ya':''}"><div class="pt"></div>${i===n?'<span class="camion">🚚</span>':''}
-          <div class="caja">${et}<b>${esc(lugar)}</b>${det.filter(Boolean).map(esc).join('<br>')}</div></div>`).join('')}</div>
-      <div class="esp"><span></span>${esperas.map(d=> `<span>${d===null?'':d+' d'}</span>`).join('')}</div>
-      ${hijosDe(v).map(s => tarjetaHijo(s, v)).join('')}
-      <div class="pie">${tiemposOperacion(v)}${v.operacion==='IMPO' && demora(v) ? `<span style="color:var(--bad)">${demora(v)} d de demora del vacío</span>`:''}</div>
-    </div></div></div>
-    <div class="der">${window.MODO_CLIENTE ? '' : panelFactura(v, P, n)}</div></div></div>`;   // costos y facturación: solo el equipo
+
+/* ---------- línea de tiempo del viaje: qué entra (novedades, cambios, correos de LogxIA, reprogramaciones, programación) ---------- */
+/* ---------- línea de tiempo del viaje: todo lo que ha pasado (ediciones, correos, cambios de plan, costos, incidentes) ---------- */
+// correos de la bitácora que tocan el viaje (también los ya resueltos y los de viajes cerrados)
+// (más amplio que accionesDe: también el booking dentro de un texto más largo y el pedido citado en el asunto)
+const correosDe = v => (window.BITACORA||[]).filter(b => coincide(v, b) || (compacto(v.booking).length >= 6 && compacto(b.booking).includes(compacto(v.booking))) ||
+  (v.pedido && String(b.asunto||'').includes(String(v.pedido).split('-')[0])));
+
+function eventosDe(v){
+  const E = [], hijos = hijosDe(v), ids = [v.id, ...hijos.map(x => x.id)];
+  const fechaHist = f => String(f||'');
+  // novedades (novedades.js): las del equipo y los cambios que el sistema anota solo desde la fase 2
+  const novs = novedadesDe(v);
+  novs.forEach(n => E.push(delSistema(n) ? {fecha: fechaLocal(n.fecha), tipo: 'Cambio', quien: n.usuario, texto: n.texto}
+    : {fecha: fechaLocal(n.fecha), tipo: n.origen === 'Conductor' ? 'Conductor' : 'Novedad', sub: n.tipo, quien: n.usuario, texto: n.texto}));
+  // un cambio del Historial que ya tiene su novedad automática (misma hora ±3 min) no se repite
+  const minutos = f => { const s = fechaLocal(f); return s.length > 10 ? Date.parse(s + ':00Z') / 6e4 : NaN; };
+  const cambios = novs.filter(delSistema).map(n => minutos(n.fecha));
+  const yaAnotado = f => cambios.some(m => Math.abs(m - minutos(f)) <= 3);
+  historial.filter(x => ids.includes(x.id)).forEach(x => {
+    const t = String(x.observacion||'').replace(/^(EXPO|IMPO) · /, '');
+    if (!t || /^Reprogramaciones:/.test(t) || yaAnotado(x.fecha)) return;
+    // "Mes programado: antes → después" va como evento de programación (de qué cuadro mensual de Reckitt a cuál pasó)
+    const partes = t.split(' | '), prog = partes.find(p => /^Mes programado: /.test(p)), resto = partes.filter(p => p !== prog).join(' | ');
+    if (prog) { const [antes, despues] = prog.replace(/^Mes programado: /, '').split(' → ');
+      E.push({fecha: fechaHist(x.fecha), tipo: 'Programación', quien: x.usuario || '', texto: textoProgramacion(v, antes, despues)}); }
+    if (resto) E.push({fecha: fechaHist(x.fecha), tipo: /^Versión anterior/.test(resto) ? 'Excel' : 'Edición', quien: x.usuario || '', texto: (x.id!==v.id ? `Subviaje ${x.id}: ` : '') + resto});
+  });
+  reprogsDe(v).forEach(r => {
+    const hito = ((HITOS_PLAN[v.operacion]||[]).find(([, , cs]) => cs.includes(r.campo)) || [r.campo])[0];
+    E.push({fecha: r.fecha, tipo: 'Cambio de plan', quien: r.usuario, causa: r.causa, resp: responsable(r.causa), costo: r.costo, incidente: r.incidente,
+      texto: `${hito}: ${r.antes ? fd(r.antes) : '—'} → ${r.despues ? fd(r.despues) : 'sin fecha'}${r.antes && r.despues ? ` (${dDias(r.antes, r.despues) > 0 ? '+' : ''}${dDias(r.antes, r.despues)} d)` : ''}${r.detalle ? ' · '+r.detalle : ''}`});
+  });
+  correosDe(v).forEach(b => E.push({fecha: String(b.fechaCorreo||b.registrado||''), tipo: 'Correo', quien: String(b.remitente||'').replace(/<.*>/, '').trim(),
+    texto: `${b.asunto || ''}${b.accion ? ' → ' + b.accion : ''}`, prioridad: b.prioridad, hecha: b.estadoAccion==='Hecha'}));
+  hijos.forEach(x => E.push({fecha: '', tipo: 'Subviaje', texto: `${x.id}: bodega de paso ${x.patioSub||'—'} · urbano ${x.fechaUrbano ? fd(x.fechaUrbano) : 'sin fecha'}${x.motivoSub ? ' · '+x.motivoSub : ''}`}));
+  if (v.novedad) E.push({fecha: '', tipo: 'Incidente', texto: 'Marcado con novedad' + (v.observacion ? ': ' + v.observacion : '')});
+  return E.sort((a, b) => fechaLocal(b.fecha).localeCompare(fechaLocal(a.fecha)));
 }
 
+// "3 cambios de plan (Reckitt 2, Entrapetrol 1) · costo extra $… · 1 incidente" para la cabecera de la línea de tiempo
+function resumenEventos(E){
+  const cp = E.filter(e => e.tipo==='Cambio de plan'), por = {};
+  cp.forEach(e => { por[e.resp] = (por[e.resp]||0) + 1; });
+  const costo = cp.reduce((t, e) => t + (e.costo||0), 0), inc = cp.filter(e => e.incidente).length + E.filter(e => e.tipo==='Incidente' || e.sub==='Incidente').length;
+  return [cp.length && `<b>${cp.length}</b> cambio${cp.length===1?'':'s'} de plan (${Object.entries(por).map(([r, n]) => `${esc(r)} ${n}`).join(', ')})`,
+    costo && `costo extra <b>${pesos(costo)}</b>`, inc && `<b style="color:var(--bad)">${inc}</b> incidente${inc===1?'':'s'}`].filter(Boolean).join(' · ');
+}
+
+const ICONO_EVENTO = {'Programación':'📋', 'Cambio de plan':'⟲', 'Correo':'✉', 'Edición':'✎', 'Excel':'▦', 'Subviaje':'↪', 'Incidente':'⚠'};
 function abrir(id){
   const v = viajes.find(x=>x.id===id); if (!v) { toast('No se encontró el viaje ' + id); return; }
   editId = id; estadoSel = MARCAS.some(m=>m.k===v.estadoHoja) ? v.estadoHoja : '';
@@ -2643,7 +2707,6 @@ $('#mForm').addEventListener('click', e => {
   if (e.target.id==='addExtra') { $('#mExtras').insertAdjacentHTML('beforeend', filaExtra()); $('#mExtras .exrow:last-child .exc').focus(); }
   else if (e.target.closest('[data-del]')) { e.target.closest('.exrow').remove(); syncExtras(); marcarCambios(); }
 });
-
 /* ---------- llenar datos desde correos (con revisión y aprobación) ---------- */
 let PROP = [];
 // cada área revisa lo suyo: los datos de cobro (relación de Pedro y aprobación de Reckitt) son de Facturación; el resto, de Operaciones
@@ -2782,72 +2845,8 @@ $('#subCrear').onclick = async () => {
   $('#subCrear').disabled = false;
 };
 
-/* ---------- buscar correos ahora: lectura directa del buzón de calidad@ (reglas fijas) ---------- */
-let BARRIDO = [];
-const BODEGAS_CORREO = [[/cortijo/i, 'DHL Cortijo'], [/agecolda/i, 'Agecolda'], [/solistica/i, 'Solistica']];
-async function abrirBarrido(){
-  if (!CFG.SHEETS_API_URL || !window.CLAVE) return toast('Funciona desde el tablero publicado');
-  $('#barridoLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">Leyendo el buzón de calidad@…</div>';
-  $('#barridoUsuario').value = usuarioGuardado() || '';
-  $('#ovBarrido').classList.add('open');
-  try {
-    const r = await fetch(CFG.SHEETS_API_URL + '?formato=json&que=correos&dias=2&clave=' + encodeURIComponent(window.CLAVE));
-    const t = await r.text();
-    let j; try { j = JSON.parse(t); } catch(e) { throw new Error('el servidor aún no tiene permiso para leer el buzón de calidad@'); }
-    if (!j.ok) throw new Error(j.error || 'error');
-    BARRIDO = j.correos || [];
-  } catch(e) { $('#barridoLista').innerHTML = `<div class="sub" style="padding:20px;text-align:center">No se pudo leer el buzón: ${esc(e.message)}.</div>`; return; }
-  pintarBarrido();
-}
-// datos del correo que faltan o cambian en el viaje: {campo: valor} para "Actualizar viaje"
-function cambiosDeCorreo(c){
-  const b = c.enBase || {}, ch = {};
-  if (b.operacion === 'IMPO') {
-    // con subviaje, la fecha del correo es la del urbano (se ve en el subviaje), no la entrega del viaje padre
-    const padre = viajes.find(x => x.id === c.viajeId), conSub = padre && hijosDe(padre).length;
-    if (c.fechaDescargue && c.fechaDescargue !== b.fechaCargue && !conSub) ch.fechaCargue = c.fechaDescargue;
-    if (c.tipo === 'Orden de retiro' && !b.fechaLevante) ch.fechaLevante = c.fecha.slice(0,10);
-    const bod = bodegaDeCorreo(c.lugar);
-    if (bod && !b.bodega) ch.bodega = bod;
-    if (c.contenedor && !b.contenedor) ch.contenedor = c.contenedor;
-    if (c.do && !b.do) ch.do = c.do;
-    if (c.devolucion === 'CLO' && !b.ciudadDevolucion) ch.ciudadDevolucion = 'Cali';
-  }
-  return ch;
-}
-const NOMBRES_CAMPO = {fechaCargue:'entrega en bodega', fechaLevante:'entrega de documentos', bodega:'bodega', contenedor:'contenedor', do:'DO', ciudadDevolucion:'ciudad de devolución'};
-const bodegaDeCorreo = lugar => lugar ? ((BODEGAS_CORREO.find(([re]) => re.test(lugar)) || [null, lugar])[1]) : '';
-const fmtCambio = (k, x) => /^fecha/.test(k) ? fd(x) : x;
-function pintarBarrido(){
-  if (!BARRIDO.length) { $('#barridoLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">No hay correos del ciclo de operación en los últimos 2 días.</div>'; return; }
-  const btn = (txt, act, i, primario) => `<button class="btn${primario?' primary':''}" style="margin:4px 4px 0 0;padding:3px 10px" data-act="${act}" data-i="${i}">${txt}</button>`;
-  const fila = (c, i) => {
-    let estado = '', botones = '';
-    if (c.viajeId) {
-      const ch = cambiosDeCorreo(c), n = Object.keys(ch).length;
-      estado = `<span style="color:var(--ok);font-weight:600">✓ ${esc(c.viajeId)}</span>` +
-        (n ? '<br>' + Object.entries(ch).map(([k, x]) => `<span style="color:var(--warn)">⚠ ${esc(NOMBRES_CAMPO[k]||k)}: ${esc(fmtCambio(k, x))}${k==='fechaCargue' && c.enBase.fechaCargue ? ` (base ${esc(fd(c.enBase.fechaCargue))})` : ''}</span>`).join('<br>') : '<br><span class="sub">al día</span>');
-      botones = (n ? btn(`Actualizar viaje (${n})`, 'aplicar', i, true) : '') + btn('Abrir viaje', 'abrir', i);
-    } else if (c.tipo === 'Programación') {
-      const P = compararProgramacion(c), n = k => P.filas.filter(f => f.accion===k).length;
-      estado = `<b>${c.programacion.length} cargues</b><br><span class="sub">${n('crear')} nuevos · ${n('cambiar')+n('reusar')} con cambios · ${n('igual')} al día${P.fuera.length ? ` · ${P.fuera.length} ya no aparecen` : ''}</span>`;
-      botones = btn('Revisar programación', 'prog', i, true);
-    } else if (c.tipo === 'Comodato') {
-      estado = '<span class="sub">Dato de devolución</span>';
-    } else {
-      estado = `<span style="color:var(--bad);font-weight:600">${c.tipo==='Nueva exportación' ? 'Booking' : 'Pedido'} no está en la base</span>`;
-      botones = btn(c.tipo==='Nueva exportación' ? 'Crear exportación' : 'Crear importación', 'crear', i, true);
-    }
-    botones += btn('Ver correo', 'ver', i);
-    const datos = [c.booking && 'BK '+c.booking, c.rbhy, c.pais, c.do && 'DO '+c.do, c.pedido && 'PO '+c.pedido, c.contenedor].filter(Boolean).map(esc).join(' · ');
-    const desc = [c.lugar, c.fechaDescargue && fd(c.fechaDescargue), c.hora, c.puerto && (c.puerto+(c.terminal?' ('+c.terminal+')':'')), c.devolucion && 'devol. '+c.devolucion].filter(Boolean).map(esc).join(' · ');
-    return `<tr><td class="sub" style="white-space:nowrap">${esc(c.fecha.slice(5,16).replace('T',' '))}</td><td><b>${esc(c.tipo)}</b><br><span class="sub">${esc(c.firma || c.remitente.replace(/<.*>/,''))}</span></td>
-      <td>${datos || '—'}<br><span class="sub" title="${esc(c.asunto)}">${esc(c.asunto.slice(0,70))}${c.asunto.length>70?'…':''}</span></td><td>${desc || '—'}</td><td>${estado}<div>${botones}</div></td></tr>`;
-  };
-  const pend = BARRIDO.filter(c => !c.viajeId && c.tipo !== 'Comodato').length, cambios = BARRIDO.filter(c => c.viajeId && Object.keys(cambiosDeCorreo(c)).length).length;
-  $('#barridoLista').innerHTML = `<div class="tbl-wrap"><table class="prop"><tr><th>Llegó</th><th>Tipo</th><th>Booking · DO · Pedido · Contenedor</th><th>Descargue / retiro</th><th>En la base · qué hacer</th></tr>${BARRIDO.map(fila).join('')}</table></div>
-    <p class="sub" style="margin-top:6px">${BARRIDO.length} correo${BARRIDO.length===1?'':'s'} · ${pend} sin viaje en la base · ${cambios} con datos por actualizar. Lo que cree o actualice queda en el Historial con su nombre.</p>`;
-}
+/* ---------- programación mensual de Reckitt: comparar el cuadro de Jhonier con la base y aplicar (✉ Llenar datos desde correos) ----------
+ * Se carga antes de correos.js: sus botones (#progAplicar…) se conectan allí al cargar la página. */
 /* ---------- programación mensual de cargues (correo de Jhonier): crear los viajes del mes y aplicar los cambios de cada versión ---------- */
 // cuadro mensual de Reckitt en el que está el viaje; sin mes anterior escrito, el de su plan original (ej. Guatemala: de octubre pasó a noviembre)
 function textoProgramacion(v, antes, despues){
@@ -2855,6 +2854,7 @@ function textoProgramacion(v, antes, despues){
   if (!/^\d{4}-\d{2}$/.test(d)) return 'Sin mes programado' + (/^\d{4}-\d{2}$/.test(a) ? ` (antes: ${nombreMes(a)})` : '');
   return `Programado para ${nombreMes(d)}` + (/^\d{4}-\d{2}$/.test(a) && a !== d ? ` · venía de la programación de ${nombreMes(a)}` : '');
 }
+
 // programación mensual: busca el cuadro del mes en los correos; si ya está aplicado, ofrece cerrar la acción
 async function atajoProgramacion(b){
   toast('Buscando el cuadro de programación en los correos…');
@@ -2874,11 +2874,15 @@ async function atajoProgramacion(b){
     abrirProgramacion(c);
   } catch(e) { accionEnCurso = null; toast('No se pudo leer el buzón: ' + e.message); }
 }
+
 let PROG = null;
+
 const CAMPOS_PROG = [['mesProg','Mes programado'],['fechaCargue','Llenado'],['fechaRetiro','Retiro del vacío'],['pais','País'],['unidad','Unidad'],['mn','Motonave'],['cierreDoc','Cierre doc'],
   ['etd','ETD'],['eta','ETA'],['booking','Booking'],['fwd','FWD'],['puerto','Puerto']];
+
 const datosProg = r => ({fechaCargue: r.fechaCargue, fechaRetiro: addDias(r.fechaCargue, -1), pais: r.pais, unidad: r.unidad, mn: r.mn,
   cierreDoc: r.cierreDoc, etd: r.etd, eta: r.eta, booking: r.booking, fwd: r.fwd, puerto: r.puerto});
+
 // cada contenedor de la programación es un viaje: una fila "2X40" son dos contenedores ("1X40" cada uno)
 function contenedoresDe(prog){
   return prog.flatMap(r => {
@@ -2886,6 +2890,7 @@ function contenedoresDe(prog){
     return k === 1 ? [r] : Array.from({length: k}, (_, j) => ({...r, unidad: `1X${m[2]}`, n: `${r.n}.${j + 1}`}));
   });
 }
+
 function compararProgramacion(c){
   const prog = contenedoresDe(c.programacion);
   const mes = c.programacion[0].fechaCargue.slice(0, 7), eq = (a, b) => compacto(a) === compacto(b);
@@ -2958,6 +2963,7 @@ function compararProgramacion(c){
     sinFecha: contenedoresDe(c.programacionSinFecha || [])};   // filas sin fecha de cargue válida: contenedores que aún no se pueden crear
   return {filas, fuera, cuadre};
 }
+
 function abrirProgramacion(c){
   PROG = {c, ...compararProgramacion(c)};
   $('#progUsuario').value = usuarioGuardado() || $('#barridoUsuario').value || '';
@@ -2966,8 +2972,10 @@ function abrirProgramacion(c){
   pintarProgramacion();
   $('#ovProg').classList.add('open');
 }
+
 // fecha legible si es fecha; si no, el texto tal cual (ej. "sin informacion")
 const fv = x => /^\d{4}-\d{2}-\d{2}/.test(x||'') ? fd(x) : (x || '—');
+
 function pintarProgramacion(){
   const ET = {crear:['Nuevo','var(--ok)'], cambiar:['Cambió','var(--warn)'], reusar:['Reutilizar','var(--accent)'], igual:['Al día','var(--muted)'], anulado:['Anulado: no se crea','var(--muted)']};
   const fila = (f, i) => {
@@ -2992,6 +3000,7 @@ function pintarProgramacion(){
     <div class="tbl-wrap"><table class="prop prog"><tr><th></th><th>#</th><th>Cargue</th><th>Destino</th><th>Motonave</th><th>Booking</th><th>En la base · qué se hará</th></tr>${PROG.filas.map(fila).join('')}</table></div>
     ${PROG.fuera.length ? `<p style="margin-top:8px;color:var(--warn)">ℹ No vienen en este envío: ${PROG.fuera.map(v => `<button class="link" onclick="abrir('${v.id}')">${esc(v.id)} ${esc(v.pais||'')} ${fd(v.fechaCargue)}</button>`).join(' · ')}. Jhonier manda la programación por partes: se dejan como están (no se cancelan) hasta que él los mueva o los cancele.</p>` : ''}`;
 }
+
 async function aplicarProgramacion(){
   const usuario = $('#progUsuario').value.trim();
   if (!usuario) { $('#progUsuario').focus(); return toast('Escriba su nombre: queda en el Historial'); }
@@ -3026,7 +3035,72 @@ async function aplicarProgramacion(){
   } catch(e) { toast('No se pudo aplicar: ' + e.message); }
   $('#progAplicar').disabled = false;
 }
-
+/* ---------- buscar correos ahora: lectura directa del buzón de calidad@ (reglas fijas) ---------- */
+let BARRIDO = [];
+const BODEGAS_CORREO = [[/cortijo/i, 'DHL Cortijo'], [/agecolda/i, 'Agecolda'], [/solistica/i, 'Solistica']];
+async function abrirBarrido(){
+  if (!CFG.SHEETS_API_URL || !window.CLAVE) return toast('Funciona desde el tablero publicado');
+  $('#barridoLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">Leyendo el buzón de calidad@…</div>';
+  $('#barridoUsuario').value = usuarioGuardado() || '';
+  $('#ovBarrido').classList.add('open');
+  try {
+    const r = await fetch(CFG.SHEETS_API_URL + '?formato=json&que=correos&dias=2&clave=' + encodeURIComponent(window.CLAVE));
+    const t = await r.text();
+    let j; try { j = JSON.parse(t); } catch(e) { throw new Error('el servidor aún no tiene permiso para leer el buzón de calidad@'); }
+    if (!j.ok) throw new Error(j.error || 'error');
+    BARRIDO = j.correos || [];
+  } catch(e) { $('#barridoLista').innerHTML = `<div class="sub" style="padding:20px;text-align:center">No se pudo leer el buzón: ${esc(e.message)}.</div>`; return; }
+  pintarBarrido();
+}
+// datos del correo que faltan o cambian en el viaje: {campo: valor} para "Actualizar viaje"
+function cambiosDeCorreo(c){
+  const b = c.enBase || {}, ch = {};
+  if (b.operacion === 'IMPO') {
+    // con subviaje, la fecha del correo es la del urbano (se ve en el subviaje), no la entrega del viaje padre
+    const padre = viajes.find(x => x.id === c.viajeId), conSub = padre && hijosDe(padre).length;
+    if (c.fechaDescargue && c.fechaDescargue !== b.fechaCargue && !conSub) ch.fechaCargue = c.fechaDescargue;
+    if (c.tipo === 'Orden de retiro' && !b.fechaLevante) ch.fechaLevante = c.fecha.slice(0,10);
+    const bod = bodegaDeCorreo(c.lugar);
+    if (bod && !b.bodega) ch.bodega = bod;
+    if (c.contenedor && !b.contenedor) ch.contenedor = c.contenedor;
+    if (c.do && !b.do) ch.do = c.do;
+    if (c.devolucion === 'CLO' && !b.ciudadDevolucion) ch.ciudadDevolucion = 'Cali';
+  }
+  return ch;
+}
+const NOMBRES_CAMPO = {fechaCargue:'entrega en bodega', fechaLevante:'entrega de documentos', bodega:'bodega', contenedor:'contenedor', do:'DO', ciudadDevolucion:'ciudad de devolución'};
+const bodegaDeCorreo = lugar => lugar ? ((BODEGAS_CORREO.find(([re]) => re.test(lugar)) || [null, lugar])[1]) : '';
+const fmtCambio = (k, x) => /^fecha/.test(k) ? fd(x) : x;
+function pintarBarrido(){
+  if (!BARRIDO.length) { $('#barridoLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">No hay correos del ciclo de operación en los últimos 2 días.</div>'; return; }
+  const btn = (txt, act, i, primario) => `<button class="btn${primario?' primary':''}" style="margin:4px 4px 0 0;padding:3px 10px" data-act="${act}" data-i="${i}">${txt}</button>`;
+  const fila = (c, i) => {
+    let estado = '', botones = '';
+    if (c.viajeId) {
+      const ch = cambiosDeCorreo(c), n = Object.keys(ch).length;
+      estado = `<span style="color:var(--ok);font-weight:600">✓ ${esc(c.viajeId)}</span>` +
+        (n ? '<br>' + Object.entries(ch).map(([k, x]) => `<span style="color:var(--warn)">⚠ ${esc(NOMBRES_CAMPO[k]||k)}: ${esc(fmtCambio(k, x))}${k==='fechaCargue' && c.enBase.fechaCargue ? ` (base ${esc(fd(c.enBase.fechaCargue))})` : ''}</span>`).join('<br>') : '<br><span class="sub">al día</span>');
+      botones = (n ? btn(`Actualizar viaje (${n})`, 'aplicar', i, true) : '') + btn('Abrir viaje', 'abrir', i);
+    } else if (c.tipo === 'Programación') {
+      const P = compararProgramacion(c), n = k => P.filas.filter(f => f.accion===k).length;
+      estado = `<b>${c.programacion.length} cargues</b><br><span class="sub">${n('crear')} nuevos · ${n('cambiar')+n('reusar')} con cambios · ${n('igual')} al día${P.fuera.length ? ` · ${P.fuera.length} ya no aparecen` : ''}</span>`;
+      botones = btn('Revisar programación', 'prog', i, true);
+    } else if (c.tipo === 'Comodato') {
+      estado = '<span class="sub">Dato de devolución</span>';
+    } else {
+      estado = `<span style="color:var(--bad);font-weight:600">${c.tipo==='Nueva exportación' ? 'Booking' : 'Pedido'} no está en la base</span>`;
+      botones = btn(c.tipo==='Nueva exportación' ? 'Crear exportación' : 'Crear importación', 'crear', i, true);
+    }
+    botones += btn('Ver correo', 'ver', i);
+    const datos = [c.booking && 'BK '+c.booking, c.rbhy, c.pais, c.do && 'DO '+c.do, c.pedido && 'PO '+c.pedido, c.contenedor].filter(Boolean).map(esc).join(' · ');
+    const desc = [c.lugar, c.fechaDescargue && fd(c.fechaDescargue), c.hora, c.puerto && (c.puerto+(c.terminal?' ('+c.terminal+')':'')), c.devolucion && 'devol. '+c.devolucion].filter(Boolean).map(esc).join(' · ');
+    return `<tr><td class="sub" style="white-space:nowrap">${esc(c.fecha.slice(5,16).replace('T',' '))}</td><td><b>${esc(c.tipo)}</b><br><span class="sub">${esc(c.firma || c.remitente.replace(/<.*>/,''))}</span></td>
+      <td>${datos || '—'}<br><span class="sub" title="${esc(c.asunto)}">${esc(c.asunto.slice(0,70))}${c.asunto.length>70?'…':''}</span></td><td>${desc || '—'}</td><td>${estado}<div>${botones}</div></td></tr>`;
+  };
+  const pend = BARRIDO.filter(c => !c.viajeId && c.tipo !== 'Comodato').length, cambios = BARRIDO.filter(c => c.viajeId && Object.keys(cambiosDeCorreo(c)).length).length;
+  $('#barridoLista').innerHTML = `<div class="tbl-wrap"><table class="prop"><tr><th>Llegó</th><th>Tipo</th><th>Booking · DO · Pedido · Contenedor</th><th>Descargue / retiro</th><th>En la base · qué hacer</th></tr>${BARRIDO.map(fila).join('')}</table></div>
+    <p class="sub" style="margin-top:6px">${BARRIDO.length} correo${BARRIDO.length===1?'':'s'} · ${pend} sin viaje en la base · ${cambios} con datos por actualizar. Lo que cree o actualice queda en el Historial con su nombre.</p>`;
+}
 async function aplicarDesdeCorreo(c){
   const usuario = $('#barridoUsuario').value.trim();
   if (!usuario) { $('#barridoUsuario').focus(); return toast('Escriba su nombre para actualizar el viaje'); }
@@ -3089,7 +3163,6 @@ $('#ovBarrido').onclick = e => {
   else if (c.tipo === 'Nueva exportación') crearExpoDesdeCorreo(c);
   else crearDesdeCorreo(c);
 };
-
 // documentos.js · "Documentos de contenedores": los adjuntos de la programación de Jhonier (confirmación del booking, carta de
 // retiro…) que Apps Script archiva en Drive por mes (pestañas Documentos y Documentos por booking). Busca por booking, destino o
 // viaje y marca lo que falta. Solo lee.
@@ -3208,52 +3281,6 @@ function listaCorta(L, titulo){
      <span class="sub">· ${v.operacion} ${esc(v.pais||'')} · llenado ${fd(v.fechaCargue)}${v.placa?'':` · ${esc(v.booking||'sin booking')}`}</span> ${sitTag(v)}</li>`).join('')}</ol>
     ¿Cuál quieres ver? Escribe el número o tócalo.`;
 }
-/* ---------- línea de tiempo del viaje: todo lo que ha pasado (ediciones, correos, cambios de plan, costos, incidentes) ---------- */
-// correos de la bitácora que tocan el viaje (también los ya resueltos y los de viajes cerrados)
-// (más amplio que accionesDe: también el booking dentro de un texto más largo y el pedido citado en el asunto)
-const correosDe = v => (window.BITACORA||[]).filter(b => coincide(v, b) || (compacto(v.booking).length >= 6 && compacto(b.booking).includes(compacto(v.booking))) ||
-  (v.pedido && String(b.asunto||'').includes(String(v.pedido).split('-')[0])));
-function eventosDe(v){
-  const E = [], hijos = hijosDe(v), ids = [v.id, ...hijos.map(x => x.id)];
-  const fechaHist = f => String(f||'');
-  // novedades (novedades.js): las del equipo y los cambios que el sistema anota solo desde la fase 2
-  const novs = novedadesDe(v);
-  novs.forEach(n => E.push(delSistema(n) ? {fecha: fechaLocal(n.fecha), tipo: 'Cambio', quien: n.usuario, texto: n.texto}
-    : {fecha: fechaLocal(n.fecha), tipo: n.origen === 'Conductor' ? 'Conductor' : 'Novedad', sub: n.tipo, quien: n.usuario, texto: n.texto}));
-  // un cambio del Historial que ya tiene su novedad automática (misma hora ±3 min) no se repite
-  const minutos = f => { const s = fechaLocal(f); return s.length > 10 ? Date.parse(s + ':00Z') / 6e4 : NaN; };
-  const cambios = novs.filter(delSistema).map(n => minutos(n.fecha));
-  const yaAnotado = f => cambios.some(m => Math.abs(m - minutos(f)) <= 3);
-  historial.filter(x => ids.includes(x.id)).forEach(x => {
-    const t = String(x.observacion||'').replace(/^(EXPO|IMPO) · /, '');
-    if (!t || /^Reprogramaciones:/.test(t) || yaAnotado(x.fecha)) return;
-    // "Mes programado: antes → después" va como evento de programación (de qué cuadro mensual de Reckitt a cuál pasó)
-    const partes = t.split(' | '), prog = partes.find(p => /^Mes programado: /.test(p)), resto = partes.filter(p => p !== prog).join(' | ');
-    if (prog) { const [antes, despues] = prog.replace(/^Mes programado: /, '').split(' → ');
-      E.push({fecha: fechaHist(x.fecha), tipo: 'Programación', quien: x.usuario || '', texto: textoProgramacion(v, antes, despues)}); }
-    if (resto) E.push({fecha: fechaHist(x.fecha), tipo: /^Versión anterior/.test(resto) ? 'Excel' : 'Edición', quien: x.usuario || '', texto: (x.id!==v.id ? `Subviaje ${x.id}: ` : '') + resto});
-  });
-  reprogsDe(v).forEach(r => {
-    const hito = ((HITOS_PLAN[v.operacion]||[]).find(([, , cs]) => cs.includes(r.campo)) || [r.campo])[0];
-    E.push({fecha: r.fecha, tipo: 'Cambio de plan', quien: r.usuario, causa: r.causa, resp: responsable(r.causa), costo: r.costo, incidente: r.incidente,
-      texto: `${hito}: ${r.antes ? fd(r.antes) : '—'} → ${r.despues ? fd(r.despues) : 'sin fecha'}${r.antes && r.despues ? ` (${dDias(r.antes, r.despues) > 0 ? '+' : ''}${dDias(r.antes, r.despues)} d)` : ''}${r.detalle ? ' · '+r.detalle : ''}`});
-  });
-  correosDe(v).forEach(b => E.push({fecha: String(b.fechaCorreo||b.registrado||''), tipo: 'Correo', quien: String(b.remitente||'').replace(/<.*>/, '').trim(),
-    texto: `${b.asunto || ''}${b.accion ? ' → ' + b.accion : ''}`, prioridad: b.prioridad, hecha: b.estadoAccion==='Hecha'}));
-  hijos.forEach(x => E.push({fecha: '', tipo: 'Subviaje', texto: `${x.id}: bodega de paso ${x.patioSub||'—'} · urbano ${x.fechaUrbano ? fd(x.fechaUrbano) : 'sin fecha'}${x.motivoSub ? ' · '+x.motivoSub : ''}`}));
-  if (v.novedad) E.push({fecha: '', tipo: 'Incidente', texto: 'Marcado con novedad' + (v.observacion ? ': ' + v.observacion : '')});
-  return E.sort((a, b) => fechaLocal(b.fecha).localeCompare(fechaLocal(a.fecha)));
-}
-// "3 cambios de plan (Reckitt 2, Entrapetrol 1) · costo extra $… · 1 incidente" para la cabecera de la línea de tiempo
-function resumenEventos(E){
-  const cp = E.filter(e => e.tipo==='Cambio de plan'), por = {};
-  cp.forEach(e => { por[e.resp] = (por[e.resp]||0) + 1; });
-  const costo = cp.reduce((t, e) => t + (e.costo||0), 0), inc = cp.filter(e => e.incidente).length + E.filter(e => e.tipo==='Incidente' || e.sub==='Incidente').length;
-  return [cp.length && `<b>${cp.length}</b> cambio${cp.length===1?'':'s'} de plan (${Object.entries(por).map(([r, n]) => `${esc(r)} ${n}`).join(', ')})`,
-    costo && `costo extra <b>${pesos(costo)}</b>`, inc && `<b style="color:var(--bad)">${inc}</b> incidente${inc===1?'':'s'}`].filter(Boolean).join(' · ');
-}
-const ICONO_EVENTO = {'Programación':'📋', 'Cambio de plan':'⟲', 'Correo':'✉', 'Edición':'✎', 'Excel':'▦', 'Subviaje':'↪', 'Incidente':'⚠'};
-
 function verDeLista(i){
   const v = ultimaLista[i]; if (!v) return;
   burbuja(String(i+1), 'me');
