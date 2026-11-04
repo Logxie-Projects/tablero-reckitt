@@ -2401,15 +2401,19 @@ function haceCuanto(f){
   const ayer = new Date(ahora.fecha + 'T12:00'); ayer.setDate(ayer.getDate() - 1);
   return `${dia === ayer.toISOString().slice(0, 10) ? 'ayer' : fd(dia)} ${hora}`;
 }
+// en los cambios, una observación editada sale como "Observación actualizada" (el texto completo está en la Observación del viaje):
+// se corta hasta el siguiente dato cambiado (" · Etiqueta: … →" o " | Etiqueta: … →")
+const sinObservacion = t => String(t || '').replace(/Observaci[oó]n: [\s\S]*?(?=(?: · | \| )[A-ZÁÉÍÓÚÑ][^:·|]{1,40}: [^·|]*→|$)/g, 'Observación actualizada');
+const textoNovedad = n => n.tipo === 'Cambio' ? sinObservacion(n.texto) : n.texto;
 // la línea de la tarjeta: la última novedad con hora y autor; sin novedades, la observación como antes
 function lineaNovedad(v){
   const n = ultimaNovedad(v), estilo = 'style="margin:-4px 0 10px"';
-  if (n) return `<div class="sub nov-ult" ${estilo} title="${esc(fechaNovedad(n))}">🕑 <b>${esc(haceCuanto(n.fecha))}</b> · ${esc(n.usuario)} · ${n.origen === 'Conductor' ? '🚛 Conductor' : iconoNovedad(n.tipo) + ' ' + esc(n.tipo)}: ${esc(n.texto)}${novedadesDe(v).length > 1 ? ` <span class="sub">(+${novedadesDe(v).length - 1})</span>` : ''}</div>`;
+  if (n) return `<div class="sub nov-ult" ${estilo} title="${esc(fechaNovedad(n))}">🕑 <b>${esc(haceCuanto(n.fecha))}</b> · ${esc(n.usuario)} · ${n.origen === 'Conductor' ? '🚛 Conductor' : iconoNovedad(n.tipo) + ' ' + esc(n.tipo)}: ${esc(textoNovedad(n))}${novedadesDe(v).length > 1 ? ` <span class="sub">(+${novedadesDe(v).length - 1})</span>` : ''}</div>`;
   return v.observacion ? `<div class="sub" ${estilo}>💬 ${esc(v.observacion)}</div>` : '';
 }
 const fechaNovedad = n => { const f = fechaLocal(n.fecha); return f ? `${fd(f)}${f.length > 10 ? ' ' + f.slice(11, 16) : ''}` : 'sin hora'; };
 // columna Observación de la tabla: la última novedad (con cuándo y quién) o la observación
-const textoObservacion = v => { const n = ultimaNovedad(v); return n ? `${haceCuanto(n.fecha)} · ${n.usuario}: ${n.texto}` : (v.observacion || ''); };
+const textoObservacion = v => { const n = ultimaNovedad(v); return n ? `${haceCuanto(n.fecha)} · ${n.usuario}: ${textoNovedad(n)}` : (v.observacion || ''); };
 
 // en la ventana del viaje: agregar (equipo) y la línea de tiempo única del viaje (fase 2): novedades del equipo, cambios
 // guardados, correos de LogxIA, reprogramaciones y programación (eventosDe, linea-tiempo.js), con filtros; la nota fija al final
@@ -2480,7 +2484,7 @@ function eventosDe(v){
   const fechaHist = f => String(f||'');
   // novedades (novedades.js): las del equipo y los cambios que el sistema anota solo desde la fase 2
   const novs = novedadesDe(v);
-  novs.forEach(n => E.push(delSistema(n) ? {fecha: fechaLocal(n.fecha), tipo: 'Cambio', quien: n.usuario, texto: n.texto}
+  novs.forEach(n => E.push(delSistema(n) ? {fecha: fechaLocal(n.fecha), tipo: 'Cambio', quien: n.usuario, texto: sinObservacion(n.texto)}
     : {fecha: fechaLocal(n.fecha), tipo: n.origen === 'Conductor' ? 'Conductor' : 'Novedad', sub: n.tipo, quien: n.usuario, texto: n.texto}));
   // un cambio del Historial que ya tiene su novedad automática (misma hora ±3 min) no se repite
   const minutos = f => { const s = fechaLocal(f); return s.length > 10 ? Date.parse(s + ':00Z') / 6e4 : NaN; };
@@ -2493,7 +2497,7 @@ function eventosDe(v){
     const partes = t.split(' | '), prog = partes.find(p => /^Mes programado: /.test(p)), resto = partes.filter(p => p !== prog).join(' | ');
     if (prog) { const [antes, despues] = prog.replace(/^Mes programado: /, '').split(' → ');
       E.push({fecha: fechaHist(x.fecha), tipo: 'Programación', quien: x.usuario || '', texto: textoProgramacion(v, antes, despues)}); }
-    if (resto) E.push({fecha: fechaHist(x.fecha), tipo: /^Versión anterior/.test(resto) ? 'Excel' : 'Edición', quien: x.usuario || '', texto: (x.id!==v.id ? `Subviaje ${x.id}: ` : '') + resto});
+    if (resto) E.push({fecha: fechaHist(x.fecha), tipo: /^Versión anterior/.test(resto) ? 'Excel' : 'Edición', quien: x.usuario || '', texto: (x.id!==v.id ? `Subviaje ${x.id}: ` : '') + sinObservacion(resto)});
   });
   reprogsDe(v).forEach(r => {
     const hito = ((HITOS_PLAN[v.operacion]||[]).find(([, , cs]) => cs.includes(r.campo)) || [r.campo])[0];
