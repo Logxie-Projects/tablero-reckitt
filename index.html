@@ -348,6 +348,16 @@ tr.dia-reunion td{background:var(--accent-soft);color:var(--text);font-weight:70
 h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;padding:8px 12px;border-radius:8px;margin:14px 0 8px}
 .pasos-reunion{font-size:12px;color:var(--accent);font-weight:600;margin-top:4px;min-width:160px}
 #leanTablero .pasos-reunion{margin:0 0 4px 2px}
+/* novedades del viaje (novedades.js): agregar con tipo, lista con hora y autor, última en la tarjeta */
+.mgrupo.nov{margin-top:0}
+.nov-tipos{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 8px}
+.nov-fila{display:flex;gap:8px;align-items:flex-start}
+.nov-fila textarea{flex:1;min-height:44px}
+#novLista{margin-top:10px;max-height:260px;overflow:auto}
+.nov-it{display:flex;gap:8px;padding:6px 0;border-top:1px solid var(--border)}
+.nov-ic{width:20px;text-align:center;flex:none}
+.nov-nota{opacity:.85}
+.nov-ult b{color:var(--text)}
 </style>
 </head>
 <body>
@@ -1185,6 +1195,7 @@ async function cargar(){
     window.MODO_CLIENTE = !j.interno;
     window.BITACORA = j.bitacora || [];
     window.TURNO = j.turno || [];
+    window.NOVEDADES = j.novedades || [];   // novedades de cada viaje, con hora y autor (novedades.js)
     window.PREGUNTAS = j.preguntas || [];   // preguntas al agente LogxIA (preguntas.js)
     window.TURNOS_C = j.turnosConductores || [];   // conductores enturnados y disponibles (app Viajes ETP)
     window.CONDUCTORES = j.conductores || [];
@@ -1772,7 +1783,7 @@ $('#v-turno').onclick = e => {   // incluye el reloj de la ronda (#turnoReloj)
     if (confirm(`¿${d.tAprobar ? 'Aprobar' : 'Rechazar'} esta excepción como Gerencia?\n\nQueda registrado con su nombre y la hora.`)) marcarRevisado((d.tAprobar ? 'ok|' : 'no|') + k); }
   else if (d.tAbrir) abrir(d.tAbrir);
   else if (d.tActualizar) abrir(d.tActualizar);   // la ventana del viaje ofrece el siguiente paso (→ etapa hoy) y los datos
-  else if (d.tNovedad) { abrir(d.tNovedad); const b = $('#mStates [data-e="Novedad"]'); if (b && !b.classList.contains('on')) b.click(); const o = $('#mForm [data-k="observacion"]'); if (o) { o.scrollIntoView({block: 'center'}); o.focus(); } }
+  else if (d.tNovedad) { abrir(d.tNovedad); const b = $('#mStates [data-e="Novedad"]'); if (b && !b.classList.contains('on')) b.click(); $('[data-tnov="Incidente"]')?.click(); const o = $('#novTexto'); if (o) { o.scrollIntoView({block: 'center'}); o.focus(); } }   // novedades.js
   else if (d.tRev) marcarRevisado(d.tRev);
   else if (d.tHecha) marcarHecha(d.tHecha);
   else if (d.tNoetp) marcarHecha(d.tNoetp, true);
@@ -2111,7 +2122,7 @@ function renderTabla(){
     if (k==='estado') return `<td>${pill(val)}${celdaConductor(v)}</td>`;
     if (k==='operacion') return `<td><span class="op ${val}">${val}</span></td>`;
     if (k==='placa') return `<td>${val?`<span class="placa">${esc(val)}</span>`:'<span class="missing">Sin asignar</span>'}</td>`;
-    if (k==='observacion') return `<td class="obs">${esc(val)}</td>`;
+    if (k==='observacion') return `<td class="obs">${esc(textoObservacion(v))}</td>`;   // novedades.js: la última novedad o la nota
     if (k==='avance') return `<td>${miniAvance(v)}</td>`;
     if (k==='lead') return `<td style="white-space:nowrap">${celdaLead(v)}</td>`;
     if (k==='cobro') return `<td style="white-space:nowrap">${celdaCobro(v)}</td>`;
@@ -2141,6 +2152,65 @@ function renderMotonaves(){
     </div>`; }).join('');
 }
 
+/* ---------- novedades del viaje: la bitácora con hora y autor (fase 1) ----------
+ * Cada novedad es una fila de la pestaña "Novedades del viaje" (Base.gs): cuándo, viaje, quién, tipo, texto y origen. No se
+ * editan ni se borran: así queda el seguimiento. El campo Observación sigue siendo la nota fija del viaje (programación,
+ * bodega de cargue: la leen correos.js y viaje.js) y se muestra al final como "Nota del viaje (sin hora)".
+ * Las "Interna" solo las ve el equipo (el backend no se las manda a Reckitt).
+ * Lo usan viaje.js (lineaNovedad en la tarjeta, bloqueNovedades en la ventana), tabla.js (columna Observación) y turno.js. */
+const TIPOS_NOVEDAD = [['Status', '📍'], ['Acuerdo con Reckitt', '🤝'], ['Incidente', '⚠'], ['Pendiente', '⏳'], ['Interna', '🔒']];
+const iconoNovedad = t => (TIPOS_NOVEDAD.find(x => x[0] === t) || [, '•'])[1];
+// las del viaje y sus subviajes, la más nueva primero
+const novedadesDe = v => { const ids = [v.id, ...viajes.filter(x => x.padre === v.id).map(x => x.id)];
+  return (window.NOVEDADES || []).filter(n => ids.includes(String(n.viaje))).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))); };
+const ultimaNovedad = v => novedadesDe(v)[0];
+// "hace 15 min", "hace 3 h", "ayer 15:20", "lun 3 nov 10:42"
+function haceCuanto(f){
+  if (!f) return 'sin hora';
+  const ahora = ahoraBogota(), dia = String(f).slice(0, 10), hora = String(f).slice(11, 16);
+  if (dia === ahora.fecha) { const min = ahora.min - (Number(hora.slice(0, 2)) * 60 + Number(hora.slice(3, 5)));
+    return min < 1 ? 'ahora' : min < 60 ? `hace ${min} min` : `hace ${Math.floor(min / 60)} h`; }
+  const ayer = new Date(ahora.fecha + 'T12:00'); ayer.setDate(ayer.getDate() - 1);
+  return `${dia === ayer.toISOString().slice(0, 10) ? 'ayer' : fd(dia)} ${hora}`;
+}
+// la línea de la tarjeta: la última novedad con hora y autor; sin novedades, la observación como antes
+function lineaNovedad(v){
+  const n = ultimaNovedad(v), estilo = 'style="margin:-4px 0 10px"';
+  if (n) return `<div class="sub nov-ult" ${estilo} title="${esc(fechaNovedad(n))}">🕑 <b>${esc(haceCuanto(n.fecha))}</b> · ${esc(n.usuario)} · ${iconoNovedad(n.tipo)} ${esc(n.tipo)}: ${esc(n.texto)}${novedadesDe(v).length > 1 ? ` <span class="sub">(+${novedadesDe(v).length - 1})</span>` : ''}</div>`;
+  return v.observacion ? `<div class="sub" ${estilo}>💬 ${esc(v.observacion)}</div>` : '';
+}
+const fechaNovedad = n => n.fecha ? `${fd(n.fecha)} ${String(n.fecha).slice(11, 16)}` : 'sin hora';
+// columna Observación de la tabla: la última novedad (con cuándo y quién) o la observación
+const textoObservacion = v => { const n = ultimaNovedad(v); return n ? `${haceCuanto(n.fecha)} · ${n.usuario}: ${n.texto}` : (v.observacion || ''); };
+
+// en la ventana del viaje: agregar (equipo) y la lista, de la más nueva a la más vieja, con la nota fija al final
+let tipoNovedad = 'Status';
+function bloqueNovedades(v){
+  const L = novedadesDe(v);
+  const form = window.MODO_CLIENTE ? '' : `<div class="nov-form">
+      <div class="nov-tipos">${TIPOS_NOVEDAD.map(([t, i]) => `<button type="button" class="chip ${t === tipoNovedad ? 'on' : ''}" data-tnov="${esc(t)}" title="${t === 'Interna' ? 'Solo la ve el equipo de Entrapetrol' : 'La ve también Reckitt'}">${i} ${esc(t)}</button>`).join('')}</div>
+      <div class="nov-fila"><textarea id="novTexto" rows="2" placeholder="Qué pasó. Ej: Contenedor cargado, sale hacia bodega Reckitt"></textarea>
+      <button type="button" class="btn primary" id="novAgregar" onclick="agregarNovedad('${v.id}')">Agregar novedad</button></div></div>`;
+  const items = L.map(n => `<div class="nov-it"><span class="nov-ic">${iconoNovedad(n.tipo)}</span><div><span class="sub">${esc(fechaNovedad(n))} · ${esc(n.usuario)}${n.origen && n.origen !== 'Equipo' ? ' · ' + esc(n.origen) : ''}</span>
+      <div><b>${esc(n.tipo)}</b> · ${esc(n.texto)}</div></div></div>`).join('')
+    + (v.observacion ? `<div class="nov-it nov-nota"><span class="nov-ic">📌</span><div><span class="sub">Nota del viaje (sin hora) · se edita abajo en Observación</span><div>${esc(v.observacion)}</div></div></div>` : '');
+  return `<fieldset class="mgrupo nov"><legend>Novedades del viaje${L.length ? ` · ${L.length}` : ''}</legend>${form}<div id="novLista">${items || '<p class="sub">Aún no hay novedades.</p>'}</div></fieldset>`;
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-tnov]'); if (!b) return;
+  tipoNovedad = b.dataset.tnov; document.querySelectorAll('[data-tnov]').forEach(x => x.classList.toggle('on', x === b)); });
+async function agregarNovedad(id){
+  const t = $('#novTexto'), texto = t.value.trim(); if (!texto) { t.focus(); return; }
+  const usuario = pedirUsuario('¿Quién eres? Queda como autor de la novedad'); if (!usuario) return;
+  const btn = $('#novAgregar'); btn.disabled = true; btn.textContent = 'Guardando…';
+  try {
+    const j = await api('novedadViaje', {id, usuario, tipo: tipoNovedad, texto});
+    if (!j.ok) throw new Error(j.error || 'error');
+    window.NOVEDADES = j.novedades || window.NOVEDADES;
+    const v = viajes.find(x => x.id === id);
+    $('#mNovedades').innerHTML = bloqueNovedades(v);
+    render(); toast('Novedad guardada');
+  } catch(e) { toast('No se guardó la novedad: ' + e.message); btn.disabled = false; btn.textContent = 'Agregar novedad'; }
+}
 /* ---------- ventana del viaje (actualización) y modo lean: ruta del pedido ---------- */
 // paradas según la operación: [etiqueta, lugar, fecha que la cumple, detalle]
 // el equipo anota la entrega en la observación o en la tirilla aunque no llene la fecha
@@ -2284,7 +2354,7 @@ function rutaPedido(v){
       ${tagNuevo(v)}<span class="op ${v.operacion}">${v.operacion}</span><b>${esc(v.empresa||'Empresa sin definir')} · ${esc(ref)}</b>
       <span class="sub">${esc([v.solicitante && 'Solicita '+v.solicitante, v.fwd].filter(Boolean).join(' · '))}</span></div>
       <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span>${etiquetaSinActualizar(v)}${!window.MODO_CLIENTE && pendientesOps(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)" title="Lo que operaciones debe completar">Falta (operaciones): ${esc(pendientesOps(v).join(' · '))}</span>` : ''}${!window.MODO_CLIENTE && pendientesFact(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--muted) 15%, transparent);color:var(--muted)" title="Para poder facturarlo">Falta (facturación): ${esc(pendientesFact(v).join(' · '))}</span>` : ''}</div>
-    ${v.observacion ? `<div class="sub" style="margin:-4px 0 10px">💬 ${esc(v.observacion)}</div>` : ''}
+    ${lineaNovedad(v)}
     <div class="cuerpo"><div>
       <div style="display:flex;align-items:flex-end;gap:2px"><div class="cont"><b style="font-size:12px">${esc(v.contenedor||'—')}</b><div class="sub">${esc(v.unidad||'')}</div></div><div class="cabina"></div></div>
       <div class="ruedas"><i></i><i></i><i></i><i></i></div>
@@ -2390,8 +2460,10 @@ function pintarForm(v){
   };
   const grupo = (titulo, cs) => `<fieldset class="mgrupo"><legend>${titulo}</legend><div class="fgrid3">${cs.map(campo).join('')}</div></fieldset>`;
   const calc = v.operacion==='IMPO' ? `<p class="sub" style="margin:8px 2px 0">Fecha límite de devolución <b>${fd(v.fechaLimite)}</b>${demora(v) ? ` · <b style="color:var(--bad)">${demora(v)} d de demora</b>` : ''} · se calculan solas con la ciudad y la entrega en bodega.</p>` : '';
-  $('#mForm').innerHTML = (v.padre ? CAMPOS_SUB.map(([t, cs]) => grupo(t, cs)).join('') : grupo('Viaje', CAMPOS_VIAJE) + CAMPOS_ETAPA[v.operacion].map(([t, cs]) => grupo(t, cs)).join('') + calc) +
-    `<div class="full" style="margin-top:12px"><label>Observación / novedad</label><textarea data-k="observacion" placeholder="Ej: Cita de descargue 9 am, en fila en patio…">${esc(v.observacion||'')}</textarea></div>`;
+  // primero las novedades (lo que más se escribe, con hora y autor: novedades.js); la Observación queda como nota fija del viaje
+  $('#mForm').innerHTML = `<div id="mNovedades">${bloqueNovedades(v)}</div>` +
+    (v.padre ? CAMPOS_SUB.map(([t, cs]) => grupo(t, cs)).join('') : grupo('Viaje', CAMPOS_VIAJE) + CAMPOS_ETAPA[v.operacion].map(([t, cs]) => grupo(t, cs)).join('') + calc) +
+    `<div class="full" style="margin-top:12px"><label>Observación (nota fija del viaje) <span class="sub">· lo que pasa día a día va en Novedades, arriba</span></label><textarea data-k="observacion" placeholder="Ej: Programación nov · cargue en DHL">${esc(v.observacion||'')}</textarea></div>`;
   const lista = (id, k) => { $('#'+id).innerHTML = [...new Set(viajes.map(x=>x[k]).filter(Boolean))].sort().map(x=>`<option value="${esc(x)}">`).join(''); };
   $('#dlExtra').innerHTML = [...new Set([...CONCEPTOS_EXTRA, ...viajes.flatMap(x=>itemsExtra(x).map(i=>i[0]))])].map(x=>`<option value="${esc(x)}">`).join('');
   lista('dlPatio','patio'); lista('dlCond','conductor'); lista('dlPlaca','placa'); lista('dlFwd','fwd');
