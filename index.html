@@ -840,9 +840,28 @@ function clavesBusqueda(v){
   const c = L.filter(([, x]) => String(x||'').trim() && !/^(sin info|pend|pte)/i.test(String(x)));
   return c.length ? c : (v.placa ? [['Placa', v.placa]] : []);
 }
+// contenedor y placa: un contenedor es 4 letras + 7 números (ISO 6346, ej. MSKU1234567); una placa colombiana, 3 letras + 3 números
+// (o 3 letras, 2 números y 1 letra en motos). Lo que se escribe en uno con el formato del otro es un error de digitación.
+const limpioId = x => String(x || '').toUpperCase().replace(/[\s.\-_/]/g, '');
+const pareceContenedor = x => /^[A-Z]{4}\d{7}$/.test(limpioId(x));
+const parecePlaca = x => /^[A-Z]{3}\d{2}[A-Z0-9]$/.test(limpioId(x));
+// qué tiene de malo un valor de contenedor o placa ('' = está bien); lo usan validar() y el tablero antes de guardar
+function datoMalEscrito(campo, valor){
+  const x = limpioId(valor);
+  if (!x) return '';
+  if (campo === 'contenedor' && !pareceContenedor(x))
+    return parecePlaca(x) ? `"${valor}" parece una placa, no un contenedor (el contenedor tiene 4 letras y 7 números, ej. MSKU1234567)`
+      : `"${valor}" no es un número de contenedor (4 letras y 7 números, ej. MSKU1234567)`;
+  if (campo === 'placa' && pareceContenedor(x)) return `"${valor}" parece un contenedor, no una placa (la placa tiene 3 letras y 3 números, ej. ABC123)`;
+  return '';
+}
+
 // cada hallazgo dice "por qué": qué fecha o qué hecho hace que haya que llenarlo ya
 function validar(v){
   const e = [], add = (sev, campo, msg, tipo = 'Error', porque = '') => e.push({v, sev, campo, msg, tipo, porque});
+  // contenedor o placa escritos en el campo equivocado (pasó en EXPO-009: la placa SYL424 en Contenedor)
+  [['contenedor', 'Contenedor'], ['placa', 'Placa']].forEach(([k, nombre]) => { const m = datoMalEscrito(k, v[k]);
+    if (m && !['Cancelado'].includes(situacion(v))) add('Alta', nombre, m, 'Error', 'Con el dato equivocado no se cruzan los correos ni las asignaciones del viaje'); });
   if (v.padre) {
     // subviaje (regla 4, igual que el reporte por correo): vehículo, destino final y fecha del urbano mientras esté abierto
     if (!['Cerrado','Cancelado'].includes(situacion(v))) {
@@ -1317,6 +1336,10 @@ setInterval(async () => {
 // todo, también el estado (Asignado, En tránsito…), se escribe en la pestaña Seguimiento EXPO / IMPO de la base
 async function guardarCambio(id, cambios, usuario){
   const v = viajes.find(x=>x.id===id);
+  // contenedor o placa con el formato del otro (dominio.js datoMalEscrito): no se guarda, se avisa qué está mal
+  const mal = ['contenedor', 'placa'].map(k => k in cambios ? datoMalEscrito(k, cambios[k]) : '').filter(Boolean);
+  if (mal.length) { toast('No se guardó: ' + mal.join(' · ')); return false; }
+  if (cambios.contenedor) cambios.contenedor = limpioId(cambios.contenedor);
   const anterior = v.estado;
   Object.assign(v, cambios, {actualizado: new Date().toISOString()});
   if ('estado' in cambios) v.estadoHoja = cambios.estado;
@@ -2702,6 +2725,9 @@ $('#mSave').onclick = () => {
   const marcaAntes = MARCAS.some(m=>m.k===v.estadoHoja) ? v.estadoHoja : '';
   if ((estadoSel||'') !== marcaAntes) cambios.estado = estadoSel || '';
   if (Object.keys(cambios).length && !usuario) { $('#mUsuario').focus(); return toast('Escriba su nombre para guardar en la base'); }
+  // contenedor o placa mal escritos (dominio.js datoMalEscrito): la ventana queda abierta en el campo para corregirlo
+  const mal = ['contenedor', 'placa'].find(k => k in cambios && datoMalEscrito(k, cambios[k]));
+  if (mal) { $(`#mForm [data-k=${mal}]`)?.focus(); return toast(datoMalEscrito(mal, cambios[mal])); }
   guardarUsuario(usuario);
   if (Object.keys(cambios).length) guardarCambio(editId, cambios, usuario);
   cerrar();
