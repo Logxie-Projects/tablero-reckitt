@@ -1189,9 +1189,10 @@ function hitosDe(v){
     .filter(([f]) => f).map(([f, que, donde]) => ({f: String(f).slice(0, 10), que, donde}));
 }
 // la etapa de la operación como se ve en la tarjeta: "En camino a puerto · cita de ingreso jue 5 nov", "Zarpó ✔"…
-function etapaAhora(v, P, n){
+// cliente = la ve Reckitt (tablero de solo lectura o resumen por correo): la tirilla es un documento interno, no se menciona
+function etapaAhora(v, P, n, cliente){
   const hacia = {Puerto:'En camino a puerto', Bodega:'En camino a bodega', Vacío:'Vacío por devolver', 'Retiro lleno':'Por retirar en puerto', Llenado:'En llenado', Patio:'Por retirar el vacío'};
-  const sinTirilla = v.operacion==='EXPO' ? !v.tirillaEntrega : !v.tirillaDevolucion;
+  const sinTirilla = !cliente && (v.operacion==='EXPO' ? !v.tirillaEntrega : !v.tirillaDevolucion);
   const subP = hijosDe(v).find(s => !(s.fechaUrbano && s.fechaUrbano <= HOY));
   // la etapa de la operación (sale de las fechas) con su detalle
   const proxHito = hitosDe(v).filter(h => h.f > HOY && h.que !== 'Cierre documental').sort((a, b) => a.f.localeCompare(b.f))[0];
@@ -2425,7 +2426,7 @@ function rutaPedido(v){
   const dif = (a,b) => iso(a) && iso(b) ? Math.round((new Date(b+'T12:00')-new Date(a+'T12:00'))/864e5) : null;
   const esperas = P.slice(1).map((p,i)=> P[i][2] && p[2] ? dif(P[i][2], p[2]) : null);
   // la etapa con su detalle y el color (dominio: etapaAhora, la misma del correo al cliente)
-  const {ahora, tono} = etapaAhora(v, P, n), col = {cerrado: 'var(--ok)', gris: 'var(--muted)', curso: 'var(--accent)'}[tono];
+  const {ahora, tono} = etapaAhora(v, P, n, window.MODO_CLIENTE), col = {cerrado: 'var(--ok)', gris: 'var(--muted)', curso: 'var(--accent)'}[tono];
   const ref = v.operacion==='IMPO' ? (v.pedido ? 'Pedido '+v.pedido : v.id) : (v.booking ? ['Booking '+v.booking, contenedorDeBooking(v)].filter(Boolean).join(' · ') : v.id);
   return `<div class="ruta"><div class="dos"><div class="izq">
     <div class="cab"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
