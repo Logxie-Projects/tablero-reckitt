@@ -382,6 +382,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
     <a class="btn solo-interno" id="lnkDespacho" style="text-decoration:none;color:inherit" href="despacho.html" target="_blank" rel="noopener" title="Asignaciones de conductores: cita, instrucciones, imágenes, enlace por WhatsApp y revisión de la aceptación (cédula y selfie)">🚛 Despacho</a>
     <button class="btn primary solo-interno" id="btnBarrido" title="Lee ya mismo el buzón de calidad@ (últimos 2 días) y muestra qué correos de Reckitt y sus agentes no están en la base">⟳ Buscar correos ahora</button>
     <button class="btn correo solo-interno" id="btnCorreos" title="Datos que LogxIA encontró en los correos, para revisar y aprobar">✉ Llenar datos desde correos<span class="badge" id="nProp"></span></button>
+    <button class="btn solo-interno" id="btnTurnos" title="Conductores que se enturnaron en un viaje o avisaron que están disponibles en la app Viajes ETP, de cualquier fecha; asignar o escribirles">🙋 Turnos<span class="badge" id="nTurnos"></span></button>
     <button class="btn solo-interno" id="btnDocs" title="Confirmaciones de booking y cartas de retiro que llegan con la programación de Jhonier, archivadas en Drive por mes; marca lo que falta">📎 Documentos de contenedores</button>
     <button class="btn" id="btnCsv">Exportar CSV</button>
   </div>
@@ -490,6 +491,14 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
       <label class="sub"><input type="checkbox" id="docsFalta"> Solo los que tienen algo pendiente</label></div>
     <div id="docsLista" style="margin-top:10px"></div>
     <div class="mfoot"><button class="btn" id="docsCerrar">Cerrar</button></div>
+  </div>
+</div>
+<div class="ov" id="ovTurnos">
+  <div class="modal" role="dialog" aria-modal="true" style="width:min(980px,100%)">
+    <h3>Turnos de conductores</h3>
+    <div class="sub">Lo que los conductores marcaron en la app Viajes ETP. Asignar abre el viaje con el vehículo y el conductor puestos: revise y guarde.</div>
+    <div id="turnosLista" style="margin-top:10px"></div>
+    <div class="mfoot"><button class="btn" id="turnosCerrar">Cerrar</button></div>
   </div>
 </div>
 <div class="ov" id="ovProg">
@@ -3287,6 +3296,93 @@ $('#btnDocs').onclick = abrirDocumentos;
 $('#docsCerrar').onclick = () => $('#ovDocs').classList.remove('open');
 ['docsMes', 'docsFalta'].forEach(id => $('#' + id).onchange = pintarDocumentos);
 $('#docsBuscar').oninput = pintarDocumentos;
+// enturnados.js · "🙋 Turnos": todos los conductores que se enturnaron en un viaje o reportaron estar disponibles en la app
+// Viajes ETP (turnos.html), de cualquier fecha (Mi turno → Cobertura solo muestra los viajes de las próximas 72 h).
+// Datos: window.TURNOS_C (datos.js; Conductores.gs resumenTurnos_ = últimos 10 días, sin los retirados). Solo equipo.
+// Asignar abre la ventana del viaje con placa y conductor puestos (asignarSugerido, turno.js): el coordinador revisa y guarda.
+
+function abrirEnturnados(){
+  $('#ovTurnos').classList.add('open');
+  pintarEnturnados();
+}
+
+function pintarEnturnados(){
+  const T = window.TURNOS_C || [];
+  const turnos = T.filter(t => t.tipo === 'Turno'), disponibles = T.filter(t => t.tipo === 'Disponible');
+  const viajeDe = id => viajes.find(v => v.id === id);
+  const cel = t => t.telefono ? String(t.telefono).replace(/^57(?=\d{10}$)/, '') : '';
+  const wa = (t, texto) => t.telefono ? `<a class="btn" href="${waLink(t.telefono, texto)}" target="_blank" rel="noopener">${ICONO_WA}Escribir</a>` : '';
+  const nombre1 = t => String(t.conductor || '').split(' ')[0];
+  const btnAsignar = (v, t) => `<button class="btn primary" data-e-asignar="${esc(v.id)}" data-placa="${esc(t.placa)}" data-conductor="${esc(t.conductor)}" data-telefono="${esc(t.telefono || '')}" title="Abre el viaje con este vehículo y conductor puestos: revise y guarde">Asignar</button>`;
+
+  // 1) viajes con enturnados, del que arranca primero al último
+  const porViaje = {};
+  turnos.forEach(t => (porViaje[t.viajeId] = porViaje[t.viajeId] || []).push(t));
+  const bloques = Object.keys(porViaje).map(id => ({v: viajeDe(id), id, L: porViaje[id].sort((a, b) => String(a.creado).localeCompare(String(b.creado)))}))
+    .sort((a, b) => String(a.v ? primerEvento(a.v) || '9' : '9').localeCompare(String(b.v ? primerEvento(b.v) || '9' : '9')));
+  const filaTurno = (v, t, i) => {
+    const asignado = v && tieneVehiculo(v);
+    const esEste = asignado && placaIgual(v.placa, t.placa);
+    const estado = !v ? '<span class="sub">viaje no encontrado</span>'
+      : esEste ? '<b style="color:var(--ok)">✓ Asignado a él</b>'
+      : asignado ? `<span class="sub">El viaje ya tiene ${esc(v.placa)}</span>` : btnAsignar(v, t);
+    const msg = v ? `Hola ${nombre1(t)}, sobre el viaje ${nombreTurno(v)} del ${fd(primerEvento(v))} al que se enturnó: ` : `Hola ${nombre1(t)}, `;
+    return `<tr><td class="sub">${i + 1}.º</td><td><span class="placa">${esc(t.placa)}</span> ${esc(t.conductor)}<br><span class="sub">${esc(cel(t))}</span></td>
+      <td class="sub">${t.creado ? 'se enturnó ' + esc(haceTxt(t.creado)) : ''}</td><td style="white-space:nowrap">${estado} ${wa(t, msg)}</td></tr>`;
+  };
+  const htmlViajes = bloques.length ? bloques.map(({v, id, L}) => {
+    const d = v && primerEvento(v) ? diffDias(primerEvento(v)) : null;
+    const cuando = !v ? '' : !primerEvento(v) ? 'sin fecha' : `${d === 0 ? 'hoy, ' : d === 1 ? 'mañana, ' : d < 0 ? 'debió arrancar el ' : ''}${fd(primerEvento(v))}`;
+    const cab = v ? `<button class="link" data-e-abrir="${esc(v.id)}"><b>${esc(v.id)}</b></button> · ${esc(v.operacion)} ${esc(v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || ''))}
+      ${v.booking ? '· booking ' + esc(v.booking) : v.pedido ? '· pedido ' + esc(v.pedido) : ''} · <b>${esc(cuando)}</b>
+      · ${tieneVehiculo(v) ? `vehículo <span class="placa">${esc(v.placa)}</span>` : '<b style="color:var(--bad)">sin vehículo</b>'}` : esc(id);
+    return `<div class="card" style="margin:8px 0;padding:10px 12px"><div>${cab}</div>
+      <div class="tbl-wrap" style="border:0;margin-top:6px"><table class="prop">${L.map((t, i) => filaTurno(v, t, i)).join('')}</table></div></div>`;
+  }).join('') : '<p class="sub">Ningún conductor se ha enturnado en los últimos 10 días.</p>';
+
+  // 2) disponibles: se pueden poner en cualquier viaje sin vehículo que arranque desde su fecha
+  const sinVehiculo = viajes.filter(v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre && !tieneVehiculo(v) && primerEvento(v) && diffDias(primerEvento(v)) >= -1)
+    .sort((a, b) => primerEvento(a).localeCompare(primerEvento(b)));
+  const opciones = t => sinVehiculo.filter(v => !t.desde || primerEvento(v) >= t.desde)
+    .map(v => `<option value="${esc(v.id)}">${esc(fd(primerEvento(v)))} · ${esc(v.id)} · ${esc(nombreTurno(v).replace(/^Sin vehículo · /, ''))}</option>`).join('');
+  const htmlDisp = disponibles.length ? `<div class="tbl-wrap"><table class="prop"><tr><th>Vehículo y conductor</th><th>Disponible</th><th>Asignar a un viaje sin vehículo</th><th></th></tr>
+    ${disponibles.sort((a, b) => String(a.desde || '').localeCompare(String(b.desde || ''))).map(t => {
+      const ops = opciones(t);
+      return `<tr><td><span class="placa">${esc(t.placa)}</span> ${esc(t.conductor)}<br><span class="sub">${esc(cel(t))}</span></td>
+        <td>${t.desde ? 'desde ' + esc(fd(t.desde)) : 'ya'}${t.ciudad ? ' · ' + esc(t.ciudad) : ''}<br><span class="sub">${t.creado ? 'avisó ' + esc(haceTxt(t.creado)) : ''}</span></td>
+        <td>${ops ? `<select data-e-elegir="${esc(t.placa)}" data-conductor="${esc(t.conductor)}" data-telefono="${esc(t.telefono || '')}" style="width:100%;max-width:300px"><option value="">Elegir viaje…</option>${ops}</select>`
+          : '<span class="sub">No hay viajes sin vehículo desde esa fecha</span>'}</td>
+        <td>${wa(t, `Hola ${nombre1(t)}, vimos que está disponible${t.desde ? ' desde el ' + fd(t.desde) : ''}: `)}</td></tr>`;
+    }).join('')}</table></div>` : '<p class="sub">Nadie ha reportado estar disponible en los últimos 10 días.</p>';
+
+  const nSin = bloques.filter(b => b.v && !tieneVehiculo(b.v)).length;
+  $('#turnosLista').innerHTML = `<p class="sub">${turnos.length} enturnado${turnos.length === 1 ? '' : 's'} en ${bloques.length} viaje${bloques.length === 1 ? '' : 's'}
+      (${nSin} sin vehículo) · ${disponibles.length} disponible${disponibles.length === 1 ? '' : 's'} · últimos 10 días, sin los que se retiraron</p>
+    <h3 style="margin:12px 0 4px">🙋 Enturnados por viaje <span class="sub">· en el orden en que se enturnaron</span></h3>${htmlViajes}
+    <h3 style="margin:16px 0 4px">🟢 Disponibles</h3>${htmlDisp}`;
+}
+
+// la placa se compara sin espacios ni guiones ni mayúsculas
+const placaIgual = (a, b) => String(a || '').replace(/[\s-]/g, '').toUpperCase() === String(b || '').replace(/[\s-]/g, '').toUpperCase();
+
+function contarEnturnados(){
+  const n = (window.TURNOS_C || []).filter(t => t.tipo === 'Turno' && (() => { const v = viajes.find(x => x.id === t.viajeId); return v && !tieneVehiculo(v); })()).length;
+  const b = $('#nTurnos'); if (b) b.textContent = n || '';
+}
+
+$('#btnTurnos').onclick = abrirEnturnados;
+$('#turnosCerrar').onclick = () => $('#ovTurnos').classList.remove('open');
+$('#turnosLista').addEventListener('click', e => {
+  const b = e.target.closest('[data-e-asignar],[data-e-abrir]'); if (!b) return;
+  $('#ovTurnos').classList.remove('open');
+  if (b.dataset.eAsignar) asignarSugerido(b.dataset.eAsignar, b.dataset.placa, b.dataset.conductor, b.dataset.telefono);
+  else abrir(b.dataset.eAbrir);
+});
+$('#turnosLista').addEventListener('change', e => {
+  const s = e.target.closest('[data-e-elegir]'); if (!s || !s.value) return;
+  $('#ovTurnos').classList.remove('open');
+  asignarSugerido(s.value, s.dataset.eElegir, s.dataset.conductor, s.dataset.telefono);
+});
 /* ---------- navegación y eventos ---------- */
 $('#nav').onclick = e => { const b=e.target.closest('button'); if(!b) return;
   document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on', x===b));
@@ -3648,7 +3744,7 @@ const leida = id => { try { return (localStorage.getItem('rkt-preg-leidas') || '
 function marcarLeidas(){ const ids = (window.PREGUNTAS || []).filter(p => p.estado === 'Respondida').map(p => p.id);
   try { localStorage.setItem('rkt-preg-leidas', ids.join(',')); } catch(e){} }
 $('#chatMsgs').addEventListener('click', e => { const b = e.target.closest('[data-preguntar]'); if (b) { b.disabled = true; preguntarALogxia(b.dataset.preguntar); } });
-function render(){ pintarSugerencias(); pintarPreguntas(); renderGbar(); renderTurno(); renderLean(); renderErrores(); renderAcciones(); renderKpis(); renderChartDias(); renderChartEstados(); renderChartPais(); renderChartMix(); renderAlertas(); renderProximos(); renderFeed(); renderChips(); renderTabla(); renderMotonaves(); }
+function render(){ pintarSugerencias(); pintarPreguntas(); renderGbar(); renderTurno(); renderLean(); renderErrores(); renderAcciones(); renderKpis(); renderChartDias(); renderChartEstados(); renderChartPais(); renderChartMix(); renderAlertas(); renderProximos(); renderFeed(); renderChips(); renderTabla(); renderMotonaves(); contarEnturnados(); }
 // pantalla de acceso cuando la página trae los datos de la hoja con clave
 function pedirClave(errada){
   document.body.insertAdjacentHTML('beforeend', `<div class="ov open" style="background:var(--bg)"><form class="modal" style="width:min(380px,100%)" onsubmit="event.preventDefault(); location.search='?clave='+encodeURIComponent(this.clave.value.trim())">
