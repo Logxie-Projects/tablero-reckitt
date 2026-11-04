@@ -2408,8 +2408,11 @@ const novedadesDe = v => { const ids = [v.id, ...viajes.filter(x => x.padre === 
 // la de la tarjeta: la última que escribió el equipo o el conductor; si no hay, el último cambio del sistema que dice algo de la
 // operación (una fecha, una cita, el vehículo, el estado). Un cambio de datos de oficina (observación, BL, FWD, motonave…) no:
 // entonces la tarjeta muestra la observación del viaje, que es lo que el cliente quiere saber de su operación
+// De un cambio solo cuentan los datos de la operación (por la etiqueta: fechas, citas, vehículo, conductor, estado, patio, bodega);
+// contenedor, BL, observación… son de oficina. Una corrección hecha por LogxIA no es una noticia de la operación (pasó en EXPO-009)
 const CAMBIO_OPERATIVO = /fecha|cita|retir|entrega|cargue|llenado|devoluci|descargue|placa|conductor|estado|status|bodega|patio/i;
-const cambioOperativo = n => CAMBIO_OPERATIVO.test(sinObservacion(n.texto).replace(/Observación actualizada/g, ''));
+const soloOperacion = t => sinObservacion(t).split(/ · (?=[A-ZÁÉÍÓÚÑ][^:·]{1,40}: )/).filter(s => CAMBIO_OPERATIVO.test(s.split(':')[0])).join(' · ');
+const cambioOperativo = n => !/logxia/i.test(n.usuario || '') && !!soloOperacion(n.texto);
 // una nota Interna (solo para el equipo) o una prueba del sistema tampoco: no son el status del viaje
 const notaDelViaje = n => n.tipo !== 'Interna' && !/prueba/i.test(n.usuario || '');
 const ultimaNovedad = v => { const L = novedadesDe(v).filter(notaDelViaje); return L.find(n => !delSistema(n)) || L.find(cambioOperativo); };
@@ -2436,7 +2439,8 @@ const SIGUIENTE_DATO = '(?=(?: · | \\| )[A-ZÁÉÍÓÚÑ][^:·|]{1,40}: [^·|]*
 const sinObservacion = t => String(t || '').replace(new RegExp('Observaci[oó]n: [\\s\\S]*?' + SIGUIENTE_DATO, 'g'), 'Observación actualizada')
   // columnas de control (las reprogramaciones ya salen como "Cambio de plan" con su causa; "Visto por" es del equipo): no van
   .replace(new RegExp('(?:^|(?: · | \\| ))(?:Reprogramaciones|Visto por): [\\s\\S]*?' + SIGUIENTE_DATO, 'g'), '').replace(/^(?: · | \| )/, '');
-const textoNovedad = n => n.tipo === 'Cambio' ? sinObservacion(n.texto) : n.texto;
+// en la tarjeta y la tabla, de un cambio solo lo de la operación; la línea de tiempo lo muestra completo
+const textoNovedad = n => n.tipo === 'Cambio' ? soloOperacion(n.texto) : n.texto;
 // la línea de la tarjeta: la última novedad con hora y autor; sin novedades, la observación como antes
 function lineaNovedad(v){
   const n = ultimaNovedad(v), estilo = 'style="margin:-4px 0 10px"';
