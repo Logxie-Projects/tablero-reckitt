@@ -599,7 +599,11 @@ const nombreMes = m => m ? `${MESES_LARGO[Number(m.slice(5, 7)) - 1]} ${m.slice(
 const FOCOS = ['Por asignar vehículo','Por iniciar','En tránsito','En bodega de paso','Terminado · faltan datos','Listo para facturar','En facturación','Sin servicio'];
 // vista de conjunto (no es un grupo): todos los viajes, en cualquier etapa, a los que operaciones les debe algo
 const FOCO_OPS = '⚠ Con pendientes de operaciones';
-const terminoTransporte = v => v.operacion==='EXPO' ? ['Entregado en puerto','Zarpó'].includes(v.estado) : v.estado==='Vacío devuelto';
+// carga suelta (LCL): la importación no trae contenedor propio; no hay vacío que devolver y el transporte termina con la entrega
+// en bodega. Se identifica por pedido, DO y BL (regla del 3-nov, IMPO-014)
+const esLCL = v => v.operacion === 'IMPO' && /\bLCL\b|carga suelta/i.test(v.unidad || '');
+const terminoTransporte = v => v.operacion==='EXPO' ? ['Entregado en puerto','Zarpó'].includes(v.estado)
+  : esLCL(v) ? v.estado==='Entregado en bodega' : v.estado==='Vacío devuelto';
 // fuera de ruta: el transporte terminó o el viaje se canceló; ya no hay vehículo al que hacerle seguimiento
 const fueraDeRuta = v => terminoTransporte(v) || v.estado === 'Cancelado';
 // lo que operaciones le debe a un viaje (en cualquier etapa): cierre del transporte, subviaje, causa de reprogramación y los errores de la hoja
@@ -608,6 +612,7 @@ function pendientesOps(v){
   const f = [];
   if (terminoTransporte(v)) {
     if (v.operacion==='EXPO') { if (!v.fechaEntregaPuerto) f.push('fecha de entrega en puerto'); if (!v.tirillaEntrega) f.push('tirilla de entrega'); }
+    else if (esLCL(v)) { if (!v.fechaCargue) f.push('fecha de entrega en bodega'); }
     else { if (!v.fechaDevolucion) f.push('fecha de devolución'); if (!v.tirillaDevolucion) f.push('tirilla de devolución'); }
   }
   const hijos = hijosDe(v);
@@ -622,9 +627,10 @@ function pendientesOps(v){
 function pendientesFact(v){
   if (!terminoTransporte(v) || ['En aprobación Reckitt','Aprobado por Reckitt','Facturado','Sin servicio'].includes(cobro(v).fact)) return [];
   const f = [];
-  // datos que pide facturación: EXPO → RBHY y OBD; IMPO → N° de pedido y contenedor
+  // datos que pide facturación: EXPO → RBHY y OBD; IMPO → N° de pedido y contenedor (carga suelta: pedido y BL)
   if (v.operacion==='EXPO' && (!v.rbhy || !v.obd)) f.push('RBHY / OBD');
-  if (v.operacion==='IMPO' && (!v.pedido || !v.contenedor)) f.push([!v.pedido && 'N° de pedido', !v.contenedor && 'contenedor'].filter(Boolean).join(' y '));
+  if (esLCL(v) && (!v.pedido || !v.booking)) f.push([!v.pedido && 'N° de pedido', !v.booking && 'BL'].filter(Boolean).join(' y '));
+  else if (v.operacion==='IMPO' && !esLCL(v) && (!v.pedido || !v.contenedor)) f.push([!v.pedido && 'N° de pedido', !v.contenedor && 'contenedor'].filter(Boolean).join(' y '));
   if (!Number(v.tarifa)) f.push('tarifa');
   return f;
 }
@@ -740,7 +746,7 @@ function etapaOperacion(v){
   const ya = f => !!f && f <= HOY;
   const sub = hijosDe(v)[0], dePaso = sub && !ya(sub.fechaUrbano);
   // con el urbano pendiente la carga sigue en la bodega de paso, aunque el vacío ya figure devuelto (se revisa en Errores)
-  if (v.operacion==='IMPO') return dePaso ? 'En bodega de paso' : ya(v.fechaDevolucion) || v.tirillaDevolucion ? 'Vacío devuelto'
+  if (v.operacion==='IMPO') return dePaso ? 'En bodega de paso' : !esLCL(v) && (ya(v.fechaDevolucion) || v.tirillaDevolucion) ? 'Vacío devuelto'
     : (sub && ya(sub.fechaUrbano)) || ya(v.fechaCargue) ? 'Entregado en bodega'
     : ya(v.fechaRetiro) ? 'Retirado de puerto' : tieneVehiculo(v) ? 'Asignado' : 'Sin asignar';
   const enPuerto = ya(v.fechaEntregaPuerto) || !!v.tirillaEntrega || (sub && ya(sub.fechaUrbano));
@@ -751,7 +757,7 @@ function etapasViajes(){ viajes.forEach(v => { v.novedad = v.estadoHoja === 'Nov
 // el transporte termina con la entrega en puerto (EXPO) o la devolución del vacío (IMPO); de ahí en adelante cuenta la facturación
 // lead time de facturación: desde que termina el transporte (entrega en puerto EXPO / devolución del vacío IMPO) hasta la factura;
 // sin factura, los días que lleva esperando
-const fechaFinTransporte = v => { const f = v.operacion==='EXPO' ? v.fechaEntregaPuerto : v.fechaDevolucion; return f && f <= HOY ? f : ''; };
+const fechaFinTransporte = v => { const f = v.operacion==='EXPO' ? v.fechaEntregaPuerto : esLCL(v) ? v.fechaCargue : v.fechaDevolucion; return f && f <= HOY ? f : ''; };
 const hijosDe = v => viajes.filter(x => x.padre === v.id && situacion(x) !== 'Cancelado');
 // transporte finalizado: EXPO pasó la parada Puerto; IMPO cumplió todas las paradas (vacío devuelto, con el urbano si hay subviaje)
 // transporte finalizado = tiene la fecha de fin (EXPO entrega en puerto, IMPO devolución del vacío) y no queda un urbano pendiente.
@@ -881,7 +887,7 @@ function validar(v){
   if (sit==='Cerrado'){
     if (seg && (v.fechaCargue||'') >= inicioSeguimiento() && !reemplazado(v)){
       if (expo && !v.tirillaEntrega) add('Alta','Tirilla de entrega','Viaje CERRADO sin tirilla de entrega en puerto', 'Error', 'El viaje ya está cerrado: la tirilla es el soporte de la entrega en puerto');
-      if (impo && !v.tirillaDevolucion) add('Alta','Tirilla de devolución','Viaje CERRADO sin tirilla de devolución del vacío', 'Error', 'El viaje ya está cerrado: la tirilla es el soporte de la devolución del vacío');
+      if (impo && !esLCL(v) && !v.tirillaDevolucion) add('Alta','Tirilla de devolución','Viaje CERRADO sin tirilla de devolución del vacío', 'Error', 'El viaje ya está cerrado: la tirilla es el soporte de la devolución del vacío');
     }
     return e;
   }
@@ -889,7 +895,7 @@ function validar(v){
   if (!['Abierto','Cerrado','Cancelado'].includes(sit)) add('Alta',C.status,`STATUS "${sit}": debe ser Abierto, Cerrado o Cancelado`, 'Error', 'Con otro STATUS el viaje no sale en la vista inicial ni en el total de abiertos');
   // sin fecha del viaje: si ya se entregó (o devolvió) la fecha existe y solo falta registrarla; si no, no se puede programar nada
   if (!v.fechaCargue) {
-    const hecho = expo ? (v.fechaEntregaPuerto || v.tirillaEntrega) : (v.fechaDevolucion || v.tirillaDevolucion);
+    const hecho = expo ? (v.fechaEntregaPuerto || v.tirillaEntrega) : esLCL(v) ? '' : (v.fechaDevolucion || v.tirillaDevolucion);
     const msg = expo ? (v.fechaRetiro ? 'Sin fecha de llenado' : 'Sin fechas de retiro y llenado') : 'Sin fecha de entrega en bodega';
     const porque = hecho
       ? (expo ? `El contenedor ya se entregó en puerto${v.fechaEntregaPuerto ? ' el ' + fd(v.fechaEntregaPuerto) : ' (hay tirilla)'}: las fechas ya existen y falta registrarlas para cerrar el viaje`
@@ -931,12 +937,13 @@ function validar(v){
   }
   if (seg && impo && !pend){
     // lo que Reckitt pregunta de cada importación
-    [['pedido','Pedido','Sin número de pedido'],['contenedor','Contenedor','Sin número de contenedor'],['unidad','Unidad','Sin tipo de contenedor (20 o 40)'],
+    [['pedido','Pedido','Sin número de pedido'],esLCL(v) ? ['booking','Booking / BL','Sin BL (carga suelta)'] : ['contenedor','Contenedor','Sin número de contenedor'],['unidad','Unidad','Sin tipo de contenedor (20 o 40)'],
      ['puerto','Origen','Sin origen (puerto de llegada)'],['destino','Destino','Sin destino'],['bodega','Bodega','Sin bodega de entrega'],
      ['fechaLevante','Fecha entrega documentos','Sin fecha de entrega de documentos']].forEach(([k,campo,msg])=>{ if(!v[k]) add('Media',campo,msg, 'Error', 'Reckitt pregunta este dato de cada importación; viene en la instrucción o en la orden de retiro'); });
     if (v.fechaRetiro && v.eta && v.fechaRetiro < v.eta) add('Alta','Fecha de retiro',`Retiro del lleno (${fd(v.fechaRetiro)}) antes de la ETA (${fd(v.eta)})`, 'Error', choque);
     const descargado = v.fechaCargue && v.fechaCargue <= HOY;
-    if (!v.fechaDevolucion){
+    if (esLCL(v)) { /* carga suelta: no hay vacío que devolver */ }
+    else if (!v.fechaDevolucion){
       const yaDescargo = `Se descargó el ${fd(v.fechaCargue)}: el vacío hay que devolverlo`;
       if (!v.patio && descargado) add('Alta','Patio de devolución','Sin patio de devolución del vacío', 'Error', yaDescargo);
       else if (!v.patio && dias !== null && dias <= VENTANAS.patioDevolucion) add('Media','Patio de devolución','Sin patio de devolución del vacío' + cuando, 'Alerta', porqueEvento);
@@ -951,7 +958,7 @@ function validar(v){
   }
   // reglas de detección (REGLAS-DETECCION.md): devolución del vacío dudosa y patio intermedio sin subviaje
   const hijos = hijosDe(v), mismo = (a, b) => sinTilde(String(a||'')).toLowerCase().trim() === sinTilde(String(b||'')).toLowerCase().trim();
-  if (impo && v.fechaDevolucion) {
+  if (impo && !esLCL(v) && v.fechaDevolucion) {
     if (v.fechaDevolucion === v.fechaCargue && v.patio && mismo(v.patio, v.bodega)) add('Alta','Fecha de devolución',`Devolución del vacío dudosa: mismo día y mismo lugar de la entrega (${v.bodega}). ¿El contenedor quedó almacenado lleno? Confirmar o crear subviaje`, 'Error', 'Si el contenedor sigue lleno en la bodega, el vacío no se ha devuelto y el plazo sigue corriendo');
     else if (v.fechaDevolucion === v.fechaCargue) add('Media','Fecha de devolución',`Vacío devuelto el mismo día de la entrega en ${v.bodega||'bodega'}: confirmar que no quedó almacenado lleno`, 'Error', 'Si el contenedor sigue lleno en la bodega, el vacío no se ha devuelto y el plazo sigue corriendo');
     const urbano = hijos.map(x=>x.fechaUrbano||'').filter(Boolean).sort().pop();
@@ -1174,7 +1181,8 @@ function paradas(v){
     ['Retiro lleno', v.puerto ? 'Puerto '+v.puerto : 'Puerto', v.fechaRetiro, [ver('Cita', v.citaRetiro), ver('Retiro', v.fechaRetiro)]],
     sub ? ['Bodega', sub.bodega && sub.bodega!==sub.patioSub ? sub.bodega : (v.bodega||'Bodega'), urbano, [`Patio ${sub.patioSub||'intermedio'} ${fd(sub.fechaDescargueSub||v.fechaCargue)}`, sub.fechaUrbano&&`Urbano ${fd(sub.fechaUrbano)}`]]
       : ['Bodega', v.bodega||'Bodega', v.fechaCargue && v.fechaCargue<=HOY ? v.fechaCargue : '', [v.fechaCargue ? `${v.fechaCargue > HOY ? 'Cita de entrega' : 'Entregado'} ${fd(v.fechaCargue)}` : 'Cita de entrega —', v.destino]],
-    ['Vacío', v.patio||'Patio', hecho(v.fechaDevolucion, v.tirillaDevolucion), [ver('Cita', v.citaDevolucion), !v.fechaDevolucion && v.tirillaDevolucion ? 'Devuelto (sin fecha)' : ver('Devuelto', v.fechaDevolucion), v.fechaLimite&&`Límite ${fd(v.fechaLimite)}`, v.tirillaDevolucion&&'✔ tirilla']],
+    // carga suelta: la ruta termina en la bodega (no hay vacío)
+    ...(esLCL(v) ? [] : [['Vacío', v.patio||'Patio', hecho(v.fechaDevolucion, v.tirillaDevolucion), [ver('Cita', v.citaDevolucion), !v.fechaDevolucion && v.tirillaDevolucion ? 'Devuelto (sin fecha)' : ver('Devuelto', v.fechaDevolucion), v.fechaLimite&&`Límite ${fd(v.fechaLimite)}`, v.tirillaDevolucion&&'✔ tirilla']]]),
   ];
   return [
     ['Origen', 'Cali', v.fechaRetiro && v.fechaRetiro<=HOY ? v.fechaRetiro : '', [bodegaCargue(v) || 'Planta Reckitt']],
@@ -1211,7 +1219,7 @@ function hitosDe(v){
 // cliente = la ve Reckitt (tablero de solo lectura o resumen por correo): la tirilla es un documento interno, no se menciona
 function etapaAhora(v, P, n, cliente){
   const hacia = {Puerto:'En camino a puerto', Bodega:'En camino a bodega', Vacío:'Vacío por devolver', 'Retiro lleno':'Por retirar en puerto', Llenado:'En llenado', Patio:'Por retirar el vacío'};
-  const sinTirilla = !cliente && (v.operacion==='EXPO' ? !v.tirillaEntrega : !v.tirillaDevolucion);
+  const sinTirilla = !cliente && (v.operacion==='EXPO' ? !v.tirillaEntrega : !esLCL(v) && !v.tirillaDevolucion);
   const subP = hijosDe(v).find(s => !(s.fechaUrbano && s.fechaUrbano <= HOY));
   // la etapa de la operación (sale de las fechas) con su detalle
   const proxHito = hitosDe(v).filter(h => h.f > HOY && h.que !== 'Cierre documental').sort((a, b) => a.f.localeCompare(b.f))[0];
@@ -2180,6 +2188,7 @@ function celdaCierre(v){
     if (v.fechaEntregaPuerto) return `Entregado ${fd(v.fechaEntregaPuerto)}${ok(v.tirillaEntrega)}`;
     return v.citaIngreso ? `Cita ${fd(v.citaIngreso)}<br><span class="sub">${esc(v.estadoCita||'Sin confirmar')}</span>` : '<span class="sub">—</span>';
   }
+  if (esLCL(v)) return v.fechaCargue ? `Carga suelta · ${v.fechaCargue > HOY ? 'entrega' : 'entregada'} ${fd(v.fechaCargue)}` : '<span class="sub">Carga suelta · sin vacío</span>';
   if (v.fechaDevolucion) return `Devuelto ${fd(v.fechaDevolucion)}${demora(v)?` <span class="sub" style="color:var(--bad)">${demora(v)} d demora</span>`:''}${ok(v.tirillaDevolucion)}`;
   if (!v.fechaLimite) return v.citaDevolucion ? `Cita ${fd(v.citaDevolucion)}` : '<span class="sub">—</span>';
   const d = diffDias(v.fechaLimite);
@@ -2599,7 +2608,8 @@ const SIGUIENTE_ETAPA = {
   IMPO: {'Asignado': ['fechaRetiro', 'Retirado de puerto'], 'Retirado de puerto': ['fechaCargue', 'Entregado en bodega'], 'Entregado en bodega': ['fechaDevolucion', 'Vacío devuelto']},
 };
 function pintarEstados(){
-  const v = viajes.find(x=>x.id===editId), sig = v && (SIGUIENTE_ETAPA[v.operacion] || {})[v.estado];
+  // carga suelta (dominio.js esLCL): termina en Entregado en bodega, no hay vacío que devolver
+  const v = viajes.find(x=>x.id===editId), sig = v && !(esLCL(v) && v.estado === 'Entregado en bodega') && (SIGUIENTE_ETAPA[v.operacion] || {})[v.estado];
   $('#mStates').innerHTML = `<span class="sub" style="margin-right:6px">Etapa: ${v ? pill(v.estado) : ''} <span title="Sale de las fechas del viaje: para avanzarla, ponga la fecha correspondiente">(sale de las fechas)</span></span>`
     + (v && v.placa && !window.MODO_CLIENTE ? `<button type="button" data-enlace="1" title="Abre WhatsApp con el enlace del viaje para el conductor (asignacion.js)">${ICONO_WA}Enviar enlace al conductor</button>` : '')
     + (sig ? `<button type="button" data-sig="${sig[0]}" title="Pone la fecha de hoy en el campo; se puede cambiar antes de guardar">→ ${sig[1]} (hoy)</button>` : '')
