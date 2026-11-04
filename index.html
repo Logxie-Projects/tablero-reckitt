@@ -1140,6 +1140,72 @@ function fechaDeTexto(texto, ref){
   if (/\bmanana\b/.test(t)) return addDias(r, 1);
   return '';
 }
+/* ---------- ruta del viaje (Modo lean del tablero y resumen al cliente): paradas, avance y etapa ---------- */
+// paradas según la operación: [etiqueta, lugar, fecha que la cumple, detalle]
+// el equipo anota la entrega en la observación o en la tirilla aunque no llene la fecha
+const dijoEntregado = v => /descargad|entregad/i.test(v.observacion||'');
+function paradas(v){
+  const hecho = (fecha, otraSenal) => fecha || (otraSenal ? 'sí' : '');
+  // con subviaje, la entrega final (bodega IMPO / puerto EXPO) es la del urbano desde el patio intermedio
+  // fechas clave siempre a la vista (con "—" si falta), para que se note lo que no está registrado
+  const ver = (txt, f) => `${txt} ${f ? fd(f) : '—'}`;
+  const sub = hijosDe(v)[0], urbano = sub && sub.fechaUrbano && sub.fechaUrbano <= HOY ? sub.fechaUrbano : '';
+  if (v.operacion==='IMPO') return [
+    ['Origen', v.puerto||'Puerto', v.fechaLevante || (v.eta && v.eta<=HOY ? v.eta : ''), [v.eta&&`ETA ${fd(v.eta)}`, v.fechaLevante&&`Docs ${fd(v.fechaLevante)}`]],
+    ['Retiro lleno', v.puerto ? 'Puerto '+v.puerto : 'Puerto', v.fechaRetiro, [ver('Cita', v.citaRetiro), ver('Retiro', v.fechaRetiro)]],
+    sub ? ['Bodega', sub.bodega && sub.bodega!==sub.patioSub ? sub.bodega : (v.bodega||'Bodega'), urbano, [`Patio ${sub.patioSub||'intermedio'} ${fd(sub.fechaDescargueSub||v.fechaCargue)}`, sub.fechaUrbano&&`Urbano ${fd(sub.fechaUrbano)}`]]
+      : ['Bodega', v.bodega||'Bodega', v.fechaCargue && v.fechaCargue<=HOY ? v.fechaCargue : '', [v.fechaCargue ? `${v.fechaCargue > HOY ? 'Cita de entrega' : 'Entregado'} ${fd(v.fechaCargue)}` : 'Cita de entrega —', v.destino]],
+    ['Vacío', v.patio||'Patio', hecho(v.fechaDevolucion, v.tirillaDevolucion), [ver('Cita', v.citaDevolucion), !v.fechaDevolucion && v.tirillaDevolucion ? 'Devuelto (sin fecha)' : ver('Devuelto', v.fechaDevolucion), v.fechaLimite&&`Límite ${fd(v.fechaLimite)}`, v.tirillaDevolucion&&'✔ tirilla']],
+  ];
+  return [
+    ['Origen', 'Cali', v.fechaRetiro && v.fechaRetiro<=HOY ? v.fechaRetiro : '', [bodegaCargue(v) || 'Planta Reckitt']],
+    ['Patio', v.patio||'Patio', v.fechaRetiro && v.fechaRetiro<=HOY ? v.fechaRetiro : '', [v.fechaRetiro&&`Retiro ${fd(v.fechaRetiro)}`]],
+    ['Llenado', bodegaCargue(v) || 'Reckitt', v.fechaCargue && (v.fechaCargue<HOY || dijoEntregado(v) || v.tirillaEntrega) ? v.fechaCargue : '', [v.fechaCargue&&`Llenado ${fd(v.fechaCargue)}`, v.sello&&`Sello ${v.sello}`]],
+    ['Puerto', v.puerto||'Puerto', sub ? (v.fechaEntregaPuerto || urbano) : hecho(v.fechaEntregaPuerto, v.tirillaEntrega || dijoEntregado(v)), [ver('Cita', v.citaIngreso), !v.fechaEntregaPuerto && (v.tirillaEntrega || dijoEntregado(v)) ? 'Entregado (sin fecha)' : ver('Entregado', v.fechaEntregaPuerto), ver('Cierre', v.cierreDoc), v.tirillaEntrega&&'✔ tirilla']],
+    ['Motonave', v.mn||'—', v.etd && v.etd<=HOY ? v.etd : '', [v.etd&&`ETD ${fd(v.etd)}`]],
+    ['Destino', v.pais||'—', v.eta && v.eta<=HOY ? v.eta : '', [v.eta&&`ETA ${fd(v.eta)}`]],
+  ];
+}
+// dónde se llena el contenedor EXPO: la programación lo anota como "cargue en DHL" cuando no es la planta
+function bodegaCargue(v){ return ((String(v.observacion||'').match(/cargue en ([^·(]+)/i) || [])[1] || '').trim(); }
+// un booking con varios contenedores: cuál es este (por fecha de llenado) para que no parezcan duplicados
+function contenedorDeBooking(v){
+  if (!v.booking || /^(pte|sin info|pend)/i.test(v.booking) || v.padre) return '';
+  const mismos = viajes.filter(x => x.booking===v.booking && !x.padre && situacion(x)!=='Cancelado')
+    .sort((a, b) => String(a.fechaCargue).localeCompare(String(b.fechaCargue)) || String(a.id).localeCompare(String(b.id)));
+  return mismos.length > 1 ? `contenedor ${mismos.indexOf(v) + 1} de ${mismos.length}` : '';
+}
+// cumplidas en orden: una parada cuenta si ella y todas las anteriores tienen fecha cumplida
+function avance(v){ const P = paradas(v); let n = 0; while (n < P.length && P[n][2]) n++;
+  return {P, n}; }
+
+// lo que pasa en el viaje en cada fecha
+function hitosDe(v){
+  const expo = v.operacion === 'EXPO';
+  return [[v.fechaRetiro, expo ? 'Retiro del vacío' : 'Retiro en puerto', expo ? v.patio : v.puerto],
+    [v.fechaCargue, expo ? 'Llenado en planta' : 'Entrega en bodega', expo ? '' : v.bodega], [v.citaRetiro, 'Cita de retiro en puerto', v.puerto],
+    [v.citaIngreso, 'Cita de ingreso a puerto', v.puerto], [v.cierreDoc, 'Cierre documental', ''], [v.citaDevolucion, 'Cita de devolución del vacío', v.patio],
+    [v.fechaUrbano, 'Urbano al destino final', v.bodega]]
+    .filter(([f]) => f).map(([f, que, donde]) => ({f: String(f).slice(0, 10), que, donde}));
+}
+// la etapa de la operación como se ve en la tarjeta: "En camino a puerto · cita de ingreso jue 5 nov", "Zarpó ✔"…
+function etapaAhora(v, P, n){
+  const hacia = {Puerto:'En camino a puerto', Bodega:'En camino a bodega', Vacío:'Vacío por devolver', 'Retiro lleno':'Por retirar en puerto', Llenado:'En llenado', Patio:'Por retirar el vacío'};
+  const sinTirilla = v.operacion==='EXPO' ? !v.tirillaEntrega : !v.tirillaDevolucion;
+  const subP = hijosDe(v).find(s => !(s.fechaUrbano && s.fechaUrbano <= HOY));
+  // la etapa de la operación (sale de las fechas) con su detalle
+  const proxHito = hitosDe(v).filter(h => h.f > HOY && h.que !== 'Cierre documental').sort((a, b) => a.f.localeCompare(b.f))[0];
+  const sit = situacion(v), et = v.estado, ahora = et==='En bodega de paso' && subP ? `En bodega de paso ${subP.patioSub || ''} · urbano ${subP.fechaUrbano ? fd(subP.fechaUrbano) : 'sin fecha'}`
+    : et==='Vacío devuelto' ? (sinTirilla ? 'Vacío devuelto · falta tirilla' : 'Vacío devuelto ✔')
+    : et==='Entregado en puerto' ? (sinTirilla ? 'Entregado en puerto · falta tirilla' : 'Entregado en puerto · esperando zarpe')
+    : et==='Zarpó' ? (sinTirilla ? 'Zarpó · falta tirilla' : 'Zarpó ✔')
+    // en curso: lo que está pasando ahora (el paso anterior ya se ve hecho en la ruta), ej. "En camino a puerto", no "Llenado · …"
+    // y lo que tiene programado (hitosDe, turno.js): así se ve que el viaje está en espera de una cita y no quieto
+    : n < P.length && !['Sin asignar','Asignado'].includes(et) ? (hacia[P[n][0]] || 'Hacia '+P[n][0].toLowerCase()) + (proxHito ? ` · ${proxHito.que.toLowerCase()} ${fd(proxHito.f)}` : '')
+    : et;
+  // el tono sigue a la etapa (no a las paradas cumplidas): sin vehículo gris, en curso, cerrado
+  return {ahora, tono: sit==='Cerrado' ? 'cerrado' : et==='Sin asignar' ? 'gris' : 'curso'};
+}
 </script>
 <script>
 const CFG = window.APP_CONFIG || {};
@@ -1521,15 +1587,7 @@ async function marcarRevisado(k){
     window.TURNO = j.turno || window.TURNO; renderTurno();
   } catch(e) { window.TURNO = antes; renderTurno(); toast('No se guardó la marca: ' + e.message); }
 }
-// lo que pasa en el viaje en cada fecha
-function hitosDe(v){
-  const expo = v.operacion === 'EXPO';
-  return [[v.fechaRetiro, expo ? 'Retiro del vacío' : 'Retiro en puerto', expo ? v.patio : v.puerto],
-    [v.fechaCargue, expo ? 'Llenado en planta' : 'Entrega en bodega', expo ? '' : v.bodega], [v.citaRetiro, 'Cita de retiro en puerto', v.puerto],
-    [v.citaIngreso, 'Cita de ingreso a puerto', v.puerto], [v.cierreDoc, 'Cierre documental', ''], [v.citaDevolucion, 'Cita de devolución del vacío', v.patio],
-    [v.fechaUrbano, 'Urbano al destino final', v.bodega]]
-    .filter(([f]) => f).map(([f, que, donde]) => ({f: String(f).slice(0, 10), que, donde}));
-}
+// hitosDe (lo que pasa en el viaje en cada fecha) está en el dominio (dominio.js)
 // WhatsApp con el mensaje armado; el coordinador elige el contacto (la base aún no guarda el teléfono del conductor)
 const waConductor = (v, pregunta) => waLink('', 
   `Hola${v.conductor ? ' ' + v.conductor.split(' ')[0] : ''}, ${pregunta} · ${v.placa || ''} ${clavesBusqueda(v).slice(0, 1).map(([k, x]) => k + ' ' + x).join('')}`.trim());
@@ -2282,43 +2340,7 @@ async function agregarNovedad(id){
   } catch(e) { toast('No se guardó la novedad: ' + e.message); btn.disabled = false; btn.textContent = 'Agregar novedad'; }
 }
 /* ---------- ventana del viaje (actualización) y modo lean: ruta del pedido ---------- */
-// paradas según la operación: [etiqueta, lugar, fecha que la cumple, detalle]
-// el equipo anota la entrega en la observación o en la tirilla aunque no llene la fecha
-const dijoEntregado = v => /descargad|entregad/i.test(v.observacion||'');
-function paradas(v){
-  const hecho = (fecha, otraSenal) => fecha || (otraSenal ? 'sí' : '');
-  // con subviaje, la entrega final (bodega IMPO / puerto EXPO) es la del urbano desde el patio intermedio
-  // fechas clave siempre a la vista (con "—" si falta), para que se note lo que no está registrado
-  const ver = (txt, f) => `${txt} ${f ? fd(f) : '—'}`;
-  const sub = hijosDe(v)[0], urbano = sub && sub.fechaUrbano && sub.fechaUrbano <= HOY ? sub.fechaUrbano : '';
-  if (v.operacion==='IMPO') return [
-    ['Origen', v.puerto||'Puerto', v.fechaLevante || (v.eta && v.eta<=HOY ? v.eta : ''), [v.eta&&`ETA ${fd(v.eta)}`, v.fechaLevante&&`Docs ${fd(v.fechaLevante)}`]],
-    ['Retiro lleno', v.puerto ? 'Puerto '+v.puerto : 'Puerto', v.fechaRetiro, [ver('Cita', v.citaRetiro), ver('Retiro', v.fechaRetiro)]],
-    sub ? ['Bodega', sub.bodega && sub.bodega!==sub.patioSub ? sub.bodega : (v.bodega||'Bodega'), urbano, [`Patio ${sub.patioSub||'intermedio'} ${fd(sub.fechaDescargueSub||v.fechaCargue)}`, sub.fechaUrbano&&`Urbano ${fd(sub.fechaUrbano)}`]]
-      : ['Bodega', v.bodega||'Bodega', v.fechaCargue && v.fechaCargue<=HOY ? v.fechaCargue : '', [v.fechaCargue ? `${v.fechaCargue > HOY ? 'Cita de entrega' : 'Entregado'} ${fd(v.fechaCargue)}` : 'Cita de entrega —', v.destino]],
-    ['Vacío', v.patio||'Patio', hecho(v.fechaDevolucion, v.tirillaDevolucion), [ver('Cita', v.citaDevolucion), !v.fechaDevolucion && v.tirillaDevolucion ? 'Devuelto (sin fecha)' : ver('Devuelto', v.fechaDevolucion), v.fechaLimite&&`Límite ${fd(v.fechaLimite)}`, v.tirillaDevolucion&&'✔ tirilla']],
-  ];
-  return [
-    ['Origen', 'Cali', v.fechaRetiro && v.fechaRetiro<=HOY ? v.fechaRetiro : '', [bodegaCargue(v) || 'Planta Reckitt']],
-    ['Patio', v.patio||'Patio', v.fechaRetiro && v.fechaRetiro<=HOY ? v.fechaRetiro : '', [v.fechaRetiro&&`Retiro ${fd(v.fechaRetiro)}`]],
-    ['Llenado', bodegaCargue(v) || 'Reckitt', v.fechaCargue && (v.fechaCargue<HOY || dijoEntregado(v) || v.tirillaEntrega) ? v.fechaCargue : '', [v.fechaCargue&&`Llenado ${fd(v.fechaCargue)}`, v.sello&&`Sello ${v.sello}`]],
-    ['Puerto', v.puerto||'Puerto', sub ? (v.fechaEntregaPuerto || urbano) : hecho(v.fechaEntregaPuerto, v.tirillaEntrega || dijoEntregado(v)), [ver('Cita', v.citaIngreso), !v.fechaEntregaPuerto && (v.tirillaEntrega || dijoEntregado(v)) ? 'Entregado (sin fecha)' : ver('Entregado', v.fechaEntregaPuerto), ver('Cierre', v.cierreDoc), v.tirillaEntrega&&'✔ tirilla']],
-    ['Motonave', v.mn||'—', v.etd && v.etd<=HOY ? v.etd : '', [v.etd&&`ETD ${fd(v.etd)}`]],
-    ['Destino', v.pais||'—', v.eta && v.eta<=HOY ? v.eta : '', [v.eta&&`ETA ${fd(v.eta)}`]],
-  ];
-}
-// dónde se llena el contenedor EXPO: la programación lo anota como "cargue en DHL" cuando no es la planta
-function bodegaCargue(v){ return ((String(v.observacion||'').match(/cargue en ([^·(]+)/i) || [])[1] || '').trim(); }
-// un booking con varios contenedores: cuál es este (por fecha de llenado) para que no parezcan duplicados
-function contenedorDeBooking(v){
-  if (!v.booking || /^(pte|sin info|pend)/i.test(v.booking) || v.padre) return '';
-  const mismos = viajes.filter(x => x.booking===v.booking && !x.padre && situacion(x)!=='Cancelado')
-    .sort((a, b) => String(a.fechaCargue).localeCompare(String(b.fechaCargue)) || String(a.id).localeCompare(String(b.id)));
-  return mismos.length > 1 ? `contenedor ${mismos.indexOf(v) + 1} de ${mismos.length}` : '';
-}
-// cumplidas en orden: una parada cuenta si ella y todas las anteriores tienen fecha cumplida
-function avance(v){ const P = paradas(v); let n = 0; while (n < P.length && P[n][2]) n++;
-  return {P, n}; }
+// paradas, avance, bodegaCargue y contenedorDeBooking están en el dominio (dominio.js): también los usa el correo al cliente
 function miniAvance(v){ const {P,n} = avance(v); return `<span class="mini" title="${esc(n<P.length ? 'En: '+P[n][0] : 'Completo')}">${P.map((_,i)=>`<i class="${i<n?'ok':i===n?'ya':''}"></i>`).join('')}</span>`; }
 function leadFactura(v){
   const fin = fechaFinTransporte(v);
@@ -2402,22 +2424,8 @@ function rutaPedido(v){
   const iso = x => /^\d{4}-\d{2}-\d{2}$/.test(x||'');
   const dif = (a,b) => iso(a) && iso(b) ? Math.round((new Date(b+'T12:00')-new Date(a+'T12:00'))/864e5) : null;
   const esperas = P.slice(1).map((p,i)=> P[i][2] && p[2] ? dif(P[i][2], p[2]) : null);
-  // n = paradas cumplidas: el viaje va hacia la parada n
-  const hacia = {Puerto:'En camino a puerto', Bodega:'En camino a bodega', Vacío:'Vacío por devolver', 'Retiro lleno':'Por retirar en puerto', Llenado:'En llenado', Patio:'Por retirar el vacío'};
-  const sinTirilla = v.operacion==='EXPO' ? !v.tirillaEntrega : !v.tirillaDevolucion;
-  const subP = hijosDe(v).find(s => !(s.fechaUrbano && s.fechaUrbano <= HOY));
-  // la etapa de la operación (sale de las fechas) con su detalle
-  const proxHito = hitosDe(v).filter(h => h.f > HOY && h.que !== 'Cierre documental').sort((a, b) => a.f.localeCompare(b.f))[0];
-  const sit = situacion(v), et = v.estado, ahora = et==='En bodega de paso' && subP ? `En bodega de paso ${subP.patioSub || ''} · urbano ${subP.fechaUrbano ? fd(subP.fechaUrbano) : 'sin fecha'}`
-    : et==='Vacío devuelto' ? (sinTirilla ? 'Vacío devuelto · falta tirilla' : 'Vacío devuelto ✔')
-    : et==='Entregado en puerto' ? (sinTirilla ? 'Entregado en puerto · falta tirilla' : 'Entregado en puerto · esperando zarpe')
-    : et==='Zarpó' ? (sinTirilla ? 'Zarpó · falta tirilla' : 'Zarpó ✔')
-    // en curso: lo que está pasando ahora (el paso anterior ya se ve hecho en la ruta), ej. "En camino a puerto", no "Llenado · …"
-    // y lo que tiene programado (hitosDe, turno.js): así se ve que el viaje está en espera de una cita y no quieto
-    : n < P.length && !['Sin asignar','Asignado'].includes(et) ? (hacia[P[n][0]] || 'Hacia '+P[n][0].toLowerCase()) + (proxHito ? ` · ${proxHito.que.toLowerCase()} ${fd(proxHito.f)}` : '')
-    : et;
-  // el color sigue a la etapa (no a las paradas cumplidas): sin vehículo gris, en curso rosado, cerrado verde
-  const col = sit==='Cerrado' ? 'var(--ok)' : et==='Sin asignar' ? 'var(--muted)' : 'var(--accent)';
+  // la etapa con su detalle y el color (dominio: etapaAhora, la misma del correo al cliente)
+  const {ahora, tono} = etapaAhora(v, P, n), col = {cerrado: 'var(--ok)', gris: 'var(--muted)', curso: 'var(--accent)'}[tono];
   const ref = v.operacion==='IMPO' ? (v.pedido ? 'Pedido '+v.pedido : v.id) : (v.booking ? ['Booking '+v.booking, contenedorDeBooking(v)].filter(Boolean).join(' · ') : v.id);
   return `<div class="ruta"><div class="dos"><div class="izq">
     <div class="cab"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
