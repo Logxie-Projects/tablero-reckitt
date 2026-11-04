@@ -343,6 +343,11 @@ body.en-turno #gbar{display:none}
 .chat-preg details{padding:4px 12px}
 .chat-preg summary{cursor:pointer;padding:4px 0}
 #btnChat[data-nuevas]:not([data-nuevas=""])::after{content:attr(data-nuevas);position:absolute;top:-4px;right:-4px;min-width:20px;height:20px;padding:0 5px;border-radius:99px;background:var(--bad);color:#fff;font-size:12px;font-weight:700;display:grid;place-items:center}
+/* reunión diaria con Reckitt (reunion.js): título de cada día y lo que pasa en el viaje esos días */
+tr.dia-reunion td{background:var(--accent-soft);color:var(--text);font-weight:700;font-size:14px;padding:8px 10px}
+h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;padding:8px 12px;border-radius:8px;margin:14px 0 8px}
+.pasos-reunion{font-size:12px;color:var(--accent);font-weight:600;margin-top:4px;min-width:160px}
+#leanTablero .pasos-reunion{margin:0 0 4px 2px}
 </style>
 </head>
 <body>
@@ -1226,7 +1231,7 @@ async function guardarCambio(id, cambios, usuario){
 /* ---------- filtros globales: estado, reglas, conteos y la barra (aplican a Tablero, Viajes y Motonaves) ---------- */
 // Al abrir o recargar el tablero arrancan siempre limpios (viajes abiertos de IMPO y EXPO) para no esconder nada;
 // no se recuerdan entre visitas.
-const FILTROS_INICIO = {op:'', sit:'Abierto', mes:'', mesSol:'', emp:'', sol:'', fwd:'', ped:'', bk:'', fact:'', foco:'', q:''};
+const FILTROS_INICIO = {op:'', dia:'', sit:'Abierto', mes:'', mesSol:'', emp:'', sol:'', fwd:'', ped:'', bk:'', fact:'', foco:'', q:''};
 let G = {...FILTROS_INICIO};
 try { localStorage.removeItem('rkt-filtros'); } catch(e){}
 // listas desplegables: campo del viaje y texto cuando está vacío
@@ -1248,7 +1253,7 @@ const enListas = v => !v.padre && FILTROS_LISTA.every(([k, campo, , vacio]) => !
 const cancelado = v => situacion(v)==='Cancelado' || v.estado==='Cancelado';
 const enGlobal = v => (!G.op || v.operacion===G.op) && enSituacion(v, G.sit) && (!cancelado(v) || G.sit==='Cancelado') && enListas(v)
   && (!G.mes || mesDe(v)===(G.mes==='sin' ? '' : G.mes)) && (!G.mesSol || mesSolDe(v)===(G.mesSol==='sin' ? '' : G.mesSol))
-  && (!G.foco || (G.foco===FOCO_OPS ? pendientesOps(v).length > 0 : focoDe(v)===G.foco));
+  && (!G.foco || (G.foco===FOCO_OPS ? pendientesOps(v).length > 0 : focoDe(v)===G.foco)) && enReunion(v);   // reunion.js
 // cuántos viajes se verían al elegir esa opción, con los demás filtros como están y con el mismo ajuste de STATUS que
 // hará la barra al elegirla (ajustarStatus): así el número de la opción es el que se ve después
 function cuentaCon(cambio){ const antes = G; G = {...G, ...cambio}; ajustarStatus(antes); try { return viajes.filter(enGlobal).length; } finally { G = antes; } }
@@ -1276,6 +1281,8 @@ function chipsGlobales(){
   // cada opción muestra cuántos viajes se verían al elegirla, con los demás filtros como están (igual en todas las listas)
   const sel = (k, titulo, ops) => `<select class="gsel ${G[k]?'on':''}" data-gsel="${k}" aria-label="${titulo}">${ops.map(([val, txt, cnt])=>`<option value="${esc(val)}" ${G[k]===val?'selected':''}>${titulo}: ${esc(txt)} · ${cnt}</option>`).join('')}</select>`;
   return sel('op', 'IMPO/EXPO', [['', 'ambas', cuentaCon({op:''})], ['IMPO', 'IMPO', cuentaCon({op:'IMPO'})], ['EXPO', 'EXPO', cuentaCon({op:'EXPO'})]])
+    // reunión diaria con Reckitt (reunion.js): los viajes con algún paso hoy, mañana o pasado mañana, ordenados por fecha
+    + sel('dia', '📆 Reunión', [['', 'todos los días', cuentaCon({dia:''})], ...REUNION_OPS.map(([k, t]) => [k, t, cuentaCon({dia:k})])])
     + sel('sit', 'STATUS', [...situacionesPresentes().map(s=>[s, PLURAL[s]||s, cuentaCon({sit:s})]), ['', 'Todos', cuentaCon({sit:''})]])
     // Mes solicitado y mes ejecutado: los meses con viajes, del más reciente al más antiguo
     + [['mesSol', '📋 Programado', mesSolDe, 'Mes de la programación de Reckitt en la que está el viaje'], ['mes', '📅 Ejecutado', mesDe, 'Mes del llenado (EXPO) o de la entrega en bodega (IMPO), la fecha que tiene hoy']]
@@ -1953,6 +1960,45 @@ function renderFeed(){
   $('#feed').innerHTML = items.map(h=>`<div class="it"><b>${esc(h.placa||h.id)}</b>: ${h.estadoAnterior===h.estadoNuevo ? '' : esc(h.estadoAnterior)+' → '}${pill(h.estadoNuevo)} ${h.observacion?`<br>${esc(h.observacion)}`:''}<br><time>${new Date(h.fecha).toLocaleString('es-CO')} · ${esc(h.usuario)}</time></div>`).join('');
 }
 
+/* ---------- reunión diaria con Reckitt: los viajes de hoy, mañana y pasado mañana, ordenados por fecha ----------
+ * Filtro "📆 Reunión" de la barra (G.dia): deja los viajes que tienen algún paso en esos días (retiro, llenado o entrega,
+ * citas, cierre, entrega en puerto, devolución) y los ordena por el primero de esos pasos. Viajes y Modo lean los agrupan
+ * bajo Hoy / Mañana / Pasado mañana. Los domingos no cuentan como día de la reunión (si mañana es domingo, sigue el lunes).
+ * Lo usan filtros.js (enReunion, REUNION_OPS) y tabla.js (claveReunion, tituloDia, pasosReunion). */
+const REUNION_OPS = [['3', 'Hoy · mañana · pasado'], ['2', 'Hoy y mañana'], ['1', 'Solo hoy']];
+// los días de la reunión desde HOY: n días, saltando domingos (hoy cuenta siempre)
+function diasReunion(n){
+  const dias = [HOY]; let d = new Date(HOY + 'T12:00');
+  while (dias.length < n) { d.setDate(d.getDate() + 1); if (d.getDay() !== 0) dias.push(d.toISOString().slice(0, 10)); }
+  return dias;
+}
+// todos los pasos con fecha del viaje (los de hitosDe más la entrega en puerto y la devolución), con su hora si la tiene
+function pasosViaje(v){
+  const expo = v.operacion === 'EXPO';
+  const extra = [[v.fechaEntregaPuerto, 'Entrega en puerto', v.puerto], [v.fechaDevolucion, 'Devolución del vacío', v.patio]]
+    .filter(([f]) => f).map(([f, que, donde]) => ({f: String(f).slice(0, 10), que, donde}));
+  const crudo = {'Retiro del vacío': v.fechaRetiro, 'Retiro en puerto': v.fechaRetiro, 'Llenado en planta': v.fechaCargue, 'Entrega en bodega': v.fechaCargue};
+  const vistos = new Set();
+  return [...hitosDe(v), ...extra]   // hitosDe: turno.js
+    .filter(p => !(expo && p.que === 'Devolución del vacío'))
+    .map(p => ({...p, h: (String(crudo[p.que] || '').match(/T(\d\d:\d\d)/) || [])[1] || ''}))
+    .filter(p => { const k = p.f + p.que; return !vistos.has(k) && vistos.add(k); });
+}
+// los pasos del viaje que caen en los días elegidos, en orden
+const pasosReunion = v => { const dias = diasReunion(Number(G.dia) || 0);
+  return pasosViaje(v).filter(p => dias.includes(p.f)).sort((a, b) => (a.f + (a.h || '99')).localeCompare(b.f + (b.h || '99'))); };
+const enReunion = v => !G.dia || pasosReunion(v).length > 0;
+// orden: el día y la hora del primer paso en la reunión
+const claveReunion = v => { const p = pasosReunion(v)[0]; return p ? p.f + (p.h || '99') : '9999'; };
+const diaReunion = v => (pasosReunion(v)[0] || {}).f || '';
+function tituloDia(f){
+  const i = diasReunion(3).indexOf(f);
+  return `${['Hoy', 'Mañana', 'Pasado mañana'][i] || ''}${i >= 0 ? ' · ' : ''}${fd(f)}`;
+}
+// lo que pasa en el viaje en los días de la reunión, por día: "Hoy: Retiro del vacío, Llenado en planta 07:00 · Mañana: Cierre documental"
+const textoPasos = v => { const nombres = ['Hoy', 'Mañana', 'Pasado mañana'], dias = diasReunion(3), por = {};
+  pasosReunion(v).forEach(p => (por[p.f] = por[p.f] || []).push(p.que + (p.h ? ' ' + p.h : '')));
+  return Object.keys(por).map(f => `${nombres[dias.indexOf(f)] || fd(f)}: ${por[f].join(', ')}`).join(' · '); };
 /* ---------- tabla de viajes ---------- */
 const COLS = [
   ['situacion','Viaje'],['avance','Avance'],['lead','Lead time'],['cobro','Precio · facturación'],['estado','Estado'],['fechaRetiro','Retiro patio'],['fechaCargue','Llenado / Cargue'],['operacion','Op.'],['empresa','Empresa'],['solicitante','Solicitante'],['placa','Placa'],['conductor','Conductor'],['pais','Destino'],
@@ -2031,13 +2077,18 @@ function claveUrgencia(v){
   return [1, prox || primerEvento(v) || '9999'];
 }
 const ordenUrgencia = (a, b) => { const x = claveUrgencia(a), y = claveUrgencia(b); return x[0] - y[0] || x[1].localeCompare(y[1]); };
+// con el filtro 📆 Reunión: por el día y la hora del primer paso en esos días (reunion.js)
+const ordenReunion = (a, b) => claveReunion(a).localeCompare(claveReunion(b)) || ordenUrgencia(a, b);
 function renderLean(){
   const lean = MODO === 'lean';
   [...$('#v-tablero').children].forEach(el => el.classList.toggle('hidden', lean ? el.id !== 'leanTablero' : el.id === 'leanTablero'));
   if (!lean) return;
-  const L = visibles().sort(ordenUrgencia);
+  const L = visibles().sort(G.dia ? ordenReunion : ordenUrgencia);
   const clic = !window.MODO_CLIENTE;
-  $('#leanTablero').innerHTML = L.length ? L.map(v => rutaPedido(v).replace('<div class="ruta">', clic ? `<div class="ruta clic" onclick="abrir('${v.id}')">` : '<div class="ruta">')).join('')
+  // con 📆 Reunión: un título por día y, sobre cada ruta, lo que pasa en el viaje esos días (reunion.js)
+  $('#leanTablero').innerHTML = L.length ? L.map((v, i) => (G.dia && diaReunion(v) !== diaReunion(L[i - 1] || {}) ? `<h3 class="dia-reunion">${tituloDia(diaReunion(v))}</h3>` : '')
+      + (G.dia ? `<div class="pasos-reunion">${esc(textoPasos(v))}</div>` : '')
+      + rutaPedido(v).replace('<div class="ruta">', clic ? `<div class="ruta clic" onclick="abrir('${v.id}')">` : '<div class="ruta">')).join('')
     : '<div class="card sub" style="text-align:center;padding:24px">No hay viajes con estos filtros.</div>';
 }
 document.addEventListener('click', e => { const b = e.target.closest('[data-modo]'); if (!b) return;
@@ -2048,10 +2099,13 @@ function renderTabla(){
   const q = $('#q').value.toLowerCase();
   let rows = visibles().filter(v=> (!filtroEstado || v.estado===filtroEstado) && (!q || Object.values(v).join(' ').toLowerCase().includes(q)));
   // sin columna elegida: por lo que hay que hacer primero; al tocar un encabezado, por esa columna
-  rows.sort((a,b)=> orden.k ? String(a[orden.k]||'~').localeCompare(String(b[orden.k]||'~')) * (orden.asc?1:-1) : ordenUrgencia(a, b));
+  rows.sort((a,b)=> orden.k ? String(a[orden.k]||'~').localeCompare(String(b[orden.k]||'~')) * (orden.asc?1:-1) : G.dia ? ordenReunion(a, b) : ordenUrgencia(a, b));
   const fechas = ['fechaRetiro','fechaCargue','cierreDoc','etd','eta'];
+  // con 📆 Reunión (y sin columna elegida): una fila de título por día y, bajo Actualizar, lo que pasa en el viaje esos días
+  const porDia = G.dia && !orden.k;
+  const titulo = (v, n) => porDia && diaReunion(v) !== diaReunion(rows[n - 1] || {}) ? `<tr class="dia-reunion"><td colspan="${COLS.length+2}">${tituloDia(diaReunion(v))}</td></tr>` : '';
   $('#tbl').innerHTML = `<thead><tr><th class="num">#</th><th></th>${COLS.map(([k,l])=>`<th data-k="${k}">${l}${orden.k===k?(orden.asc?' ▲':' ▼'):''}</th>`).join('')}</tr></thead>
-  <tbody>${rows.map((v, n)=>`<tr><td class="num">${n+1}</td><td><button class="link" onclick="abrir('${v.id}')">Actualizar</button></td>${COLS.map(([k])=>{
+  <tbody>${rows.map((v, n)=>`${titulo(v, n)}<tr><td class="num">${n+1}</td><td><button class="link" onclick="abrir('${v.id}')">Actualizar</button>${G.dia ? `<div class="pasos-reunion">${esc(textoPasos(v))}</div>` : ''}</td>${COLS.map(([k])=>{
     const val = v[k];
     if (k==='situacion') return `<td>${tagNuevo(v)}${sitTag(v)}</td>`;
     if (k==='estado') return `<td>${pill(val)}${celdaConductor(v)}</td>`;
