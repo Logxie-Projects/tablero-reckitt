@@ -1778,7 +1778,10 @@ function estadoTurno(){
   return {r, n, R, M, resta, rondaHecha, rondaVencida, rondaExc, rojas, excepciones, bloqueado: !window.MODO_CLIENTE && !esGerencia() && !esFacturacion() && !enPausa() && rojas.some(Boolean)};
 }
 
-const nombreTurno = v => v ? `${v.placa || 'Sin vehículo'} · ${v.operacion} ${v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || '')}${v.padre ? ' · subviaje' : ''}` : '';
+// con la placa sola a veces no se sabe qué viaje es: va también el número con que lo identifica el cliente (booking en EXPO,
+// pedido en IMPO; dominio.js clavesBusqueda) y el id del tablero
+const refTurno = v => [clavesBusqueda(v).filter(([k]) => k !== 'Placa').slice(0, 1).map(([k, x]) => `${k} ${x}`)[0], v.id].filter(Boolean).join(' · ');
+const nombreTurno = v => v ? `${v.placa || 'Sin vehículo'} · ${v.operacion} ${v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || '')}${v.padre ? ' · subviaje' : ''} · ${refTurno(v)}` : '';
 const btnT = (txt, data, title='') => `<button type="button" class="link" ${data} ${title ? `title="${esc(title)}"` : ''}>${txt}</button>`;
 const lnkT = (txt, url) => `<a class="link" href="${url}" target="_blank" rel="noopener">${txt}</a>`;
 function filaTurno(x, rev){
@@ -1786,7 +1789,7 @@ function filaTurno(x, rev){
   let titulo = '', detalle = '', acc = [], marca = rev ? '↺ Volver a la lista' : '✓ Revisado';
   if (x.tipo === 'seg') {
     const p = x.p;
-    titulo = `${esc(v.placa)} · ${esc(v.operacion)} ${esc(v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || ''))} <span class="sub">· ${esc([v.conductor, v.contenedor].filter(Boolean).join(' · '))}</span>`;
+    titulo = `${esc(v.placa)} · ${esc(v.operacion)} ${esc(v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || ''))} <span class="sub">· ${esc([v.conductor, refCliente(v), v.id].filter(Boolean).join(' · '))}</span>`;
     detalle = `📍 <b>${esc(p.donde)}</b>${p.quieto ? ` · <span style="${x.roja ? 'color:var(--bad);font-weight:600' : ''}">${esc(p.quieto)}</span>` : ''}`
       + (p.espera ? `<br>${x.roja ? '<span style="color:var(--bad);font-weight:600">⚠ ' + esc(p.espera) + '</span> · ' + esc(p.porque) : esc(p.espera)}` : '')
       + (p.app ? `<br>${esc(p.app)}` : '');
