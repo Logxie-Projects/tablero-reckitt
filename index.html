@@ -3247,7 +3247,7 @@ $('#ovBarrido').onclick = e => {
 // retiro…) que Apps Script archiva en Drive por mes (pestañas Documentos y Documentos por booking). Busca por booking, destino o
 // viaje y marca lo que falta. Solo lee.
 let DOCS = null;
-const TIPOS_CLAVE = ['Confirmación de booking', 'Carta de retiro'];
+const TIPOS_CLAVE = ['Confirmación de booking', 'Carta de retiro', 'Comodato', 'Order List'];
 
 async function abrirDocumentos(){
   $('#ovDocs').classList.add('open');
@@ -3275,10 +3275,11 @@ function pintarDocumentos(){
   const sinBk = DOCS.archivos.filter(a => a.mes === mes && !a.booking);
   const faltan = DOCS.porBooking.filter(r => r.mes === mes && r.falta).length;
   $('#docsLista').innerHTML = `<p class="sub">${filas.length} contenedores · <b style="color:${faltan ? 'var(--bad)' : 'var(--ok)'}">${faltan} con documentos o booking pendientes</b></p>
-    <div class="tbl-wrap"><table class="prop"><tr><th>Cargue</th><th>Destino</th><th>Motonave</th><th>Booking</th><th>Viaje</th><th>Confirmación</th><th>Carta de retiro</th><th>Otros</th><th>Falta</th></tr>
+    <div class="tbl-wrap"><table class="prop"><tr><th>Cargue</th><th>Destino</th><th>Motonave</th><th>Booking</th><th>Viaje</th><th>Confirmación</th><th>Carta de retiro</th><th title="MAERSK pide Comodato; MSC pide Order List">Comodato / Order List</th><th>Otros</th><th>Falta</th></tr>
     ${filas.map(r => `<tr><td style="white-space:nowrap">${fd(r.fechaCargue)}</td><td>${esc(r.pais)}<br><span class="sub">${esc(r.unidad)}</span></td><td>${esc(r.mn || '—')}</td>
       <td><b>${esc(r.booking)}</b></td><td>${r.viaje ? r.viaje.split(', ').map(id => `<button class="link" onclick="$('#ovDocs').classList.remove('open');abrir('${esc(id)}')">${esc(id)}</button>`).join(' ') : '<span class="sub">—</span>'}</td>
-      <td>${marca(r, 'Confirmación de booking', r.confirmacion)}</td><td>${marca(r, 'Carta de retiro', r.carta)}</td><td class="sub">${otros(r.booking)}</td>
+      <td>${marca(r, 'Confirmación de booking', r.confirmacion)}</td><td>${marca(r, 'Carta de retiro', r.carta)}</td>
+      <td>${(r.naviera || '') ? `<span class="sub">${esc(r.naviera.replace(/ [✔✖]$/, ''))}</span> ${marca(r, r.naviera.replace(/ [✔✖]$/, ''), /✔$/.test(r.naviera) ? '✔' : '✖')}` : '<span class="sub">no aplica</span>'}</td><td class="sub">${otros(r.booking)}</td>
       <td>${r.falta ? `<span style="color:var(--bad)">${esc(r.falta)}</span>` : '<span style="color:var(--ok)">Completo</span>'}</td></tr>`).join('')}</table></div>
     ${sinBk.length ? `<p class="sub" style="margin-top:8px">Archivos sin booking en el nombre (revisarlos y renombrarlos en Drive): ${sinBk.map(a => `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.nombre)}</a>`).join(' · ')}</p>` : ''}`;
 }
