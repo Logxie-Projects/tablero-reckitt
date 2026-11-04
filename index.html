@@ -1085,12 +1085,13 @@ const datoDeAccion = b => { const dn = datosNuevosDe(b); return Object.assign({}
 // viaje de la acción: el que LogxIA ligó (viajeId) o el que coincide por un dato fuerte, primero los vigentes (viajeDe)
 const viajeDeAccion = (b, lista) => viajeDe(datoDeAccion(b), lista) || null;
 // acción que pide crear un viaje que ya está en la base (mismo booking, contenedor, DO, RBHY, OBD o pedido; nunca solo la
-// placa): no se ofrece crearlo otra vez (quedaría repetido); la acción dice cuál es y el equipo la cierra con un clic
+// placa): no se ofrece crearlo otra vez (quedaría repetido); la acción dice cuál es y el equipo la cierra con un clic.
+// Cuenta también un viaje CERRADO (ya se hizo y hasta se facturó: pasó con EXPO-001 y la acción LX-0060); uno cancelado no
 const pideCrearViaje = b => /(^|:\s*)crear (en el tablero )?(el )?viaje|crear viaje nuevo/i.test(b.accion);
 function yaCreado(b, lista){
   if (!pideCrearViaje(b)) return null;
   const d = datoDeAccion(b), fuerte = d.viajeId || compacto(d.pedido) || CLAVES_VIAJE.some(k => compacto(d[k]));
-  return fuerte ? (d.viajeId && (lista || viajes).find(v => v.id === d.viajeId)) || viajesDe(d, lista).find(vigente) || null : null;
+  return fuerte ? (d.viajeId && (lista || viajes).find(v => v.id === d.viajeId)) || viajesDe(d, lista).find(v => situacion(v) !== 'Cancelado') || null : null;
 }
 // acción que el avance del viaje ya muestra hecha (la operación siguió, pero nadie la marcó). Cada paso que pide se
 // compara con lo que el viaje registra; debe pedir al menos un hito (retiro, entrega, devolución, factura) y estar
