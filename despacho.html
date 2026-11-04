@@ -135,9 +135,24 @@ async function cargar(silencioso) {
     if (!d.ok) { if (d.error === 'clave') { CLAVE = ''; ls.set('despacho_clave', ''); return login(true); } throw new Error(d.error); }
     ls.set('despacho_clave', CLAVE);
     if (!USUARIO) return login();   // falta el nombre: se pide en el formulario (prompt() no funciona en todos los navegadores)
-    D = d; pintar();
+    D = d; D.turnos = turnosHora ? TURNOS : null; pintar();
+    cargarTurnos();
   } catch (e) { if (!silencioso) toast('No se pudo cargar: ' + e.message); }
 }
+// conductores enturnados y disponibles en la app Viajes ETP (turnos.html): vienen con los datos del tablero
+// (turnosConductores, Conductores.gs resumenTurnos_: últimos 10 días, sin los retirados); se piden aparte para no demorar Despacho
+let TURNOS = [], turnosHora = 0, DESTINOS = {};   // DESTINOS: id del viaje -> país o bodega (Despacho no los trae)
+async function cargarTurnos(forzar) {
+  if (!forzar && Date.now() - turnosHora < 5 * 60e3) return;
+  try {
+    const j = await (await fetch(API + '?' + new URLSearchParams({ formato: 'json', clave: CLAVE }))).json();
+    if (!j.ok) return;
+    TURNOS = j.turnosConductores || []; turnosHora = Date.now();
+    (j.viajes || []).forEach(v => { DESTINOS[v.id] = v.operacion === 'EXPO' ? v.pais : (v.bodega || v.destino); });
+    if (D) { D.turnos = TURNOS; if (!$('#velo')) pintar(); }
+  } catch (e) { /* sin turnos: Despacho sigue igual */ }
+}
+const enturnadosDe = v => (D.turnos || []).filter(t => t.tipo === 'Turno' && t.viajeId === v.id);
 
 /* ---------- cálculo ---------- */
 const activa = a => a.estado === 'Activa';
@@ -171,6 +186,7 @@ function pintar() {
   const curso = D.asignaciones.filter(activa);
   const term = D.asignaciones.filter(a => !activa(a));
   const libres = D.viajes.filter(v => !asignacionDe(v));
+  const nEnt = (D.turnos || []).filter(t => t.tipo === 'Turno').length, nDisp = (D.turnos || []).filter(t => t.tipo === 'Disponible').length;
   const nov = novedadesRecientes();
   const porRevisar = D.asignaciones.filter(a => a.verificacion && a.verificacion.estado === 'Por revisar' && a.estado !== 'Anulada');
   const f = filtro.toLowerCase();
@@ -183,7 +199,7 @@ function pintar() {
     <span class="hora">datos de ${esc(D.hora)} · ${esc(USUARIO)}</span>
     <div class="der">
       <input type="search" placeholder="Buscar booking, placa, conductor" value="${esc(filtro)}" oninput="filtro=this.value;pintar();this.focus();this.setSelectionRange(this.value.length,this.value.length)">
-      <button class="b" onclick="cargar()">🔄</button>
+      <button class="b" onclick="cargar();cargarTurnos(true)">🔄</button>
       <button class="b b-pri" onclick="formulario()">+ Nueva asignación</button>
     </div>
   </header>
@@ -203,8 +219,9 @@ function pintar() {
       <button class="${pestana === 'curso' ? 'on' : ''}" onclick="pestana='curso';pintar()">En curso<span class="num">${curso.length}</span></button>
       <button class="${pestana === 'libres' ? 'on' : ''}" onclick="pestana='libres';pintar()">Viajes sin asignar<span class="num">${libres.length}</span></button>
       <button class="${pestana === 'term' ? 'on' : ''}" onclick="pestana='term';pintar()">Terminadas / anuladas<span class="num">${term.length}</span></button>
+      <button class="${pestana === 'turnos' ? 'on' : ''}" onclick="pestana='turnos';pintar()">🙋 Enturnados<span class="num">${nEnt}</span>${nDisp ? `<span class="num" title="Disponibles">🟢 ${nDisp}</span>` : ''}</button>
     </div>
-    ${pestana === 'curso' ? tarjetas(curso.filter(pasa)) : pestana === 'term' ? tarjetas(term.filter(pasa).reverse()) : tablaLibres(libres.filter(pasa))}
+    ${pestana === 'curso' ? tarjetas(curso.filter(pasa)) : pestana === 'term' ? tarjetas(term.filter(pasa).reverse()) : pestana === 'turnos' ? vistaTurnos(f) : tablaLibres(libres.filter(pasa))}
   </main>`;
 }
 
@@ -240,12 +257,54 @@ function tarjetas(lista) {
 
 function tablaLibres(lista) {
   if (!lista.length) return '<div class="vacio">Todos los viajes abiertos de la hoja ya tienen conductor asignado en la app.</div>';
-  return `<div class="tabla"><table><thead><tr><th>Op.</th><th>Booking</th><th>Placa</th><th>Conductor</th><th>Retiro</th><th>Llenado</th><th>Patio / Puerto</th><th>Status</th><th></th></tr></thead><tbody>
+  return `<div class="tabla"><table><thead><tr><th>Op.</th><th>Booking</th><th>Placa</th><th>Conductor</th><th>Retiro</th><th>Llenado</th><th>Patio / Puerto</th><th>Status</th><th>🙋 Enturnados</th><th></th></tr></thead><tbody>
     ${lista.map(v => `<tr><td><span class="op ${v.operacion}">${esc(v.operacion)}</span></td><td><b>${esc(v.booking)}</b></td>
       <td><span class="placa">${esc(v.placa || '—')}</span></td><td>${esc(v.conductor || '—')}</td><td>${esc(v.fechaRetiro)}</td><td>${esc(v.fechaCargue)}</td>
       <td>${esc([v.patio, v.puerto].filter(Boolean).join(' / '))}</td><td>${esc(v.situacion)}</td>
+      <td>${enturnadosDe(v).map(t => botonTurno(v, t)).join(' ') || '<span class="sub">—</span>'}</td>
       <td><button class="b b-mini b-pri" onclick="formulario(null,'${esc(v.id)}')">Asignar</button></td></tr>`).join('')}
   </tbody></table></div>`;
+}
+
+/* ---------- enturnados y disponibles (app Viajes ETP) ---------- */
+const nombreViaje = v => `${v.operacion} ${DESTINOS[v.id] || (v.operacion === 'EXPO' ? v.pais : v.bodega || v.destino) || ''}`.trim();
+const primerDia = v => v.fechaRetiro || v.fechaCargue || '';
+const diaTxt = iso => iso ? new Date(iso.slice(0, 10) + 'T12:00').toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' }) : 'sin fecha';
+const celTurno = t => String(t.telefono || '').replace(/^57(?=\d{10}$)/, '');
+function botonTurno(v, t) {
+  return `<button class="b b-mini b-pri" onclick='asignarTurno(${JSON.stringify(v.id)}, ${JSON.stringify({ placa: t.placa, conductor: t.conductor, telefono: celTurno(t) })})'
+    title="Se enturnó ${esc(hace(t.creado))} · cel ${esc(celTurno(t))}">🙋 ${esc(t.placa)} · ${esc(String(t.conductor).split(' ').slice(0, 2).join(' '))}</button>`;
+}
+function asignarTurno(viajeId, pre) { formulario(null, viajeId, pre); }
+function vistaTurnos(f) {
+  if (!D.turnos) return '<div class="vacio">Cargando los turnos de la app…</div>';
+  const pasaT = t => !f || JSON.stringify([t.placa, t.conductor, t.viajeId, t.ciudad]).toLowerCase().includes(f);
+  const turnos = D.turnos.filter(t => t.tipo === 'Turno' && pasaT(t)), disp = D.turnos.filter(t => t.tipo === 'Disponible' && pasaT(t));
+  const viajeDe = id => D.viajes.find(v => v.id === id);
+  const ids = [...new Set(turnos.map(t => t.viajeId))].sort((a, b) => String(primerDia(viajeDe(a) || {}) || '9').localeCompare(String(primerDia(viajeDe(b) || {}) || '9')));
+  const wa = (t, txt) => t.telefono ? `<a class="b b-mini b-wa" target="_blank" href="https://wa.me/${String(t.telefono).replace(/\D/g, '')}?text=${encodeURIComponent(txt)}">💬</a>` : '';
+  const porViaje = ids.length ? `<div class="grid">${ids.map(id => {
+    const v = viajeDe(id), L = turnos.filter(t => t.viajeId === id).sort((a, b) => String(a.creado).localeCompare(String(b.creado)));
+    const asig = v && asignacionDe(v);
+    return `<div class="card"><div class="top"><span class="op ${v ? v.operacion : ''}">${esc(v ? v.operacion : '')}</span>
+        <div><div class="bk">${esc(id)} · ${esc(v ? nombreViaje(v) : 'viaje cerrado o no encontrado')}</div>
+        <div class="sub">${v ? `${v.booking ? 'Booking ' + esc(v.booking) + ' · ' : ''}<b>${esc(diaTxt(primerDia(v)))}</b> · ${asig ? `asignado a <span class="placa">${esc(asig.placa || '')}</span>` : v.placa ? `vehículo <span class="placa">${esc(v.placa)}</span>` : '<span class="tarde">sin vehículo</span>'}` : ''}</div></div></div>
+      ${L.map((t, i) => `<div class="estado" style="align-items:center"><span>${i + 1}.º <span class="placa">${esc(t.placa)}</span> ${esc(t.conductor)} <span class="sub">· ${esc(celTurno(t))} · ${esc(hace(t.creado))}</span></span>
+        <span style="display:flex;gap:4px">${v && !asig && !v.placa ? botonTurno(v, t) : ''}${wa(t, `Hola ${String(t.conductor).split(' ')[0]}, sobre el viaje ${v ? nombreViaje(v) + ' del ' + diaTxt(primerDia(v)) : id} al que se enturnó: `)}</span></div>`).join('')}
+    </div>`;
+  }).join('')}</div>` : '<div class="vacio">Ningún conductor se ha enturnado en los últimos 10 días.</div>';
+  const libres = D.viajes.filter(v => !asignacionDe(v) && !v.placa && primerDia(v)).sort((a, b) => primerDia(a).localeCompare(primerDia(b)));
+  const disponibles = disp.length ? `<div class="tabla"><table><thead><tr><th>Vehículo y conductor</th><th>Disponible</th><th>Asignar a un viaje sin vehículo</th><th></th></tr></thead><tbody>
+    ${disp.map(t => { const ops = libres.filter(v => !t.desde || primerDia(v) >= t.desde);
+      return `<tr><td><span class="placa">${esc(t.placa)}</span> ${esc(t.conductor)}<div class="sub">${esc(celTurno(t))}</div></td>
+        <td>${t.desde ? 'desde ' + esc(diaTxt(t.desde)) : 'ya'}${t.ciudad ? ' · ' + esc(t.ciudad) : ''}<div class="sub">avisó ${esc(hace(t.creado))}</div></td>
+        <td>${ops.length ? `<select onchange='if(this.value) asignarTurno(this.value, ${JSON.stringify({ placa: t.placa, conductor: t.conductor, telefono: celTurno(t) })})'><option value="">Elegir viaje…</option>
+          ${ops.map(v => `<option value="${esc(v.id)}">${esc(diaTxt(primerDia(v)))} · ${esc(v.id)} · ${esc(nombreViaje(v))}</option>`).join('')}</select>` : '<span class="sub">No hay viajes sin vehículo desde esa fecha</span>'}</td>
+        <td>${wa(t, `Hola ${String(t.conductor).split(' ')[0]}, vimos que está disponible${t.desde ? ' desde el ' + diaTxt(t.desde) : ''}: `)}</td></tr>`; }).join('')}
+  </tbody></table></div>` : '<div class="vacio">Nadie ha reportado estar disponible en los últimos 10 días.</div>';
+  return `<p class="sub" style="margin:0 0 10px">Lo que los conductores marcaron en la app Viajes ETP (últimos 10 días, sin los que se retiraron). 🙋 abre la asignación con el vehículo, el conductor y su celular ya puestos.</p>
+    <h3 style="margin:0 0 8px">🙋 Enturnados por viaje</h3>${porViaje}
+    <h3 style="margin:18px 0 8px">🟢 Disponibles</h3>${disponibles}`;
 }
 
 /* ---------- asignar / editar ---------- */
@@ -254,11 +313,12 @@ function telDe(conductor, placa) {
   const d = D.directorio.find(x => conductor && n(x.conductor) === n(conductor)) || D.directorio.find(x => placa && n(x.placa) === n(placa));
   return d ? d.telefono : '';
 }
-function formulario(token, viajeId) {
+function formulario(token, viajeId, pre) {
   const a = token ? D.asignaciones.find(x => x.token === token) : null;
   const v = viajeId ? D.viajes.find(x => x.id === viajeId) : null;
   const o = a || (v ? { operacion: v.operacion, booking: v.booking, placa: v.placa, conductor: v.conductor, viajeId: v.id,
     telefono: telDe(v.conductor, v.placa), lugarCita: v.operacion === 'EXPO' ? v.bodega || '' : v.puerto || '' } : { operacion: 'EXPO' });
+  if (pre) Object.assign(o, pre);   // el conductor enturnado en la app (vistaTurnos / botonTurno)
   ventana(`<h2>${a ? 'Actualizar asignación' : 'Nueva asignación'}</h2>
     <form class="form" id="fa" onsubmit="guardarAsig(event, ${a ? `'${a.token}'` : 'null'})">
       <input type="hidden" name="viajeId" value="${esc(o.viajeId || '')}">
