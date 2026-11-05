@@ -561,7 +561,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
     <div class="sub">Status de los viajes para Reckitt, sin enlaces. Marque los que van; "Enviar prueba" lo manda solo a calidad@ para revisarlo.</div>
     <div class="sub" id="rcPara" style="margin-top:6px"></div>
     <div id="rcLista" style="margin-top:8px;max-height:55vh;overflow:auto"></div>
-    <div class="mfoot"><span class="sub" id="rcN" style="margin-right:auto"></span><button class="btn" id="rcCerrar">Cerrar</button><button class="btn" id="rcPrueba">Enviar prueba (a calidad@)</button><button class="btn primary" id="rcEnviar">Enviar al cliente</button></div>
+    <div id="rcEstado" class="sub" style="margin-top:8px;font-weight:600" role="status" aria-live="polite"></div><div class="mfoot"><span class="sub" id="rcN" style="margin-right:auto"></span><button class="btn" id="rcCerrar">Cerrar</button><button class="btn" id="rcPrueba">Enviar prueba (a calidad@)</button><button class="btn primary" id="rcEnviar">Enviar al cliente</button></div>
   </div>
 </div>
 <div class="ov" id="ovCom">
@@ -1481,10 +1481,13 @@ function celdaConductor(v){
 }
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2200); }
 /* ---------- servidor, usuario, hora de Colombia y WhatsApp: un solo lugar para todo el tablero ---------- */
+// la clave: la de los datos ya cargados o, mientras cargan (los primeros segundos muestran datos de demostración), la del enlace.
+// Antes solo se tomaba al terminar de cargar y un botón presionado en esos segundos fallaba con "clave" (5-nov)
+const claveActual = () => window.CLAVE || new URLSearchParams(location.search).get('clave') || '';
 // POST al Apps Script con la clave del equipo; devuelve la respuesta (JSON)
 async function api(action, datos = {}){
   const r = await fetch(CFG.SHEETS_API_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'},
-    body: JSON.stringify({action, clave: window.CLAVE, ...datos})});
+    body: JSON.stringify({action, clave: claveActual(), ...datos})});
   return r.json();
 }
 // INGRESAR COMO: al abrir el tablero (solo el equipo) cada persona elige quién es de la lista EQUIPO; ese nombre queda en todo lo
@@ -1499,7 +1502,21 @@ const usuarioGuardado = () => { try { return sessionStorage.getItem('rkt-quien')
 const usuarioActual = () => usuarioGuardado() || CFG.USUARIO || '';
 // el nombre ya no se cambia desde las casillas: guardarUsuario devuelve el de la sesión (si no hay sesión, el que llega)
 const guardarUsuario = u => usuarioGuardado() || String(u || '').trim().slice(0, 60);
-const pedirUsuario = pregunta => usuarioGuardado() || String(prompt(pregunta) || '').trim().slice(0, 60);
+// sin nombre en la sesión: se abre "Ingresar como" (la lista del equipo) y la acción se repite después. Ya no usa prompt(): varios
+// navegadores del celular (WhatsApp, Gmail) lo bloquean sin avisar y el botón "no hacía nada" (5-nov)
+const pedirUsuario = () => { const u = usuarioGuardado(); if (u) return u;
+  elegirUsuario(); toast('Primero elija quién es y vuelva a presionar'); return ''; };
+// pregunta Sí / No dentro del tablero (en vez de confirm(), que esos navegadores también bloquean): devuelve una promesa true / false
+function preguntarSiNo(texto, si = 'Sí', no = 'Cancelar'){
+  return new Promise(ok => {
+    $('#ovPreguntar')?.remove();
+    document.body.insertAdjacentHTML('beforeend', `<div class="ov open" id="ovPreguntar" style="z-index:75"><div class="modal" role="dialog" aria-modal="true" style="width:min(440px,100%)">
+      <div style="white-space:pre-line;margin-bottom:14px">${esc(texto)}</div>
+      <div class="mfoot"><button type="button" class="btn" data-pr="0">${esc(no)}</button><button type="button" class="btn primary" data-pr="1">${esc(si)}</button></div></div></div>`);
+    $('#ovPreguntar').onclick = e => { const b = e.target.closest('[data-pr]'); if (!b && e.target.id !== 'ovPreguntar') return;
+      $('#ovPreguntar').remove(); ok(!!b && b.dataset.pr === '1'); };
+  });
+}
 const CASILLAS_USUARIO = '#mUsuario,#regUsuario,#progUsuario,#barridoUsuario,#propUsuario,#subUsuario';
 function fijarUsuario(){
   const u = usuarioGuardado();
@@ -1591,7 +1608,7 @@ async function guardarCambio(id, cambios, usuario, opciones = {}){
   if (!v.vistoPor && hayControlVisto()) v.vistoPor = usuario || 'equipo';
   historial.push({fecha:v.actualizado, id, placa:v.placa, estadoAnterior:anterior, estadoNuevo:v.estado, observacion:cambios.observacion||'', usuario:usuario||CFG.USUARIO||''});
   const enBase = {...cambios};
-  if (window.CLAVE && Object.keys(enBase).length){
+  if (claveActual() && Object.keys(enBase).length){
     render();
     try{
       const j = await api('update', {id, cambios:enBase, usuario, telefono: telefonoPara(id), ...(opciones.confirma === false ? {fuente: 'plan'} : {})});
@@ -1766,7 +1783,7 @@ async function marcarHecha(id, noEtp, nota){
   const yo = usuarioActual();
   const usuario = noEtp ? `${NO_ETP} · ${yo}` : nota ? `${yo} · ${nota}` : yo;
   b.estadoAccion = 'Hecha'; b.resueltoEn = new Date().toISOString(); b.resueltoPor = usuario;
-  if (window.CLAVE){
+  if (claveActual()){
     try { await api('resolver', {id, usuario});
       toast(noEtp ? 'Acción cerrada: no es para Entrapetrol' : 'Acción marcada como hecha'); }
     catch(e){ toast('No se pudo guardar en la bitácora'); }
@@ -2170,7 +2187,7 @@ $('#v-turno').addEventListener('input', e => { if (e.target.id === 'tPausaHora')
 // A Entrapetrol sale al momento; al solicitante del viaje (CORREOS_SOLICITANTE) no: queda en cola y le llega en el resumen de
 // las 10 a. m. y las 3 p. m. (AVISO_CLIENTE en Código.gs), para no saturar al cliente con un correo por hito.
 async function ofrecerAviso(v, cambios, usuario){
-  const H = hitosDelCambio(v, cambios); if (!H.length || !window.CLAVE || window.MODO_CLIENTE) return;
+  const H = hitosDelCambio(v, cambios); if (!H.length || !claveActual() || window.MODO_CLIENTE) return;
   const viaje = `${refCliente(v) || v.placa || 'Sin referencia'} · ${v.operacion} ${v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || '')}`;
   if (!confirm(`¿Avisar este hito?\n\n${viaje}\n${H.map(h => '• ' + h.txt).join('\n')}\n\nEntrapetrol: ahora${v.solicitante ? `\n${v.solicitante} (cliente): en el resumen de las 10 a. m. o las 3 p. m.` : ''}`)) return;
   try {
@@ -3346,8 +3363,9 @@ const fuenteDeOrigen = o => /conductor/i.test(o || '') ? 'conductor' : /novedad/
 async function confirmarPaso(id, campo, fecha){
   const v = viajes.find(x => x.id === id); if (!v) return toast('No se encontró el viaje ' + id);
   const txt = (pasosDe(v).find(p => p[0] === campo) || [])[1] || campo;
-  if (!confirm(`¿Confirma que ${txt.toLowerCase()} se hizo el ${fd(fecha)}?\n\n${v.id} · ${v.placa || 'sin placa'}\nQueda con su nombre. Si no se hizo, cancele y cambie la fecha en el viaje.`)) return;
-  const usuario = usuarioActual() || pedirUsuario('¿Quién confirma? (queda con su nombre)'); if (!usuario) return;
+  // nombre y pregunta dentro del tablero (base.js pedirUsuario / preguntarSiNo): confirm() y prompt() los bloquean algunos navegadores del celular
+  const usuario = pedirUsuario(); if (!usuario) return;
+  if (!await preguntarSiNo(`¿Confirma que ${txt.toLowerCase()} se hizo el ${fd(fecha)}?\n\n${v.id} · ${v.placa || 'sin placa'}\nQueda a nombre de ${usuario}. Si no se hizo, cancele y cambie la fecha en el viaje.`, 'Sí, se hizo')) return;
   const antes = v.confirmados || '';
   v.confirmados = [antes, [campo, fecha, usuario, 'equipo', HOY].join('|')].filter(Boolean).join(';;');
   repintarConfirmado(id);
@@ -3382,7 +3400,7 @@ let propArea = '';
 async function cargarPropuestas(intentos = 3){
   for (let i = 0; i < intentos; i++) {
     try {
-      const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=propuestas&clave=' + encodeURIComponent(window.CLAVE))).json();
+      const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=propuestas&clave=' + encodeURIComponent(claveActual()))).json();
       if (j.ok) { PROP = j.propuestas || []; $('#nProp').textContent = PROP.length || ''; return true; }
     } catch(e) {}
     await new Promise(r => setTimeout(r, 3000 * (i + 1)));
@@ -3391,7 +3409,7 @@ async function cargarPropuestas(intentos = 3){
 }
 async function abrirPropuestas(){
   if (!CFG.SHEETS_API_URL) return toast('Funciona desde el tablero publicado');
-  if (!window.CLAVE) return toast('Espere a que carguen los datos e intente de nuevo');
+  if (!claveActual()) return toast('Espere a que carguen los datos e intente de nuevo');
   $('#propLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">Buscando datos en los correos…</div>';
   $('#propUsuario').value = usuarioGuardado() || '';
   $('#propTodos').checked = false;
@@ -3498,7 +3516,7 @@ $('#ovSub').onclick = e => { if (e.target.id==='ovSub') $('#ovSub').classList.re
 $('#subCrear').onclick = async () => {
   const usuario = $('#subUsuario').value.trim();
   if (!usuario) { $('#subUsuario').focus(); return toast('Escriba su nombre'); }
-  if (!CFG.SHEETS_API_URL || !window.CLAVE) return toast('Funciona desde el tablero publicado');
+  if (!CFG.SHEETS_API_URL || !claveActual()) return toast('Funciona desde el tablero publicado');
   guardarUsuario(usuario);
   $('#subCrear').disabled = true;
   try {
@@ -3527,7 +3545,7 @@ function textoProgramacion(v, antes, despues){
 async function atajoProgramacion(b){
   toast('Buscando el cuadro de programación en los correos…');
   try {
-    const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=correos&dias=20&clave=' + encodeURIComponent(window.CLAVE))).json();
+    const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=correos&dias=20&clave=' + encodeURIComponent(claveActual()))).json();
     const progs = (j.correos||[]).filter(c => c.programacion && c.programacion.length);
     const nMes = MESES_LARGO.findIndex(m => minus(b.asunto + ' ' + b.accion).includes(m));
     const c = progs.find(p => Number(p.programacion[0].fechaCargue.slice(5, 7)) === nMes + 1) || progs[0];
@@ -3708,12 +3726,12 @@ async function aplicarProgramacion(){
 let BARRIDO = [];
 const BODEGAS_CORREO = [[/cortijo/i, 'DHL Cortijo'], [/agecolda/i, 'Agecolda'], [/solistica/i, 'Solistica']];
 async function abrirBarrido(){
-  if (!CFG.SHEETS_API_URL || !window.CLAVE) return toast('Funciona desde el tablero publicado');
+  if (!CFG.SHEETS_API_URL || !claveActual()) return toast('Funciona desde el tablero publicado');
   $('#barridoLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">Leyendo el buzón de calidad@…</div>';
   $('#barridoUsuario').value = usuarioGuardado() || '';
   $('#ovBarrido').classList.add('open');
   try {
-    const r = await fetch(CFG.SHEETS_API_URL + '?formato=json&que=correos&dias=2&clave=' + encodeURIComponent(window.CLAVE));
+    const r = await fetch(CFG.SHEETS_API_URL + '?formato=json&que=correos&dias=2&clave=' + encodeURIComponent(claveActual()));
     const t = await r.text();
     let j; try { j = JSON.parse(t); } catch(e) { throw new Error('el servidor aún no tiene permiso para leer el buzón de calidad@'); }
     if (!j.ok) throw new Error(j.error || 'error');
@@ -3852,7 +3870,7 @@ async function abrirDocumentos(){
   if (!DOCS) {
     $('#docsLista').innerHTML = '<p class="sub">Cargando los documentos…</p>';
     try {
-      const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=documentos&clave=' + encodeURIComponent(window.CLAVE))).json();
+      const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=documentos&clave=' + encodeURIComponent(claveActual()))).json();
       if (!j.ok) throw new Error(j.error || 'error');
       DOCS = j;
     } catch(e) { $('#docsLista').innerHTML = `<p class="sub">No se pudieron leer los documentos: ${esc(e.message)}</p>`; return; }
@@ -4032,7 +4050,7 @@ let RES_CLI = null;
 async function abrirResumenCliente(){
   $('#rcLista').innerHTML = '<p class="sub">Cargando los viajes…</p>'; $('#rcPara').textContent = ''; $('#ovResCli').classList.add('open');
   try {
-    const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=resumenCliente&clave=' + encodeURIComponent(window.CLAVE))).json();
+    const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=resumenCliente&clave=' + encodeURIComponent(claveActual()))).json();
     if (!j.ok) throw new Error(j.error || 'error');
     RES_CLI = j; pintarResumenCliente();
   } catch(e) { $('#rcLista').innerHTML = `<p class="missing">No se pudo cargar: ${esc(e.message)}</p>`; }
@@ -4069,18 +4087,24 @@ function contarResCli(){
   $('#rcN').textContent = `${n} viaje${n === 1 ? '' : 's'} · ${p} destinatario${p === 1 ? '' : 's'} de Reckitt`;
   $('#rcEnviar').disabled = $('#rcPrueba').disabled = !n || !p;
 }
+// el resultado queda escrito en la ventana (no solo en un aviso que desaparece): así se sabe si salió o por qué no
+const estadoResCli = (txt, color) => { const e = $('#rcEstado'); if (e) { e.textContent = txt; e.style.color = color || ''; } };
 async function enviarResCli(prueba){
-  const viajesSel = elegidosResCli(); if (!viajesSel.length) return;
-  const usuario = usuarioActual() || pedirUsuario('¿Quién envía? (queda con su nombre)'); if (!usuario) return;
+  const viajesSel = elegidosResCli(); if (!viajesSel.length) return estadoResCli('Marque al menos un viaje', 'var(--bad)');
+  // sin nombre: se abre "Ingresar como" (base.js) y se vuelve a presionar; nada de prompt()/confirm(), que el celular puede bloquear
+  const usuario = pedirUsuario(); if (!usuario) return estadoResCli('Elija quién es (Ingresar como) y vuelva a presionar', 'var(--warn)');
   const para = paraResCli(); try { localStorage.setItem('rkt-rc-para', JSON.stringify(para)); } catch(e){}
-  if (!prueba && !confirm(`¿Enviar a Reckitt el status de ${viajesSel.length} viaje${viajesSel.length === 1 ? '' : 's'}?\n\nPara: ${nombresPara().join(', ')}`)) return;
+  if (!prueba && !await preguntarSiNo(`¿Enviar a Reckitt el status de ${viajesSel.length} viaje${viajesSel.length === 1 ? '' : 's'}?\n\nPara: ${nombresPara().join(', ')}`, 'Sí, enviar')) return estadoResCli('Envío cancelado');
   const b = prueba ? $('#rcPrueba') : $('#rcEnviar'), txt = b.textContent; b.disabled = true; b.textContent = 'Enviando…';
+  estadoResCli('Enviando…');
   try {
     const j = await api('resumenCliente', {viajes: viajesSel, para, usuario, prueba: !!prueba});
     if (!j.ok) throw new Error(j.error || 'error');
-    toast(prueba ? `Prueba enviada a ${j.para}: revise el correo` : `Resumen enviado a Reckitt · ${j.viajes} viajes`);
-    if (!prueba) $('#ovResCli').classList.remove('open');
-  } catch(e) { toast('No se envió: ' + e.message); }
+    const hora = ahoraBogota().hhmm || '';
+    const ok = prueba ? `✓ Prueba enviada a ${j.para} ${hora}: revise el correo` : `✓ Resumen enviado a Reckitt ${hora} · ${j.viajes} viaje${j.viajes === 1 ? '' : 's'}`;
+    estadoResCli(ok, 'var(--ok)'); toast(ok);
+    if (!prueba) setTimeout(() => $('#ovResCli').classList.remove('open'), 2500);
+  } catch(e) { estadoResCli('✖ No se envió: ' + e.message, 'var(--bad)'); toast('No se envió: ' + e.message); }
   finally { b.textContent = txt; contarResCli(); }
 }
 $('#btnResCli').onclick = abrirResumenCliente;
@@ -4098,7 +4122,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // recarga solo con ?v=<nueva> (la dirección nueva evita la copia guardada del navegador y de GitHub Pages). Si hay una ventana
 // abierta o algo escrito sin guardar, no interrumpe: muestra arriba "Hay una versión nueva · Actualizar". La sesión "Ingresar como"
 // se conserva (sessionStorage). En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '13181d92ed';
+const VERSION_TABLERO = 'd53305c89d';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 function actualizarTablero(v){ const u = new URL(location.href); u.searchParams.set('v', v); location.replace(u.toString()); }
@@ -4219,7 +4243,7 @@ function respuestaReporte(){
 }
 // envía el mismo reporte por correo, a los destinatarios que escriba quien lo pide (solo con clave del equipo)
 async function enviarReporteCorreo(){
-  if (!CFG.SHEETS_API_URL || !window.CLAVE) return toast('El envío por correo funciona desde el tablero publicado');
+  if (!CFG.SHEETS_API_URL || !claveActual()) return toast('El envío por correo funciona desde el tablero publicado');
   const para = (prompt('¿A qué correo(s) lo envío? (separados por coma)', '') || '').split(/[,;\s]+/).map(s=>s.trim()).filter(s=>/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s));
   if (!para.length) return;
   if (!confirm(`Se enviará el reporte de errores y acciones pendientes a:\n${para.join('\n')}\n\n¿Confirmas?`)) return;
@@ -4470,9 +4494,9 @@ function pintarPreguntas(){
 // el chat trae de nuevo las preguntas (solo esa lista, sin recargar el tablero): cada minuto mientras haya alguna
 // pendiente y cada vez que se abre el chat; así la respuesta aparece apenas LogxIA la deja en la base
 async function refrescarPreguntas(){
-  if (!window.CLAVE || window.MODO_CLIENTE) return;
+  if (!claveActual() || window.MODO_CLIENTE) return;
   try {
-    const j = await (await fetch(`${CFG.SHEETS_API_URL}?formato=json&que=preguntas&clave=${encodeURIComponent(window.CLAVE)}`)).json();
+    const j = await (await fetch(`${CFG.SHEETS_API_URL}?formato=json&que=preguntas&clave=${encodeURIComponent(claveActual())}`)).json();
     if (j.ok) { window.PREGUNTAS = j.preguntas || []; pintarPreguntas(); }
   } catch(e) {}
 }
@@ -4496,7 +4520,7 @@ function pedirClave(errada){
 // la página publicada para el cliente (Reckitt) es de solo lectura
 cargar().then(ok => { if (ok === false) return; if (window.MODO_CLIENTE) document.body.classList.add('cliente'); render();
   // datos de LogxIA por aprobar (propuestas.js): número del botón "Llenar datos desde correos" y botones "Aplicar" de las acciones
-  if (!window.MODO_CLIENTE && window.CLAVE) cargarPropuestas().then(ok => { if (ok) render(); });
+  if (!window.MODO_CLIENTE && claveActual()) cargarPropuestas().then(ok => { if (ok) render(); });
   // enlace "Abrir viaje" de un correo (?viaje=FILA-9): el equipo ve la ventana del viaje; el cliente (solo lectura) ve la lista
   // Viajes filtrada por ese viaje. Se usa una sola vez: se quita de la dirección para que recargar o guardar el enlace no lo reabra
   const vid = new URLSearchParams(location.search).get('viaje'), vv = vid && viajes.find(x => x.id === vid);
