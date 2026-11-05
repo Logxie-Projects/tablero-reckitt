@@ -428,6 +428,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
     <button class="btn correo solo-interno" id="btnCorreos" title="Datos que LogxIA encontró en los correos, para revisar y aprobar">✉ Llenar datos desde correos<span class="badge" id="nProp"></span></button>
     <button class="btn solo-interno" id="btnTurnos" title="Conductores que se enturnaron en un viaje o avisaron que están disponibles en la app Viajes ETP, de cualquier fecha; asignar o escribirles">🙋 Turnos<span class="badge" id="nTurnos"></span></button>
     <button class="btn solo-interno" id="btnResCli" title="Status de los viajes para Reckitt: elija qué viajes van, envíe una prueba a calidad@ y luego al cliente (ya no sale solo)">📨 Resumen al cliente</button>
+    <button class="btn solo-interno" id="btnNacional" title="Operación nacional: recoger estibas en ERCOL, traslados dentro de Colombia (pestaña Seguimiento NACIONAL)">🚚 Viaje nacional</button>
     <button class="btn solo-interno" id="btnComunicado" title="Comunicado a los conductores por WhatsApp (seguridad, vías, viajes disponibles, documentos): plantilla lista para el canal de avisos de la comunidad">📣 Comunicado</button>
     <button class="btn solo-interno" id="btnDocs" title="Confirmaciones de booking y cartas de retiro que llegan con la programación de Jhonier, archivadas en Drive por mes; marca lo que falta">📎 Documentos de contenedores</button>
     <button class="btn" id="btnCsv">Exportar CSV</button>
@@ -664,7 +665,7 @@ const MARCAS = [{k:'Novedad', c:'var(--s-nov)'}, {k:'Cancelado', c:'var(--s-can)
 // etapas en las que el transporte ya terminó (o el contenedor ya llegó a su destino final)
 // la carga ya llegó a su destino (puerto o bodega): para alertas e indicadores de entrega. El fin del TRANSPORTE es otra cosa:
 // terminoTransporte (por etapa), transporteFinalizado (con la fecha) y fueraDeRuta (terminó o se canceló)
-const ETAPAS_FIN = ['Entregado en puerto','Zarpó','Entregado en bodega','Vacío devuelto'];
+const ETAPAS_FIN = ['Entregado en puerto','Zarpó','Entregado en bodega','Vacío devuelto','Entregado'];
 const diffDias = iso => Math.round((new Date(iso.slice(0,10)+'T12:00') - new Date(HOY+'T12:00'))/864e5);
 const tieneVehiculo = v => !!(v.placa && v.placa.trim());
 const addDias = (iso, n) => { const d = new Date(iso.slice(0,10)+'T12:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
@@ -685,8 +686,15 @@ const FOCO_OPS = '⚠ Con pendientes de operaciones';
 // carga suelta (LCL): la importación no trae contenedor propio; no hay vacío que devolver y el transporte termina con la entrega
 // en bodega. Se identifica por pedido, DO y BL (regla del 3-nov, IMPO-014)
 const esLCL = v => v.operacion === 'IMPO' && /\bLCL\b|carga suelta/i.test(v.unidad || '');
+// operación NACIONAL (desde 5-nov): transporte dentro de Colombia sin puerto (ej. estibas de ERCOL Cali para Reckitt). Pestaña propia
+// (Base.gs SEGUIMIENTO.NACIONAL, Ref NAC-001) y los mismos campos: fechaRetiro = recogida, fechaCargue = entrega en el destino
+const esNacional = v => v.operacion === 'NACIONAL';
+const OPERACIONES_VIAJE = ['EXPO', 'IMPO', 'NACIONAL'];
+// cómo se identifica el viaje en una línea: pedido (IMPO), lo que se lleva (NACIONAL) o booking (EXPO)
+const refCorta = v => v.operacion === 'IMPO' ? (v.pedido ? 'Pedido ' + v.pedido : '') : esNacional(v) ? (v.carga || (v.pedido ? 'Pedido ' + v.pedido : ''))
+  : (v.booking ? 'Booking ' + v.booking : '');
 const terminoTransporte = v => v.operacion==='EXPO' ? ['Entregado en puerto','Zarpó'].includes(v.estado)
-  : esLCL(v) ? v.estado==='Entregado en bodega' : v.estado==='Vacío devuelto';
+  : esNacional(v) ? v.estado==='Entregado' : esLCL(v) ? v.estado==='Entregado en bodega' : v.estado==='Vacío devuelto';
 // fuera de ruta: el transporte terminó o el viaje se canceló; ya no hay vehículo al que hacerle seguimiento
 const fueraDeRuta = v => terminoTransporte(v) || v.estado === 'Cancelado';
 // lo que operaciones le debe a un viaje (en cualquier etapa): cierre del transporte, subviaje, causa de reprogramación y los errores de la hoja
@@ -695,6 +703,7 @@ function pendientesOps(v){
   const f = [];
   if (terminoTransporte(v)) {
     if (v.operacion==='EXPO') { if (!v.fechaEntregaPuerto) f.push('fecha de entrega en puerto'); if (!v.tirillaEntrega) f.push('tirilla de entrega'); }
+    else if (esNacional(v)) { if (!v.fechaCargue) f.push('fecha de entrega'); if (!v.soporteEntrega) f.push('soporte de entrega'); }
     else if (esLCL(v)) { if (!v.fechaCargue) f.push('fecha de entrega en bodega'); }
     else { if (!v.fechaDevolucion) f.push('fecha de devolución'); if (!v.tirillaDevolucion) f.push('tirilla de devolución'); }
   }
@@ -781,6 +790,7 @@ const HITOS_PLAN = {
     ['Entrega en puerto','planEntregaPuerto',['fechaEntregaPuerto','citaIngreso']]],
   IMPO: [['Entrega documentos','planLevante',['fechaLevante']], ['Retiro en puerto','planRetiro',['fechaRetiro','citaRetiro']],
     ['Entrega en bodega','planCargue',['fechaCargue']], ['Devolución del vacío','planDevolucion',['fechaDevolucion','citaDevolucion']]],
+  NACIONAL: [['Recogida','planRetiro',['fechaRetiro']], ['Entrega','planCargue',['fechaCargue']]],
 };
 // causa → responsable; "Corrección de dato" no cuenta como reprogramación (la fecha estaba mal escrita)
 const CAUSAS_REPROG = [['Cliente (Reckitt)','Reckitt'], ['Transportadora (Entrapetrol)','Entrapetrol'], ['Puerto o naviera','Terceros'],
@@ -837,6 +847,7 @@ const PASOS_CONFIRMAR = {
     ['etd', 'Zarpe de la motonave', true], ['eta', 'Llegada a destino', true]],
   IMPO: [['fechaLevante', 'Entrega de documentos'], ['fechaRetiro', 'Retiro en puerto'], ['fechaCargue', 'Entrega en bodega'],
     ['fechaDevolucion', 'Devolución del vacío']],
+  NACIONAL: [['fechaRetiro', 'Recogida'], ['fechaCargue', 'Entrega en el destino']],
   SUB: [['fechaDescargueSub', 'Descargue en patio intermedio'], ['fechaUrbano', 'Urbano al destino final']],
 };
 // la regla empezó el 5-nov-2026: lo que tiene fecha anterior queda como el equipo ya lo tenía (cuenta como hecho, fuente 'anterior');
@@ -853,7 +864,7 @@ function confirmacion(v, campo){
   const f = fechaPaso(v, campo); if (!f) return null;
   const c = confirmacionesDe(v).filter(x => x.campo === campo && x.fecha === f).pop(); if (c) return c;
   if (f < INICIO_CONFIRMACION) return {campo, fecha: f, quien: '', fuente: 'anterior', cuando: ''};
-  if ((campo === 'fechaEntregaPuerto' && v.tirillaEntrega) || (campo === 'fechaDevolucion' && v.tirillaDevolucion)) return {campo, fecha: f, quien: '', fuente: 'tirilla', cuando: ''};
+  if ((campo === 'fechaEntregaPuerto' && v.tirillaEntrega) || (campo === 'fechaDevolucion' && v.tirillaDevolucion) || (esNacional(v) && campo === 'fechaCargue' && v.soporteEntrega)) return {campo, fecha: f, quien: '', fuente: 'tirilla', cuando: ''};
   const p = v.padre && viajes.find(x => x.id === v.padre);
   if (situacion(v) === 'Cerrado' || (p && situacion(p) === 'Cerrado')) return {campo, fecha: f, quien: '', fuente: 'historico', cuando: ''};
   return null;
@@ -879,6 +890,8 @@ function etapaOperacion(v){
   const ya = k => !!cumplido(v, k);
   const sub = hijosDe(v)[0], urbanoHecho = !!(sub && cumplido(sub, 'fechaUrbano')), dePaso = sub && !urbanoHecho;
   // con el urbano pendiente la carga sigue en la bodega de paso, aunque el vacío ya figure devuelto (se revisa en Errores)
+  // NACIONAL: recogida y entrega (el soporte de entrega la confirma, como la tirilla)
+  if (esNacional(v)) return ya('fechaCargue') || v.soporteEntrega ? 'Entregado' : ya('fechaRetiro') ? 'Recogido' : tieneVehiculo(v) ? 'Asignado' : 'Sin asignar';
   if (v.operacion==='IMPO') return dePaso ? 'En bodega de paso' : !esLCL(v) && (ya('fechaDevolucion') || v.tirillaDevolucion) ? 'Vacío devuelto'
     : urbanoHecho || ya('fechaCargue') ? 'Entregado en bodega'
     : ya('fechaRetiro') ? 'Retirado de puerto' : tieneVehiculo(v) ? 'Asignado' : 'Sin asignar';
@@ -890,7 +903,7 @@ function etapasViajes(){ viajes.forEach(v => { v.novedad = v.estadoHoja === 'Nov
 // el transporte termina con la entrega en puerto (EXPO) o la devolución del vacío (IMPO); de ahí en adelante cuenta la facturación
 // lead time de facturación: desde que termina el transporte (entrega en puerto EXPO / devolución del vacío IMPO) hasta la factura;
 // sin factura, los días que lleva esperando
-const fechaFinTransporte = v => cumplido(v, v.operacion==='EXPO' ? 'fechaEntregaPuerto' : esLCL(v) ? 'fechaCargue' : 'fechaDevolucion');
+const fechaFinTransporte = v => cumplido(v, v.operacion==='EXPO' ? 'fechaEntregaPuerto' : esLCL(v) || esNacional(v) ? 'fechaCargue' : 'fechaDevolucion');
 const hijosDe = v => viajes.filter(x => x.padre === v.id && situacion(x) !== 'Cancelado');
 // transporte finalizado: EXPO pasó la parada Puerto; IMPO cumplió todas las paradas (vacío devuelto, con el urbano si hay subviaje)
 // transporte finalizado = tiene la fecha de fin (EXPO entrega en puerto, IMPO devolución del vacío) y no queda un urbano pendiente.
@@ -961,6 +974,8 @@ const LECTURA_NOVEDAD = {
   IMPO: [['fechaRetiro', /(retir|sali)\w*\s+(de|del|en)\s+(el\s+)?puerto/, 'Retirado de puerto'],
     ['fechaCargue', /(entreg|descarg)\w*\s+(en\s+|a\s+)?(la\s+)?(bodega|cliente)|\bdescargad/, 'Entregado en bodega'],
     ['fechaDevolucion', /\bdevolvi|vacio\s+devuelt|devolucion\s+(del\s+vacio\s+)?(hecha|realizada|lista)/, 'Vacío devuelto']],
+  NACIONAL: [['fechaRetiro', /(recog|carg)\w*\s+(las\s+|la\s+|el\s+)?(estibas?|carga|mercancia)|estibas?\s+recogid/, 'Carga recogida'],
+    ['fechaCargue', /(entreg|descarg)\w*\s+(en\s+|a\s+)?(la\s+)?(bodega|cliente|destino)|\bentregad/, 'Entregado en el destino']],
 };
 const NOVEDAD_NIEGA = /\b(no|sin|falta|faltan|aun no|todavia no|pendiente|manana|esperando)\b|programad|reprogram/;
 function interpretarNovedad(v, tipo, texto, fecha){
@@ -974,7 +989,8 @@ function interpretarNovedad(v, tipo, texto, fecha){
 }
 // con qué se busca el viaje en los correos: EXPO por booking (y factura RBHY); IMPO por pedido, DO y contenedor; si no, la placa
 function clavesBusqueda(v){
-  const L = v.operacion === 'IMPO' ? [['Pedido', v.pedido], ['DO', v.do], ['Contenedor', v.contenedor], ['BL', v.booking]]
+  const L = esNacional(v) ? [['Pedido', v.pedido], ['Carga', v.carga]]
+    : v.operacion === 'IMPO' ? [['Pedido', v.pedido], ['DO', v.do], ['Contenedor', v.contenedor], ['BL', v.booking]]
     : [['Booking', v.booking], ['RBHY', v.rbhy], ['Contenedor', v.contenedor]];
   const c = L.filter(([, x]) => String(x||'').trim() && !/^(sin info|pend|pte)/i.test(String(x)));
   return c.length ? c : (v.placa ? [['Placa', v.placa]] : []);
@@ -1039,7 +1055,7 @@ function validar(v){
   // STATUS válidos: Abierto, Cerrado, Cancelado. "Pendiente confirmación" o vacío vienen de la hoja original y esconden el viaje
   if (!['Abierto','Cerrado','Cancelado'].includes(sit)) add('Alta',C.status,`STATUS "${sit}": debe ser Abierto, Cerrado o Cancelado`, 'Error', 'Con otro STATUS el viaje no sale en la vista inicial ni en el total de abiertos');
   // sin fecha del viaje: si ya se entregó (o devolvió) la fecha existe y solo falta registrarla; si no, no se puede programar nada
-  if (!v.fechaCargue) {
+  if (!v.fechaCargue && !esNacional(v)) {
     const hecho = expo ? (v.fechaEntregaPuerto || v.tirillaEntrega) : esLCL(v) ? '' : (v.fechaDevolucion || v.tirillaDevolucion);
     const msg = expo ? (v.fechaRetiro ? 'Sin fecha de llenado' : 'Sin fechas de retiro y llenado') : 'Sin fecha de entrega en bodega';
     const porque = hecho
@@ -1053,11 +1069,22 @@ function validar(v){
   // Sin fecha del viaje no se piden (ya sale "Sin fecha"): todo lo demás depende de ella.
   const dias = primerEvento(v) ? diffDias(primerEvento(v)) : null, urge = dias !== null && dias <= 2 ? 'Alta' : 'Media';
   const cuando = dias < 0 ? ' (fecha vencida)' : dias === 0 ? ' (es hoy)' : ` (faltan ${dias} d)`;
-  const evento = v.fechaRetiro ? (expo ? 'el retiro del vacío' : 'el retiro en puerto') : (expo ? 'el llenado' : 'la entrega en bodega');
+  const evento = esNacional(v) ? 'la recogida' : v.fechaRetiro ? (expo ? 'el retiro del vacío' : 'el retiro en puerto') : (expo ? 'el llenado' : 'la entrega en bodega');
   const porqueEvento = dias === null ? '' : dias < 0 ? `${evento[0].toUpperCase() + evento.slice(1)} era el ${fd(primerEvento(v))} y el dato no quedó registrado`
     : `Se necesita para ${evento} del ${fd(primerEvento(v))}`;
   const falta = (ventana, sev, campo, msg) => { if (dias === null || dias > ventana) return;
     if (dias < 0) add('Alta', campo, msg + cuando, 'Error', porqueEvento); else add(sev, campo, msg + cuando, 'Alerta', porqueEvento); };
+  // NACIONAL: lo que se necesita para programar la recogida (fecha, origen, destino) y el vehículo cerca de la fecha
+  if (esNacional(v)) {
+    const pq = 'Sin este dato no se puede programar la recogida ni el vehículo';
+    if (!v.fechaRetiro) add('Alta', 'Fecha de recogida', 'Sin fecha de recogida', 'Error', pq);
+    if (!v.origen) add('Media', 'Origen', 'Sin lugar de recogida', 'Error', pq);
+    if (!v.bodega && !v.destino) add('Media', 'Lugar de entrega', 'Sin lugar de entrega', 'Error', pq);
+    if (!tieneVehiculo(v)) falta(VENTANAS.placa, urge, 'Placa', 'Sin vehículo asignado');
+    if (tieneVehiculo(v) && !v.conductor) falta(VENTANAS.conductor, 'Media', 'Conductor', 'Placa sin conductor');
+    if (v.fechaRetiro && v.fechaCargue && v.fechaRetiro > v.fechaCargue) add('Alta', 'Fechas', `Recogida (${fd(v.fechaRetiro)}) después de la entrega (${fd(v.fechaCargue)})`, 'Error', 'Las dos fechas se contradicen: una de ellas quedó mal escrita');
+    return e;
+  }
   if (expo && !v.patio && !pend) falta(VENTANAS.patio, urge, C.patio, 'Patio de retiro sin definir');
   if (!tieneVehiculo(v) && !pend) falta(VENTANAS.placa, urge, 'Placa', 'Sin vehículo asignado');
   if (tieneVehiculo(v) && !v.conductor) falta(VENTANAS.conductor, 'Media', 'Conductor', 'Placa sin conductor');
@@ -1166,6 +1193,7 @@ const HITOS_AVISO = {
     ['fechaEntregaPuerto', 'Entregado en puerto'], ['tirillaEntrega', 'Tirilla de entrega en puerto']],
   IMPO: [['fechaRetiro', 'Retirado de puerto'], ['fechaCargue', 'Entregado en bodega'], ['citaDevolucion', 'Cita de devolución del vacío'],
     ['fechaDevolucion', 'Vacío devuelto'], ['tirillaDevolucion', 'Tirilla de devolución del vacío'], ['fechaUrbano', 'Urbano al destino final']],
+  NACIONAL: [['fechaRetiro', 'Carga recogida'], ['fechaCargue', 'Entregado en el destino'], ['soporteEntrega', 'Soporte de entrega']],
 };
 // hitos que trae un cambio guardado: fecha de hoy o pasada = ocurrió; fecha futura = quedó programado (reprogramación).
 // Guardar placa o conductor es el aviso "Vehículo asignado" (lo que Reckitt pide: placa y conductor).
@@ -1276,6 +1304,8 @@ const hitosPlan = v => (HITOS_PLAN[v.operacion] || []).map(([hito, plan, campos]
 // lead time total: del primer al último hito; real = completo, o "en curso" contando hasta hoy
 function leadTime(v){
   const H = hitosPlan(v), u = H.length - 1;
+  // operación sin hitos de plan (una nueva que el tablero aún no conoce): sin lead time, en vez de romper la pantalla (5-nov, NAC-001)
+  if (u < 0) return {plan: null, real: null, enCurso: null};
   const plan = dDias(H[0][1], H[u][1]);
   const ini = H[0][2] || (H.find(x => x[2]) || [])[2] || '';
   const fin = H[u][2];
@@ -1331,6 +1361,11 @@ function paradas(v){
   const pendUrbano = sub ? pend(sub, 'fechaDescargueSub', 'fechaUrbano') : null;
   // fecha pasada aún sin confirmar: en el detalle dice "por confirmar" en vez de "Entregado"
   const dijo = (txt, k, x) => { x = x || v; const f = x[k]; return !f ? `${txt} —` : f > HOY ? `${txt} ${fd(f)} (plan)` : `${txt} ${fd(f)}${cumplido(x, k) ? '' : ' · por confirmar'}`; };
+  // NACIONAL: recogida en el origen (ej. ERCOL Cali) y entrega en el destino (ej. bodega Reckitt Bogotá)
+  if (esNacional(v)) return [
+    ['Recogida', v.origen||'Origen', cumplido(v, 'fechaRetiro'), [v.fechaRetiro ? dijo('Recogida', 'fechaRetiro') + (v.horaRecogida ? ' ' + v.horaRecogida : '') : 'Recogida —', v.carga, v.certificado&&'✔ certificado'], pend(v, 'fechaRetiro')],
+    ['Entrega', v.bodega||v.destino||'Destino', hecho(cumplido(v, 'fechaCargue'), v.soporteEntrega), [v.destino, v.fechaCargue ? (v.fechaCargue > HOY ? `Entrega ${fd(v.fechaCargue)} (plan)` : dijo('Entregado', 'fechaCargue')) : 'Entrega —', v.soporteEntrega&&'✔ soporte'], pend(v, 'fechaCargue')],
+  ];
   if (v.operacion==='IMPO') return [
     ['Origen', v.puerto||'Puerto', cumplido(v, 'fechaLevante'), [v.eta&&`ETA ${fd(v.eta)}`, v.fechaLevante&&dijo('Docs', 'fechaLevante')], pend(v, 'fechaLevante')],
     ['Retiro lleno', v.puerto ? 'Puerto '+v.puerto : 'Puerto', cumplido(v, 'fechaRetiro'), [ver('Cita', v.citaRetiro), dijo('Retiro', 'fechaRetiro')], pend(v, 'fechaRetiro')],
@@ -1367,6 +1402,8 @@ const paradaPorConfirmar = (P, n) => (P.slice(n).find(p => p[4]) || [])[4] || nu
 // lo que pasa en el viaje en cada fecha
 function hitosDe(v){
   const expo = v.operacion === 'EXPO';
+  if (esNacional(v)) return [[v.fechaRetiro, 'Recogida', v.origen], [v.fechaCargue, 'Entrega en el destino', v.bodega || v.destino]]
+    .filter(([f]) => f).map(([f, que, donde]) => ({f: String(f).slice(0, 10), que, donde}));
   return [[v.fechaRetiro, expo ? 'Retiro del vacío' : 'Retiro en puerto', expo ? v.patio : v.puerto],
     [v.fechaCargue, expo ? 'Llenado en planta' : 'Entrega en bodega', expo ? '' : v.bodega], [v.citaRetiro, 'Cita de retiro en puerto', v.puerto],
     [v.citaIngreso, 'Cita de ingreso a puerto', v.puerto], [v.cierreDoc, 'Cierre documental', ''], [v.citaDevolucion, 'Cita de devolución del vacío', v.patio],
@@ -1376,8 +1413,8 @@ function hitosDe(v){
 // la etapa de la operación como se ve en la tarjeta: "En camino a puerto · cita de ingreso jue 5 nov", "Zarpó ✔"…
 // cliente = la ve Reckitt (tablero de solo lectura o resumen por correo): la tirilla es un documento interno, no se menciona
 function etapaAhora(v, P, n, cliente){
-  const hacia = {Puerto:'En camino a puerto', Bodega:'En camino a bodega', Vacío:'Vacío por devolver', 'Retiro lleno':'Por retirar en puerto', Llenado:'En llenado', Patio:'Por retirar el vacío'};
-  const sinTirilla = !cliente && (v.operacion==='EXPO' ? !v.tirillaEntrega : !esLCL(v) && !v.tirillaDevolucion);
+  const hacia = {Recogida:'Por recoger', Entrega:'En camino al destino', Puerto:'En camino a puerto', Bodega:'En camino a bodega', Vacío:'Vacío por devolver', 'Retiro lleno':'Por retirar en puerto', Llenado:'En llenado', Patio:'Por retirar el vacío'};
+  const sinTirilla = !cliente && (v.operacion==='EXPO' ? !v.tirillaEntrega : esNacional(v) ? !v.soporteEntrega : !esLCL(v) && !v.tirillaDevolucion);
   const subP = hijosDe(v).find(s => !cumplido(s, 'fechaUrbano'));
   // la etapa de la operación (sale de las fechas) con su detalle
   const proxHito = hitosDe(v).filter(h => h.f > HOY && h.que !== 'Cierre documental').sort((a, b) => a.f.localeCompare(b.f))[0];
@@ -1385,6 +1422,7 @@ function etapaAhora(v, P, n, cliente){
     : et==='Vacío devuelto' ? (sinTirilla ? 'Vacío devuelto · falta tirilla' : 'Vacío devuelto ✔')
     : et==='Entregado en puerto' ? (sinTirilla ? 'Entregado en puerto · falta tirilla' : 'Entregado en puerto · esperando zarpe')
     : et==='Zarpó' ? (sinTirilla ? 'Zarpó · falta tirilla' : 'Zarpó ✔')
+    : et==='Entregado' ? (sinTirilla ? 'Entregado · falta soporte de entrega' : 'Entregado ✔')
     // en curso: lo que está pasando ahora (el paso anterior ya se ve hecho en la ruta), ej. "En camino a puerto", no "Llenado · …"
     // y lo que tiene programado (hitosDe, turno.js): así se ve que el viaje está en espera de una cita y no quieto
     : n < P.length && !['Sin asignar','Asignado'].includes(et) ? (hacia[P[n][0]] || 'Hacia '+P[n][0].toLowerCase()) + (proxHito ? ` · ${proxHito.que.toLowerCase()} ${fd(proxHito.f)}` : '')
@@ -1443,6 +1481,8 @@ const ESTADOS = [
   {k:'Asignado', c:'var(--s-asig)'},
   {k:'Vacío retirado', c:'var(--s-ret)'},
   {k:'Retirado de puerto', c:'var(--s-ret)'},
+  {k:'Recogido', c:'var(--s-ret)'},   // operación nacional (dominio etapaOperacion)
+  {k:'Entregado', c:'var(--s-ent)'},
   {k:'Llenado', c:'var(--s-carg)'},
   {k:'En bodega de paso', c:'var(--s-patio)'},
   {k:'Entregado en bodega', c:'var(--s-tran)'},
@@ -1685,7 +1725,7 @@ const porOp = () => viajes.filter(v=>(!G.op || v.operacion===G.op) && enListas(v
 function chipsGlobales(){
   // cada opción muestra cuántos viajes se verían al elegirla, con los demás filtros como están (igual en todas las listas)
   const sel = (k, titulo, ops) => `<select class="gsel ${G[k]?'on':''}" data-gsel="${k}" aria-label="${titulo}">${ops.map(([val, txt, cnt])=>`<option value="${esc(val)}" ${G[k]===val?'selected':''}>${titulo}: ${esc(txt)} · ${cnt}</option>`).join('')}</select>`;
-  return sel('op', 'IMPO/EXPO', [['', 'ambas', cuentaCon({op:''})], ['IMPO', 'IMPO', cuentaCon({op:'IMPO'})], ['EXPO', 'EXPO', cuentaCon({op:'EXPO'})]])
+  return sel('op', 'Operación', [['', 'todas', cuentaCon({op:''})], ...OPERACIONES_VIAJE.map(o => [o, o === 'NACIONAL' ? 'Nacional' : o, cuentaCon({op:o})])])
     // reunión diaria con Reckitt (reunion.js): los viajes con algún paso hoy, mañana o pasado mañana, ordenados por fecha
     + sel('dia', '📆 Reunión', [['', 'todos los días', cuentaCon({dia:''})], ...REUNION_OPS.map(([k, t]) => [k, t, cuentaCon({dia:k})])])
     + sel('sit', 'STATUS', [...situacionesPresentes().map(s=>[s, PLURAL[s]||s, cuentaCon({sit:s})]), ['', 'Todos', cuentaCon({sit:''})]])
@@ -1809,6 +1849,8 @@ const ATAJOS = [
   ['aplicar', b => `✔ Aplicar ${datosDeAccion(b).length} dato${datosDeAccion(b).length === 1 ? '' : 's'}`, b => datosDeAccion(b).length > 0, b => aplicarAccion(b)],
   ['programacion', '📋 Aplicar programación', b => /programaci[oó]n/i.test(b.accion) && /programaci[oó]n/i.test(b.asunto + ' ' + b.resumen), b => atajoProgramacion(b)],
   ['propuestas', '✔ Revisar datos', b => /Llenar datos desde correos/i.test(b.accion) && !pareceHecha(b), () => abrirPropuestas()],   // si ya están en el viaje, no queda nada que revisar
+  // pedido de la operación NACIONAL (estibas de ERCOL…): formulario del viaje nacional con lo que dice el correo (nacional.js)
+  ['nacional', '＋ Crear viaje nacional', b => operacionAccion(b) === 'NACIONAL' && !viajeDeAccion(b) && !viajeNacionalDe(b) && !/^sin acci/i.test(b.accion || ''), b => nuevoNacional(b)],
   ['viaje', '＋ Crear viaje', b => pideCrearViaje(b) && !yaCreado(b), () => abrirBarrido()],   // si ya existe, no (yaCreado)
   ['subviaje', '↪ Crear subviaje', b => /crear subviaje de [A-Z]+-[\w-]+/i.test(b.accion), b => nuevoSubviaje(b.accion.match(/crear subviaje de ([A-Z]+-[\w-]+?)(?=[:,\s]|$)/i)[1])],
 ];
@@ -1936,6 +1978,7 @@ async function terminarPausa(){
 // dónde está el vehículo según la etapa del viaje (sale de las fechas): dónde quedó, hacia dónde va y desde cuándo
 // no cambia de estado ni de lugar; además, qué se esperaba y lo último que reportó el conductor en su app
 const UBICACION = {
+  NACIONAL: {'Asignado': v => [`Por recoger en ${v.origen || 'el origen'}`, ''], 'Recogido': v => [`Con la carga, hacia ${v.bodega || v.destino || 'el destino'}`, v.fechaRetiro]},
   EXPO: {'Asignado': v => [`Por retirar el vacío en ${v.patio || 'patio'}`, ''], 'Vacío retirado': v => [`Con el vacío, hacia el llenado en Reckitt`, v.fechaRetiro],
     'Llenado': v => [`Lleno, en camino a puerto ${v.puerto || ''}`, v.fechaCargue], 'En bodega de paso': v => [`En bodega de paso ${(hijosDe(v)[0] || {}).patioSub || ''}`, (hijosDe(v)[0] || {}).fechaDescargueSub]},
   IMPO: {'Asignado': v => [`Por retirar en puerto ${v.puerto || ''}`, ''], 'Retirado de puerto': v => [`Lleno, en camino a bodega ${v.bodega || ''}`, v.fechaRetiro],
@@ -2103,7 +2146,8 @@ function mensajeGrupo(){
   const L = viajes.filter(v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre && !tieneVehiculo(v) && primerEvento(v) && diffDias(primerEvento(v)) >= -1 && diffDias(primerEvento(v)) <= 7)
     .sort((a, b) => primerEvento(a).localeCompare(primerEvento(b)));
   const puerto = v => ({BUN: 'Buenaventura', CTG: 'Cartagena'})[String(v.puerto || '').toUpperCase()] || v.puerto || 'por confirmar';
-  const ruta = v => v.operacion === 'IMPO' ? `puerto ${puerto(v)} → ${v.bodega || v.destino || 'bodega'}` : `vacío → cargue Reckitt Cali → puerto ${puerto(v)}`;
+  const ruta = v => esNacional(v) ? `${v.carga ? v.carga + ' · ' : ''}${v.origen || 'origen'} → ${v.bodega || v.destino || 'destino'}`
+    : v.operacion === 'IMPO' ? `puerto ${puerto(v)} → ${v.bodega || v.destino || 'bodega'}` : `vacío → cargue Reckitt Cali → puerto ${puerto(v)}`;
   return `🚛 *Entrapetrol · viajes disponibles*\n${L.map((v, i) => `${i + 1}) ${fd(primerEvento(v))} · ${v.operacion}${v.unidad ? ' ' + v.unidad.replace('1X', '') + "'" : ''} · ${ruta(v)}`).join('\n')}\n\nEnturnarse o reportar disponibilidad aquí 👇\n${APP_TURNOS}`;
 }
 // selector del motivo de una excepción (en la misma fila)
@@ -2583,7 +2627,7 @@ function finTransporte(v){
   // en facturación sin la fecha de fin: se muestra la etapa y se avisa la fecha que falta
   if (!fin && !['En aprobación Reckitt','Aprobado por Reckitt','Facturado'].includes(s)) return '';
   const cab = fin ? `<span class="hecho">✓ Transporte finalizado ${fd(fechaFinTransporte(v))}</span>`
-    : `<span class="hecho" style="color:var(--warn)">⚠ Falta la fecha de ${v.operacion==='EXPO' ? 'entrega en puerto' : 'devolución del vacío'}</span>`;
+    : `<span class="hecho" style="color:var(--warn)">⚠ Falta la fecha de ${v.operacion==='EXPO' ? 'entrega en puerto' : esNacional(v) || esLCL(v) ? 'entrega' : 'devolución del vacío'}</span>`;
   return `<div class="fin">${cab}<span class="est" style="background:color-mix(in srgb, ${col} 14%, transparent);color:${col}">${s}${v.numFactura?' · '+esc(v.numFactura):''}</span></div>`;
 }
 
@@ -2620,12 +2664,12 @@ function panelFactura(v, P, n){
     + granR('Total', pesos(totalViaje))
     + (c.extra ? `<div class="nota">${lnR('Extracostos', `<span style="color:${COLOR_COBRO[c.aprob]};font-weight:600">● ${c.aprob==='Pendiente' ? 'Por aprobar' : c.aprob}</span>`)}${c.aprob!=='Aprobado' ? lnR('Aprobado para facturar', pesos(c.total)) : ''}</div>` : '');
   const fin = finTransporte(v), lf = fin ? leadFactura(v) : null;
-  const leadF = !fin ? '' : `<div class="pieF"><h4>Lead time facturación</h4>${!lf ? `<span class="sub">Falta la fecha de ${v.operacion==='EXPO' ? 'entrega en puerto' : 'devolución del vacío'}</span>`
+  const leadF = !fin ? '' : `<div class="pieF"><h4>Lead time facturación</h4>${!lf ? `<span class="sub">Falta la fecha de ${v.operacion==='EXPO' ? 'entrega en puerto' : esNacional(v) || esLCL(v) ? 'entrega' : 'devolución del vacío'}</span>`
     : `<b style="${!lf.hecho && lf.dias>5 ? 'color:var(--bad)' : ''}">${lf.dias} d</b> <span class="sub">${lf.hecho ? 'facturado'+(v.fechaFactura ? ' '+fd(v.fechaFactura) : '') : 'sin facturar'}</span>`}</div>`;
   // datos que facturación necesita para la relación a Reckitt
   // lo que pide facturación: EXPO → RBHY y OBD; IMPO → N° de pedido y contenedor
   const expo = v.operacion==='EXPO';
-  const datosF = expo ? [[v.rbhy, 'RBHY', x => esc(x)], [v.obd, 'OBD', x => 'OBD '+esc(x)]] : [[v.pedido, 'N° de pedido', x => 'Pedido '+esc(x)], [v.contenedor, 'contenedor', x => esc(x)]];
+  const datosF = expo ? [[v.rbhy, 'RBHY', x => esc(x)], [v.obd, 'OBD', x => 'OBD '+esc(x)]] : esNacional(v) ? [] : [[v.pedido, 'N° de pedido', x => 'Pedido '+esc(x)], [v.contenedor, 'contenedor', x => esc(x)]];
   const tiene = datosF.filter(d => d[0]), falta = datosF.filter(d => !d[0]).map(d => d[1]);
   const docs = (tiene.length || fin) ? `<div class="sub" style="margin:4px 0 2px">${tiene.map(d => d[2](d[0])).join(' · ')}${falta.length && fin ? `${tiene.length ? ' · ' : ''}<span style="color:var(--warn)">Falta ${falta.join(' y ')}</span>` : ''}</div>` : '';
   return `${fin}${docs}<div class="resumen"><div><h4>Resumen de gastos</h4>${gastos}</div></div>${leadF}`;
@@ -2646,7 +2690,7 @@ function rutaPedido(v){
   const esperas = P.slice(1).map((p,i)=> P[i][2] && p[2] ? dif(P[i][2], p[2]) : null);
   // la etapa con su detalle y el color (dominio: etapaAhora, la misma del correo al cliente)
   const {ahora, tono, pend} = etapaAhora(v, P, n, window.MODO_CLIENTE), col = {cerrado: 'var(--ok)', gris: 'var(--muted)', curso: 'var(--accent)'}[tono];
-  const ref = v.operacion==='IMPO' ? (v.pedido ? 'Pedido '+v.pedido : v.id) : (v.booking ? ['Booking '+v.booking, contenedorDeBooking(v)].filter(Boolean).join(' · ') : v.id);
+  const ref = v.operacion==='EXPO' && v.booking ? ['Booking '+v.booking, contenedorDeBooking(v)].filter(Boolean).join(' · ') : (refCorta(v) || v.id);   // dominio refCorta
   return `<div class="ruta"><div class="dos"><div class="izq">
     <div class="cab"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
       ${tagNuevo(v)}<span class="op ${v.operacion}">${v.operacion}</span><b>${esc(v.empresa||'Empresa sin definir')} · ${esc(ref)}</b>
@@ -2654,10 +2698,10 @@ function rutaPedido(v){
       <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span>${etiquetaSinActualizar(v)}${etiquetaPorConfirmar(pend)}${!window.MODO_CLIENTE && pendientesOps(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)" title="Lo que operaciones debe completar">Falta (operaciones): ${esc(pendientesOps(v).join(' · '))}</span>` : ''}${!window.MODO_CLIENTE && pendientesFact(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--muted) 15%, transparent);color:var(--muted)" title="Para poder facturarlo">Falta (facturación): ${esc(pendientesFact(v).join(' · '))}</span>` : ''}</div>
     ${lineaNovedad(v)}
     <div class="cuerpo"><div>
-      <div style="display:flex;align-items:flex-end;gap:2px"><div class="cont"><b style="font-size:12px">${esc(v.contenedor||'—')}</b><div class="sub">${esc(v.unidad||'')}</div></div><div class="cabina"></div></div>
+      <div style="display:flex;align-items:flex-end;gap:2px"><div class="cont"><b style="font-size:12px">${esc(esNacional(v) ? (v.carga||'—') : (v.contenedor||'—'))}</b><div class="sub">${esc(esNacional(v) ? 'Nacional' : (v.unidad||''))}</div></div><div class="cabina"></div></div>
       <div class="ruedas"><i></i><i></i><i></i><i></i></div>
       <div class="cond"><div class="ini">${esc(ini(v.conductor))}</div><div style="min-width:0"><b style="font-size:12px;display:block">${esc(v.conductor||'Sin conductor')}</b><span class="sub">${esc(v.placa||'Sin placa')}</span></div></div>
-      ${window.MODO_CLIENTE ? '' : `<button type="button" class="subv" onclick="event.stopPropagation();nuevoSubviaje('${v.id}')"><span>+</span> Subviaje</button>`}
+      ${window.MODO_CLIENTE || esNacional(v) ? '' : `<button type="button" class="subv" onclick="event.stopPropagation();nuevoSubviaje('${v.id}')"><span>+</span> Subviaje</button>`}
     </div><div>
       <div class="linea"><div class="hecho" style="width:${P.length>1 ? Math.min(86, 86*Math.max(0,n-1)/(P.length-1)) : 0}%"></div>
         ${P.map(([et, lugar, , det], i)=>`<div class="par ${i<n?'ok':i===n?'ya':''}${i>=n && P[i][4] && !window.MODO_CLIENTE ? ' conf' : ''}"><div class="pt"></div>${i===n?'<span class="camion">🚚</span>':''}
@@ -2887,7 +2931,10 @@ function abrir(id){
   $('#mTitle').textContent = `${v.placa || 'Sin vehículo'} · ${v.operacion} ${v.pais||''}`;
   $('#mSub').textContent = `${v.id} · ${v.fechaRetiro?`Retiro en patio ${fd(v.fechaRetiro)} · Llenado planta ${fd(v.fechaCargue)}`:`Cargue ${fd(v.fechaCargue)}`} · Última actualización ${new Date(v.actualizado).toLocaleString('es-CO')}`;
   const fx = x => x ? fd(x) : '';
-  const det = v.operacion==='IMPO'
+  const det = esNacional(v)
+    ? [['Qué se lleva',v.carga],['Origen',v.origen],['Destino',v.destino],['Lugar de entrega',v.bodega],['Recogida',[fx(v.fechaRetiro),v.horaRecogida].filter(Boolean).join(' ')],
+       ['Certificado / soporte de la carga',v.certificado],['Entrega',fx(v.fechaCargue)],['Soporte de entrega',v.soporteEntrega],['Solicitante',v.solicitante],['Empresa',v.empresa],['Pedido',v.pedido]]
+    : v.operacion==='IMPO'
     // primero lo que Reckitt pregunta de cada importación
     ? [['Pedido',v.pedido],['Contenedor',v.contenedor],['Tipo',v.unidad],['Origen',v.puerto],['Destino',v.destino],['Bodega',v.bodega],
        ['Entrega documentos',fx(v.fechaLevante)],['Retiro contenedor',fx(v.fechaRetiro)],['Entrega en bodega',fx(v.fechaCargue)],
@@ -2919,6 +2966,7 @@ function abrir(id){
 // siguiente paso de cada etapa: el campo de fecha que la hace avanzar (la etapa sale de las fechas, no se elige a mano)
 const SIGUIENTE_ETAPA = {
   EXPO: {'Asignado': ['fechaRetiro', 'Vacío retirado'], 'Vacío retirado': ['fechaCargue', 'Llenado'], 'Llenado': ['fechaEntregaPuerto', 'Entregado en puerto']},
+  NACIONAL: {'Asignado': ['fechaRetiro', 'Recogido'], 'Recogido': ['fechaCargue', 'Entregado']},
   IMPO: {'Asignado': ['fechaRetiro', 'Retirado de puerto'], 'Retirado de puerto': ['fechaCargue', 'Entregado en bodega'], 'Entregado en bodega': ['fechaDevolucion', 'Vacío devuelto']},
 };
 function pintarEstados(){
@@ -2942,6 +2990,12 @@ const CAMPOS_ETAPA = {
     ['Destino', [['pais','País'],['etd','ETD','fecha'],['eta','ETA','fecha']]],
     ['Costos y facturación', [['tarifa','Flete (tarifa)','num'],['conceptoExtra','Extracostos','extras'],
       ['aprobacionExtra','Aprobación extracostos','lista',['Pendiente','Aprobado','Rechazado']],['facturacion','Facturación','lista',FACTURACION],['numFactura','N° factura'],['fechaFactura','Fecha factura','fecha'],['rbhy','RBHY (factura Reckitt)'],['obd','OBD (Delivery Number)'],['obsFactura','Observaciones facturación']]]],
+  // NACIONAL (Base.gs SEGUIMIENTO.NACIONAL): recogida en el origen y entrega en el destino
+  NACIONAL: [['Solicitud', [['carga','Qué se lleva'],['origen','Origen (dónde se recoge)'],['destino','Ciudad de destino'],['bodega','Lugar de entrega']]],
+    ['Recogida', [['fechaRetiro','Fecha de recogida','fecha'],['horaRecogida','Hora de recogida'],['certificado','Certificado / soporte de la carga']]],
+    ['Entrega', [['fechaCargue','Fecha de entrega','fecha'],['soporteEntrega','Soporte de entrega']]],
+    ['Costos y facturación', [['tarifa','Flete (tarifa)','num'],['conceptoExtra','Extracostos','extras'],
+      ['aprobacionExtra','Aprobación extracostos','lista',['Pendiente','Aprobado','Rechazado']],['facturacion','Facturación','lista',FACTURACION],['numFactura','N° factura'],['fechaFactura','Fecha factura','fecha'],['obsFactura','Observaciones facturación']]]],
   IMPO: [['Llegada', [['mn','Motonave'],['puerto','Origen'],['eta','ETA','fecha'],['fechaLevante','Fecha entrega documentos','fecha']]],
     ['Retiro del lleno', [['citaRetiro','Cita de retiro en puerto','fecha'],['fechaRetiro','Fecha de retiro','fecha']]],
     ['Entrega en bodega', [['fechaCargue','Fecha entrega en bodega','fecha'],['destino','Destino'],['bodega','Bodega']]],
@@ -2975,7 +3029,7 @@ function pintarForm(v){
   const calc = v.operacion==='IMPO' ? `<p class="sub" style="margin:8px 2px 0">Fecha límite de devolución <b>${fd(v.fechaLimite)}</b>${demora(v) ? ` · <b style="color:var(--bad)">${demora(v)} d de demora</b>` : ''} · se calculan solas con la ciudad y la entrega en bodega.</p>` : '';
   // primero las novedades (lo que más se escribe, con hora y autor: novedades.js); la Observación queda como nota fija del viaje
   $('#mForm').innerHTML = `<div id="mNovedades">${bloqueNovedades(v)}</div>` +
-    (v.padre ? CAMPOS_SUB.map(([t, cs]) => grupo(t, cs)).join('') : grupo('Viaje', CAMPOS_VIAJE) + CAMPOS_ETAPA[v.operacion].map(([t, cs]) => grupo(t, cs)).join('') + calc) +
+    (v.padre ? CAMPOS_SUB.map(([t, cs]) => grupo(t, cs)).join('') : grupo('Viaje', esNacional(v) ? CAMPOS_VIAJE.filter(c => !['booking','do','contenedor','unidad','fwd'].includes(c[0])) : CAMPOS_VIAJE) + CAMPOS_ETAPA[v.operacion].map(([t, cs]) => grupo(t, cs)).join('') + calc) +
     `<div class="full" style="margin-top:12px"><label>Observación (nota fija del viaje) <span class="sub">· lo que pasa día a día va en Novedades, arriba</span></label><textarea data-k="observacion" placeholder="Ej: Programación nov · cargue en DHL">${esc(v.observacion||'')}</textarea></div>`;
   const lista = (id, k) => { $('#'+id).innerHTML = [...new Set(viajes.map(x=>x[k]).filter(Boolean))].sort().map(x=>`<option value="${esc(x)}">`).join(''); };
   $('#dlExtra').innerHTML = [...new Set([...CONCEPTOS_EXTRA, ...viajes.flatMap(x=>itemsExtra(x).map(i=>i[0]))])].map(x=>`<option value="${esc(x)}">`).join('');
@@ -3399,6 +3453,64 @@ document.addEventListener('click', e => {
   const [id, campo, fecha] = b.dataset.conf.split('|');
   confirmarPaso(id, campo, fecha);
 }, true);
+/* ---------- nacional.js · Operación NACIONAL: crear el viaje (recoger estibas en ERCOL, traslados…) ----------
+ * Capa: pantalla (solo el equipo). Las reglas están en el dominio (dominio.js: esNacional, PASOS_CONFIRMAR.NACIONAL, paradas,
+ * etapaOperacion) y la pestaña en Base.gs (SEGUIMIENTO.NACIONAL, Ref NAC-001). Se crea:
+ *  - desde la acción de LogxIA de un pedido nacional (botón "＋ Crear viaje nacional", acciones.js ATAJOS): el formulario sale con lo
+ *    que dice el correo (qué se lleva, dónde se recoge, la hora) y el texto de la acción a la vista; la fecha NO se adivina: la elige
+ *    el equipo (el correo de Gabriela López del 5-nov decía "lunes 09/11" y "miércoles");
+ *  - o en blanco con el botón "🚚 Viaje nacional" de arriba.
+ * Guarda con doPost 'nuevo' {operacion:'NACIONAL'} (Base.gs crearViaje_); la acción queda ligada al viaje por su id en la observación. */
+
+// el viaje nacional ya creado para una acción (la observación lleva el id de la acción)
+const viajeNacionalDe = b => viajes.find(v => esNacional(v) && String(v.observacion || '').includes(b.id)) || null;
+// lo que se puede leer del texto de la acción o del correo, sin inventar: cantidad y qué, lugar de recogida, hora
+function datosNacionalDe(b){
+  const t = [b.accion, b.resumen, b.asunto].filter(Boolean).join(' · ');
+  const carga = (t.match(/\b(\d+\s+(?:estibas?|cajas?|pallets?|bultos?|unidades))\b/i) || [])[1] || '';
+  const origen = (t.match(/\ben\s+(ERCOL(?:\s+Cali)?)\b/i) || [])[1] || '';
+  const hora = (t.match(/\b(\d{1,2}:\d{2})\s*(?:a\.?\s*m\.?|p\.?\s*m\.?)?/i) || [])[1] || '';
+  const quien = String(b.remitente || '').replace(/\s*\(.*\)\s*$/, '');
+  return {carga, origen, horaRecogida: hora, solicitante: quien};
+}
+const CAMPOS_NACIONAL = [['solicitante', 'Solicitante'], ['empresa', 'Empresa', EMPRESAS], ['carga', 'Qué se lleva', null, 'Ej.: 120 estibas'],
+  ['origen', 'Origen (dónde se recoge)', null, 'Ej.: ERCOL Cali'], ['destino', 'Ciudad de destino', null, 'Ej.: Cali'], ['bodega', 'Lugar de entrega', null, 'Ej.: Planta Reckitt'],
+  ['fechaRetiro', 'Fecha de recogida', 'fecha'], ['horaRecogida', 'Hora de recogida', null, 'Ej.: 10:00'], ['pedido', 'Pedido (si tiene)']];
+function nuevoNacional(b){
+  const d = b ? datosNacionalDe(b) : {};
+  $('#ovNacional')?.remove();
+  const campo = ([k, l, tipo, ph]) => `<div><label>${esc(l)}</label>${Array.isArray(tipo)
+    ? `<select data-nk="${k}"><option value=""></option>${tipo.map(x => `<option ${x === 'Reckitt Benckiser' ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>`
+    : `<input data-nk="${k}" ${tipo === 'fecha' ? 'type="date"' : ''} value="${esc(d[k] || '')}" placeholder="${esc(ph || '')}">`}</div>`;
+  document.body.insertAdjacentHTML('beforeend', `<div class="ov open" id="ovNacional"><div class="modal" role="dialog" aria-modal="true" style="width:min(640px,100%)">
+    <h3>🚚 Viaje nacional nuevo</h3>
+    ${b ? `<div class="sub" style="margin:4px 0 10px;padding:8px;border-radius:8px;background:var(--surface-2)"><b>Del correo (${esc(b.id)}):</b> ${esc(b.accion)}<br>${esc(b.resumen || '')}</div>` : ''}
+    <div class="fgrid3">${CAMPOS_NACIONAL.map(campo).join('')}</div>
+    <div class="sub" style="margin-top:8px">La fecha de recogida la pone el equipo: si el correo no es claro, confírmela con quien pidió el servicio. Placa y conductor se asignan después en el viaje (solo del registro).</div>
+    <div id="nacEstado" class="sub" style="margin-top:8px;font-weight:600"></div>
+    <div class="mfoot"><button type="button" class="btn" data-nac="cerrar">Cancelar</button><button type="button" class="btn primary" data-nac="crear">Crear viaje</button></div></div></div>`);
+  $('#ovNacional').onclick = e => { const a = e.target.closest('[data-nac]')?.dataset.nac;
+    if (a === 'cerrar' || e.target.id === 'ovNacional') { $('#ovNacional').remove(); if (b) accionEnCurso = null; }
+    else if (a === 'crear') crearNacional(b); };
+}
+async function crearNacional(b){
+  const est = (t, c) => { $('#nacEstado').textContent = t; $('#nacEstado').style.color = c || ''; };
+  const usuario = pedirUsuario(); if (!usuario) return est('Elija quién es (Ingresar como) y vuelva a presionar', 'var(--warn)');
+  const campos = {situacion: 'Abierto', estado: 'Sin asignar'};
+  document.querySelectorAll('#ovNacional [data-nk]').forEach(i => { const x = i.value.trim(); if (x) campos[i.dataset.nk] = x; });
+  if (!campos.carga || !campos.origen) return est('Falta qué se lleva y dónde se recoge', 'var(--bad)');
+  campos.observacion = b ? `Acción ${b.id} · correo de ${b.remitente || ''} ${String(b.fechaCorreo || '').slice(0, 10)}` : 'Creado en el tablero';
+  est('Creando…');
+  try {
+    const j = await api('nuevo', {operacion: 'NACIONAL', campos, usuario});
+    if (!j.ok) throw new Error(j.error || 'error');
+    est(`✓ Viaje ${j.id} creado`, 'var(--ok)'); toast(`Viaje nacional ${j.id} creado: asigne placa y conductor`);
+    await cargar(); render();
+    if (b) cerrarAccionEnCurso('nacional', `viaje nacional ${j.id} creado en el tablero`);
+    setTimeout(() => { $('#ovNacional')?.remove(); if (j.id) abrir(j.id); }, 800);
+  } catch(e) { est('✖ No se creó: ' + e.message, 'var(--bad)'); }
+}
+$('#btnNacional') && ($('#btnNacional').onclick = () => nuevoNacional(null));
 /* ---------- llenar datos desde correos (con revisión y aprobación) ---------- */
 let PROP = [];
 // cada área revisa lo suyo: los datos de cobro (relación de Pedro y aprobación de Reckitt) son de Facturación; el resto, de Operaciones
@@ -4014,7 +4126,8 @@ function viajesParaComunicado(){
   return viajes.filter(v => !v.padre && !esPrueba(v) && situacion(v) === 'Abierto' && !tieneVehiculo(v))
     .map(v => ({v, f: v.operacion === 'IMPO' ? (v.citaRetiro || v.fechaRetiro || v.fechaCargue) : (v.fechaRetiro || v.fechaCargue)}))
     .filter(x => x.f && x.f >= hoy && x.f <= hasta).sort((a, b) => String(a.f).localeCompare(String(b.f)))
-    .map(({v, f}) => `• ${fd(f)} · ${v.operacion === 'EXPO' ? 'Exportación' : 'Importación'} ${v.operacion === 'EXPO' ? 'Cali → ' + (v.puerto || 'puerto') + (v.pais ? ' (' + v.pais + ')' : '') : (v.puerto || 'puerto') + ' → ' + (v.bodega || v.destino || 'bodega')}${v.unidad ? ' · ' + v.unidad : ''}`);
+    .map(({v, f}) => esNacional(v) ? `• ${fd(f)} · Nacional ${v.origen || 'origen'} → ${v.bodega || v.destino || 'destino'}${v.carga ? ' · ' + v.carga : ''}`
+      : `• ${fd(f)} · ${v.operacion === 'EXPO' ? 'Exportación' : 'Importación'} ${v.operacion === 'EXPO' ? 'Cali → ' + (v.puerto || 'puerto') + (v.pais ? ' (' + v.pais + ')' : '') : (v.puerto || 'puerto') + ' → ' + (v.bodega || v.destino || 'bodega')}${v.unidad ? ' · ' + v.unidad : ''}`);
 }
 const PLANTILLAS_COM = {
   'Seguridad': () => `🦺 *COMUNICADO DE SEGURIDAD · ENTRAPETROL*\n${fechaLarga()}\n\nCompañeros conductores:\n\n[Escriba aquí el mensaje]\n\nRecuerden siempre:\n• Cinturón puesto y nada de celular al volante.\n• Respetar los límites de velocidad y las pausas activas cada 2 horas.\n• Elementos de protección en patio, planta y puerto: casco, chaleco, botas y gafas.\n• Cualquier novedad, repórtenla en la app Viajes ETP o a Operaciones.\n\n${FIRMA_COM}`,
@@ -4132,7 +4245,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // recarga solo con ?v=<nueva> (la dirección nueva evita la copia guardada del navegador y de GitHub Pages). Si hay una ventana
 // abierta o algo escrito sin guardar, no interrumpe: muestra arriba "Hay una versión nueva · Actualizar". La sesión "Ingresar como"
 // se conserva (sessionStorage). En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'e4413665ef';
+const VERSION_TABLERO = '8b7bca9ae3';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 function actualizarTablero(v){ const u = new URL(location.href); u.searchParams.set('v', v); location.replace(u.toString()); }
