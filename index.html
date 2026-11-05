@@ -4241,24 +4241,32 @@ $('#rcPrueba').onclick = () => enviarResCli(true);
 $('#rcEnviar').onclick = () => enviarResCli(false);
 /* ---------- version.js · el tablero se actualiza solo cuando se publica una versión nueva ---------- */
 // Capa: pantalla. generar_publico.py pone en VERSION_TABLERO la huella de esta publicación y escribe publico/version.json con la
-// misma huella. Cada REVISAR_VERSION_MIN minutos (y al volver a la pestaña) el tablero lee version.json sin caché: si cambió, se
-// recarga solo con ?v=<nueva> (la dirección nueva evita la copia guardada del navegador y de GitHub Pages). Si hay una ventana
-// abierta o algo escrito sin guardar, no interrumpe: muestra arriba "Hay una versión nueva · Actualizar". La sesión "Ingresar como"
-// se conserva (sessionStorage). En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '8b7bca9ae3';
+// misma huella. Cada REVISAR_VERSION_MIN minutos (y al volver a la pestaña) el tablero lee version.json sin caché. Si cambió:
+//  - con la pestaña a la vista, NUNCA se recarga solo (5-nov: "el sistema se reinicia a veces" — se recargaba en medio del trabajo):
+//    muestra arriba "Hay una versión nueva · Actualizar" y la persona decide;
+//  - con la pestaña en segundo plano y nada abierto ni sin guardar, se recarga ahí (al volver ya está al día).
+// Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
+// se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
+// "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
+const VERSION_TABLERO = '345f5ca2d5';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
-function actualizarTablero(v){ const u = new URL(location.href); u.searchParams.set('v', v); location.replace(u.toString()); }
+// lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
+function guardarEstado(){
+  const vista = ([...document.querySelectorAll('main > section')].find(s => s.id.startsWith('v-') && !s.classList.contains('hidden')) || {id: ''}).id.slice(2);
+  try { sessionStorage.setItem('rkt-estado', JSON.stringify({vista, modo: typeof MODO !== 'undefined' ? MODO : '', G, y: scrollY, t: Date.now()})); } catch(e){}
+}
+function actualizarTablero(v){ guardarEstado(); const u = new URL(location.href); u.searchParams.set('v', v); location.replace(u.toString()); }
 async function revisarVersion(){
   if (VERSION_TABLERO.startsWith('__')) return;
   try {
     const j = await (await fetch('version.json?t=' + Date.now(), {cache: 'no-store'})).json();
     if (!j.v || j.v === VERSION_TABLERO) return;
-    if (!ocupado()) return actualizarTablero(j.v);
+    if (document.hidden && !ocupado()) return actualizarTablero(j.v);   // solo en segundo plano; a la vista, el aviso
     if ($('#avisoVersion')) return;
     document.body.insertAdjacentHTML('afterbegin', `<div id="avisoVersion" class="aviso-version">Hay una versión nueva del tablero.
       <button type="button" class="btn primary" onclick="actualizarTablero('${esc(j.v)}')">Actualizar ahora</button>
-      <span class="sub">(guarde antes lo que esté escribiendo)</span></div>`);
+      <span class="sub">(queda en la misma vista; guarde antes lo que esté escribiendo)</span></div>`);
   } catch(e) { /* sin conexión: se intenta en la próxima vuelta */ }
 }
 setInterval(revisarVersion, REVISAR_VERSION_MIN * 60e3);
@@ -4659,7 +4667,19 @@ cargar().then(ok => { if (ok === false) return; if (window.MODO_CLIENTE) documen
     if (accArea === 'Facturación') try { sessionStorage.setItem('rkt-area', accArea); } catch(e){} renderTurno(); }
   const vista = qp.get('vista') || 'turno';
   if (vista && !window.MODO_CLIENTE && !vid) document.querySelector('#nav [data-v="'+vista.replace(/[^a-z]/g,'')+'"]')?.click();
+  if (!vid && !qp.get('vista')) restaurarEstado();
 });
+// después de una actualización del tablero (version.js guardarEstado): la misma vista, modo, filtros y punto de la página.
+// Solo si se guardó hace menos de 30 min (un reinicio de verdad, otro día, arranca en Mi turno)
+function restaurarEstado(){
+  let e = null; try { e = JSON.parse(sessionStorage.getItem('rkt-estado') || 'null'); sessionStorage.removeItem('rkt-estado'); } catch(x){}
+  if (!e || Date.now() - (e.t || 0) > 30 * 60e3) return;
+  if (e.G) Object.assign(G, e.G);
+  if (e.modo) MODO = e.modo;   // tabla.js
+  if (e.vista) document.querySelector(`#nav [data-v="${String(e.vista).replace(/[^a-z]/g, '')}"]`)?.click();
+  render();
+  setTimeout(() => scrollTo(0, e.y || 0), 150);
+}
 </script>
 </body>
 </html>
