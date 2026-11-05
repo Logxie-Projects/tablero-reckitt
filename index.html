@@ -291,6 +291,14 @@ table.prog td:last-child{min-width:260px}
 .ruta .par.ya .pt{background:var(--accent);border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
 .ruta .caja{border:1px solid var(--border);border-radius:8px;padding:5px;margin-top:8px;font-size:11px;line-height:1.35;color:var(--muted)}
 .ruta .par.ya .caja{border-color:var(--accent)}
+/* paso con fecha pasada que nadie ha confirmado (confirmar.js): amarillo, no se cuenta como hecho */
+.ruta .par.conf .pt{border-color:var(--warn);background:color-mix(in srgb, var(--warn) 25%, var(--surface))}
+.ruta .par.conf .caja{border-color:var(--warn);border-style:dashed}
+.tg.tg-conf{background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)}
+.tg.tg-conf .conf-btn{font-size:inherit;font-weight:700;color:var(--warn);text-decoration:underline}
+.paso-est{margin-top:2px;font-size:11px}
+.paso-est.conf{color:var(--warn);font-weight:600}
+.paso-est.ok{color:var(--ok)}
 .ruta .caja b{display:block;color:var(--text);font-size:12px;font-weight:600;overflow-wrap:anywhere}
 .ruta .camion{position:absolute;top:-20px;left:50%;transform:translateX(-50%) scaleX(-1);font-size:15px}
 .ruta .esp{display:flex;gap:6px;margin-top:4px}
@@ -802,25 +810,70 @@ function desviosPlan(v){
       costo: R.filter(x => campos.includes(x.campo)).reduce((t, x) => t + x.costo, 0), incidente: R.filter(x => campos.includes(x.campo) && x.incidente).map(x => x.incidente).join(' · ')};
   }).filter(Boolean);
 }
-// etapa de la operación (ver ESTADOS): la más avanzada que respaldan las fechas o las tirillas del viaje.
-// El texto de la observación no cuenta; "En bodega de paso" = subviaje con el urbano pendiente.
+/* ---------- pasos confirmados: que una fecha ya pasó no prueba que el paso se hizo (5-nov) ----------
+ * Un paso del viaje (retiro, llenado, entrega, devolución, urbano…) cuenta como hecho solo si su fecha es de hoy o pasada Y
+ * alguien lo confirmó: el equipo (botón "✓ Confirmar" o al escribir la fecha a mano en el tablero), un correo (dato aprobado en
+ * "Llenar datos desde correos") o una tirilla. La programación de Reckitt nunca confirma: trae planes. Una fecha pasada sin
+ * confirmar se ve "por confirmar" (amarillo) y sale en Mi turno → Seguimiento. Un viaje cerrado (factura o Gerencia) cuenta
+ * todo lo pasado como confirmado ("histórico").
+ * Columna "Pasos confirmados" (Control del equipo): "campo|fecha|quién|fuente|cuándo", separadas por ";;" (Base.gs confirmarPasos_).
+ * La confirmación es de ESA fecha: si el paso se reprograma, hay que confirmarlo otra vez. */
+// [campo, paso, naviera]: naviera = fecha del buque (zarpe, llegada); se confirma igual, pero no pone roja la línea de Mi turno
+const PASOS_CONFIRMAR = {
+  EXPO: [['fechaRetiro', 'Retiro del vacío'], ['fechaCargue', 'Llenado en planta'], ['fechaEntregaPuerto', 'Entrega en puerto'],
+    ['etd', 'Zarpe de la motonave', true], ['eta', 'Llegada a destino', true]],
+  IMPO: [['fechaLevante', 'Entrega de documentos'], ['fechaRetiro', 'Retiro en puerto'], ['fechaCargue', 'Entrega en bodega'],
+    ['fechaDevolucion', 'Devolución del vacío']],
+  SUB: [['fechaDescargueSub', 'Descargue en patio intermedio'], ['fechaUrbano', 'Urbano al destino final']],
+};
+const FUENTES_CONFIRMA = {equipo: 'el equipo', fecha: 'el equipo (escribió la fecha)', correo: 'un correo aprobado', novedad: 'una novedad aprobada',
+  conductor: 'la app del conductor', tirilla: 'la tirilla', historico: 'viaje cerrado'};
+const pasosDe = v => v.padre ? PASOS_CONFIRMAR.SUB : PASOS_CONFIRMAR[v.operacion] || [];
+const fechaPaso = (v, campo) => /^\d{4}-\d{2}-\d{2}/.test(String(v && v[campo] || '')) ? String(v[campo]).slice(0, 10) : '';
+const confirmacionesDe = v => String(v && v.confirmados || '').split(';;').map(s => s.split('|')).filter(p => p[0] && p[1])
+  .map(([campo, fecha, quien, fuente, cuando]) => ({campo, fecha, quien: quien || '', fuente: fuente || 'equipo', cuando: cuando || ''}));
+// quién confirmó el paso de esa fecha (null = nadie). Cuenta la tirilla de entrega / devolución y el viaje cerrado (el suyo o el del padre)
+function confirmacion(v, campo){
+  const f = fechaPaso(v, campo); if (!f) return null;
+  const c = confirmacionesDe(v).filter(x => x.campo === campo && x.fecha === f).pop(); if (c) return c;
+  if ((campo === 'fechaEntregaPuerto' && v.tirillaEntrega) || (campo === 'fechaDevolucion' && v.tirillaDevolucion)) return {campo, fecha: f, quien: '', fuente: 'tirilla', cuando: ''};
+  const p = v.padre && viajes.find(x => x.id === v.padre);
+  if (situacion(v) === 'Cerrado' || (p && situacion(p) === 'Cerrado')) return {campo, fecha: f, quien: '', fuente: 'historico', cuando: ''};
+  return null;
+}
+// fecha del paso si ya se hizo (fecha de hoy o pasada y confirmada); '' si no
+const cumplido = (v, campo) => { const f = fechaPaso(v, campo); return f && f <= HOY && confirmacion(v, campo) ? f : ''; };
+// paso con fecha de hoy o pasada que nadie ha confirmado
+const porConfirmar = (v, campo) => { const f = fechaPaso(v, campo); return !!f && f <= HOY && !confirmacion(v, campo); };
+// los pasos por confirmar de un viaje (o subviaje): {campo, txt, fecha, dias vencido, naviera}. No en cancelados ni en prueba
+function pasosPorConfirmar(v){
+  if (!v || situacion(v) === 'Cancelado' || v.estado === 'Cancelado') return [];
+  return pasosDe(v).filter(([k]) => porConfirmar(v, k)).map(([k, txt, naviera]) => ({campo: k, txt, fecha: fechaPaso(v, k), dias: -diffDias(fechaPaso(v, k)), naviera: !!naviera}));
+}
+// texto corto de quién confirmó, para la ventana del viaje: "confirmado por Eider Zea (5 nov)", "confirmado con la tirilla"
+const textoConfirmacion = c => !c ? '' : c.fuente === 'tirilla' ? 'confirmado con la tirilla' : c.fuente === 'historico' ? 'viaje cerrado'
+  : `confirmado${{correo: ' por correo', novedad: ' por novedad', conductor: ' con la app del conductor'}[c.fuente] || ''}${c.quien ? ' por ' + c.quien : ''}${c.cuando ? ' (' + fd(c.cuando) + ')' : ''}`;
+
+// etapa de la operación (ver ESTADOS): la más avanzada que respaldan los pasos confirmados o las tirillas del viaje.
+// El texto de la observación no cuenta; "En bodega de paso" = subviaje con el urbano pendiente. Una fecha pasada sin confirmar
+// NO avanza la etapa (5-nov: "no asumas por fechas que algo se realizó").
 function etapaOperacion(v){
   if (situacion(v)==='Cancelado' || v.estadoHoja==='Cancelado') return 'Cancelado';
-  const ya = f => !!f && f <= HOY;
-  const sub = hijosDe(v)[0], dePaso = sub && !ya(sub.fechaUrbano);
+  const ya = k => !!cumplido(v, k);
+  const sub = hijosDe(v)[0], urbanoHecho = !!(sub && cumplido(sub, 'fechaUrbano')), dePaso = sub && !urbanoHecho;
   // con el urbano pendiente la carga sigue en la bodega de paso, aunque el vacío ya figure devuelto (se revisa en Errores)
-  if (v.operacion==='IMPO') return dePaso ? 'En bodega de paso' : !esLCL(v) && (ya(v.fechaDevolucion) || v.tirillaDevolucion) ? 'Vacío devuelto'
-    : (sub && ya(sub.fechaUrbano)) || ya(v.fechaCargue) ? 'Entregado en bodega'
-    : ya(v.fechaRetiro) ? 'Retirado de puerto' : tieneVehiculo(v) ? 'Asignado' : 'Sin asignar';
-  const enPuerto = ya(v.fechaEntregaPuerto) || !!v.tirillaEntrega || (sub && ya(sub.fechaUrbano));
-  return dePaso && !enPuerto ? 'En bodega de paso' : enPuerto && ya(v.etd) ? 'Zarpó' : enPuerto ? 'Entregado en puerto'
-    : ya(v.fechaCargue) ? 'Llenado' : ya(v.fechaRetiro) ? 'Vacío retirado' : tieneVehiculo(v) ? 'Asignado' : 'Sin asignar';
+  if (v.operacion==='IMPO') return dePaso ? 'En bodega de paso' : !esLCL(v) && (ya('fechaDevolucion') || v.tirillaDevolucion) ? 'Vacío devuelto'
+    : urbanoHecho || ya('fechaCargue') ? 'Entregado en bodega'
+    : ya('fechaRetiro') ? 'Retirado de puerto' : tieneVehiculo(v) ? 'Asignado' : 'Sin asignar';
+  const enPuerto = ya('fechaEntregaPuerto') || !!v.tirillaEntrega || urbanoHecho;
+  return dePaso && !enPuerto ? 'En bodega de paso' : enPuerto && ya('etd') ? 'Zarpó' : enPuerto ? 'Entregado en puerto'
+    : ya('fechaCargue') ? 'Llenado' : ya('fechaRetiro') ? 'Vacío retirado' : tieneVehiculo(v) ? 'Asignado' : 'Sin asignar';
 }
 function etapasViajes(){ viajes.forEach(v => { v.novedad = v.estadoHoja === 'Novedad'; v.estado = etapaOperacion(v); }); }
 // el transporte termina con la entrega en puerto (EXPO) o la devolución del vacío (IMPO); de ahí en adelante cuenta la facturación
 // lead time de facturación: desde que termina el transporte (entrega en puerto EXPO / devolución del vacío IMPO) hasta la factura;
 // sin factura, los días que lleva esperando
-const fechaFinTransporte = v => { const f = v.operacion==='EXPO' ? v.fechaEntregaPuerto : esLCL(v) ? v.fechaCargue : v.fechaDevolucion; return f && f <= HOY ? f : ''; };
+const fechaFinTransporte = v => cumplido(v, v.operacion==='EXPO' ? 'fechaEntregaPuerto' : esLCL(v) ? 'fechaCargue' : 'fechaDevolucion');
 const hijosDe = v => viajes.filter(x => x.padre === v.id && situacion(x) !== 'Cancelado');
 // transporte finalizado: EXPO pasó la parada Puerto; IMPO cumplió todas las paradas (vacío devuelto, con el urbano si hay subviaje)
 // transporte finalizado = tiene la fecha de fin (EXPO entrega en puerto, IMPO devolución del vacío) y no queda un urbano pendiente.
@@ -1175,7 +1228,8 @@ function yaCreado(b, lista){
 // TODO hecho. Tener vehículo solo cuenta junto a un hito. Nada se cierra solo: el equipo confirma con un clic.
 function pareceHecha(b, lista){
   const v = b.estadoAccion !== 'Hecha' && (viajeDeAccion(b, lista) || yaCreado(b, lista)); if (!v) return '';
-  const t = minus(b.accion), ya = f => !!f && f <= HOY, impo = v.operacion === 'IMPO';
+  // un paso cuenta hecho solo si está confirmado (cumplido); una fecha pasada sin confirmar no cierra la acción
+  const t = minus(b.accion), ya = k => !!cumplido(v, k), impo = v.operacion === 'IMPO';
   // "revisar los datos del correo": si todo lo que trajo el correo ya está en el viaje, no queda nada por revisar
   if (/llenar datos desde correos/.test(t)) {
     const d = datosNuevosDe(b), ks = Object.keys(d).filter(k => d[k]);
@@ -1183,10 +1237,10 @@ function pareceHecha(b, lista){
   }
   const pasos = [
     [true, pideCrearViaje(b), !!yaCreado(b, lista), `el viaje ya está creado (${v.id})`],
-    [true, /cita de retiro|retiro en puerto|retirar .*(del )?puerto|programar (el )?retiro/.test(t), impo && ya(v.fechaRetiro), `el contenedor se retiró del puerto el ${fd(v.fechaRetiro)}`],
-    [true, /cita de ingreso|ingreso a puerto|entrega(r)? en puerto/.test(t), !impo && (ya(v.fechaEntregaPuerto) || !!v.tirillaEntrega), 'el contenedor ya se entregó en puerto'],
-    [true, /descargue|entrega(r)? en bodega/.test(t), impo && ya(v.fechaCargue), `se entregó en bodega el ${fd(v.fechaCargue)}`],
-    [true, /devolucion del vacio|devolver el vacio|cita de devolucion/.test(t), ya(v.fechaDevolucion) || !!v.tirillaDevolucion, 'el vacío ya se devolvió'],
+    [true, /cita de retiro|retiro en puerto|retirar .*(del )?puerto|programar (el )?retiro/.test(t), impo && ya('fechaRetiro'), `el contenedor se retiró del puerto el ${fd(v.fechaRetiro)}`],
+    [true, /cita de ingreso|ingreso a puerto|entrega(r)? en puerto/.test(t), !impo && (ya('fechaEntregaPuerto') || !!v.tirillaEntrega), 'el contenedor ya se entregó en puerto'],
+    [true, /descargue|entrega(r)? en bodega/.test(t), impo && ya('fechaCargue'), `se entregó en bodega el ${fd(v.fechaCargue)}`],
+    [true, /devolucion del vacio|devolver el vacio|cita de devolucion/.test(t), ya('fechaDevolucion') || !!v.tirillaDevolucion, 'el vacío ya se devolvió'],
     [true, /emitir (las )?facturas?|^facturar/.test(t), cobro(v).fact === 'Facturado', 'el viaje ya está facturado'],
     [false, /asignar vehiculo|programar vehiculo|placa y conductor|conductor y vehiculo/.test(t), !!(v.placa && v.conductor), `ya tiene vehículo (${v.placa})`],
   ].filter(([, pide]) => pide);
@@ -1197,10 +1251,10 @@ const pedidoRojo = (b, lista) => pedidoVencido(b) && !pareceHecha(b, lista);
 
 /* ---------- plan vs ejecución por hito (HITOS_PLAN): tabla del viaje, lead time e indicador de cumplimiento ---------- */
 // [hito, plan, real]: plan = la primera fecha que tuvo el hito (sin plan guardado, la cita o la fecha de hoy en la base);
-// real = la fecha del hito si ya pasó
+// real = la fecha del hito si ya se hizo (pasada y confirmada: cumplido)
 const hitosPlan = v => (HITOS_PLAN[v.operacion] || []).map(([hito, plan, campos]) => {
   const f = v[campos[0]];
-  return [hito, v[plan] || campos.slice(1).map(k => v[k]).find(Boolean) || f || '', f && f <= HOY ? f : ''];
+  return [hito, v[plan] || campos.slice(1).map(k => v[k]).find(Boolean) || f || '', cumplido(v, campos[0])];
 });
 // lead time total: del primer al último hito; real = completo, o "en curso" contando hasta hoy
 function leadTime(v){
@@ -1245,30 +1299,36 @@ function fechaDeTexto(texto, ref){
   return '';
 }
 /* ---------- ruta del viaje (Modo lean del tablero y resumen al cliente): paradas, avance y etapa ---------- */
-// paradas según la operación: [etiqueta, lugar, fecha que la cumple, detalle]
-// el equipo anota la entrega en la observación o en la tirilla aunque no llene la fecha
-const dijoEntregado = v => /descargad|entregad/i.test(v.observacion||'');
+// paradas según la operación: [etiqueta, lugar, fecha que la cumple, detalle, por confirmar]
+// La parada se cumple solo con su paso confirmado (cumplido) o con la tirilla; una fecha pasada sin confirmar deja la parada
+// "por confirmar": el 5.º elemento = {v, campo, fecha, txt} (v = el viaje o el subviaje dueño del paso) y el tablero ofrece "✓ Confirmar".
 function paradas(v){
   const hecho = (fecha, otraSenal) => fecha || (otraSenal ? 'sí' : '');
+  // paso por confirmar de la parada (el primero que tenga fecha pasada sin confirmar)
+  const pend = (x, ...campos) => { const k = campos.find(c => porConfirmar(x, c)); if (!k) return null;
+    return {v: x, campo: k, fecha: fechaPaso(x, k), txt: (pasosDe(x).find(p => p[0] === k) || [, k])[1]}; };
   // con subviaje, la entrega final (bodega IMPO / puerto EXPO) es la del urbano desde el patio intermedio
   // fechas clave siempre a la vista (con "—" si falta), para que se note lo que no está registrado
   const ver = (txt, f) => `${txt} ${f ? fd(f) : '—'}`;
-  const sub = hijosDe(v)[0], urbano = sub && sub.fechaUrbano && sub.fechaUrbano <= HOY ? sub.fechaUrbano : '';
+  const sub = hijosDe(v)[0], urbano = sub ? cumplido(sub, 'fechaUrbano') : '';
+  const pendUrbano = sub ? pend(sub, 'fechaDescargueSub', 'fechaUrbano') : null;
+  // fecha pasada aún sin confirmar: en el detalle dice "por confirmar" en vez de "Entregado"
+  const dijo = (txt, k, x) => { x = x || v; const f = x[k]; return !f ? `${txt} —` : f > HOY ? `${txt} ${fd(f)} (plan)` : `${txt} ${fd(f)}${cumplido(x, k) ? '' : ' · por confirmar'}`; };
   if (v.operacion==='IMPO') return [
-    ['Origen', v.puerto||'Puerto', v.fechaLevante || (v.eta && v.eta<=HOY ? v.eta : ''), [v.eta&&`ETA ${fd(v.eta)}`, v.fechaLevante&&`Docs ${fd(v.fechaLevante)}`]],
-    ['Retiro lleno', v.puerto ? 'Puerto '+v.puerto : 'Puerto', v.fechaRetiro, [ver('Cita', v.citaRetiro), ver('Retiro', v.fechaRetiro)]],
-    sub ? ['Bodega', sub.bodega && sub.bodega!==sub.patioSub ? sub.bodega : (v.bodega||'Bodega'), urbano, [`Patio ${sub.patioSub||'intermedio'} ${fd(sub.fechaDescargueSub||v.fechaCargue)}`, sub.fechaUrbano&&`Urbano ${fd(sub.fechaUrbano)}`]]
-      : ['Bodega', v.bodega||'Bodega', v.fechaCargue && v.fechaCargue<=HOY ? v.fechaCargue : '', [v.fechaCargue ? `${v.fechaCargue > HOY ? 'Cita de entrega' : 'Entregado'} ${fd(v.fechaCargue)}` : 'Cita de entrega —', v.destino]],
+    ['Origen', v.puerto||'Puerto', cumplido(v, 'fechaLevante'), [v.eta&&`ETA ${fd(v.eta)}`, v.fechaLevante&&dijo('Docs', 'fechaLevante')], pend(v, 'fechaLevante')],
+    ['Retiro lleno', v.puerto ? 'Puerto '+v.puerto : 'Puerto', cumplido(v, 'fechaRetiro'), [ver('Cita', v.citaRetiro), dijo('Retiro', 'fechaRetiro')], pend(v, 'fechaRetiro')],
+    sub ? ['Bodega', sub.bodega && sub.bodega!==sub.patioSub ? sub.bodega : (v.bodega||'Bodega'), urbano, [`Patio ${sub.patioSub||'intermedio'} ${fd(sub.fechaDescargueSub||v.fechaCargue)}`, sub.fechaUrbano&&dijo('Urbano', 'fechaUrbano', sub)], pendUrbano]
+      : ['Bodega', v.bodega||'Bodega', cumplido(v, 'fechaCargue'), [v.fechaCargue ? (v.fechaCargue > HOY ? `Cita de entrega ${fd(v.fechaCargue)}` : dijo('Entregado', 'fechaCargue')) : 'Cita de entrega —', v.destino], pend(v, 'fechaCargue')],
     // carga suelta: la ruta termina en la bodega (no hay vacío)
-    ...(esLCL(v) ? [] : [['Vacío', v.patio||'Patio', hecho(v.fechaDevolucion, v.tirillaDevolucion), [ver('Cita', v.citaDevolucion), !v.fechaDevolucion && v.tirillaDevolucion ? 'Devuelto (sin fecha)' : ver('Devuelto', v.fechaDevolucion), v.fechaLimite&&`Límite ${fd(v.fechaLimite)}`, v.tirillaDevolucion&&'✔ tirilla']]]),
+    ...(esLCL(v) ? [] : [['Vacío', v.patio||'Patio', hecho(cumplido(v, 'fechaDevolucion'), v.tirillaDevolucion), [ver('Cita', v.citaDevolucion), !v.fechaDevolucion && v.tirillaDevolucion ? 'Devuelto (sin fecha)' : dijo('Devuelto', 'fechaDevolucion'), v.fechaLimite&&`Límite ${fd(v.fechaLimite)}`, v.tirillaDevolucion&&'✔ tirilla'], pend(v, 'fechaDevolucion')]]),
   ];
   return [
-    ['Origen', 'Cali', v.fechaRetiro && v.fechaRetiro<=HOY ? v.fechaRetiro : '', [bodegaCargue(v) || 'Planta Reckitt']],
-    ['Patio', v.patio||'Patio', v.fechaRetiro && v.fechaRetiro<=HOY ? v.fechaRetiro : '', [v.fechaRetiro&&`Retiro ${fd(v.fechaRetiro)}`]],
-    ['Llenado', bodegaCargue(v) || 'Reckitt', v.fechaCargue && (v.fechaCargue<HOY || dijoEntregado(v) || v.tirillaEntrega) ? v.fechaCargue : '', [v.fechaCargue&&`Llenado ${fd(v.fechaCargue)}`, v.sello&&`Sello ${v.sello}`]],
-    ['Puerto', v.puerto||'Puerto', sub ? (v.fechaEntregaPuerto || urbano) : hecho(v.fechaEntregaPuerto, v.tirillaEntrega || dijoEntregado(v)), [ver('Cita', v.citaIngreso), !v.fechaEntregaPuerto && (v.tirillaEntrega || dijoEntregado(v)) ? 'Entregado (sin fecha)' : ver('Entregado', v.fechaEntregaPuerto), ver('Cierre', v.cierreDoc), v.tirillaEntrega&&'✔ tirilla']],
-    ['Motonave', v.mn||'—', v.etd && v.etd<=HOY ? v.etd : '', [v.etd&&`ETD ${fd(v.etd)}`]],
-    ['Destino', v.pais||'—', v.eta && v.eta<=HOY ? v.eta : '', [v.eta&&`ETA ${fd(v.eta)}`]],
+    ['Origen', 'Cali', cumplido(v, 'fechaRetiro'), [bodegaCargue(v) || 'Planta Reckitt'], null],
+    ['Patio', v.patio||'Patio', cumplido(v, 'fechaRetiro'), [v.fechaRetiro&&dijo('Retiro', 'fechaRetiro')], pend(v, 'fechaRetiro')],
+    ['Llenado', bodegaCargue(v) || 'Reckitt', hecho(cumplido(v, 'fechaCargue'), v.tirillaEntrega), [v.fechaCargue&&dijo('Llenado', 'fechaCargue'), v.sello&&`Sello ${v.sello}`], pend(v, 'fechaCargue')],
+    ['Puerto', v.puerto||'Puerto', sub ? (cumplido(v, 'fechaEntregaPuerto') || urbano) : hecho(cumplido(v, 'fechaEntregaPuerto'), v.tirillaEntrega), [ver('Cita', v.citaIngreso), !v.fechaEntregaPuerto && v.tirillaEntrega ? 'Entregado (sin fecha)' : dijo('Entregado', 'fechaEntregaPuerto'), ver('Cierre', v.cierreDoc), v.tirillaEntrega&&'✔ tirilla'], sub ? pend(v, 'fechaEntregaPuerto') || pendUrbano : pend(v, 'fechaEntregaPuerto')],
+    ['Motonave', v.mn||'—', cumplido(v, 'etd'), [v.etd&&dijo('ETD', 'etd')], pend(v, 'etd')],
+    ['Destino', v.pais||'—', cumplido(v, 'eta'), [v.eta&&dijo('ETA', 'eta')], pend(v, 'eta')],
   ];
 }
 // dónde se llena el contenedor EXPO: la programación lo anota como "cargue en DHL" cuando no es la planta
@@ -1280,9 +1340,12 @@ function contenedorDeBooking(v){
     .sort((a, b) => String(a.fechaCargue).localeCompare(String(b.fechaCargue)) || String(a.id).localeCompare(String(b.id)));
   return mismos.length > 1 ? `contenedor ${mismos.indexOf(v) + 1} de ${mismos.length}` : '';
 }
-// cumplidas en orden: una parada cuenta si ella y todas las anteriores tienen fecha cumplida
-function avance(v){ const P = paradas(v); let n = 0; while (n < P.length && P[n][2]) n++;
+// paradas cumplidas: hasta la última confirmada (si se confirmó la entrega, el retiro anterior también se hizo aunque nadie lo
+// haya confirmado: eso se deduce del paso confirmado, no de una fecha)
+function avance(v){ const P = paradas(v); let n = 0; P.forEach((p, i) => { if (p[2]) n = i + 1; });
   return {P, n}; }
+// primera parada por confirmar en el tramo que falta (la que el tablero muestra en amarillo con "✓ Confirmar")
+const paradaPorConfirmar = (P, n) => (P.slice(n).find(p => p[4]) || [])[4] || null;
 
 // lo que pasa en el viaje en cada fecha
 function hitosDe(v){
@@ -1298,7 +1361,7 @@ function hitosDe(v){
 function etapaAhora(v, P, n, cliente){
   const hacia = {Puerto:'En camino a puerto', Bodega:'En camino a bodega', Vacío:'Vacío por devolver', 'Retiro lleno':'Por retirar en puerto', Llenado:'En llenado', Patio:'Por retirar el vacío'};
   const sinTirilla = !cliente && (v.operacion==='EXPO' ? !v.tirillaEntrega : !esLCL(v) && !v.tirillaDevolucion);
-  const subP = hijosDe(v).find(s => !(s.fechaUrbano && s.fechaUrbano <= HOY));
+  const subP = hijosDe(v).find(s => !cumplido(s, 'fechaUrbano'));
   // la etapa de la operación (sale de las fechas) con su detalle
   const proxHito = hitosDe(v).filter(h => h.f > HOY && h.que !== 'Cierre documental').sort((a, b) => a.f.localeCompare(b.f))[0];
   const sit = situacion(v), et = v.estado, ahora = et==='En bodega de paso' && subP ? `En bodega de paso ${subP.patioSub || ''} · urbano ${subP.fechaUrbano ? fd(subP.fechaUrbano) : 'sin fecha'}`
@@ -1309,8 +1372,9 @@ function etapaAhora(v, P, n, cliente){
     // y lo que tiene programado (hitosDe, turno.js): así se ve que el viaje está en espera de una cita y no quieto
     : n < P.length && !['Sin asignar','Asignado'].includes(et) ? (hacia[P[n][0]] || 'Hacia '+P[n][0].toLowerCase()) + (proxHito ? ` · ${proxHito.que.toLowerCase()} ${fd(proxHito.f)}` : '')
     : et;
-  // el tono sigue a la etapa (no a las paradas cumplidas): sin vehículo gris, en curso, cerrado
-  return {ahora, tono: sit==='Cerrado' ? 'cerrado' : et==='Sin asignar' ? 'gris' : 'curso'};
+  // el tono sigue a la etapa (no a las paradas cumplidas): sin vehículo gris, en curso, cerrado.
+  // pend = paso con fecha pasada que nadie ha confirmado (paradaPorConfirmar): el tablero lo pone en amarillo con "✓ Confirmar"
+  return {ahora, tono: sit==='Cerrado' ? 'cerrado' : et==='Sin asignar' ? 'gris' : 'curso', pend: sit==='Cerrado' ? null : paradaPorConfirmar(P, n)};
 }
 
 /* ---------- Registro de vehículos y conductores (pestañas Vehículos y Conductores) ---------- */
@@ -1338,10 +1402,15 @@ const estrellasDePuntos = p => Math.round(Number(p) || 0) / 2;
 // La misma idea de etapaAhora para el viaje hijo: se ve en la tarjeta del viaje padre (lean.js tarjetaHijo). tono como etapaAhora.
 function etapaSubviaje(s){
   if (s.estado === 'Cancelado' || situacion(s) === 'Cancelado') return {txt: 'Cancelado', tono: 'gris'};
-  if (s.fechaUrbano && s.fechaUrbano <= HOY) return {txt: 'Urbano entregado ✓', tono: 'cerrado'};
-  if (s.fechaDescargueSub && s.fechaDescargueSub <= HOY) return {txt: s.fechaUrbano ? 'En patio · urbano ' + fd(s.fechaUrbano) : 'En patio · urbano sin fecha', tono: 'curso'};
-  if (s.fechaDescargueSub) return {txt: 'Descargue en patio ' + fd(s.fechaDescargueSub), tono: 'curso'};
-  return {txt: 'Sin fechas', tono: 'gris'};
+  // solo lo confirmado cuenta como hecho (cumplido); una fecha pasada sin confirmar queda "por confirmar" (pend, amarillo)
+  const pend = pasosPorConfirmar(s).map(p => ({v: s, ...p})).pop() || null;
+  if (cumplido(s, 'fechaUrbano')) return {txt: 'Urbano entregado ✓', tono: 'cerrado', pend: null};
+  if (porConfirmar(s, 'fechaUrbano')) return {txt: `Urbano programado ${fd(s.fechaUrbano)} · por confirmar`, tono: 'confirmar', pend};
+  const urb = s.fechaUrbano ? 'urbano ' + fd(s.fechaUrbano) : 'urbano sin fecha';
+  if (cumplido(s, 'fechaDescargueSub')) return {txt: 'En patio · ' + urb, tono: 'curso', pend};
+  if (porConfirmar(s, 'fechaDescargueSub')) return {txt: `Descargue en patio ${fd(s.fechaDescargueSub)} · por confirmar`, tono: 'confirmar', pend};
+  if (s.fechaDescargueSub) return {txt: 'Descargue en patio ' + fd(s.fechaDescargueSub), tono: 'curso', pend};
+  return {txt: 'Sin fechas', tono: 'gris', pend};
 }</script>
 <script>
 /* ---------- base.js · utilidades comunes del tablero ---------- */
@@ -1495,6 +1564,12 @@ async function guardarCambio(id, cambios, usuario){
   const anterior = v.estado, previo = Object.fromEntries(Object.keys(cambios).map(k => [k, v[k]]));   // para deshacer si la base no lo acepta
   Object.assign(v, cambios, {actualizado: new Date().toISOString()});
   if ('estado' in cambios) v.estadoHoja = cambios.estado;
+  // escribir a mano la fecha de hoy o pasada de un paso = confirmarlo con su nombre (dominio PASOS_CONFIRMAR; la base hace lo
+  // mismo en Base.gs actualizarSeguimiento_). Una fecha futura es un plan: no confirma nada
+  const confNuevas = pasosDe(v).map(p => p[0]).filter(k => k in cambios && fechaPaso(cambios, k) && fechaPaso(cambios, k) <= HOY && fechaPaso(cambios, k) !== fechaPaso(previo, k))
+    .map(k => [k, fechaPaso(cambios, k), usuario || 'equipo', 'fecha', HOY].join('|'));
+  const confAntes = v.confirmados || '';
+  if (confNuevas.length) v.confirmados = [confAntes, ...confNuevas].filter(Boolean).join(';;');
   etapasViajes();
   if (!v.vistoPor && hayControlVisto()) v.vistoPor = usuario || 'equipo';
   historial.push({fecha:v.actualizado, id, placa:v.placa, estadoAnterior:anterior, estadoNuevo:v.estado, observacion:cambios.observacion||'', usuario:usuario||CFG.USUARIO||''});
@@ -1505,7 +1580,8 @@ async function guardarCambio(id, cambios, usuario){
       const j = await api('update', {id, cambios:enBase, usuario, telefono: telefonoPara(id)});
       toast(j.ok ? (j.cambios ? `Guardado en la base: ${j.cambios} dato${j.cambios===1?'':'s'}` : 'Sin cambios en la base') : 'No se guardó: ' + (j.error||'error'));
       // F2: aviso del hito (avisos.js); asignación única: enlace del conductor (asignacion.js)
-      if (!j.ok) { Object.assign(v, previo); etapasViajes(); }
+      if (!j.ok) { Object.assign(v, previo); v.confirmados = confAntes; etapasViajes(); }
+      else if (j.confirmados !== undefined) { v.confirmados = j.confirmados; etapasViajes(); }
       if (j.ok && j.cambios) ofrecerAviso(v, cambios, usuario).then(() => ofrecerEnlaceConductor(v, j.asignacion));
     }catch(e){ toast('No se pudo guardar en la base, intente de nuevo'); }
   }
@@ -1839,6 +1915,7 @@ const MOTIVOS = {
   ronda: ['Sin contacto con los conductores', 'Urgencia operativa en curso', 'Otro'],
   seg: ['Conductor sin señal: se confirma en la próxima ronda', 'Esperando confirmación del puerto o la bodega', 'Otro'],
   cob: ['Sin vehículo disponible', 'Reckitt no ha confirmado la fecha', 'Viaje por reprogramar o cancelar', 'Otro'],
+  conf: ['El conductor no responde: se confirma en la próxima ronda', 'Esperando la tirilla o el correo del puerto o la bodega', 'Otro'],
   reg: ['El conductor o el propietario no responde: se completa en la próxima ronda', 'Vehículo de un tercero: datos por confirmar con la empresa', 'Otro'],
   cli: ['Esperando respuesta de Reckitt', 'Depende de otro (agente, naviera, aduana)', 'Otro'],
 };
@@ -1863,7 +1940,8 @@ function menusTurno(r){
     {id: 'seg', titulo: 'Seguimiento', meta: 'Todos los vehículos con seguimiento en esta ronda', vacio: 'Ningún vehículo en movimiento',
      ayuda: r ? `Ronda ${r.n} de ${RONDAS.length}: ¿dónde está cada vehículo? Los que no avanzan (en rojo) van primero: confirme con el conductor y registre si llegó o la novedad.` : `Primera ronda a las ${RONDAS[0]}:00`,
      // primero los datos del registro que faltan (registro.js: vehículo y conductor completos), luego dónde va cada vehículo
-     filas: [...filasRegistro(V), ...V.filter(v => enSeguimiento([v]).length || sinActualizar(v).length).map(v => ({k: `seg${r ? r.n : 0}|${v.id}`, tipo: 'seg', v, p: pulsoViaje(v), roja: !!sinActualizar(v).length}))
+     // y los pasos con fecha pasada que nadie ha confirmado (confirmar.js): un paso no se da por hecho solo por su fecha
+     filas: [...filasRegistro(V), ...filasConfirmar(V), ...V.filter(v => enSeguimiento([v]).length || sinActualizar(v).length).map(v => ({k: `seg${r ? r.n : 0}|${v.id}`, tipo: 'seg', v, p: pulsoViaje(v), roja: !!sinActualizar(v).length}))
        .sort((a, b) => b.roja - a.roja || b.p.hace - a.p.hace)]},
     {id: 'cob', titulo: 'Cobertura', meta: `Ningún viaje sin vehículo a ${HORAS_COBERTURA} h o menos`, vacio: `Todos los viajes de las próximas ${HORAS_COBERTURA} h tienen vehículo`,
      ayuda: `Asigne vehículo a los viajes que arrancan en ${HORAS_COBERTURA} h o menos. Al guardar placa y conductor, el viaje sale de la lista.`,
@@ -1895,7 +1973,7 @@ function estadoTurno(){
   const rondaExc = excepcionDe('ronda' + n, R), rondaSaltada = viva(rondaExc);
   M.forEach(m => m.filas.forEach(x => { x.exc = excepcionDe(x.k, R); x.hecha = !x.roja && (x.tipo === 'nota' ? [...R.keys()].some(c => c.startsWith('nota|')) : R.has(x.k)); x.bloquea = !!x.roja && !vigenteExc(x.k) && !(m.id === 'seg' && rondaSaltada); }));
   // los datos del registro de viajes a más de 72 h se piden, pero no impiden cerrar la ronda (registro.js filasRegistro)
-  const segPend = M[0].filas.filter(x => !x.hecha && !vigenteExc(x.k) && !(x.tipo === 'reg' && !x.roja)).length, resta = r ? r.vence - r.ahora : 0;
+  const segPend = M[0].filas.filter(x => !x.hecha && !vigenteExc(x.k) && !(['reg', 'conf'].includes(x.tipo) && !x.roja)).length, resta = r ? r.vence - r.ahora : 0;
   const rondaHecha = !r || rondaSaltada || !segPend, rondaVencida = !!r && !rondaHecha && resta <= 0;
   const rojas = M.map((m, i) => m.filas.filter(x => x.bloquea).length + (i === 0 && rondaVencida ? 1 : 0));
   const excepciones = [...R.values()].filter(x => x.clave.startsWith('exc|')).map(x => { const k = x.clave.slice(4).split('|').slice(0, -1).join('|'); return {k, ...excepcionDe(k, R)}; });
@@ -1912,6 +1990,7 @@ function filaTurno(x, rev){
   const v = x.v, abrirV = v ? btnT('Abrir viaje', `data-t-abrir="${v.id}"`) : '', buscar = v ? clavesBusqueda(v).slice(0, 2).map(([k, c]) => lnkT(`🔎 ${esc(k)} ${esc(c)}`, urlBusqueda(c))).join(' ') : '';
   let titulo = '', detalle = '', acc = [], marca = rev ? '↺ Volver a la lista' : '✓ Revisado';
   if (x.tipo === 'reg') { ({titulo, detalle, acc} = filaRegistroHtml(x)); marca = ''; }   // registro.js
+  else if (x.tipo === 'conf') { ({titulo, detalle, acc} = filaConfirmarHtml(x)); marca = ''; }   // confirmar.js
   else if (x.tipo === 'seg') {
     const p = x.p;
     titulo = `${esc(v.placa)} · ${esc(v.operacion)} ${esc(v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || ''))} <span class="sub">· ${esc([v.conductor, refCliente(v), v.id].filter(Boolean).join(' · '))}</span>`;
@@ -1983,14 +2062,14 @@ function mensajeGrupo(){
   return `🚛 *Entrapetrol · viajes disponibles*\n${L.map((v, i) => `${i + 1}) ${fd(primerEvento(v))} · ${v.operacion}${v.unidad ? ' ' + v.unidad.replace('1X', '') + "'" : ''} · ${ruta(v)}`).join('\n')}\n\nEnturnarse o reportar disponibilidad aquí 👇\n${APP_TURNOS}`;
 }
 // selector del motivo de una excepción (en la misma fila)
-const tipoExc = k => k.startsWith('ronda') ? 'ronda' : k.startsWith('reg|') ? 'reg' : k.startsWith('seg') ? 'seg' : k.startsWith('cob') ? 'cob' : 'cli';
+const tipoExc = k => k.startsWith('ronda') ? 'ronda' : k.startsWith('reg|') ? 'reg' : k.startsWith('conf|') ? 'conf' : k.startsWith('seg') ? 'seg' : k.startsWith('cob') ? 'cob' : 'cli';
 const selectorMotivo = k => `<div class="tr-motivo"><select data-t-motivo="${esc(k)}">${MOTIVOS[tipoExc(k)].map(m => `<option>${esc(m)}</option>`).join('')}</select>
   ${btnT('Enviar a Gerencia', `data-t-excok="${esc(k)}"`)} ${btnT('Cancelar', 'data-t-exccancel="1"')}</div>`;
 // Gerencia: excepciones del día por aprobar
 function bloqueGerencia(T){
   const P = T.excepciones.filter(x => x.estado === 'pendiente'); if (!P.length) return '';
   return `<div class="tr-gerencia"><b>Por aprobar (Gerencia) · ${P.length}</b>${P.map(x => `<div class="tr-fila"><div class="tr-txt">${esc(x.motivo)}
-    <div class="sub">${esc(x.k.replace(/^seg\d\|/, 'Seguimiento · ').replace(/^cob\|/, 'Sin vehículo · ').replace(/^a(LX-)/, 'Pedido del cliente $1').replace(/^ronda/, 'Saltar la ronda '))} · pedida por ${esc(x.usuario)} ${esc(x.hora)}</div></div>
+    <div class="sub">${esc(x.k.replace(/^seg\d\|/, 'Seguimiento · ').replace(/^cob\|/, 'Sin vehículo · ').replace(/^conf\|/, 'Paso por confirmar · ').replace(/^a(LX-)/, 'Pedido del cliente $1').replace(/^ronda/, 'Saltar la ronda '))} · pedida por ${esc(x.usuario)} ${esc(x.hora)}</div></div>
     <div class="tr-acc">${esGerencia() ? btnT('✓ Aprobar', `data-t-aprobar="${esc(x.k)}"`) + btnT('✖ Rechazar', `data-t-rechazar="${esc(x.k)}"`) : '<span class="sub">Solo Gerencia aprueba (con su clave)</span>'}</div></div>`).join('')}</div>`;
 }
 function renderTurno(){
@@ -2422,7 +2501,7 @@ const costoViaje = v => { const c = cobro(v); return c.tarifa + (c.aprob==='Rech
 function tarjetaHijo(s, padre){
   // el subviaje guarda su destino final en Bodega; si no lo tiene, el del viaje padre
   const destino = s.bodega && s.bodega !== s.patioSub ? s.bodega : padre.operacion==='EXPO' ? (padre.puerto ? 'Puerto '+padre.puerto : 'Puerto') : (padre.bodega || padre.destino || 'Bodega');
-  const hecho = s.fechaUrbano && s.fechaUrbano <= HOY;
+  const hecho = !!cumplido(s, 'fechaUrbano');   // confirmado, no solo con la fecha pasada (dominio)
   const clic = window.MODO_CLIENTE ? '' : ` onclick="event.stopPropagation();abrir('${s.id}')"`;
   return `<div class="hijo${clic ? ' clic' : ''}"${clic}>
     <span class="hijo-tg">↳ Subviaje</span>
@@ -2437,11 +2516,11 @@ function tarjetaHijo(s, padre){
 // pie del subviaje: su etapa (dominio etapaSubviaje), la marca Novedad si la tiene y su última novedad con hora y autor, como el viaje
 // principal; "+ Novedad" abre el subviaje en la caja de novedades (las novedades del subviaje también suman en el padre)
 function pieHijo(s){
-  const {txt, tono} = etapaSubviaje(s), col = {cerrado: 'var(--ok)', gris: 'var(--muted)', curso: 'var(--accent)'}[tono], n = ultimaNovedad(s);
+  const {txt, tono, pend} = etapaSubviaje(s), col = {cerrado: 'var(--ok)', gris: 'var(--muted)', curso: 'var(--accent)', confirmar: 'var(--warn)'}[tono], n = ultimaNovedad(s);
   const tg = (t, c) => `<span class="tg" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${esc(t)}</span>`;
   const nov = n ? `🕑 <b>${esc(haceCuanto(fechaLocal(n.fecha)))}</b> · ${esc(n.usuario)} · ${n.origen === 'Conductor' ? '🚛 Conductor' : iconoNovedad(n.tipo) + ' ' + esc(n.tipo)}: ${esc(textoNovedad(n))}${novedadesDe(s).length > 1 ? ` (+${novedadesDe(s).length - 1})` : ''}`
     : 'Sin novedades del subviaje';
-  return `<div class="hijo-pie">${tg(txt, col)}${s.estadoHoja === 'Novedad' ? tg('⚠ Novedad', 'var(--warn)') : ''}<span class="sub">${nov}</span>
+  return `<div class="hijo-pie">${tg(txt, col)}${tono === 'confirmar' ? botonConfirmar(pend) : ''}${s.estadoHoja === 'Novedad' ? tg('⚠ Novedad', 'var(--warn)') : ''}<span class="sub">${nov}</span>
     ${window.MODO_CLIENTE ? '' : `<button type="button" class="link" onclick="event.stopPropagation();novedadSubviaje('${s.id}')" title="Abre el subviaje en la caja de novedades">+ Novedad</button>`}</div>`;
 }
 function novedadSubviaje(id){ abrir(id); const o = $('#novTexto'); if (o) { o.scrollIntoView({block: 'center'}); o.focus(); } }
@@ -2515,13 +2594,13 @@ function rutaPedido(v){
   const dif = (a,b) => iso(a) && iso(b) ? Math.round((new Date(b+'T12:00')-new Date(a+'T12:00'))/864e5) : null;
   const esperas = P.slice(1).map((p,i)=> P[i][2] && p[2] ? dif(P[i][2], p[2]) : null);
   // la etapa con su detalle y el color (dominio: etapaAhora, la misma del correo al cliente)
-  const {ahora, tono} = etapaAhora(v, P, n, window.MODO_CLIENTE), col = {cerrado: 'var(--ok)', gris: 'var(--muted)', curso: 'var(--accent)'}[tono];
+  const {ahora, tono, pend} = etapaAhora(v, P, n, window.MODO_CLIENTE), col = {cerrado: 'var(--ok)', gris: 'var(--muted)', curso: 'var(--accent)'}[tono];
   const ref = v.operacion==='IMPO' ? (v.pedido ? 'Pedido '+v.pedido : v.id) : (v.booking ? ['Booking '+v.booking, contenedorDeBooking(v)].filter(Boolean).join(' · ') : v.id);
   return `<div class="ruta"><div class="dos"><div class="izq">
     <div class="cab"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
       ${tagNuevo(v)}<span class="op ${v.operacion}">${v.operacion}</span><b>${esc(v.empresa||'Empresa sin definir')} · ${esc(ref)}</b>
       <span class="sub">${esc([v.solicitante && 'Solicita '+v.solicitante, v.fwd].filter(Boolean).join(' · '))}</span></div>
-      <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span>${etiquetaSinActualizar(v)}${!window.MODO_CLIENTE && pendientesOps(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)" title="Lo que operaciones debe completar">Falta (operaciones): ${esc(pendientesOps(v).join(' · '))}</span>` : ''}${!window.MODO_CLIENTE && pendientesFact(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--muted) 15%, transparent);color:var(--muted)" title="Para poder facturarlo">Falta (facturación): ${esc(pendientesFact(v).join(' · '))}</span>` : ''}</div>
+      <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span>${etiquetaSinActualizar(v)}${etiquetaPorConfirmar(pend)}${!window.MODO_CLIENTE && pendientesOps(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)" title="Lo que operaciones debe completar">Falta (operaciones): ${esc(pendientesOps(v).join(' · '))}</span>` : ''}${!window.MODO_CLIENTE && pendientesFact(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--muted) 15%, transparent);color:var(--muted)" title="Para poder facturarlo">Falta (facturación): ${esc(pendientesFact(v).join(' · '))}</span>` : ''}</div>
     ${lineaNovedad(v)}
     <div class="cuerpo"><div>
       <div style="display:flex;align-items:flex-end;gap:2px"><div class="cont"><b style="font-size:12px">${esc(v.contenedor||'—')}</b><div class="sub">${esc(v.unidad||'')}</div></div><div class="cabina"></div></div>
@@ -2530,7 +2609,7 @@ function rutaPedido(v){
       ${window.MODO_CLIENTE ? '' : `<button type="button" class="subv" onclick="event.stopPropagation();nuevoSubviaje('${v.id}')"><span>+</span> Subviaje</button>`}
     </div><div>
       <div class="linea"><div class="hecho" style="width:${P.length>1 ? Math.min(86, 86*Math.max(0,n-1)/(P.length-1)) : 0}%"></div>
-        ${P.map(([et, lugar, , det], i)=>`<div class="par ${i<n?'ok':i===n?'ya':''}"><div class="pt"></div>${i===n?'<span class="camion">🚚</span>':''}
+        ${P.map(([et, lugar, , det], i)=>`<div class="par ${i<n?'ok':i===n?'ya':''}${i>=n && P[i][4] && !window.MODO_CLIENTE ? ' conf' : ''}"><div class="pt"></div>${i===n?'<span class="camion">🚚</span>':''}
           <div class="caja">${et}<b>${esc(lugar)}</b>${det.filter(Boolean).map(esc).join('<br>')}</div></div>`).join('')}</div>
       <div class="esp"><span></span>${esperas.map(d=> `<span>${d===null?'':d+' d'}</span>`).join('')}</div>
       ${hijosDe(v).map(s => tarjetaHijo(s, v)).join('')}
@@ -2838,7 +2917,8 @@ function pintarForm(v){
       <div id="mExtras">${(itemsExtra(v).length || !v.padre ? itemsExtra(v) : CONCEPTOS_SUB.map(k=>[k,0])).map(filaExtra).join('')}</div>
       <button type="button" class="link" id="addExtra">+ Agregar extracosto</button>
       <input type="hidden" data-k="conceptoExtra" value="${esc(val)}"><input type="hidden" data-k="extracostos" value="${esc(valorCampo(v,'extracostos'))}"></div>`;
-    return `<div><label>${l}</label>${ctl}</div>`;
+    // fecha de un paso del viaje: debajo, si ya está confirmado o falta confirmarlo (confirmar.js)
+    return `<div><label>${l}</label>${ctl}${t==='fecha' ? estadoPaso(v, k) : ''}</div>`;
   };
   const grupo = (titulo, cs) => `<fieldset class="mgrupo"><legend>${titulo}</legend><div class="fgrid3">${cs.map(campo).join('')}</div></fieldset>`;
   const calc = v.operacion==='IMPO' ? `<p class="sub" style="margin:8px 2px 0">Fecha límite de devolución <b>${fd(v.fechaLimite)}</b>${demora(v) ? ` · <b style="color:var(--bad)">${demora(v)} d de demora</b>` : ''} · se calculan solas con la ciudad y la entrega en bodega.</p>` : '';
@@ -3187,6 +3267,76 @@ function filaRegistroHtml(x){
 }
 $('#regGuardar').onclick = guardarRegistroUI;
 $('#regCerrar').onclick = () => { regContinuar = null; $('#ovReg').classList.remove('open'); };
+/* ---------- confirmar.js · pasos por confirmar: una fecha pasada no prueba que el paso se hizo ----------
+ * Capa: pantalla. La regla está en el dominio (dominio.js: PASOS_CONFIRMAR, cumplido, porConfirmar, pasosPorConfirmar): un paso
+ * cuenta como hecho solo si alguien lo confirmó. Aquí: el botón "✓ Sí, se hizo" (ventana del viaje, Modo lean, Mi turno), que
+ * guarda la confirmación con el nombre de quien la hace (Apps Script doPost 'confirmar' → Base.gs confirmarPasos_), y las filas de
+ * Mi turno → Seguimiento. Una fecha pasada sin confirmar por más de 1 día (que no sea del buque) es línea roja. */
+
+// botón de confirmar un paso: data-conf="id|campo|fecha" (lo atiende el clic de abajo en cualquier vista)
+const botonConfirmar = (p, txt) => window.MODO_CLIENTE || !p ? '' :
+  `<button type="button" class="link conf-btn" data-conf="${esc(p.v.id + '|' + p.campo + '|' + p.fecha)}" title="Confirma que ${esc(p.txt.toLowerCase())} se hizo el ${esc(fd(p.fecha))}; queda con su nombre">${txt || '✓ Sí, se hizo'}</button>`;
+// etiqueta amarilla de la tarjeta (Modo lean): "¿Se hizo? Retiro del vacío jue 5 nov · ✓ Sí, se hizo"
+const etiquetaPorConfirmar = p => window.MODO_CLIENTE || !p ? '' :
+  `<span class="tg tg-conf" title="La fecha ya pasó pero nadie ha confirmado que se hizo: no se cuenta como hecho">¿Se hizo? ${esc(p.txt)} ${esc(fd(p.fecha))} · ${botonConfirmar(p)}</span>`;
+// debajo de un campo de fecha en la ventana del viaje: por confirmar, confirmado (por quién) o plan
+function estadoPaso(v, k){
+  if (!pasosDe(v).some(p => p[0] === k)) return '';
+  const f = fechaPaso(v, k); if (!f) return '';
+  if (f > HOY) return `<div data-paso="${k}" class="sub paso-est">Plan (aún no pasa)</div>`;
+  if (porConfirmar(v, k)) { const txt = (pasosDe(v).find(p => p[0] === k) || [])[1] || k;
+    return `<div data-paso="${k}" class="sub paso-est conf">⚠ Por confirmar · ${botonConfirmar({v, campo: k, fecha: f, txt})}</div>`; }
+  return `<div data-paso="${k}" class="sub paso-est ok">✓ ${esc(textoConfirmacion(confirmacion(v, k)))}</div>`;
+}
+
+// Mi turno → Seguimiento: un viaje (o subviaje) con pasos por confirmar. Roja si alguno, que no sea del buque, lleva más de 1 día
+function filasConfirmar(V){
+  const lista = V.flatMap(v => [v, ...hijosDe(v)]).filter(x => !esPrueba(x));
+  return lista.map(x => ({x, P: pasosPorConfirmar(x)})).filter(y => y.P.length)
+    .map(({x, P}) => ({k: 'conf|' + x.id, tipo: 'conf', v: x, P, roja: P.some(p => !p.naviera && p.dias > 1)}))
+    .sort((a, b) => b.roja - a.roja || Math.max(...b.P.map(p => p.dias)) - Math.max(...a.P.map(p => p.dias)));
+}
+function filaConfirmarHtml(x){
+  const v = x.v, padre = v.padre ? ` <span class="sub">(subviaje de ${esc(v.padre)})</span>` : '';
+  const titulo = `¿Se hizo? ${esc(nombreTurno(v))}${padre}`;
+  const detalle = x.P.map(p => `${esc(p.txt)} ${esc(fd(p.fecha))}${p.dias ? ` · <span style="${!p.naviera && p.dias > 1 ? 'color:var(--bad);font-weight:600' : ''}">hace ${p.dias} d sin confirmar</span>` : ' · hoy'}`).join('<br>')
+    + '<br><span class="sub">Confírmelo con el conductor, la tirilla o el correo. Si no se hizo, abra el viaje y cambie la fecha (reprogramación).</span>';
+  const pq = ' ' + x.P.map(p => p.txt.toLowerCase() + ' del ' + fd(p.fecha)).join(' y ');
+  const acc = [...x.P.map(p => botonConfirmar({v, ...p}, `✓ ${esc(p.txt)}`)),
+    btnT('No se hizo: reprogramar', `data-t-abrir="${v.id}"`, 'Abre el viaje para poner la fecha nueva con su causa'),
+    v.placa ? lnkT(ICONO_WA + 'Preguntar al conductor', waConductor(v, `¿se hizo${pq}? Confírmame por favor`)) : ''];
+  return {titulo, detalle, acc};
+}
+
+// guarda la confirmación (doPost 'confirmar'); el tablero la refleja de una vez y, si falla, la quita
+async function confirmarPaso(id, campo, fecha){
+  const v = viajes.find(x => x.id === id); if (!v) return toast('No se encontró el viaje ' + id);
+  const txt = (pasosDe(v).find(p => p[0] === campo) || [])[1] || campo;
+  if (!confirm(`¿Confirma que ${txt.toLowerCase()} se hizo el ${fd(fecha)}?\n\n${v.id} · ${v.placa || 'sin placa'}\nQueda con su nombre. Si no se hizo, cancele y cambie la fecha en el viaje.`)) return;
+  const usuario = usuarioActual() || pedirUsuario('¿Quién confirma? (queda con su nombre)'); if (!usuario) return;
+  const antes = v.confirmados || '';
+  v.confirmados = [antes, [campo, fecha, usuario, 'equipo', HOY].join('|')].filter(Boolean).join(';;');
+  repintarConfirmado(id);
+  try {
+    const j = await api('confirmar', {id, campo, fecha, usuario});
+    if (!j.ok) throw new Error(j.error || 'error');
+    if (j.confirmados !== undefined) v.confirmados = j.confirmados;
+    toast(`✓ ${txt} confirmado (${v.id})`);
+  } catch(e) { v.confirmados = antes; toast('No se guardó la confirmación: ' + e.message); }
+  repintarConfirmado(id);
+}
+// repinta las vistas; en la ventana del viaje abierta solo cambia la línea del paso (no se pierde lo que se esté escribiendo)
+function repintarConfirmado(id){
+  etapasViajes(); render();
+  const v = viajes.find(x => x.id === id);
+  document.querySelectorAll('#mForm .paso-est').forEach(el => { const k = el.dataset.paso; if (v && k && editId === id) el.outerHTML = estadoPaso(v, k); });
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-conf]'); if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  const [id, campo, fecha] = b.dataset.conf.split('|');
+  confirmarPaso(id, campo, fecha);
+}, true);
 /* ---------- llenar datos desde correos (con revisión y aprobación) ---------- */
 let PROP = [];
 // cada área revisa lo suyo: los datos de cobro (relación de Pedro y aprobación de Reckitt) son de Facturación; el resto, de Operaciones
@@ -3508,7 +3658,8 @@ async function aplicarProgramacion(){
       let ch = {...f.cambios};
       const mov = fechasMovidas(f.v, ch);
       if (mov.length) ch = conCausa(f.v, ch, mov, causa, `Programación ${mesTxt} actualizada (correo ${c.fecha.replace('T', ' ')})`, usuario);
-      const j = await post({action:'update', id: f.v.id, cambios: ch});
+      // fuente programación: sus fechas son planes; aunque sean de hoy o pasadas no confirman ningún paso (Base.gs)
+      const j = await post({action:'update', id: f.v.id, cambios: ch, fuente: 'programacion'});
       if (!j.ok) throw new Error(`${f.v.id}: ${j.error || 'error'}`);
     }
     toast(`Programación aplicada: ${crear.length} creados, ${sel.length - crear.length} actualizados`);
@@ -3911,7 +4062,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // recarga solo con ?v=<nueva> (la dirección nueva evita la copia guardada del navegador y de GitHub Pages). Si hay una ventana
 // abierta o algo escrito sin guardar, no interrumpe: muestra arriba "Hay una versión nueva · Actualizar". La sesión "Ingresar como"
 // se conserva (sessionStorage). En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '1425303688';
+const VERSION_TABLERO = '3413c12e7a';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 function actualizarTablero(v){ const u = new URL(location.href); u.searchParams.set('v', v); location.replace(u.toString()); }
