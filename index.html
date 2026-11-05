@@ -11,7 +11,8 @@
 <style>
 :root{
   --bg:#f5f6f8; --surface:#fff; --surface-2:#f0f2f5; --border:#e3e6eb;
-  --text:#1b1f27; --muted:#667085; --accent:#d4006f; --accent-soft:#fde7f2;
+  /* fucsia del logo de Reckitt (5-nov: el anterior #d4006f se veía muy fuerte) */
+  --text:#1b1f27; --muted:#667085; --accent:#ff007f; --accent-soft:#ffe9f3;
   --s-sin:#98a2b3; --s-asig:#3b82f6; --s-ret:#f97316; --s-carg:#f59e0b; --s-tran:#8b5cf6; --s-patio:#06b6d4; --s-ent:#16a34a; --s-nov:#dc2626; --s-can:#475569;
   --ok:#16a34a; --warn:#f59e0b; --bad:#dc2626;
   --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
@@ -34,7 +35,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);position:
 .bar{max-width:1400px;margin:0 auto;padding:12px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
 .lx-name{font-weight:800}.lx-name b{color:var(--accent);font-weight:800}
-.fab{position:fixed;right:20px;bottom:20px;z-index:45;display:flex;align-items:center;gap:8px;border:0;cursor:pointer;background:var(--accent);color:#fff;border-radius:999px;padding:6px 16px 6px 8px;box-shadow:0 8px 24px rgba(212,0,111,.35);font-weight:600;transition:transform .2s}
+.fab{position:fixed;right:20px;bottom:20px;z-index:45;display:flex;align-items:center;gap:8px;border:0;cursor:pointer;background:var(--accent);color:#fff;border-radius:999px;padding:6px 16px 6px 8px;box-shadow:0 8px 24px rgba(255,0,127,.30);font-weight:600;transition:transform .2s}
 .fab:hover{transform:translateY(-2px)}
 .fab svg{background:#13224a;border-radius:50%;padding:3px;box-sizing:content-box}
 .fab span{font-size:13px;color:#fff}
@@ -4304,7 +4305,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '27f0eef2b7';
+const VERSION_TABLERO = 'c003dfb20a';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
