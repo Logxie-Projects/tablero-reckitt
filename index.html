@@ -456,6 +456,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
     <button class="btn solo-interno" id="btnTurnos" title="Conductores que se enturnaron en un viaje o avisaron que están disponibles en la app Viajes ETP, de cualquier fecha; asignar o escribirles">🙋 Turnos<span class="badge" id="nTurnos"></span></button>
     <button class="btn solo-interno" id="btnResCli" title="Status de los viajes para Reckitt: elija qué viajes van, envíe una prueba a calidad@ y luego al cliente (ya no sale solo)">📨 Resumen al cliente</button>
     <button class="btn solo-interno" id="btnNacional" title="Operación nacional: recoger estibas en ERCOL, traslados dentro de Colombia (pestaña Seguimiento NACIONAL)">🚚 Viaje nacional</button>
+    <button class="btn solo-interno" id="btnInvitar" title="Invitar por WhatsApp al grupo de conductores a todos los viajes sin vehículo (a futuro, no solo 72 h)">🚛 Invitar conductores</button>
     <button class="btn solo-interno" id="btnComunicado" title="Comunicado a los conductores por WhatsApp (seguridad, vías, viajes disponibles, documentos): plantilla lista para el canal de avisos de la comunidad">📣 Comunicado</button>
     <button class="btn solo-interno" id="btnDocs" title="Confirmaciones de booking y cartas de retiro que llegan con la programación de Jhonier, archivadas en Drive por mes; marca lo que falta">📎 Documentos de contenedores</button>
     <button class="btn" id="btnCsv">Exportar CSV</button>
@@ -2211,6 +2212,10 @@ function mensajeGrupo(){
     + bloque('Esta semana', semana) + bloque('Más adelante', despues) + bloque('Fecha por confirmar', sinFecha)
     + `\n\nEnturnarse o reportar disponibilidad aquí 👇\n${APP_TURNOS}`;
 }
+// botón de la barra de arriba (index.html #btnInvitar): el mismo mensaje, armado al momento de presionar
+document.addEventListener('click', e => { if (!e.target.closest('#btnInvitar')) return;
+  if (!sinVehiculoGrupo().length) return toast('No hay viajes sin vehículo para invitar');
+  window.open(waLink('', mensajeGrupo()), '_blank', 'noopener'); });
 // selector del motivo de una excepción (en la misma fila)
 const tipoExc = k => k.startsWith('ronda') ? 'ronda' : k.startsWith('reg|') ? 'reg' : k.startsWith('conf|') ? 'conf' : k.startsWith('seg') ? 'seg' : k.startsWith('cob') ? 'cob' : 'cli';
 const selectorMotivo = k => `<div class="tr-motivo"><select data-t-motivo="${esc(k)}">${MOTIVOS[tipoExc(k)].map(m => `<option>${esc(m)}</option>`).join('')}</select>
@@ -2230,8 +2235,9 @@ function renderTurno(){
   const primeraRoja = M.findIndex((m, i) => T.rojas[i]);
   if (T.bloqueado && $('#v-turno').classList.contains('hidden')) $('#nav [data-v="turno"]').click();
   // un paso se abre cuando los anteriores no tienen líneas rojas; los que TIENEN líneas rojas están siempre abiertos (son
-  // igual de urgentes: ej. Cobertura con viajes sin vehículo a 72 h); Gerencia ve todos los pasos sin orden
-  const abierto = i => esGerencia() || primeraRoja < 0 || i <= primeraRoja || T.rojas[i] > 0;
+  // igual de urgentes: ej. Cobertura con viajes sin vehículo a 72 h); Gerencia ve todos los pasos sin orden, y mientras Gerencia
+  // quita el bloqueo (pausa) todos los pasos quedan abiertos para el equipo (5-nov: "desbloqueé y Eider no veía Cobertura")
+  const abierto = i => esGerencia() || enPausa() || primeraRoja < 0 || i <= primeraRoja || T.rojas[i] > 0;
   if (!abierto(M.findIndex(m => m.id === turnoMenu))) turnoMenu = M[primeraRoja].id;
   const cuenta = m => { const h = m.filas.filter(x => x.hecha || (x.exc && ['pendiente', 'aprobada'].includes(x.exc.estado))).length; return {h, t: m.filas.length}; };
   $('#nTurno').textContent = T.rojas.reduce((a, b) => a + b, 0) || '';
@@ -2254,10 +2260,13 @@ function renderTurno(){
   let m = M.find(x => x.id === turnoMenu);
   if (!m) { m = M[0]; turnoMenu = m.id; }   // el paso elegido ya no existe (ej. "Cierre del día" pasada la medianoche)
   const pend = m.filas.filter(x => !x.hecha), hechos = m.filas.filter(x => x.hecha);
-  cont.innerHTML = bloqueGerencia(T) + bloqueCalifGerencia() + `<div class="tr-meta"><b>Meta:</b> ${esc(m.meta)}</div><div class="sub" style="margin:2px 0 6px">${esc(m.ayuda)}</div>
+  // invitar por WhatsApp a los conductores a TODOS los viajes sin vehículo (no solo los de 72 h de Cobertura): siempre a la vista,
+  // sin depender del paso ni del bloqueo (también está en la barra de arriba: #btnInvitar)
+  const nInv = sinVehiculoGrupo().length;
+  const invitar = nInv ? `<div class="tr-vacio" style="margin:0 0 8px"><a class="btn" href="${waLink('', mensajeGrupo())}" target="_blank" rel="noopener">${ICONO_WA}Invitar conductores por WhatsApp · ${nInv} viaje${nInv === 1 ? '' : 's'} sin vehículo</a> <span class="sub">Todos los viajes a futuro: abre WhatsApp con el mensaje listo; elija el grupo y envíe. Responden en la app de turnos.</span></div>` : '';
+  cont.innerHTML = invitar + bloqueGerencia(T) + bloqueCalifGerencia() + `<div class="tr-meta"><b>Meta:</b> ${esc(m.meta)}</div><div class="sub" style="margin:2px 0 6px">${esc(m.ayuda)}</div>
     ${pend.map(x => filaTurno(x, false)).join('') || `<div class="tr-vacio">✓ ${esc(m.vacio)}${M[M.indexOf(m) + 1] ? ` · ${btnT('Siguiente: ' + M[M.indexOf(m) + 1].titulo + ' →', `data-t-menu="${M[M.indexOf(m) + 1].id}"`)}` : ''}</div>`}
     ${m.despues ? `<div class="sub tr-vacio">ℹ ${esc(m.despues)}</div>` : ''}
-    ${m.id === 'cob' ? `<div class="tr-vacio"><a class="btn" href="${waLink('', mensajeGrupo())}" target="_blank" rel="noopener">${ICONO_WA}Publicar ${sinVehiculoGrupo().length} viajes sin vehículo en el grupo de conductores</a> <span class="sub">Abre WhatsApp con el mensaje listo: elija el grupo y envíe. Los conductores responden en la app de turnos.</span></div>` : ''}
     ${hechos.length ? `<details class="tr-rev"><summary class="sub">Hechos hoy (${hechos.length})</summary>${hechos.map(x => filaTurno(x, R.get(x.k))).join('')}</details>` : ''}`;
 }
 // la clave se escribe aquí y la comprueba el Apps Script; el tablero solo guarda "es Gerencia" mientras la pestaña esté abierta.
@@ -4426,7 +4435,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '9cb800b105';
+const VERSION_TABLERO = '661e29dca7';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
