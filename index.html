@@ -376,6 +376,8 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
 #ovReg{z-index:60}   /* Completar datos se abre encima de la ventana del viaje (registro.js) */
 .quien-lista{display:grid;gap:8px}   /* Ingresar como (base.js elegirUsuario) */
 .quien-lista .btn{justify-content:space-between;display:flex;width:100%;text-align:left}
+.rc-fila{display:flex;gap:10px;align-items:flex-start;padding:7px 4px;border-bottom:1px solid var(--border);cursor:pointer}   /* resumen-cliente.js */
+.rc-fila input{margin-top:3px}
 </style>
 </head>
 <body>
@@ -398,6 +400,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
     <button class="btn primary solo-interno" id="btnBarrido" title="Lee ya mismo el buzón de calidad@ (últimos 2 días) y muestra qué correos de Reckitt y sus agentes no están en la base">⟳ Buscar correos ahora</button>
     <button class="btn correo solo-interno" id="btnCorreos" title="Datos que LogxIA encontró en los correos, para revisar y aprobar">✉ Llenar datos desde correos<span class="badge" id="nProp"></span></button>
     <button class="btn solo-interno" id="btnTurnos" title="Conductores que se enturnaron en un viaje o avisaron que están disponibles en la app Viajes ETP, de cualquier fecha; asignar o escribirles">🙋 Turnos<span class="badge" id="nTurnos"></span></button>
+    <button class="btn solo-interno" id="btnResCli" title="Status de los viajes para Reckitt: elija qué viajes van, envíe una prueba a calidad@ y luego al cliente (ya no sale solo)">📨 Resumen al cliente</button>
     <button class="btn solo-interno" id="btnComunicado" title="Comunicado a los conductores por WhatsApp (seguridad, vías, viajes disponibles, documentos): plantilla lista para el canal de avisos de la comunidad">📣 Comunicado</button>
     <button class="btn solo-interno" id="btnDocs" title="Confirmaciones de booking y cartas de retiro que llegan con la programación de Jhonier, archivadas en Drive por mes; marca lo que falta">📎 Documentos de contenedores</button>
     <button class="btn" id="btnCsv">Exportar CSV</button>
@@ -523,6 +526,15 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
     <div class="sub">Para asignar un vehículo y un conductor a un viaje deben estar completos en el registro: así se les puede llamar en viajes futuros. Se guardan en las pestañas Vehículos y Conductores de la base.</div>
     <div id="regCuerpo" style="margin-top:8px"></div>
     <div class="mfoot"><input id="regUsuario" placeholder="Su nombre (queda en el registro)" style="width:230px;margin-right:auto"><button class="btn" id="regCerrar">Cancelar</button><button class="btn primary" id="regGuardar">Guardar datos</button></div>
+  </div>
+</div>
+<div class="ov" id="ovResCli">
+  <div class="modal" role="dialog" aria-modal="true" style="width:min(760px,100%)">
+    <h3>📨 Resumen al cliente</h3>
+    <div class="sub">Status de los viajes para Reckitt, sin enlaces. Marque los que van; "Enviar prueba" lo manda solo a calidad@ para revisarlo.</div>
+    <div class="sub" id="rcPara" style="margin-top:6px"></div>
+    <div id="rcLista" style="margin-top:8px;max-height:55vh;overflow:auto"></div>
+    <div class="mfoot"><span class="sub" id="rcN" style="margin-right:auto"></span><button class="btn" id="rcCerrar">Cerrar</button><button class="btn" id="rcPrueba">Enviar prueba (a calidad@)</button><button class="btn primary" id="rcEnviar">Enviar al cliente</button></div>
   </div>
 </div>
 <div class="ov" id="ovCom">
@@ -3793,6 +3805,56 @@ $('#comEnviar').onclick = () => {
   window.open(waLink('', $('#comTexto').value), '_blank');
   toast('En WhatsApp elija la comunidad "Conductores ENTRAPETROL" → Avisos');
 };
+/* ---------- resumen-cliente.js · 📨 Resumen al cliente: elegir los viajes, probar y enviar ---------- */
+// Capa: pantalla (solo el equipo). El status de los viajes ya no le sale solo a Reckitt (Código.gs AVISO_CLIENTE.revisar): aquí se
+// ven los viajes que irían (con algún paso hoy o con un aviso de hito en cola, ya marcados) y los demás abiertos para agregarlos.
+// "Enviar prueba" lo manda solo a calidad@ (sin copias, no marca la cola); "Enviar al cliente" lo manda a los solicitantes con la
+// copia de AVISO_CLIENTE. El correo no lleva enlaces (Cliente.gs). Datos: GET ?que=resumenCliente (vistaResumenCliente_);
+// envío: doPost 'resumenCliente' {viajes, usuario, prueba}.
+let RES_CLI = null;
+async function abrirResumenCliente(){
+  $('#rcLista').innerHTML = '<p class="sub">Cargando los viajes…</p>'; $('#rcPara').textContent = ''; $('#ovResCli').classList.add('open');
+  try {
+    const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=resumenCliente&clave=' + encodeURIComponent(window.CLAVE))).json();
+    if (!j.ok) throw new Error(j.error || 'error');
+    RES_CLI = j; pintarResumenCliente();
+  } catch(e) { $('#rcLista').innerHTML = `<p class="missing">No se pudo cargar: ${esc(e.message)}</p>`; }
+}
+function filaResCli(x, marcado){
+  const por = [x.hoy && x.hoy.length && 'hoy: ' + x.hoy.join(', '), x.avisos && x.avisos.length && 'aviso: ' + x.avisos.join(' · ')].filter(Boolean).join(' · ');
+  return `<label class="rc-fila"><input type="checkbox" data-rc="${esc(x.id)}" ${marcado ? 'checked' : ''}>
+    <span><b>${esc(x.operacion)} · ${esc([x.ref, x.destino].filter(Boolean).join(' · ') || x.id)}</b> <span class="sub">${esc(x.id)} · ${esc(x.solicitante || '')}</span><br>
+    <span class="sub">${esc(x.ahora || '')}${por ? ' · ' + esc(por) : ''}${x.primer && !por ? ' · ' + fd(x.primer) : ''}</span></span></label>`;
+}
+function pintarResumenCliente(){
+  const R = RES_CLI, cand = R.grupos.flatMap(g => g.viajes);
+  const para = [...new Set(R.grupos.flatMap(g => g.para))], copia = [...new Set(R.grupos.flatMap(g => g.copia))];
+  $('#rcPara').innerHTML = para.length ? `Para: <b>${esc(para.join(', '))}</b>${copia.length ? ` · copia: ${esc(copia.join(', '))}` : ''}` : 'Los viajes que elija van a su solicitante (Jhonier, Diana, Willington) con la copia de siempre.';
+  $('#rcLista').innerHTML = (cand.length ? `<h4 style="margin:8px 0 4px">Con algún paso hoy o aviso pendiente · ${cand.length}</h4>${cand.map(x => filaResCli(x, true)).join('')}`
+      : '<p class="sub">Hoy ningún viaje tiene pasos ni avisos pendientes.</p>')
+    + (R.otros.length ? `<details style="margin-top:10px"><summary><b>Agregar otros viajes abiertos · ${R.otros.length}</b></summary>${R.otros.map(x => filaResCli(x, false)).join('')}</details>` : '');
+  contarResCli();
+}
+const elegidosResCli = () => [...document.querySelectorAll('#rcLista [data-rc]:checked')].map(i => i.dataset.rc);
+function contarResCli(){ const n = elegidosResCli().length; $('#rcN').textContent = `${n} viaje${n === 1 ? '' : 's'} elegido${n === 1 ? '' : 's'}`; $('#rcEnviar').disabled = $('#rcPrueba').disabled = !n; }
+async function enviarResCli(prueba){
+  const viajesSel = elegidosResCli(); if (!viajesSel.length) return;
+  const usuario = usuarioActual() || pedirUsuario('¿Quién envía? (queda con su nombre)'); if (!usuario) return;
+  if (!prueba && !confirm(`¿Enviar a Reckitt el status de ${viajesSel.length} viaje${viajesSel.length === 1 ? '' : 's'}?\n\n${$('#rcPara').textContent}`)) return;
+  const b = prueba ? $('#rcPrueba') : $('#rcEnviar'), txt = b.textContent; b.disabled = true; b.textContent = 'Enviando…';
+  try {
+    const j = await api('resumenCliente', {viajes: viajesSel, usuario, prueba: !!prueba});
+    if (!j.ok) throw new Error(j.error || 'error');
+    toast(prueba ? `Prueba enviada a ${j.para}: revise el correo` : `Resumen enviado a Reckitt · ${j.viajes} viajes`);
+    if (!prueba) $('#ovResCli').classList.remove('open');
+  } catch(e) { toast('No se envió: ' + e.message); }
+  finally { b.textContent = txt; contarResCli(); }
+}
+$('#btnResCli').onclick = abrirResumenCliente;
+$('#rcCerrar').onclick = () => $('#ovResCli').classList.remove('open');
+$('#rcLista').addEventListener('change', contarResCli);
+$('#rcPrueba').onclick = () => enviarResCli(true);
+$('#rcEnviar').onclick = () => enviarResCli(false);
 /* ---------- navegación y eventos ---------- */
 $('#nav').onclick = e => { const b=e.target.closest('button'); if(!b) return;
   document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on', x===b));
