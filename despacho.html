@@ -519,11 +519,12 @@ async function confirmarCargue(booking) {
 const FECHA_TIPO = { vacio: ['fechaRetiro', 'planRetiro'], llenado: ['fechaCargue', 'planCargue'], puerto: ['citaRetiro', 'fechaRetiro', 'planRetiro'] };
 const PUERTOS = { BUN: 'Puerto de Buenaventura', CTG: 'Puerto de Cartagena', SMR: 'Puerto de Santa Marta' };
 const bookingSel = () => { const f = $('#fcc'); return f && bookingsCargue().find(b => b.bk === f.booking.value); };
-// el paso que sigue: IMPO retiro en puerto; EXPO vacío si el retiro aún no pasó, si no llenado en planta
+// el paso que sigue: IMPO retiro en puerto; EXPO vacío si el retiro es más adelante, si no llenado en planta
 function tipoSugerido(x) {
   const v = x.viajes[0], hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
   if (v.operacion === 'IMPO') return 'puerto';
-  return !v.fechaRetiro || String(v.fechaRetiro).slice(0, 10) >= hoy ? 'vacio' : 'llenado';
+  // la orden se manda antes del paso: retiro mañana o después → vacío; retiro hoy o ya pasó → llenado (se puede cambiar)
+  return !v.fechaRetiro || String(v.fechaRetiro).slice(0, 10) > hoy ? 'vacio' : 'llenado';
 }
 function aplicarTipoCargue(aMano) {
   const f = $('#fcc'), x = bookingSel(); if (!f || !x) return;
