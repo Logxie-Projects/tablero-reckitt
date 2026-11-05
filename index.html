@@ -362,6 +362,17 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
 .nov-lx{margin-top:10px;padding:8px 10px;border-radius:8px;background:var(--accent-soft);font-size:13px}
 #novLista{max-height:340px}
 .nov-Cambio .nov-ic,.nov-Cambio > div{color:var(--muted)}
+/* calificación del conductor (calificacion.js) */
+.calif{margin-top:14px;padding:10px 12px;border:1px solid var(--warn);border-radius:10px;background:color-mix(in srgb, var(--warn) 6%, transparent)}
+.calif:empty{display:none}
+.calif-cab{margin-bottom:6px}
+.estrellas{color:#f59e0b;letter-spacing:1px;white-space:nowrap}
+.calif-q{padding:6px 0;border-top:1px dashed color-mix(in srgb, var(--warn) 40%, transparent)}
+.calif-q select{margin-top:4px;max-width:100%}
+.calif-just textarea{width:100%;min-height:54px;margin-top:6px;box-sizing:border-box}
+.calif-just input{width:100%;margin-top:4px;box-sizing:border-box}
+.calif-item{margin-top:6px}
+.calif-acc{margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 </style>
 </head>
 <body>
@@ -554,6 +565,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><span id="mCausaSel"></span><input id="mCausaDet" placeholder="Detalle (ej: planta sin producto, vehículo varado)" style="flex:1;min-width:200px">
         <input id="mCausaCosto" inputmode="numeric" placeholder="Costo extra $ (si hubo)" style="width:170px"><input id="mCausaInc" placeholder="Incidente (si hubo)" style="width:200px"></div></div>
     <datalist id="dlExtra"></datalist><datalist id="dlPatio"></datalist><datalist id="dlCond"></datalist><datalist id="dlPlaca"></datalist><datalist id="dlFwd"></datalist>
+    <div class="calif" id="mCalif"></div>
     <div class="hist" id="mHist"></div>
     <div class="mfoot"><span class="sub" id="mNCambios" style="margin-right:auto"></span><input id="mUsuario" placeholder="Su nombre (queda en el historial)" style="width:230px"><button class="btn" id="mCancel">Cancelar</button><button class="btn primary" id="mSave">Guardar en la base</button></div>
   </div>
@@ -1347,6 +1359,7 @@ async function cargar(){
     window.PREGUNTAS = j.preguntas || [];   // preguntas al agente LogxIA (preguntas.js)
     window.TURNOS_C = j.turnosConductores || [];   // conductores enturnados y disponibles (app Viajes ETP)
     window.CONDUCTORES = j.conductores || [];
+    window.CALIF = j.calificaciones || null;   // calificación de conductores, solo el equipo (calificacion.js)
     window.SEG_INICIO = j.seguimiento || '';
     window.CLAVE = clave;
     if (j.interno) $('#lnkDespacho').href = 'despacho.html?clave=' + encodeURIComponent(clave);   // Despacho entra con la misma clave del equipo
@@ -1900,7 +1913,7 @@ function renderTurno(){
   let m = M.find(x => x.id === turnoMenu);
   if (!m) { m = M[0]; turnoMenu = m.id; }   // el paso elegido ya no existe (ej. "Cierre del día" pasada la medianoche)
   const pend = m.filas.filter(x => !x.hecha), hechos = m.filas.filter(x => x.hecha);
-  cont.innerHTML = bloqueGerencia(T) + `<div class="tr-meta"><b>Meta:</b> ${esc(m.meta)}</div><div class="sub" style="margin:2px 0 6px">${esc(m.ayuda)}</div>
+  cont.innerHTML = bloqueGerencia(T) + bloqueCalifGerencia() + `<div class="tr-meta"><b>Meta:</b> ${esc(m.meta)}</div><div class="sub" style="margin:2px 0 6px">${esc(m.ayuda)}</div>
     ${pend.map(x => filaTurno(x, false)).join('') || `<div class="tr-vacio">✓ ${esc(m.vacio)}${M[M.indexOf(m) + 1] ? ` · ${btnT('Siguiente: ' + M[M.indexOf(m) + 1].titulo + ' →', `data-t-menu="${M[M.indexOf(m) + 1].id}"`)}` : ''}</div>`}
     ${m.despues ? `<div class="sub tr-vacio">ℹ ${esc(m.despues)}</div>` : ''}
     ${m.id === 'cob' ? `<div class="tr-vacio"><a class="btn" href="${waLink('', mensajeGrupo())}" target="_blank" rel="noopener">${ICONO_WA}Publicar viajes en el grupo de conductores</a> <span class="sub">Abre WhatsApp con el mensaje listo: elija el grupo y envíe. Los conductores responden en la app de turnos.</span></div>` : ''}
@@ -2632,6 +2645,7 @@ function abrir(id){
   pintarForm(v);
   $('#mUsuario').value = usuarioGuardado() || '';
   pintarEstados();
+  califAbierta = false; pintarCalif(v);   // calificación del conductor (calificacion.js)
   const h = historial.filter(x=>x.id===id).slice(-4).reverse();
   const lx = accionesDe(v);
   const bloqueLx = lx.length ? '<b>Acciones LogxIA (de los correos):</b>' + lx.map(b=>`<div class="lx-item ${b.estadoAccion==='Hecha'?'hecha':''}">
@@ -2799,6 +2813,110 @@ $('#mForm').addEventListener('input', e => { if (e.target.closest('#mExtras')) s
 $('#mForm').addEventListener('click', e => {
   if (e.target.id==='addExtra') { $('#mExtras').insertAdjacentHTML('beforeend', filaExtra()); $('#mExtras .exrow:last-child .exc').focus(); }
   else if (e.target.closest('[data-del]')) { e.target.closest('.exrow').remove(); syncExtras(); marcarCambios(); }
+});
+/* ---------- Calificación de conductores ---------- */
+// Cada conductor arranca en 10 puntos = 5 estrellas (apps-script/Código.gs CALIF y CRITERIOS_CALIF: las preguntas y los descuentos
+// vienen del servidor, que vuelve a validarlos). En la ventana del viaje el coordinador responde Sí/No; "Sí" no descuenta, cada "No"
+// tiene un descuento fijo y pide justificación (y evidencia si la hay). Un viaje sin descuentos recupera 0,25. Un viaje con −2 o más
+// queda "Pendiente Gerencia" y no cuenta hasta que Gerencia lo apruebe con su clave. Un viaje se califica una sola vez.
+// Solo el equipo: el cliente no recibe calificaciones (el servidor manda null).
+const CALIF = () => window.CALIF || null;
+const claveCond = s => minus(s).replace(/\s+/g, ' ');
+const califDe = nombre => (CALIF() && nombre && CALIF().porConductor[claveCond(nombre)]) || null;
+const fmtPts = x => String(Math.round(x * 100) / 100).replace('.', ',');
+function estrellasHtml(e){
+  const llenas = Math.floor(e), media = e - llenas >= 0.5;
+  return `<span class="estrellas" title="${String(e).replace('.', ',')} de 5">${'★'.repeat(llenas)}${media ? '½' : ''}${'☆'.repeat(5 - llenas - (media ? 1 : 0))}</span>`;
+}
+// estrellas junto al nombre (Turnos, ventana del viaje); sin calificaciones todavía: 5 estrellas "sin calificar"
+function estrellasDe(nombre, conTexto){
+  if (!CALIF() || !nombre) return '';
+  const c = califDe(nombre);
+  if (!c) return `<span class="sub" title="Arranca con 10 puntos">${estrellasHtml(5)}${conTexto ? ' sin calificar' : ''}</span>`;
+  return `${estrellasHtml(c.estrellas)}${conTexto ? ` <span class="sub">${fmtPts(c.puntos)} pts · ${c.nViajes} viaje${c.nViajes === 1 ? '' : 's'}${c.pendientes ? ' · ' + c.pendientes + ' por revisar' : ''}</span>` : ''}`;
+}
+
+let califAbierta = false;
+function pintarCalif(v){
+  const box = $('#mCalif'); if (!box) return;
+  if (window.MODO_CLIENTE || !CALIF() || !v || !v.conductor) { box.innerHTML = ''; return; }
+  const hecha = CALIF().viajes[v.id];
+  let html = `<div class="calif-cab"><b>Calificación del conductor</b> · ${esc(v.conductor)} ${estrellasDe(v.conductor, true)}</div>`;
+  if (hecha) {
+    const pend = hecha.estado === 'Pendiente Gerencia';
+    html += `<div class="sub">Este viaje ya se calificó (${esc(hecha.califico)}, ${esc(hecha.fecha)}): <b>${hecha.total > 0 ? '+' : ''}${fmtPts(hecha.total)}</b>${pend ? ' · <b style="color:var(--warn)">pendiente de Gerencia, todavía no cuenta</b>' : hecha.items.some(i => i.estado === 'Rechazada') ? ' · rechazada por Gerencia, no cuenta' : ''}</div>`
+      + hecha.items.filter(i => i.puntos < 0).map(i => `<div class="calif-item">${esc(i.criterio)} · ${esc(i.respuesta)} <b>${fmtPts(i.puntos)}</b><br><span class="sub">${esc(i.justificacion)}${i.evidencia ? ' · Evidencia: ' + esc(i.evidencia) : ''}</span></div>`).join('')
+      + (pend ? `<div class="calif-acc">${esGerencia() ? `<button type="button" class="btn primary" data-cal-rev="Aprobada">✓ Aprobar descuento</button> <button type="button" class="btn" data-cal-rev="Rechazada">✖ Rechazar</button>` : '<span class="sub">Solo Gerencia lo aprueba (con su clave, en modo Gerencia)</span>'}</div>` : '');
+  } else if (!califAbierta) {
+    html += `<button type="button" class="btn" data-cal-abrir="1">⭐ Calificar al conductor de este viaje</button> <span class="sub">Se responde una vez por viaje; sin descuentos recupera ${fmtPts(CALIF().reglas.recupera)} pts.</span>`;
+  } else {
+    html += `<div class="sub" style="margin:4px 0 8px">Todo empieza en <b>Sí</b>. Si marca una opción de <b>No</b>, escriba qué pasó (hora, lugar, quién lo reportó) y la evidencia si la hay: correo, novedad o foto.</div>`
+      + CALIF().criterios.map(c => `<div class="calif-q" data-cal-k="${c.k}"><div><b>${esc(c.criterio)}</b> · ${esc(c.pregunta)}</div>
+        <select data-cal-op><option value="-1">Sí</option>${c.no.map((o, i) => `<option value="${i}">No · ${esc(o.t)} (${fmtPts(o.p)})</option>`).join('')}</select>
+        <div class="calif-just hidden"><textarea data-cal-just placeholder="Justificación (obligatoria): qué pasó, cuándo y quién lo reportó"></textarea>
+        <input data-cal-ev placeholder="Evidencia (opcional): asunto del correo, N° de novedad, enlace de la foto"></div></div>`).join('')
+      + `<div class="calif-acc"><span id="calTotal" class="sub"></span> <button type="button" class="btn" data-cal-cancelar="1">Cancelar</button> <button type="button" class="btn primary" data-cal-guardar="1">Guardar calificación</button></div>`;
+  }
+  box.innerHTML = html;
+  totalCalif();
+}
+function respuestasCalif(){
+  return [...document.querySelectorAll('#mCalif .calif-q')].map(q => ({k: q.dataset.calK, opcion: Number(q.querySelector('[data-cal-op]').value),
+    justificacion: q.querySelector('[data-cal-just]').value.trim(), evidencia: q.querySelector('[data-cal-ev]').value.trim()}));
+}
+function totalCalif(){
+  const t = $('#calTotal'); if (!t) return;
+  const R = respuestasCalif(), C = CALIF().criterios, reg = CALIF().reglas;
+  const tot = R.reduce((s, r) => s + (r.opcion >= 0 ? C.find(c => c.k === r.k).no[r.opcion].p : 0), 0);
+  t.innerHTML = R.some(r => r.opcion >= 0) ? `Descuento de este viaje: <b>${fmtPts(tot)}</b>${tot <= -reg.gerencia ? ' · <b style="color:var(--warn)">lo revisa Gerencia antes de contar</b>' : ''}` : `Sin descuentos: <b>+${fmtPts(reg.recupera)}</b>`;
+}
+async function guardarCalif(){
+  const v = viajes.find(x => x.id === editId); if (!v) return;
+  const R = respuestasCalif(), C = CALIF().criterios;
+  const falta = R.find(r => r.opcion >= 0 && r.justificacion.length < 15);
+  if (falta) { document.querySelector(`#mCalif [data-cal-k="${falta.k}"] [data-cal-just]`).focus(); return toast('Escriba la justificación (mínimo 15 letras): ' + C.find(c => c.k === falta.k).pregunta); }
+  const usuario = ($('#mUsuario').value.trim() || pedirUsuario('¿Quién califica? (queda con su nombre)'));
+  if (!usuario) return toast('Escriba su nombre para calificar');
+  guardarUsuario(usuario);
+  const b = $('#mCalif [data-cal-guardar]'); b.disabled = true; b.textContent = 'Guardando…';
+  try {
+    const j = await api('calificar', {viajeId: v.id, usuario, respuestas: R});
+    if (!j.ok) throw new Error(j.error || 'error');
+    window.CALIF = j.calificaciones; califAbierta = false; pintarCalif(v);
+    toast(j.estado === 'Pendiente Gerencia' ? `Calificación guardada (${fmtPts(j.total)}): queda pendiente de Gerencia` : `Calificación guardada (${j.total > 0 ? '+' : ''}${fmtPts(j.total)})`);
+  } catch(e) { b.disabled = false; b.textContent = 'Guardar calificación'; toast('No se guardó la calificación: ' + e.message); }
+}
+async function revisarCalif(viajeId, decision){
+  const codigo = prompt(`Clave de Gerencia para ${decision === 'Aprobada' ? 'aprobar' : 'rechazar'} el descuento del viaje ${viajeId}:`); if (!codigo) return;
+  try {
+    const j = await api('revisarCalificacion', {viajeId, decision, codigo, usuario: usuarioActual() || 'Gerencia'});
+    if (!j.ok) throw new Error(j.error || 'error');
+    window.CALIF = j.calificaciones;
+    const v = viajes.find(x => x.id === editId); if (v) pintarCalif(v);
+    if (typeof renderTurno === 'function') renderTurno();
+    toast(decision === 'Aprobada' ? 'Descuento aprobado: ya cuenta' : 'Descuento rechazado: no cuenta');
+  } catch(e) { toast('No se guardó: ' + e.message); }
+}
+// Mi turno (bloque de Gerencia): viajes con descuentos grandes esperando aprobación
+function bloqueCalifGerencia(){
+  if (!CALIF()) return '';
+  const P = Object.entries(CALIF().viajes).filter(([, x]) => x.estado === 'Pendiente Gerencia'); if (!P.length) return '';
+  return `<div class="tr-gerencia"><b>Calificaciones por aprobar (Gerencia) · ${P.length}</b>${P.map(([id, x]) => `<div class="tr-fila"><div class="tr-txt">${esc(x.conductor)} · viaje ${esc(id)} · <b>${fmtPts(x.total)}</b>
+    <div class="sub">${x.items.filter(i => i.puntos < 0).map(i => esc(i.criterio + ': ' + i.justificacion)).join(' · ')} · calificó ${esc(x.califico)} ${esc(x.fecha)}</div></div>
+    <div class="tr-acc"><button type="button" class="btn" onclick="abrir('${esc(id)}')">Ver viaje</button></div></div>`).join('')}</div>`;
+}
+$('#ov').addEventListener('click', e => {
+  const b = e.target.closest('#mCalif button'); if (!b) return;
+  const v = viajes.find(x => x.id === editId); if (!v) return;
+  if (b.dataset.calAbrir) { califAbierta = true; pintarCalif(v); }
+  else if (b.dataset.calCancelar) { califAbierta = false; pintarCalif(v); }
+  else if (b.dataset.calGuardar) guardarCalif();
+  else if (b.dataset.calRev) revisarCalif(v.id, b.dataset.calRev);
+});
+$('#ov').addEventListener('change', e => {
+  const s = e.target.closest('#mCalif [data-cal-op]'); if (!s) return;
+  s.parentElement.querySelector('.calif-just').classList.toggle('hidden', Number(s.value) < 0);
+  totalCalif();
 });
 /* ---------- llenar datos desde correos (con revisión y aprobación) ---------- */
 let PROP = [];
@@ -3342,7 +3460,7 @@ function pintarEnturnados(){
       : esEste ? '<b style="color:var(--ok)">✓ Asignado a él</b>'
       : asignado ? `<span class="sub">El viaje ya tiene ${esc(v.placa)}</span>` : btnAsignar(v, t);
     const msg = v ? `Hola ${nombre1(t)}, sobre el viaje ${nombreTurno(v)} del ${fd(primerEvento(v))} al que se enturnó: ` : `Hola ${nombre1(t)}, `;
-    return `<tr><td class="sub">${i + 1}.º</td><td><span class="placa">${esc(t.placa)}</span> ${esc(t.conductor)}<br><span class="sub">${esc(cel(t))}</span></td>
+    return `<tr><td class="sub">${i + 1}.º</td><td><span class="placa">${esc(t.placa)}</span> ${esc(t.conductor)} ${estrellasDe(t.conductor)}<br><span class="sub">${esc(cel(t))}</span></td>
       <td class="sub">${t.creado ? 'se enturnó ' + esc(haceTxt(t.creado)) : ''}</td><td style="white-space:nowrap">${estado} ${wa(t, msg)}</td></tr>`;
   };
   const htmlViajes = bloques.length ? bloques.map(({v, id, L}) => {
@@ -3363,7 +3481,7 @@ function pintarEnturnados(){
   const htmlDisp = disponibles.length ? `<div class="tbl-wrap"><table class="prop"><tr><th>Vehículo y conductor</th><th>Disponible</th><th>Asignar a un viaje sin vehículo</th><th></th></tr>
     ${disponibles.sort((a, b) => String(a.desde || '').localeCompare(String(b.desde || ''))).map(t => {
       const ops = opciones(t);
-      return `<tr><td><span class="placa">${esc(t.placa)}</span> ${esc(t.conductor)}<br><span class="sub">${esc(cel(t))}</span></td>
+      return `<tr><td><span class="placa">${esc(t.placa)}</span> ${esc(t.conductor)} ${estrellasDe(t.conductor)}<br><span class="sub">${esc(cel(t))}</span></td>
         <td>${t.desde ? 'desde ' + esc(fd(t.desde)) : 'ya'}${t.ciudad ? ' · ' + esc(t.ciudad) : ''}<br><span class="sub">${t.creado ? 'avisó ' + esc(haceTxt(t.creado)) : ''}</span></td>
         <td>${ops ? `<select data-e-elegir="${esc(t.placa)}" data-conductor="${esc(t.conductor)}" data-telefono="${esc(t.telefono || '')}" style="width:100%;max-width:300px"><option value="">Elegir viaje…</option>${ops}</select>`
           : '<span class="sub">No hay viajes sin vehículo desde esa fecha</span>'}</td>
