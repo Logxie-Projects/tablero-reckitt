@@ -393,6 +393,10 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
 .nov-fila textarea{flex:1;min-height:44px}
 #novLista{margin-top:10px;max-height:260px;overflow:auto}
 .nov-it{display:flex;gap:8px;padding:6px 0;border-top:1px solid var(--border)}
+/* corrección de una novedad por Gerencia (novedades.js) */
+.nov-editar textarea{width:100%;box-sizing:border-box;margin-top:4px;font:inherit}
+.nov-editar select{font:inherit;margin-top:4px}
+.nov-editada{color:var(--warn);font-weight:600;cursor:help}
 .nov-ic{width:20px;text-align:center;flex:none}
 .nov-nota{opacity:.85}
 .nov-ult b{color:var(--text)}
@@ -2240,12 +2244,16 @@ function renderTurno(){
     ${m.id === 'cob' ? `<div class="tr-vacio"><a class="btn" href="${waLink('', mensajeGrupo())}" target="_blank" rel="noopener">${ICONO_WA}Publicar viajes en el grupo de conductores</a> <span class="sub">Abre WhatsApp con el mensaje listo: elija el grupo y envíe. Los conductores responden en la app de turnos.</span></div>` : ''}
     ${hechos.length ? `<details class="tr-rev"><summary class="sub">Hechos hoy (${hechos.length})</summary>${hechos.map(x => filaTurno(x, R.get(x.k))).join('')}</details>` : ''}`;
 }
-// la clave se escribe aquí y la comprueba el Apps Script; el tablero solo guarda "es Gerencia" mientras la pestaña esté abierta
+// la clave se escribe aquí y la comprueba el Apps Script; el tablero solo guarda "es Gerencia" mientras la pestaña esté abierta.
+// La clave misma queda solo en memoria (claveGerenciaSesion, nunca en el navegador) para las acciones que el servidor vuelve a
+// comprobar (editar novedades: novedades.js); al recargar la página se vuelve a pedir.
+let claveGerenciaSesion = '';
 async function entrarGerencia(){
   const codigo = prompt('Clave de Gerencia'); if (!codigo) return;
   try {
     const j = await api('gerencia', {codigo});
     if (!j.ok) return toast(j.error || 'Clave de Gerencia incorrecta');
+    claveGerenciaSesion = codigo;
     try { sessionStorage.setItem('rkt-gerencia', '1'); } catch(e){}
     toast('Modo Gerencia: el tablero no se bloquea en esta pestaña'); renderTurno();
   } catch(e) { toast('No se pudo verificar la clave'); }
@@ -2868,19 +2876,54 @@ let tipoNovedad = 'Status', filtroLinea = '';
 const FILTROS_LINEA = [['', 'Todo'], ['Novedad', 'Equipo'], ['Conductor', 'Conductor'], ['Cambio', 'Cambios'], ['Correo', 'Correos'], ['Reprogramación', 'Reprogramaciones']];
 // a qué filtro va cada tipo de evento ("Conductor": lo que marca el conductor en su app, Base.gs novedadDeConductor_)
 const grupoEvento = t => ({'Novedad': 'Novedad', 'Conductor': 'Conductor', 'Correo': 'Correo', 'Cambio de plan': 'Reprogramación', 'Incidente': 'Reprogramación'})[t] || 'Cambio';
-function itemEvento(e){
+// 5-nov: Gerencia (modo Gerencia, turno.js) puede corregir el texto y el tipo de una novedad del equipo o del conductor; queda
+// marcada "✏ editada" con quién, cuándo y qué decía antes (Novedades.gs editarNovedad_). Las del sistema no se editan.
+const editable = e => !window.MODO_CLIENTE && esGerencia() && e.n && e.n.fila && (e.tipo === 'Novedad' || e.tipo === 'Conductor');
+const marcaEditada = e => !e.n || !e.n.editada ? '' : ` <span class="sub nov-editada" title="${esc(String(e.n.editada).split(' ;; ').map(x => 'Editada por ' + x).join('\n'))}">✏ editada</span>`;
+let EVENTOS_LINEA = [];
+function itemEvento(e, i){
   const titulo = e.tipo === 'Novedad' ? e.sub : e.tipo === 'Conductor' ? `Conductor · ${e.sub}` : e.tipo === 'Cambio de plan' ? `Cambio de plan · ${e.causa || 'Sin causa'}${e.resp && e.resp !== 'Sin causa' ? ` (responde ${e.resp})` : ''}`
     : e.tipo === 'Programación' ? 'Programación de Reckitt' : e.tipo === 'Correo' ? `Correo${e.prioridad ? ' · ' + e.prioridad : ''}${e.hecha ? ' · ✔ hecha' : ''}` : e.tipo;
   const ic = e.tipo === 'Novedad' ? iconoNovedad(e.sub) : e.tipo === 'Conductor' ? '🚛' : e.tipo === 'Cambio' ? '⚙' : (ICONO_EVENTO[e.tipo] || '•');
-  return `<div class="nov-it nov-${grupoEvento(e.tipo)}"><span class="nov-ic">${ic}</span><div><span class="sub">${esc(fechaNovedad({fecha: e.fecha}))}${e.quien ? ' · ' + esc(e.quien) : ''}</span>
-    <div><b>${esc(titulo)}</b> · ${esc(e.texto)}${e.costo ? ` <span style="color:var(--warn)">· costo extra ${pesos(e.costo)}</span>` : ''}${e.incidente ? ` <span style="color:var(--bad)">· ⚠ ${esc(e.incidente)}</span>` : ''}</div></div></div>`;
+  return `<div class="nov-it nov-${grupoEvento(e.tipo)}" data-nev="${i}"><span class="nov-ic">${ic}</span><div style="flex:1;min-width:0"><span class="sub">${esc(fechaNovedad({fecha: e.fecha}))}${e.quien ? ' · ' + esc(e.quien) : ''}</span>${marcaEditada(e)}
+    ${editable(e) ? ` <button type="button" class="link" data-nedit="${i}" title="Corregir el texto o el tipo (queda el rastro de la edición)">✏ Editar</button>` : ''}
+    <div class="nov-cuerpo"><b>${esc(titulo)}</b> · ${esc(e.texto)}${e.costo ? ` <span style="color:var(--warn)">· costo extra ${pesos(e.costo)}</span>` : ''}${e.incidente ? ` <span style="color:var(--bad)">· ⚠ ${esc(e.incidente)}</span>` : ''}</div></div></div>`;
 }
 function listaLinea(v){
-  const E = eventosDe(v).filter(e => !filtroLinea || grupoEvento(e.tipo) === filtroLinea);
+  const E = EVENTOS_LINEA = eventosDe(v).filter(e => !filtroLinea || grupoEvento(e.tipo) === filtroLinea);
   return E.map(itemEvento).join('')
     + (!filtroLinea && v.observacion ? `<div class="nov-it nov-nota"><span class="nov-ic">📌</span><div><span class="sub">Nota del viaje (sin hora) · se edita abajo en Observación</span><div>${esc(v.observacion)}</div></div></div>` : '')
     || '<p class="sub">Nada en este filtro.</p>';
 }
+// editar (Gerencia): el texto se cambia en el mismo lugar; al guardar, el servidor vuelve a comprobar la clave de Gerencia
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-nedit]'); if (!b) return;
+  const ev = EVENTOS_LINEA[+b.dataset.nedit], caja = b.closest('[data-nev]'); if (!ev || !caja) return;
+  const tipos = ev.tipo === 'Conductor' ? '' : `<select class="nov-etipo">${TIPOS_NOVEDAD.map(([t, ic]) => `<option ${t === ev.n.tipo ? 'selected' : ''} value="${esc(t)}">${ic} ${esc(t)}</option>`).join('')}</select> `;
+  caja.querySelector('.nov-cuerpo').innerHTML = `<div class="nov-editar">${tipos}<textarea class="nov-etexto" rows="2">${esc(ev.n.texto)}</textarea>
+    <div style="margin-top:4px"><button type="button" class="btn primary" data-nguardar="${b.dataset.nedit}">Guardar corrección</button> <button type="button" class="btn" data-ncancelar>Cancelar</button>
+    <span class="sub">Queda marcada como editada, con lo que decía antes.</span></div></div>`;
+  b.remove(); caja.querySelector('.nov-etexto').focus();
+});
+document.addEventListener('click', e => { if (!e.target.closest('[data-ncancelar]')) return;
+  const v = viajes.find(x => x.id === editId); if (v) $('#novLista').innerHTML = listaLinea(v); });
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-nguardar]'); if (!b) return;
+  const ev = EVENTOS_LINEA[+b.dataset.nguardar], caja = b.closest('[data-nev]');
+  const texto = caja.querySelector('.nov-etexto').value.trim(), tipo = (caja.querySelector('.nov-etipo') || {}).value || ev.n.tipo;
+  if (!texto) return toast('Escriba el texto de la novedad');
+  if (texto === ev.n.texto && tipo === ev.n.tipo) return toast('No cambió nada');
+  const codigo = claveGerenciaSesion || await pedirTexto('Clave de Gerencia para guardar la corrección', '', 'Guardar'); if (!codigo) return;
+  b.disabled = true; b.textContent = 'Guardando…';
+  try {
+    const j = await api('editarNovedad', {fila: ev.n.fila, viaje: ev.n.viaje, antes: ev.n.texto, tipo, texto, codigo, usuario: usuarioActual() || 'Gerencia'});
+    if (!j.ok) { if (/clave/i.test(j.error || '')) claveGerenciaSesion = ''; throw new Error(j.error || 'error'); }
+    claveGerenciaSesion = codigo;
+    window.NOVEDADES = j.novedades || window.NOVEDADES;
+    const v = viajes.find(x => x.id === editId); if (v) $('#mNovedades').innerHTML = bloqueNovedades(v);
+    render(); toast('Novedad corregida');
+  } catch(err) { toast('No se guardó: ' + err.message); b.disabled = false; b.textContent = 'Guardar corrección'; }
+});
 document.addEventListener('click', e => { const b = e.target.closest('[data-flinea]'); if (!b) return;
   filtroLinea = b.dataset.flinea; const v = viajes.find(x => x.id === editId);
   document.querySelectorAll('[data-flinea]').forEach(x => x.classList.toggle('on', x === b)); $('#novLista').innerHTML = listaLinea(v); });
@@ -2932,7 +2975,7 @@ function eventosDe(v){
   // novedades (novedades.js): las del equipo y los cambios que el sistema anota solo desde la fase 2
   const novs = novedadesDe(v);
   novs.forEach(n => E.push(delSistema(n) ? {fecha: fechaLocal(n.fecha), tipo: 'Cambio', quien: n.usuario, texto: sinObservacion(n.texto)}
-    : {fecha: fechaLocal(n.fecha), tipo: n.origen === 'Conductor' ? 'Conductor' : 'Novedad', sub: n.tipo, quien: n.usuario, texto: n.texto}));
+    : {fecha: fechaLocal(n.fecha), tipo: n.origen === 'Conductor' ? 'Conductor' : 'Novedad', sub: n.tipo, quien: n.usuario, texto: n.texto, n}));
   // un cambio del Historial que ya tiene su novedad automática (misma hora ±3 min) no se repite
   const minutos = f => { const s = fechaLocal(f); return s.length > 10 ? Date.parse(s + ':00Z') / 6e4 : NaN; };
   const cambios = novs.filter(delSistema).map(n => minutos(n.fecha));
@@ -4356,7 +4399,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'c403338d95';
+const VERSION_TABLERO = '9fa9f212e1';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
