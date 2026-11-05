@@ -313,11 +313,13 @@ table.prog td:last-child{min-width:260px}
 .paso-est.conf{color:var(--warn);font-weight:600}
 .paso-est.ok{color:var(--ok)}
 .ruta .caja b{display:block;color:var(--text);font-size:12px;font-weight:600;overflow-wrap:anywhere}
-/* camión sobre la parada en curso: mismo dibujo que el correo (Cliente.gs mini): carga fucsia, cabina a la derecha, 3 llantas */
-.ruta .camion .carga{left:9px;top:5px;width:17px;height:10px;background:var(--accent);border-radius:2px}
-.ruta .camion .cabina{left:27px;top:7px;width:7px;height:8px;background:var(--text);border-radius:1px 4px 1px 1px}
-.ruta .camion .ll{top:16px;width:5px;height:5px;border-radius:50%;background:var(--text)}
-.ruta .camion .l1{left:12px} .ruta .camion .l2{left:19px} .ruta .camion .l3{left:26px}
+/* tractomula sobre la parada en curso: mismo dibujo que el correo (Cliente.gs mini): contenedor fucsia, cabina con ventana, 6 llantas */
+.ruta .ico.camion{width:52px}
+.ruta .camion .carga{left:1px;top:3px;width:31px;height:12px;background:var(--accent);border-radius:1px}
+.ruta .camion .chasis{left:1px;top:15px;width:50px;height:2px;background:var(--text)}
+.ruta .camion .cabina{left:37px;top:5px;width:14px;height:11px;background:var(--text);border-radius:2px 6px 1px 1px}
+.ruta .camion .vent{left:43px;top:7px;width:6px;height:4px;background:#9ecbff;border-radius:1px}
+.ruta .camion .ll{top:16px;width:5px;height:5px;border-radius:50%;background:var(--text);border:1px solid var(--surface)}
 /* barco y grúa sobre la parada en curso (lean.js iconoParada; mismo dibujo que el correo al cliente) */
 .ruta .ico{position:absolute;top:-25px;left:50%;transform:translateX(-50%);width:44px;height:22px}
 .ruta .ico i{position:absolute;display:block}
@@ -2625,8 +2627,10 @@ function iconoParada(v, et){
   if (et === 'Motonave') return '<span class="ico barco" title="En la motonave"><i class="cab"></i><i class="cont"></i><i class="casco"></i><i class="agua"></i></span>';
   if ((v.operacion === 'EXPO' && et === 'Destino') || (v.operacion === 'IMPO' && et === 'Origen'))
     return '<span class="ico grua" title="Arribo"><i class="brazo"></i><i class="torre"></i><i class="cable"></i><i class="cont"></i></span>';
-  // camión igual al del correo (antes era el emoji 🚚, que cada equipo dibuja distinto)
-  return '<span class="ico camion" title="En camino"><i class="carga"></i><i class="cabina"></i><i class="ll l1"></i><i class="ll l2"></i><i class="ll l3"></i></span>';
+  // tractomula igual a la del correo (5-nov: el camioncito de 3 llantas "parece hormiga"): contenedor fucsia en el remolque (3 ejes),
+  // cabina con ventana, 2 ejes atrás y 1 adelante
+  return '<span class="ico camion" title="En camino"><i class="carga"></i><i class="chasis"></i><i class="cabina"></i><i class="vent"></i>'
+    + [3, 9, 15, 27, 33, 44].map(x => `<i class="ll" style="left:${x}px"></i>`).join('') + '</span>';
 }
 function leadFactura(v){
   const fin = fechaFinTransporte(v);
@@ -4312,7 +4316,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '123bdf9cee';
+const VERSION_TABLERO = 'f171d0468e';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
