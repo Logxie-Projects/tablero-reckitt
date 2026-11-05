@@ -3720,7 +3720,7 @@ async function atajoProgramacion(b){
     const c = progs.find(p => Number(p.programacion[0].fechaCargue.slice(5, 7)) === nMes + 1) || progs[0];
     if (!c) { accionEnCurso = null; return toast('No encontré el cuadro de programación en los correos de los últimos 20 días'); }
     const R = compararProgramacion(c), mes = nombreMes(c.programacion[0].fechaCargue.slice(0, 7));
-    if (R.filas.every(f => f.accion==='igual') && !(R.fuera||[]).length) {
+    if (R.filas.every(f => ['igual', 'documento'].includes(f.accion)) &&!(R.fuera||[]).length) {
       if (confirm(`La programación de ${mes} ya está aplicada en el tablero (${R.filas.length} de ${R.filas.length} iguales).\n\n¿Marcar la acción como hecha?`))
         cerrarAccionEnCurso('programacion', `programación de ${mes} ya aplicada en el tablero`);
       else accionEnCurso = null;
@@ -3744,6 +3744,17 @@ function contenedoresDe(prog){
     const m = String(r.unidad||'').match(/^\s*(\d+)\s*X\s*(\d+)/i), k = m ? Math.max(1, +m[1]) : 1;
     return k === 1 ? [r] : Array.from({length: k}, (_, j) => ({...r, unidad: `1X${m[2]}`, n: `${r.n}.${j + 1}`}));
   });
+}
+
+// 5-nov (EXPO-008: la confirmación de reserva de la naviera dice ETD 16 / ETA 25 y Gerencia lo aprobó; el cuadro de Jhonier sigue con
+// 18 / 26): si el último cambio de ETD, ETA, cierre o motonave del viaje vino de un documento o de un dato de correo aprobado, manda
+// ese dato y el del cuadro solo se avisa. Se mira el Historial que trae el tablero (los últimos cambios).
+const ETIQ_HIST = {etd: 'ETD', eta: 'ETA', cierreDoc: 'Cierre documental', mn: 'Motonave'};
+function deDocumento(v, k){
+  const et = ETIQ_HIST[k]; if (!et) return null;
+  const h = historial.filter(x => x.id === v.id && new RegExp('(^|[|·]\\s*)' + et + ':').test(x.observacion || ''))
+    .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))[0];
+  return h && /aprob[oó] dato de correo|documento/i.test(h.usuario || '') && !/programaci/i.test(h.usuario || '') ? h : null;
 }
 
 function compararProgramacion(c){
@@ -3777,7 +3788,9 @@ function compararProgramacion(c){
     .sort((a, b) => (eq(b.mn, r.mn) - eq(a.mn, r.mn)) || (iguales(b, r) - iguales(a, r)) || cerca(a, r) - cerca(b, r));
   // filas gemelas (mismo destino, fecha y nave, sin booking): cada una se queda con el viaje que ya tiene su cierre, ETD y ETA
   function iguales(x, r){ return ['cierreDoc', 'etd', 'eta'].filter(k => r[k] && String(x[k]||'') === r[k]).length; }
-  const movido = r => candidatos(r, x => /programaci/i.test(x.observacion||'') && !terminado(x))[0];
+  // 5-nov (Argentina EXPO-007/012: Jhonier cambió fecha, nave, puerto y puso booking, y la pantalla proponía crear 2 viajes más): un
+  // viaje abierto del mismo destino y mes SIN booking es el mismo contenedor movido aunque su observación no diga "programación"
+  const movido = r => candidatos(r, x => !terminado(x) && (sinBk(x.booking) || /programaci/i.test(x.observacion||'')))[0];
   const pendientes = [];
   const filas = prog.map((r, i) => {
     let v = porBooking[i]
@@ -3807,9 +3820,13 @@ function compararProgramacion(c){
       if (k==='fechaRetiro' && v.fechaRetiro && v.fechaCargue===r.fechaCargue) return;   // el retiro real no se toca si el llenado sigue igual
       if (/^fecha|^cierre|^etd|^eta/.test(k) ? String(v[k]||'') !== x : !eq(v[k], x)) cambios[k] = x;
     });
+    // lo que vino de un documento de la naviera o de un dato de correo aprobado no se pisa con el cuadro (queda avisado, sin aplicar)
+    const doc = {};
+    Object.keys(cambios).forEach(k => { const h = deDocumento(v, k); if (h) { doc[k] = {cuadro: cambios[k], h}; delete cambios[k]; } });
     if (reusar) cambios.situacion = 'Abierto';
     if (String(v.mesProg||'').slice(0, 7) !== mes) cambios.mesProg = mes;   // la hoja lo guarda como fecha (1.º del mes)
-    return {r, v, accion: reusar ? 'reusar' : Object.keys(cambios).length ? 'cambiar' : 'igual', cambios};
+    const hay = Object.keys(cambios).length;
+    return {r, v, accion: reusar ? 'reusar' : hay ? 'cambiar' : Object.keys(doc).length ? 'documento' : 'igual', cambios, doc};
   }
   const fuera = libres().filter(x => enMes(x) && /programaci/i.test(x.observacion||'') && !terminado(x));
   const cuenta = k => filas.filter(f => f.accion===k).length;
@@ -3832,13 +3849,16 @@ function abrirProgramacion(c){
 const fv = x => /^\d{4}-\d{2}-\d{2}/.test(x||'') ? fd(x) : (x || '—');
 
 function pintarProgramacion(){
-  const ET = {crear:['Nuevo','var(--ok)'], cambiar:['Cambió','var(--warn)'], reusar:['Reutilizar','var(--accent)'], igual:['Al día','var(--muted)'], anulado:['Anulado: no se crea','var(--muted)']};
+  const ET = {crear:['Nuevo','var(--ok)'], cambiar:['Cambió','var(--warn)'], reusar:['Reutilizar','var(--accent)'], igual:['Al día','var(--muted)'], anulado:['Anulado: no se crea','var(--muted)'],
+    documento:['Manda el documento','var(--muted)']};
+  // lo que el cuadro dice distinto de un dato de documento/correo aprobado: se muestra, no se aplica (compararProgramacion → doc)
+  const notaDoc = f => Object.entries(f.doc || {}).map(([k, d]) => `<br><span class="sub" style="color:var(--warn)">⚠ ${esc(ETIQ_HIST[k])}: se deja <b>${esc(fv(f.v[k]))}</b> (${esc(String(d.h.usuario || '').replace(/\s*\(.*\)\s*$/, ''))}, dato de documento/correo del ${esc(fd(new Date(Date.parse(d.h.fecha) - 5 * 36e5).toISOString().slice(0, 10)))}); el cuadro dice ${esc(fv(d.cuadro))}. Si el cuadro es el correcto, cámbielo en el viaje.</span>`).join('');
   const fila = (f, i) => {
     const [txt, col] = ET[f.accion], movFecha = f.v && ['fechaCargue','fechaRetiro'].some(k => k in (f.cambios||{}) && f.v[k]);
     const det = f.accion==='crear' ? `<span class="sub">Retiro del vacío ${fd(addDias(f.r.fechaCargue, -1))}${f.r.bodega && !/planta/i.test(f.r.bodega) ? ' · bodega '+esc(f.r.bodega) : ''}</span>`
       : `<b>${esc(f.v.id)}</b> ${f.v.placa ? `<span class="sub">${esc(f.v.placa)}</span>` : ''}${f.accion==='reusar' ? ' <span class="sub">(esperaba fecha: se reabre)</span>' : ''}<br>`
-        + Object.entries(f.cambios||{}).filter(([k]) => k!=='situacion').map(([k, x]) => `<span class="sub">${esc((CAMPOS_PROG.find(c => c[0]===k)||[k,k])[1])}: ${esc(k==='mesProg' ? (f.v[k] ? nombreMes(String(f.v[k]).slice(0, 7)) : '—') : fv(f.v[k]))} → <b>${esc(k==='mesProg' ? nombreMes(x) : fv(x))}</b></span>`).join('<br>');
-    return `<tr><td><input type="checkbox" data-pi="${i}" ${['igual', 'anulado'].includes(f.accion) ? 'disabled' : 'checked'}></td><td>${f.r.n}</td><td style="white-space:nowrap">${fd(f.r.fechaCargue)}</td>
+        + Object.entries(f.cambios||{}).filter(([k]) => k!=='situacion').map(([k, x]) => `<span class="sub">${esc((CAMPOS_PROG.find(c => c[0]===k)||[k,k])[1])}: ${esc(k==='mesProg' ? (f.v[k] ? nombreMes(String(f.v[k]).slice(0, 7)) : '—') : fv(f.v[k]))} → <b>${esc(k==='mesProg' ? nombreMes(x) : fv(x))}</b></span>`).join('<br>') + notaDoc(f);
+    return `<tr><td><input type="checkbox" data-pi="${i}" ${['igual', 'anulado', 'documento'].includes(f.accion) ? 'disabled' : 'checked'}></td><td>${f.r.n}</td><td style="white-space:nowrap">${fd(f.r.fechaCargue)}</td>
       <td>${esc(f.r.pais)}<br><span class="sub">${esc(f.r.unidad)}</span></td><td>${esc(f.r.mn||'—')}<br><span class="sub">cierre ${fd(f.r.cierreDoc)} · ETD ${fd(f.r.etd)}</span></td>
       <td>${esc(f.r.booking || 'PTE')}<br><span class="sub">${esc(f.r.fwd)} · ${esc(f.r.puerto)}</span></td>
       <td><span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${txt}</span><br>${det}
@@ -4316,7 +4336,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'f171d0468e';
+const VERSION_TABLERO = '4e515e6d5f';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
