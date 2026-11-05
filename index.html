@@ -384,6 +384,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
 .rc-buscar{display:flex;gap:8px;margin:4px 0 8px;position:sticky;top:0;background:var(--surface);padding:4px 0;z-index:1}   /* resumen-cliente.js */
 .rc-buscar input{flex:1;min-width:0}
 .rc-fila.hidden{display:none}
+.ruta .hijo .hijo-pie{grid-column:1/-1;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;border-top:1px dashed var(--border);padding-top:6px;margin-top:2px}   /* lean.js pieHijo */
 </style>
 </head>
 <body>
@@ -1332,7 +1333,16 @@ const faltaConductorReg = c => !c ? ['no está en el registro'] : [!c.cedula && 
 const celularConfirmado = c => /^s[ií]/i.test(String(c && c.verificado || ''));
 const bloqueadoReg = x => /^bloquead/i.test(String(x && x.estado || ''));
 // calificación: 10 puntos = 5 estrellas, redondeado a media estrella
-const estrellasDePuntos = p => Math.round(Number(p) || 0) / 2;</script>
+const estrellasDePuntos = p => Math.round(Number(p) || 0) / 2;
+/* ---------- Subviaje: su propia etapa (descargue en patio intermedio y urbano al destino final) ---------- */
+// La misma idea de etapaAhora para el viaje hijo: se ve en la tarjeta del viaje padre (lean.js tarjetaHijo). tono como etapaAhora.
+function etapaSubviaje(s){
+  if (s.estado === 'Cancelado' || situacion(s) === 'Cancelado') return {txt: 'Cancelado', tono: 'gris'};
+  if (s.fechaUrbano && s.fechaUrbano <= HOY) return {txt: 'Urbano entregado ✓', tono: 'cerrado'};
+  if (s.fechaDescargueSub && s.fechaDescargueSub <= HOY) return {txt: s.fechaUrbano ? 'En patio · urbano ' + fd(s.fechaUrbano) : 'En patio · urbano sin fecha', tono: 'curso'};
+  if (s.fechaDescargueSub) return {txt: 'Descargue en patio ' + fd(s.fechaDescargueSub), tono: 'curso'};
+  return {txt: 'Sin fechas', tono: 'gris'};
+}</script>
 <script>
 /* ---------- base.js · utilidades comunes del tablero ---------- */
 // Capa: pantalla. Configuración (CFG), estado global (viajes, historial), ayudas de la página ($, esc, toast), llamada a la API (api),
@@ -2421,8 +2431,20 @@ function tarjetaHijo(s, padre){
     <div class="hijo-f"><span class="sub">Urbano</span> ${s.fechaUrbano ? fd(s.fechaUrbano) : '—'}${hecho ? ' ✓' : ''}</div>
     <div class="hijo-f"><span class="sub">${esc(s.conductor || 'Sin conductor')}</span> ${s.placa ? `<span class="placa">${esc(s.placa)}</span>` : '<span class="missing">Sin placa</span>'}</div>
     <div class="hijo-f" style="text-align:right">${window.MODO_CLIENTE ? '' : `<b>${pesos(costoViaje(s))}</b>`}</div>
+    ${pieHijo(s)}
   </div>`;
 }
+// pie del subviaje: su etapa (dominio etapaSubviaje), la marca Novedad si la tiene y su última novedad con hora y autor, como el viaje
+// principal; "+ Novedad" abre el subviaje en la caja de novedades (las novedades del subviaje también suman en el padre)
+function pieHijo(s){
+  const {txt, tono} = etapaSubviaje(s), col = {cerrado: 'var(--ok)', gris: 'var(--muted)', curso: 'var(--accent)'}[tono], n = ultimaNovedad(s);
+  const tg = (t, c) => `<span class="tg" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${esc(t)}</span>`;
+  const nov = n ? `🕑 <b>${esc(haceCuanto(fechaLocal(n.fecha)))}</b> · ${esc(n.usuario)} · ${n.origen === 'Conductor' ? '🚛 Conductor' : iconoNovedad(n.tipo) + ' ' + esc(n.tipo)}: ${esc(textoNovedad(n))}${novedadesDe(s).length > 1 ? ` (+${novedadesDe(s).length - 1})` : ''}`
+    : 'Sin novedades del subviaje';
+  return `<div class="hijo-pie">${tg(txt, col)}${s.estadoHoja === 'Novedad' ? tg('⚠ Novedad', 'var(--warn)') : ''}<span class="sub">${nov}</span>
+    ${window.MODO_CLIENTE ? '' : `<button type="button" class="link" onclick="event.stopPropagation();novedadSubviaje('${s.id}')" title="Abre el subviaje en la caja de novedades">+ Novedad</button>`}</div>`;
+}
+function novedadSubviaje(id){ abrir(id); const o = $('#novTexto'); if (o) { o.scrollIntoView({block: 'center'}); o.focus(); } }
 
 // etiqueta de facturación del viaje (arriba del resumen de gastos): la etapa de facturación del viaje completo
 function finTransporte(v){
@@ -3889,7 +3911,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // recarga solo con ?v=<nueva> (la dirección nueva evita la copia guardada del navegador y de GitHub Pages). Si hay una ventana
 // abierta o algo escrito sin guardar, no interrumpe: muestra arriba "Hay una versión nueva · Actualizar". La sesión "Ingresar como"
 // se conserva (sessionStorage). En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'abac7a654d';
+const VERSION_TABLERO = '1425303688';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 function actualizarTablero(v){ const u = new URL(location.href); u.searchParams.set('v', v); location.replace(u.toString()); }
