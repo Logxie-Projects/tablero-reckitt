@@ -2886,7 +2886,7 @@ function itemEvento(e, i){
     : e.tipo === 'Programación' ? 'Programación de Reckitt' : e.tipo === 'Correo' ? `Correo${e.prioridad ? ' · ' + e.prioridad : ''}${e.hecha ? ' · ✔ hecha' : ''}` : e.tipo;
   const ic = e.tipo === 'Novedad' ? iconoNovedad(e.sub) : e.tipo === 'Conductor' ? '🚛' : e.tipo === 'Cambio' ? '⚙' : (ICONO_EVENTO[e.tipo] || '•');
   return `<div class="nov-it nov-${grupoEvento(e.tipo)}" data-nev="${i}"><span class="nov-ic">${ic}</span><div style="flex:1;min-width:0"><span class="sub">${esc(fechaNovedad({fecha: e.fecha}))}${e.quien ? ' · ' + esc(e.quien) : ''}</span>${marcaEditada(e)}
-    ${editable(e) ? ` <button type="button" class="link" data-nedit="${i}" title="Corregir el texto o el tipo (queda el rastro de la edición)">✏ Editar</button>` : ''}
+    ${editable(e) ? ` <button type="button" class="link" data-nedit="${i}" title="Corregir el texto o el tipo (queda el rastro de la edición)">✏ Editar</button> <button type="button" class="link" data-nborrar="${i}" title="Borrar una novedad mal escrita (en la hoja queda marcada como borrada)" style="color:var(--bad)">🗑 Borrar</button>` : ''}
     <div class="nov-cuerpo"><b>${esc(titulo)}</b> · ${esc(e.texto)}${e.costo ? ` <span style="color:var(--warn)">· costo extra ${pesos(e.costo)}</span>` : ''}${e.incidente ? ` <span style="color:var(--bad)">· ⚠ ${esc(e.incidente)}</span>` : ''}</div></div></div>`;
 }
 function listaLinea(v){
@@ -2895,6 +2895,24 @@ function listaLinea(v){
     + (!filtroLinea && v.observacion ? `<div class="nov-it nov-nota"><span class="nov-ic">📌</span><div><span class="sub">Nota del viaje (sin hora) · se edita abajo en Observación</span><div>${esc(v.observacion)}</div></div></div>` : '')
     || '<p class="sub">Nada en este filtro.</p>';
 }
+// enviar a Gerencia (editar o borrar): pide la clave si no está en memoria, la olvida si el servidor la rechaza y refresca la línea
+async function cambioDeGerencia(accion, ev, datos){
+  const codigo = claveGerenciaSesion || await pedirTexto('Clave de Gerencia', '', 'Continuar'); if (!codigo) return false;
+  const j = await api(accion, {fila: ev.n.fila, viaje: ev.n.viaje, antes: ev.n.texto, codigo, usuario: usuarioActual() || 'Gerencia', ...datos});
+  if (!j.ok) { if (/clave/i.test(j.error || '')) claveGerenciaSesion = ''; throw new Error(j.error || 'error'); }
+  claveGerenciaSesion = codigo;
+  window.NOVEDADES = j.novedades || window.NOVEDADES;
+  const v = viajes.find(x => x.id === editId); if (v) $('#mNovedades').innerHTML = bloqueNovedades(v);
+  render(); return true;
+}
+// borrar (Gerencia): para una novedad mal escrita; la fila queda en la hoja marcada "borrada" y deja de salir en todos lados
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-nborrar]'); if (!b) return;
+  const ev = EVENTOS_LINEA[+b.dataset.nborrar]; if (!ev) return;
+  if (!await preguntarSiNo(`¿Borrar esta novedad de ${ev.n.usuario}?\n\n"${ev.n.texto}"\n\nDeja de verse en el tablero y en los correos; en la hoja queda marcada como borrada por usted.`, 'Borrar')) return;
+  try { if (await cambioDeGerencia('borrarNovedad', ev, {})) toast('Novedad borrada'); }
+  catch(err) { toast('No se borró: ' + err.message); }
+});
 // editar (Gerencia): el texto se cambia en el mismo lugar; al guardar, el servidor vuelve a comprobar la clave de Gerencia
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-nedit]'); if (!b) return;
@@ -2913,16 +2931,9 @@ document.addEventListener('click', async e => {
   const texto = caja.querySelector('.nov-etexto').value.trim(), tipo = (caja.querySelector('.nov-etipo') || {}).value || ev.n.tipo;
   if (!texto) return toast('Escriba el texto de la novedad');
   if (texto === ev.n.texto && tipo === ev.n.tipo) return toast('No cambió nada');
-  const codigo = claveGerenciaSesion || await pedirTexto('Clave de Gerencia para guardar la corrección', '', 'Guardar'); if (!codigo) return;
   b.disabled = true; b.textContent = 'Guardando…';
-  try {
-    const j = await api('editarNovedad', {fila: ev.n.fila, viaje: ev.n.viaje, antes: ev.n.texto, tipo, texto, codigo, usuario: usuarioActual() || 'Gerencia'});
-    if (!j.ok) { if (/clave/i.test(j.error || '')) claveGerenciaSesion = ''; throw new Error(j.error || 'error'); }
-    claveGerenciaSesion = codigo;
-    window.NOVEDADES = j.novedades || window.NOVEDADES;
-    const v = viajes.find(x => x.id === editId); if (v) $('#mNovedades').innerHTML = bloqueNovedades(v);
-    render(); toast('Novedad corregida');
-  } catch(err) { toast('No se guardó: ' + err.message); b.disabled = false; b.textContent = 'Guardar corrección'; }
+  try { if (await cambioDeGerencia('editarNovedad', ev, {tipo, texto})) toast('Novedad corregida'); else { b.disabled = false; b.textContent = 'Guardar corrección'; } }
+  catch(err) { toast('No se guardó: ' + err.message); b.disabled = false; b.textContent = 'Guardar corrección'; }
 });
 document.addEventListener('click', e => { const b = e.target.closest('[data-flinea]'); if (!b) return;
   filtroLinea = b.dataset.flinea; const v = viajes.find(x => x.id === editId);
@@ -4399,7 +4410,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '9fa9f212e1';
+const VERSION_TABLERO = '28d7aeff14';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
