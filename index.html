@@ -1479,7 +1479,17 @@ function celdaConductor(v){
   const c = conductorDe(v); if (!c || window.MODO_CLIENTE) return '';   // estado de la app del conductor: solo el equipo
   return `<div class="cond" title="${esc(c.siguiente ? 'Sigue: ' + c.siguiente : 'Viaje terminado')}">${c.icono} ${esc(c.paso)}${c.fecha?` <span class="sub">· ${haceTxt(c.fecha)}</span>`:''} <span class="sub">· ${c.n}/${c.total}</span></div>`;
 }
-function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2200); }
+function toast(msg, ms){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'), ms || 2200); }
+// "presiono y no hace nada" (5-nov): que nada falle en silencio.
+// 1) un error del tablero se muestra (para poder reportarlo con su texto)
+window.addEventListener('error', e => { try { toast('⚠ Error en el tablero: ' + (e.message || 'desconocido') + ' · recargue la página', 8000); } catch(x){} });
+window.addEventListener('unhandledrejection', e => { try { toast('⚠ No se completó: ' + ((e.reason && e.reason.message) || e.reason || 'error') , 8000); } catch(x){} });
+// 2) confirm() / prompt() bloqueados: algunos navegadores del celular (abiertos desde WhatsApp, Gmail…) responden al instante sin
+// mostrar la ventana; si contesta en menos de 50 ms nadie la vio: se avisa en vez de cancelar en silencio
+['confirm', 'prompt'].forEach(k => { const orig = window[k].bind(window);
+  window[k] = (...a) => { const t0 = Date.now(), r = orig(...a);
+    if (Date.now() - t0 < 50 && !r) toast('⚠ Este navegador bloqueó la ventana de confirmación: abra el tablero en Chrome o Safari (no dentro de WhatsApp o Gmail)', 9000);
+    return r; }; });
 /* ---------- servidor, usuario, hora de Colombia y WhatsApp: un solo lugar para todo el tablero ---------- */
 // la clave: la de los datos ya cargados o, mientras cargan (los primeros segundos muestran datos de demostración), la del enlace.
 // Antes solo se tomaba al terminar de cargar y un botón presionado en esos segundos fallaba con "clave" (5-nov)
@@ -4122,7 +4132,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // recarga solo con ?v=<nueva> (la dirección nueva evita la copia guardada del navegador y de GitHub Pages). Si hay una ventana
 // abierta o algo escrito sin guardar, no interrumpe: muestra arriba "Hay una versión nueva · Actualizar". La sesión "Ingresar como"
 // se conserva (sessionStorage). En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'd53305c89d';
+const VERSION_TABLERO = 'e4413665ef';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 function actualizarTablero(v){ const u = new URL(location.href); u.searchParams.set('v', v); location.replace(u.toString()); }
