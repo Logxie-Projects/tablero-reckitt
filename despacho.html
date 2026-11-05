@@ -493,7 +493,8 @@ async function confirmarCargue(booking) {
         <span style="font-weight:400">Salen los viajes abiertos con vehículo asignado</span></label>
       <div class="full ccgrupo">Tipo de orden<div id="ccTipos" style="display:flex;flex-wrap:wrap;gap:4px 16px">${Object.keys(CC_DATOS.tipos || {}).map(k => `<label style="flex-direction:row;align-items:center;gap:5px;font-weight:400;color:var(--text)"><input type="radio" name="tipo" value="${k}" onchange="aplicarTipoCargue(true)"> ${esc(CC_DATOS.tipos[k].titulo.replace('Orden de Cargue ', ''))}</label>`).join('')}</div></div>
       <div class="full" id="ccVeh"></div>
-      <label><span id="ccHoraLbl">Fecha y hora de llegada</span><input type="datetime-local" name="llegada" required></label>
+      <label><span id="ccHoraLbl">Hora de llegada</span><input type="time" name="hora" value="07:00" required>
+        <span style="font-weight:400">La fecha sale del tablero (la de cada vehículo, arriba)</span></label>
       <label><span id="ccLugarLbl">Lugar</span><input name="lugar" list="ccLugares" placeholder="Patio, planta o puerto" required oninput="this.dataset.auto=''"><datalist id="ccLugares">${(CC_DATOS.lugares || []).map(x => `<option value="${esc(x)}">`).join('')}</datalist></label>
       <label class="full">Comentario<textarea name="comentario" maxlength="1000" placeholder="Ej.: el vehículo llega con el contenedor vacío retirado ayer en patio"></textarea></label>
       <div class="full ccgrupo">Imagen de la orden (foto o captura · también se puede pegar con Ctrl+V)
@@ -514,9 +515,13 @@ async function confirmarCargue(booking) {
   pintarVehiculosCargue();
   $('#velo').addEventListener('paste', e => { const f = [...(e.clipboardData || {}).files || []].find(x => /^image\//.test(x.type)); if (f) { e.preventDefault(); leerOrdenCargue(f); } });
 }
-// 5-nov (usuario): módulo de órdenes de cargue por etapa (Cliente.gs ORDENES_CARGUE). Cada tipo sugiere su fecha (la programada
-// del paso) y su lugar (patio o puerto del viaje; la planta, la última usada); quien envía las corrige
-const FECHA_TIPO = { vacio: ['fechaRetiro', 'planRetiro'], llenado: ['fechaCargue', 'planCargue'], puerto: ['citaRetiro', 'fechaRetiro', 'planRetiro'] };
+// 5-nov (usuario): módulo de órdenes de cargue por etapa (Cliente.gs ORDENES_CARGUE). La FECHA no se escribe aquí: es la de cada
+// vehículo en el tablero según el tipo (campos de ORDENES_CARGUE; "las fechas deberían salir de lo que se ha llenado en el tablero");
+// quien envía pone la hora. El lugar se sugiere (patio o puerto del viaje; la planta, la última usada) y se puede corregir.
+const DIAS_C = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'], MES_C = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const fdAnio = f => { const d = new Date(f + 'T12:00'); return `${DIAS_C[d.getDay()]} ${d.getDate()} ${MES_C[d.getMonth()]} ${d.getFullYear()}`; };   // como el tablero, con el año
+const tipoCargue = () => { const f = $('#fcc'), k = f && (f.querySelector('[name=tipo]:checked') || {}).value; return k && CC_DATOS.tipos[k] ? CC_DATOS.tipos[k] : null; };
+const fechaTablero = (v, T) => String((T.campos || []).map(k => v[k]).find(x => /^\d{4}-\d{2}-\d{2}/.test(String(x || ''))) || '').slice(0, 10);
 const PUERTOS = { BUN: 'Puerto de Buenaventura', CTG: 'Puerto de Cartagena', SMR: 'Puerto de Santa Marta' };
 const bookingSel = () => { const f = $('#fcc'); return f && bookingsCargue().find(b => b.bk === f.booking.value); };
 // el paso que sigue: IMPO retiro en puerto; EXPO vacío si el retiro es más adelante, si no llenado en planta
@@ -529,11 +534,11 @@ function tipoSugerido(x) {
 function aplicarTipoCargue(aMano) {
   const f = $('#fcc'), x = bookingSel(); if (!f || !x) return;
   const tipo = (f.querySelector('[name=tipo]:checked') || {}).value, T = (CC_DATOS.tipos || {})[tipo]; if (!T) return;
-  $('#ccHoraLbl').textContent = 'Fecha y ' + T.hora.toLowerCase(); $('#ccLugarLbl').textContent = T.lugar;
-  const v = x.viajes[0], dia = (FECHA_TIPO[tipo] || []).map(k => x.viajes.map(y => y[k]).filter(Boolean).sort()[0]).find(Boolean);
-  const hora = (f.llegada.value.split('T')[1] || '07:00');
-  if (dia) f.llegada.value = String(dia).slice(0, 10) + 'T' + hora;
-  else if (aMano) f.llegada.value = '';
+  $('#ccHoraLbl').textContent = T.hora; $('#ccLugarLbl').textContent = T.lugar;
+  const v = x.viajes[0];
+  // la fecha de cada vehículo según el tipo, tal como está en el tablero; sin fecha: hay que llenarla allá
+  x.viajes.forEach(y => { const el = f.querySelector(`[data-cc-fecha="${CSS.escape(y.id)}"]`); if (!el) return; const fe = fechaTablero(y, T);
+    el.innerHTML = fe ? `📅 ${esc(T.paso)}: <b>${esc(fdAnio(fe))}</b>` : `<span style="color:var(--bad)">⚠ sin fecha de ${esc(T.paso)} en el tablero: llénela allá primero</span>`; });
   // lugar: se cambia solo si estaba vacío o lo había puesto la sugerencia anterior (no se borra lo que escribió la persona)
   const lugar = tipo === 'vacio' ? (v.patio ? 'Patio ' + v.patio : '') : tipo === 'puerto' ? (PUERTOS[String(v.puerto || '').toUpperCase()] || (v.puerto ? 'Puerto de ' + v.puerto : '')) : '';   // la base trae BUN o "Cartagena"
   if (!f.lugar.value || f.lugar.dataset.auto) { f.lugar.value = lugar; f.lugar.dataset.auto = lugar ? '1' : ''; }
@@ -545,12 +550,13 @@ function pintarVehiculosCargue(cambio) {
   $('#ccVeh').innerHTML = `<div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px">Vehículos (los marcados van en el correo)</div>`
     + x.viajes.map(v => `<label class="ccveh" style="display:flex;gap:8px;border:1px solid var(--line);border-radius:8px;padding:7px 10px;margin-bottom:5px;font-weight:400">
       <input type="checkbox" data-cc-viaje="${esc(v.id)}" checked><span><b class="placa">${esc(v.placa)}</b> · ${esc(v.conductor || '')}${v.conductor ? '' : '<span class="tarde">sin conductor</span>'}
-      <span class="sub" style="color:var(--muted)"> · ${esc(v.id)}${v.fechaRetiro ? ' · retiro ' + esc(String(v.fechaRetiro).slice(0, 10)) : ''}${v.fechaCargue ? ' · ' + (v.operacion === 'IMPO' ? 'entrega ' : 'llenado ') + esc(String(v.fechaCargue).slice(0, 10)) : ''}${v.contenedor ? ' · ' + esc(v.contenedor) : ''}</span></span></label>`).join('');
+      <span class="sub" style="color:var(--muted)"> · ${esc(v.id)}${v.contenedor ? ' · ' + esc(v.contenedor) : ''}</span>
+      <br><span data-cc-fecha="${esc(v.id)}" style="font-size:13px"></span></span></label>`).join('');
   // tipo de orden: solo los de la operación del viaje (EXPO: vacío o llenado; IMPO: retiro en puerto), con el paso que sigue marcado
   f.querySelectorAll('[name=tipo]').forEach(r => { const ok = (CC_DATOS.tipos[r.value] || {}).op === v0.operacion; r.parentElement.style.display = ok ? '' : 'none'; r.disabled = !ok; });
   const marcado = f.querySelector('[name=tipo]:checked');
   if (cambio || !marcado || marcado.disabled) { const t = f.querySelector(`[name=tipo][value="${tipoSugerido(x)}"]`); if (t) t.checked = true; }
-  if (cambio) { f.llegada.value = ''; f.lugar.value = ''; }   // otro viaje: la fecha y el lugar se vuelven a sugerir
+  if (cambio) f.lugar.value = '';   // otro viaje: el lugar se vuelve a sugerir
   aplicarTipoCargue(false);
 }
 // la imagen se reduce a 1600 px y JPEG para que el correo no pese (una foto del celular pasa de 4 MB a ~300 KB)
@@ -570,7 +576,7 @@ function leerOrdenCargue(file) {
 }
 function datosCargue() {
   const f = $('#fcc'), marcadas = campo => [...f.querySelectorAll(`[data-cc-${campo}]:checked`)].map(i => i.getAttribute(`data-cc-${campo}`));
-  return { booking: f.booking.value, tipo: (f.querySelector('[name=tipo]:checked') || {}).value, viajes: marcadas('viaje'), llegada: f.llegada.value, lugar: f.lugar.value.trim(), comentario: f.comentario.value.trim(),
+  return { booking: f.booking.value, tipo: (f.querySelector('[name=tipo]:checked') || {}).value, viajes: marcadas('viaje'), hora: f.hora.value, lugar: f.lugar.value.trim(), comentario: f.comentario.value.trim(),
     firma: { nombre: f.fnombre.value.trim(), cargo: f.fcargo.value.trim() }, para: marcadas('para'), cc: marcadas('cc'), ccOtros: f.ccOtros.value.trim() };
 }
 const estadoCargue = (txt, color) => { const e = $('#ccEstado'); if (e) e.innerHTML = `<span style="color:${color || 'inherit'}">${txt}</span>`; };
