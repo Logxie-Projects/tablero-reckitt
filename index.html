@@ -1355,7 +1355,7 @@ async function api(action, datos = {}){
 // personal: el siguiente paso es que cada uno tenga la suya y el servidor ponga el nombre (ver docs/DECISIONES.md).
 const EQUIPO = [
   {nombre: 'Eider Zea', area: 'Operaciones'}, {nombre: 'Jorge Mogollón', area: 'Operaciones'},
-  {nombre: 'Pedro González', area: 'Facturación'}, {nombre: 'Gerencia', area: 'Gerencia'}, {nombre: 'Bernardo Aristizábal', area: 'Calidad'},
+  {nombre: 'Pedro González', area: 'Facturación'}, {nombre: 'Gerencia', area: 'Gerencia'}, {nombre: 'Calidad', area: 'Calidad'},
 ];
 const usuarioGuardado = () => { try { return sessionStorage.getItem('rkt-quien') || ''; } catch(e) { return ''; } };
 const usuarioActual = () => usuarioGuardado() || CFG.USUARIO || '';
