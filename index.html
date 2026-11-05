@@ -839,7 +839,10 @@ const PASOS_CONFIRMAR = {
     ['fechaDevolucion', 'Devolución del vacío']],
   SUB: [['fechaDescargueSub', 'Descargue en patio intermedio'], ['fechaUrbano', 'Urbano al destino final']],
 };
-const FUENTES_CONFIRMA = {equipo: 'el equipo', fecha: 'el equipo (escribió la fecha)', correo: 'un correo aprobado', novedad: 'una novedad aprobada',
+// la regla empezó el 5-nov-2026: lo que tiene fecha anterior queda como el equipo ya lo tenía (cuenta como hecho, fuente 'anterior');
+// desde ese día, todo paso necesita confirmación (pedido del usuario: no borrar el status que el equipo ya había actualizado)
+const INICIO_CONFIRMACION = '2026-11-05';
+const FUENTES_CONFIRMA = {anterior: 'registrado antes del 5 nov', equipo: 'el equipo', fecha: 'el equipo (escribió la fecha)', correo: 'un correo aprobado', novedad: 'una novedad aprobada',
   conductor: 'la app del conductor', tirilla: 'la tirilla', historico: 'viaje cerrado'};
 const pasosDe = v => v.padre ? PASOS_CONFIRMAR.SUB : PASOS_CONFIRMAR[v.operacion] || [];
 const fechaPaso = (v, campo) => /^\d{4}-\d{2}-\d{2}/.test(String(v && v[campo] || '')) ? String(v[campo]).slice(0, 10) : '';
@@ -849,6 +852,7 @@ const confirmacionesDe = v => String(v && v.confirmados || '').split(';;').map(s
 function confirmacion(v, campo){
   const f = fechaPaso(v, campo); if (!f) return null;
   const c = confirmacionesDe(v).filter(x => x.campo === campo && x.fecha === f).pop(); if (c) return c;
+  if (f < INICIO_CONFIRMACION) return {campo, fecha: f, quien: '', fuente: 'anterior', cuando: ''};
   if ((campo === 'fechaEntregaPuerto' && v.tirillaEntrega) || (campo === 'fechaDevolucion' && v.tirillaDevolucion)) return {campo, fecha: f, quien: '', fuente: 'tirilla', cuando: ''};
   const p = v.padre && viajes.find(x => x.id === v.padre);
   if (situacion(v) === 'Cerrado' || (p && situacion(p) === 'Cerrado')) return {campo, fecha: f, quien: '', fuente: 'historico', cuando: ''};
@@ -864,7 +868,7 @@ function pasosPorConfirmar(v){
   return pasosDe(v).filter(([k]) => porConfirmar(v, k)).map(([k, txt, naviera]) => ({campo: k, txt, fecha: fechaPaso(v, k), dias: -diffDias(fechaPaso(v, k)), naviera: !!naviera}));
 }
 // texto corto de quién confirmó, para la ventana del viaje: "confirmado por Eider Zea (5 nov)", "confirmado con la tirilla"
-const textoConfirmacion = c => !c ? '' : c.fuente === 'tirilla' ? 'confirmado con la tirilla' : c.fuente === 'historico' ? 'viaje cerrado'
+const textoConfirmacion = c => !c ? '' : c.fuente === 'anterior' ? FUENTES_CONFIRMA.anterior : c.fuente === 'tirilla' ? 'confirmado con la tirilla' : c.fuente === 'historico' ? 'viaje cerrado'
   : `confirmado${{correo: ' por correo', novedad: ' por novedad', conductor: ' con la app del conductor'}[c.fuente] || ''}${c.quien ? ' por ' + c.quien : ''}${c.cuando ? ' (' + fd(c.cuando) + ')' : ''}`;
 
 // etapa de la operación (ver ESTADOS): la más avanzada que respaldan los pasos confirmados o las tirillas del viaje.
@@ -4094,7 +4098,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // recarga solo con ?v=<nueva> (la dirección nueva evita la copia guardada del navegador y de GitHub Pages). Si hay una ventana
 // abierta o algo escrito sin guardar, no interrumpe: muestra arriba "Hay una versión nueva · Actualizar". La sesión "Ingresar como"
 // se conserva (sessionStorage). En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '3082501f1d';
+const VERSION_TABLERO = '13181d92ed';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 function actualizarTablero(v){ const u = new URL(location.href); u.searchParams.set('v', v); location.replace(u.toString()); }
