@@ -3818,6 +3818,8 @@ function compararProgramacion(c){
     Object.entries(d).forEach(([k, x]) => {
       if (!x) return;
       if (k==='fechaRetiro' && v.fechaRetiro && v.fechaCargue===r.fechaCargue) return;   // el retiro real no se toca si el llenado sigue igual
+      // motonave: "EVER FRONT 0802-040" y "EVER FRONT 0802-040W" son la misma (el documento agrega la letra del sentido)
+      if (k==='mn' && v.mn && (compacto(v.mn).startsWith(compacto(x)) || compacto(x).startsWith(compacto(v.mn)))) return;
       if (/^fecha|^cierre|^etd|^eta/.test(k) ? String(v[k]||'') !== x : !eq(v[k], x)) cambios[k] = x;
     });
     // lo que vino de un documento de la naviera o de un dato de correo aprobado no se pisa con el cuadro (queda avisado, sin aplicar)
@@ -3851,14 +3853,16 @@ const fv = x => /^\d{4}-\d{2}-\d{2}/.test(x||'') ? fd(x) : (x || '—');
 function pintarProgramacion(){
   const ET = {crear:['Nuevo','var(--ok)'], cambiar:['Cambió','var(--warn)'], reusar:['Reutilizar','var(--accent)'], igual:['Al día','var(--muted)'], anulado:['Anulado: no se crea','var(--muted)'],
     documento:['Manda el documento','var(--muted)']};
-  // lo que el cuadro dice distinto de un dato de documento/correo aprobado: se muestra, no se aplica (compararProgramacion → doc)
-  const notaDoc = f => Object.entries(f.doc || {}).map(([k, d]) => `<br><span class="sub" style="color:var(--warn)">⚠ ${esc(ETIQ_HIST[k])}: se deja <b>${esc(fv(f.v[k]))}</b> (${esc(String(d.h.usuario || '').replace(/\s*\(.*\)\s*$/, ''))}, dato de documento/correo del ${esc(fd(new Date(Date.parse(d.h.fecha) - 5 * 36e5).toISOString().slice(0, 10)))}); el cuadro dice ${esc(fv(d.cuadro))}. Si el cuadro es el correcto, cámbielo en el viaje.</span>`).join('');
+  // lo que el cuadro dice distinto de un dato de documento/correo aprobado: por defecto se deja el del documento; cada uno tiene su
+  // casilla "usar el del cuadro" (5-nov: "no está dejando seleccionar para aplicar") y aplicarProgramacion la suma a los cambios
+  const notaDoc = (f, i) => Object.entries(f.doc || {}).map(([k, d]) => `<br><label class="sub" style="color:var(--warn);display:inline-flex;gap:4px;align-items:flex-start"><input type="checkbox" data-pd="${i}" data-pk="${k}" onchange="marcarDocProg(${i})"> <span>⚠ ${esc(ETIQ_HIST[k])}: documento <b>${esc(fv(f.v[k]))}</b> (${esc(String(d.h.usuario || '').replace(/\s*\(.*\)\s*$/, ''))}, ${esc(fd(new Date(Date.parse(d.h.fecha) - 5 * 36e5).toISOString().slice(0, 10)))}) · cuadro <b>${esc(fv(d.cuadro))}</b>. Marque para usar el del cuadro.</span></label>`).join('');
   const fila = (f, i) => {
     const [txt, col] = ET[f.accion], movFecha = f.v && ['fechaCargue','fechaRetiro'].some(k => k in (f.cambios||{}) && f.v[k]);
     const det = f.accion==='crear' ? `<span class="sub">Retiro del vacío ${fd(addDias(f.r.fechaCargue, -1))}${f.r.bodega && !/planta/i.test(f.r.bodega) ? ' · bodega '+esc(f.r.bodega) : ''}</span>`
       : `<b>${esc(f.v.id)}</b> ${f.v.placa ? `<span class="sub">${esc(f.v.placa)}</span>` : ''}${f.accion==='reusar' ? ' <span class="sub">(esperaba fecha: se reabre)</span>' : ''}<br>`
-        + Object.entries(f.cambios||{}).filter(([k]) => k!=='situacion').map(([k, x]) => `<span class="sub">${esc((CAMPOS_PROG.find(c => c[0]===k)||[k,k])[1])}: ${esc(k==='mesProg' ? (f.v[k] ? nombreMes(String(f.v[k]).slice(0, 7)) : '—') : fv(f.v[k]))} → <b>${esc(k==='mesProg' ? nombreMes(x) : fv(x))}</b></span>`).join('<br>') + notaDoc(f);
-    return `<tr><td><input type="checkbox" data-pi="${i}" ${['igual', 'anulado', 'documento'].includes(f.accion) ? 'disabled' : 'checked'}></td><td>${f.r.n}</td><td style="white-space:nowrap">${fd(f.r.fechaCargue)}</td>
+        + Object.entries(f.cambios||{}).filter(([k]) => k!=='situacion').map(([k, x]) => `<span class="sub">${esc((CAMPOS_PROG.find(c => c[0]===k)||[k,k])[1])}: ${esc(k==='mesProg' ? (f.v[k] ? nombreMes(String(f.v[k]).slice(0, 7)) : '—') : fv(f.v[k]))} → <b>${esc(k==='mesProg' ? nombreMes(x) : fv(x))}</b></span>`).join('<br>') + notaDoc(f, i);
+    // "Manda el documento": la fila se puede marcar (sin marcar por defecto); marcarla usa lo del cuadro en todos sus datos
+    return `<tr><td><input type="checkbox" data-pi="${i}" ${['igual', 'anulado'].includes(f.accion) ? 'disabled' : f.accion==='documento' ? `onchange="marcarFilaDocProg(${i}, this.checked)"` : 'checked'}></td><td>${f.r.n}</td><td style="white-space:nowrap">${fd(f.r.fechaCargue)}</td>
       <td>${esc(f.r.pais)}<br><span class="sub">${esc(f.r.unidad)}</span></td><td>${esc(f.r.mn||'—')}<br><span class="sub">cierre ${fd(f.r.cierreDoc)} · ETD ${fd(f.r.etd)}</span></td>
       <td>${esc(f.r.booking || 'PTE')}<br><span class="sub">${esc(f.r.fwd)} · ${esc(f.r.puerto)}</span></td>
       <td><span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${txt}</span><br>${det}
@@ -3876,11 +3880,22 @@ function pintarProgramacion(){
     ${PROG.fuera.length ? `<p style="margin-top:8px;color:var(--warn)">ℹ No vienen en este envío: ${PROG.fuera.map(v => `<button class="link" onclick="abrir('${v.id}')">${esc(v.id)} ${esc(v.pais||'')} ${fd(v.fechaCargue)}</button>`).join(' · ')}. Jhonier manda la programación por partes: se dejan como están (no se cancelan) hasta que él los mueva o los cancele.</p>` : ''}`;
 }
 
+// fila "Manda el documento": la casilla de la fila marca o desmarca todos sus datos; un dato marcado deja la fila marcada
+function marcarFilaDocProg(i, si){ document.querySelectorAll(`#progLista [data-pd="${i}"]`).forEach(x => { x.checked = si; }); }
+function marcarDocProg(i){
+  const f = PROG.filas[i], m = document.querySelector(`#progLista [data-pi="${i}"]`);
+  if (f && f.accion === 'documento' && m) m.checked = [...document.querySelectorAll(`#progLista [data-pd="${i}"]`)].some(x => x.checked);
+}
+
 async function aplicarProgramacion(){
   const usuario = $('#progUsuario').value.trim();
   if (!usuario) { $('#progUsuario').focus(); return toast('Escriba su nombre: queda en el Historial'); }
   guardarUsuario(usuario);
-  const sel = [...document.querySelectorAll('#progLista [data-pi]:checked')].map(x => PROG.filas[+x.dataset.pi]);
+  // datos de documento que el equipo decidió reemplazar por lo del cuadro (casillas data-pd); su fila entra aunque no esté marcada
+  const docSel = {};
+  document.querySelectorAll('#progLista [data-pd]:checked').forEach(x => { (docSel[x.dataset.pd] = docSel[x.dataset.pd] || []).push(x.dataset.pk); });
+  const marcadas = new Set([...document.querySelectorAll('#progLista [data-pi]:checked')].map(x => x.dataset.pi).concat(Object.keys(docSel)));
+  const sel = [...marcadas].map(i => PROG.filas[+i]);
   if (!sel.length) return toast('No hay filas seleccionadas');
   const c = PROG.c, mesTxt = MES[Number(c.programacion[0].fechaCargue.slice(5, 7)) - 1], quien = `${usuario} (programación ${mesTxt}, correo ${c.fecha.slice(0, 10)})`;
   const post = b => api(b.action, {...b, usuario: quien});
@@ -3897,7 +3912,10 @@ async function aplicarProgramacion(){
     }
     for (const f of sel.filter(f => f.accion!=='crear')) {
       const i = PROG.filas.indexOf(f), causa = (document.querySelector(`.prog-causa[data-pc="${i}"]`) || {}).value || 'Cliente (Reckitt)';
-      let ch = {...f.cambios};
+      const filaMarcada = (document.querySelector(`#progLista [data-pi="${i}"]`) || {}).checked && f.accion !== 'documento';
+      let ch = filaMarcada ? {...f.cambios} : {};
+      (docSel[i] || []).forEach(k => { ch[k] = f.doc[k].cuadro; });
+      if (!Object.keys(ch).length) continue;
       const mov = fechasMovidas(f.v, ch);
       if (mov.length) ch = conCausa(f.v, ch, mov, causa, `Programación ${mesTxt} actualizada (correo ${c.fecha.replace('T', ' ')})`, usuario);
       // fuente programación: sus fechas son planes; aunque sean de hoy o pasadas no confirman ningún paso (Base.gs)
@@ -4336,7 +4354,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '4e515e6d5f';
+const VERSION_TABLERO = '47d14338f0';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
