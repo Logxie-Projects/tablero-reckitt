@@ -1293,8 +1293,32 @@ function etapaAhora(v, P, n, cliente){
   // el tono sigue a la etapa (no a las paradas cumplidas): sin vehículo gris, en curso, cerrado
   return {ahora, tono: sit==='Cerrado' ? 'cerrado' : et==='Sin asignar' ? 'gris' : 'curso'};
 }
-</script>
+
+/* ---------- Registro de vehículos y conductores (pestañas Vehículos y Conductores) ---------- */
+// Una sola definición para el tablero (registro.js, calificacion.js, enturnados.js) y el backend (Registro.gs, Calificaciones.gs):
+// cómo se escribe una placa, cuándo un celular sirve, cómo se reconoce a un conductor escrito de otra forma y qué le falta a cada
+// uno para poder asignarlo. Un vehículo necesita propietario y su celular; un conductor, cédula y celular. Confirmar el celular
+// (mensaje de prueba) se pide, pero no impide asignar.
+const placaNorm = p => String(p || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+// celular colombiano de 10 dígitos que empieza por 3 (sin el 57); '' si no sirve
+const celularCO = t => { t = String(t || '').replace(/\D/g, '').replace(/^57(?=3\d{9}$)/, ''); return /^3\d{9}$/.test(t) ? t : ''; };
+const nombreClave = s => minus(s).replace(/\s+/g, ' ');
+// "También escrito como" y listas de placas: separadas por / , o ;
+const aliasDe = x => String(x || '').split(/\s*[\/,;]\s*/).map(s => s.trim()).filter(Boolean);
+// placa o conductor de verdad (no "PENDIENTE", "CANCELADO", "SIN INFO")
+const textoReal = x => !!x && !/^(pend|cancel|sin info)/i.test(String(x));
+const buscarVehiculo = (lista, placa) => placaNorm(placa) ? (lista || []).find(v => placaNorm(v.placa) === placaNorm(placa)) || null : null;
+const buscarConductor = (lista, nombre) => nombre ? (lista || []).find(c => [c.nombre, ...aliasDe(c.alias)].some(a => nombreClave(a) === nombreClave(nombre))) || null : null;
+const faltaVehiculoReg = v => !v ? ['no está en el registro'] : [!v.propietario && 'propietario', !celularCO(v.celularPropietario) && 'celular del propietario'].filter(Boolean);
+const faltaConductorReg = c => !c ? ['no está en el registro'] : [!c.cedula && 'cédula', !celularCO(c.celular) && 'celular'].filter(Boolean);
+const celularConfirmado = c => /^s[ií]/i.test(String(c && c.verificado || ''));
+const bloqueadoReg = x => /^bloquead/i.test(String(x && x.estado || ''));
+// calificación: 10 puntos = 5 estrellas, redondeado a media estrella
+const estrellasDePuntos = p => Math.round(Number(p) || 0) / 2;</script>
 <script>
+/* ---------- base.js · utilidades comunes del tablero ---------- */
+// Capa: pantalla. Configuración (CFG), estado global (viajes, historial), ayudas de la página ($, esc, toast), llamada a la API (api),
+// sesión "Ingresar como" (EQUIPO, usuarioActual, elegirUsuario) y enlaces de WhatsApp. Se carga primero: lo usan todos los módulos.
 const CFG = window.APP_CONFIG || {};
 // Etapa de la operación: sale sola de las fechas del viaje (la misma ruta que dibuja la tarjeta), no de una lista manual.
 // EXPO: Sin asignar → Asignado → Vacío retirado → Llenado → (En bodega de paso) → Entregado en puerto → Zarpó
@@ -2682,6 +2706,10 @@ function resumenEventos(E){
 }
 
 const ICONO_EVENTO = {'Programación':'📋', 'Cambio de plan':'⟲', 'Correo':'✉', 'Edición':'✎', 'Excel':'▦', 'Subviaje':'↪', 'Incidente':'⚠'};
+/* ---------- viaje.js · ventana del viaje ---------- */
+// Capa: pantalla. Abre un viaje, muestra el plan y el detalle, edita los campos de Seguimiento EXPO / IMPO (CAMPOS_VIAJE,
+// CAMPOS_ETAPA = columnas de Base.gs SEGUIMIENTO) y guarda (datos.js guardarCambio). Antes de guardar placa o conductor exige el
+// registro completo (registro.js registroCompleto); la calificación del conductor va en la misma ventana (calificacion.js).
 function abrir(id){
   const v = viajes.find(x=>x.id===id); if (!v) { toast('No se encontró el viaje ' + id); return; }
   editId = id; estadoSel = MARCAS.some(m=>m.k===v.estadoHoja) ? v.estadoHoja : '';
@@ -2886,8 +2914,7 @@ $('#mForm').addEventListener('click', e => {
 // queda "Pendiente Gerencia" y no cuenta hasta que Gerencia lo apruebe con su clave. Un viaje se califica una sola vez.
 // Solo el equipo: el cliente no recibe calificaciones (el servidor manda null).
 const CALIF = () => window.CALIF || null;
-const claveCond = s => minus(s).replace(/\s+/g, ' ');
-const califDe = nombre => (CALIF() && nombre && CALIF().porConductor[claveCond(nombre)]) || null;
+const califDe = nombre => (CALIF() && nombre && CALIF().porConductor[nombreClave(nombre)]) || null;
 const fmtPts = x => String(Math.round(x * 100) / 100).replace('.', ',');
 function estrellasHtml(e){
   const llenas = Math.floor(e), media = e - llenas >= 0.5;
@@ -2984,29 +3011,20 @@ $('#ov').addEventListener('change', e => {
   totalCalif();
 });
 /* ---------- Registro de vehículos y conductores: completar los datos ---------- */
-// El registro (pestañas Vehículos y Conductores de la base; Base.gs leerRegistro_) llega solo al equipo en window.REGISTRO.
+// Capa: pantalla (tablero). Datos: window.REGISTRO (doGet, Registro.gs leerRegistro_; solo el equipo). Escribe: doPost 'registro'.
+// Reglas (dominio.js, las mismas del servidor): placaNorm, celularCO, nombreClave, textoReal, buscarVehiculo, buscarConductor,
+// faltaVehiculoReg, faltaConductorReg, celularConfirmado.
 // Para asignar placa o conductor en un viaje deben estar completos: vehículo con propietario y su celular, conductor con cédula y
-// celular. Si falta algo, la ventana "Completar datos" lo pide y, al guardar (doPost 'registro'), sigue con lo que se estaba
-// haciendo. El servidor exige lo mismo al guardar el viaje. Mi turno (Seguimiento) lista primero los que faltan de los viajes de los
+// celular. Si falta algo, la ventana "Completar datos" lo pide y, al guardar, sigue con lo que se estaba haciendo (viaje.js). El
+// servidor exige lo mismo al guardar el viaje. Mi turno (turno.js · Seguimiento) lista primero los que faltan de los viajes de los
 // próximos 7 días y bloquea por los que arrancan en 72 h o menos o están en movimiento.
+// Usan este módulo: viaje.js (registroCompleto al guardar), turno.js (filasRegistro, filaRegistroHtml, abrirRegistro, marcarVerificado).
 const REG = () => window.REGISTRO || null;
-const placaR = p => String(p || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-const celR = t => { t = String(t || '').replace(/\D/g, '').replace(/^57(?=3\d{9}$)/, ''); return /^3\d{9}$/.test(t) ? t : ''; };
-const listaR = x => String(x || '').split(/\s*[\/,;]\s*/).map(s => s.trim()).filter(Boolean);
-const realR = x => x && !/^(pend|cancel|sin info)/i.test(String(x));
-const vehiculoReg = placa => REG() && placaR(placa) ? REG().vehiculos.find(x => placaR(x.placa) === placaR(placa)) || null : null;
-const conductorReg = nombre => REG() && nombre ? REG().conductores.find(x => [x.nombre, ...listaR(x.alias)].some(a => claveCond(a) === claveCond(nombre))) || null : null;
+const vehiculoReg = placa => REG() ? buscarVehiculo(REG().vehiculos, placa) : null;
+const conductorReg = nombre => REG() ? buscarConductor(REG().conductores, nombre) : null;
 // lo que falta, en palabras ([] = completo); sin registro cargado (cliente o error) no se exige nada
-function faltaVehiculo(placa){
-  if (!REG() || !realR(placa)) return [];
-  const v = vehiculoReg(placa); if (!v) return ['no está en el registro'];
-  return [!v.propietario && 'propietario', !celR(v.celularPropietario) && 'celular del propietario'].filter(Boolean);
-}
-function faltaConductor(nombre){
-  if (!REG() || !realR(nombre)) return [];
-  const c = conductorReg(nombre); if (!c) return ['no está en el registro'];
-  return [!c.cedula && 'cédula', !celR(c.celular) && 'celular'].filter(Boolean);
-}
+const faltaVehiculo = placa => REG() && textoReal(placa) ? faltaVehiculoReg(vehiculoReg(placa)) : [];
+const faltaConductor = nombre => REG() && textoReal(nombre) ? faltaConductorReg(conductorReg(nombre)) : [];
 
 // MENSAJE DE PRUEBA: al registrar o cambiar el celular de un conductor se abre WhatsApp a ese número con este texto; cuando
 // responde, el coordinador marca en Mi turno si es él (Sí) o no (se quita el celular y se vuelve a pedir). Columna "Celular verificado".
@@ -3020,7 +3038,6 @@ Te recordamos los *requisitos de ingreso a Reckitt*:
 • Llantas en buen estado
 
 ¡Gracias!`;
-const verificado = c => /^s[ií]/i.test(String(c && c.verificado || ''));
 async function marcarVerificado(nombre, resultado){
   if (resultado === 'No' && !confirm(`¿El número no es de ${nombre}?\n\nSe quita el celular del registro y hay que pedir el correcto.`)) return;
   const usuario = usuarioActual() || pedirUsuario('¿Quién confirma? (queda con su nombre)'); if (!usuario) return;
@@ -3042,7 +3059,7 @@ function registroCompleto(placa, conductor, continuar){
 }
 // se muestran el vehículo y el conductor del viaje (aunque uno esté completo, para corregirlo si algo cambió); lo que falta es obligatorio
 function abrirRegistro(placa, conductor, continuar){
-  regContinuar = continuar || null; regPide = {placa: realR(placa) ? placaR(placa) : '', conductor: realR(conductor) ? String(conductor).trim().toUpperCase() : ''};
+  regContinuar = continuar || null; regPide = {placa: textoReal(placa) ? placaNorm(placa) : '', conductor: textoReal(conductor) ? String(conductor).trim().toUpperCase() : ''};
   regPide.reqP = faltaVehiculo(regPide.placa).length > 0; regPide.reqC = faltaConductor(regPide.conductor).length > 0;
   const v = vehiculoReg(regPide.placa) || {}, c = conductorReg(regPide.conductor) || {};
   const campo = (id, l, val, ph, extra = '') => `<div><label>${l}</label><input id="${id}" value="${esc(val || '')}" placeholder="${esc(ph)}" ${extra}></div>`;
@@ -3065,23 +3082,23 @@ async function guardarRegistroUI(){
   const usuario = valR('regUsuario'); if (!usuario) { $('#regUsuario').focus(); return toast('Escriba su nombre'); }
   const envios = [], v0 = vehiculoReg(regPide.placa) || {}, c0 = conductorReg(regPide.conductor) || {};
   // se envía lo obligatorio y lo que se corrigió; lo completo sin cambios no se toca
-  const cambioV = regPide.placa && (regPide.reqP || valR('regEmpresa') !== (v0.empresa || 'ENTRAPETROL') || valR('regProp').toUpperCase() !== String(v0.propietario || '').toUpperCase() || celR(valR('regCelProp')) !== celR(v0.celularPropietario));
-  const cambioC = regPide.conductor && (regPide.reqC || valR('regNombre').toUpperCase() !== String(c0.nombre || '').toUpperCase() || valR('regCedula').replace(/\D/g, '') !== String(c0.cedula || '') || celR(valR('regCel')) !== celR(c0.celular));
+  const cambioV = regPide.placa && (regPide.reqP || valR('regEmpresa') !== (v0.empresa || 'ENTRAPETROL') || valR('regProp').toUpperCase() !== String(v0.propietario || '').toUpperCase() || celularCO(valR('regCelProp')) !== celularCO(v0.celularPropietario));
+  const cambioC = regPide.conductor && (regPide.reqC || valR('regNombre').toUpperCase() !== String(c0.nombre || '').toUpperCase() || valR('regCedula').replace(/\D/g, '') !== String(c0.cedula || '') || celularCO(valR('regCel')) !== celularCO(c0.celular));
   if (cambioV) {
     if (valR('regProp').length < 3) { $('#regProp').focus(); return toast('Escriba el propietario'); }
-    if (!celR(valR('regCelProp'))) { $('#regCelProp').focus(); return toast('Celular del propietario: 10 dígitos, empieza por 3'); }
+    if (!celularCO(valR('regCelProp'))) { $('#regCelProp').focus(); return toast('Celular del propietario: 10 dígitos, empieza por 3'); }
     envios.push({tipo: 'vehiculo', datos: {placa: regPide.placa, empresa: valR('regEmpresa'), propietario: valR('regProp'), celularPropietario: valR('regCelProp')}});
   }
   if (cambioC) {
     if (valR('regNombre').split(/\s+/).length < 2) { $('#regNombre').focus(); return toast('Escriba nombre y apellido'); }
     if (!/^\d{5,11}$/.test(valR('regCedula').replace(/\D/g, ''))) { $('#regCedula').focus(); return toast('Cédula: solo números, de 5 a 11 dígitos'); }
-    if (!celR(valR('regCel'))) { $('#regCel').focus(); return toast('Celular del conductor: 10 dígitos, empieza por 3'); }
+    if (!celularCO(valR('regCel'))) { $('#regCel').focus(); return toast('Celular del conductor: 10 dígitos, empieza por 3'); }
     envios.push({tipo: 'conductor', datos: {nombre: valR('regNombre'), cedula: valR('regCedula'), celular: valR('regCel'), comoAparece: regPide.conductor, placa: regPide.placa}});
   }
   guardarUsuario(usuario);
   // celular nuevo o cambiado: mensaje de prueba por WhatsApp (se abre ya, con el clic, para que el navegador no lo bloquee)
   if (cambioC) { const c = c0;
-    if (!c.nombre || celR(c.celular) !== celR(valR('regCel'))) window.open(waLink('57' + celR(valR('regCel')), mensajePrueba(valR('regNombre').toUpperCase())), '_blank'); }
+    if (!c.nombre || celularCO(c.celular) !== celularCO(valR('regCel'))) window.open(waLink('57' + celularCO(valR('regCel')), mensajePrueba(valR('regNombre').toUpperCase())), '_blank'); }
   const b = $('#regGuardar'); b.disabled = true; b.textContent = 'Guardando…';
   try {
     for (const e of envios) {
@@ -3106,15 +3123,15 @@ function filasRegistro(V){
     const roja = mov || (d !== null && d <= 3);
     [['P', v.placa, faltaVehiculo(v.placa)], ['C', v.conductor, faltaConductor(v.conductor)]].forEach(([t, x, falta]) => {
       if (!falta.length) return;
-      const nombre = t === 'P' ? placaR(x) : ((conductorReg(x) || {}).nombre || String(x).toUpperCase());   // el nombre del registro, no el del viaje
-      const k = `reg|${t}|${t === 'P' ? nombre : claveCond(nombre)}`, prev = filas.get(k);
+      const nombre = t === 'P' ? placaNorm(x) : ((conductorReg(x) || {}).nombre || String(x).toUpperCase());   // el nombre del registro, no el del viaje
+      const k = `reg|${t}|${t === 'P' ? nombre : nombreClave(nombre)}`, prev = filas.get(k);
       if (!prev) filas.set(k, {k, tipo: 'reg', clase: t, nombre, falta, v, roja});
       else if (roja && !prev.roja) Object.assign(prev, {v, roja});
     });
     // celular completo pero sin confirmar con el mensaje de prueba: se pide, no bloquea
-    const c = realR(v.conductor) && conductorReg(v.conductor);
-    if (c && c.cedula && celR(c.celular) && !verificado(c)) { const k = 'ver|' + claveCond(c.nombre);
-      if (!filas.has(k)) filas.set(k, {k, tipo: 'reg', clase: 'V', nombre: c.nombre, celular: celR(c.celular), estadoVer: c.verificado, falta: ['confirmar celular'], v, roja: false}); }
+    const c = textoReal(v.conductor) && conductorReg(v.conductor);
+    if (c && c.cedula && celularCO(c.celular) && !celularConfirmado(c)) { const k = 'ver|' + nombreClave(c.nombre);
+      if (!filas.has(k)) filas.set(k, {k, tipo: 'reg', clase: 'V', nombre: c.nombre, celular: celularCO(c.celular), estadoVer: c.verificado, falta: ['confirmar celular'], v, roja: false}); }
   });
   return [...filas.values()].sort((a, b) => b.roja - a.roja || String(primerEvento(a.v) || '').localeCompare(String(primerEvento(b.v) || '')));
 }
@@ -3708,7 +3725,7 @@ function pintarEnturnados(){
 }
 
 // la placa se compara sin espacios ni guiones ni mayúsculas
-const placaIgual = (a, b) => String(a || '').replace(/[\s-]/g, '').toUpperCase() === String(b || '').replace(/[\s-]/g, '').toUpperCase();
+const placaIgual = (a, b) => placaNorm(a) === placaNorm(b);   // dominio.js
 
 function contarEnturnados(){
   const n = (window.TURNOS_C || []).filter(t => t.tipo === 'Turno' && (() => { const v = viajes.find(x => x.id === t.viajeId); return v && !tieneVehiculo(v); })()).length;
@@ -3851,6 +3868,9 @@ function listaCorta(L, titulo){
      <span class="sub">· ${v.operacion} ${esc(v.pais||'')} · llenado ${fd(v.fechaCargue)}${v.placa?'':` · ${esc(v.booking||'sin booking')}`}</span> ${sitTag(v)}</li>`).join('')}</ol>
     ¿Cuál quieres ver? Escribe el número o tócalo.`;
 }
+/* ---------- chat-acciones.js · LogxIA en el chat: acciones y respuestas con reglas ---------- */
+// Capa: pantalla. Entiende pedidos escritos ("placa ABC123 conductor …", "factura FE-1 del …", "filtra …"), muestra el cambio y lo
+// guarda solo cuando el usuario confirma (datos.js guardarCambio). Lo que no entiende se lo pasa al agente LogxIA (preguntas.js).
 function verDeLista(i){
   const v = ultimaLista[i]; if (!v) return;
   burbuja(String(i+1), 'me');
@@ -4137,6 +4157,9 @@ const leida = id => { try { return (localStorage.getItem('rkt-preg-leidas') || '
 function marcarLeidas(){ const ids = (window.PREGUNTAS || []).filter(p => p.estado === 'Respondida').map(p => p.id);
   try { localStorage.setItem('rkt-preg-leidas', ids.join(',')); } catch(e){} }
 $('#chatMsgs').addEventListener('click', e => { const b = e.target.closest('[data-preguntar]'); if (b) { b.disabled = true; preguntarALogxia(b.dataset.preguntar); } });
+/* ---------- inicio.js · arranque del tablero ---------- */
+// Capa: pantalla. render() repinta todas las vistas; carga los datos (datos.js), pide "Ingresar como" al equipo (base.js) y atiende
+// los enlaces de los correos (?viaje=, ?vista=, ?area=, ?usuario=). Se carga de último.
 function render(){ pintarSugerencias(); pintarPreguntas(); renderGbar(); renderTurno(); renderLean(); renderErrores(); renderAcciones(); renderKpis(); renderChartDias(); renderChartEstados(); renderChartPais(); renderChartMix(); renderAlertas(); renderProximos(); renderFeed(); renderChips(); renderTabla(); renderMotonaves(); contarEnturnados(); }
 // pantalla de acceso cuando la página trae los datos de la hoja con clave
 function pedirClave(errada){
