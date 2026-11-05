@@ -305,7 +305,9 @@ table.prog td:last-child{min-width:260px}
 .ruta .par.conf .pt{border-color:var(--warn);background:color-mix(in srgb, var(--warn) 25%, var(--surface))}
 .ruta .par.conf .caja{border-color:var(--warn);border-style:dashed}
 .tg.tg-conf{background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)}
-.tg.tg-conf .conf-btn{font-size:inherit;font-weight:700;color:var(--warn);text-decoration:underline}
+/* botón de confirmar (confirmar.js): botón con borde, sin ✓, para que no se lea como "ya hecho" */
+.conf-btn{display:inline-block;font:inherit;font-size:12px;font-weight:600;color:var(--warn);background:var(--surface);border:1.5px solid var(--warn);border-radius:6px;padding:3px 10px;margin:2px 4px 2px 0;cursor:pointer;white-space:nowrap}
+.conf-btn:hover{background:color-mix(in srgb, var(--warn) 12%, var(--surface))}
 .paso-est{margin-top:2px;font-size:11px}
 .paso-est.conf{color:var(--warn);font-weight:600}
 .paso-est.ok{color:var(--ok)}
@@ -3285,17 +3287,17 @@ $('#regCerrar').onclick = () => { regContinuar = null; $('#ovReg').classList.rem
 
 // botón de confirmar un paso: data-conf="id|campo|fecha" (lo atiende el clic de abajo en cualquier vista)
 const botonConfirmar = (p, txt) => window.MODO_CLIENTE || !p ? '' :
-  `<button type="button" class="link conf-btn" data-conf="${esc(p.v.id + '|' + p.campo + '|' + p.fecha)}" title="Confirma que ${esc(p.txt.toLowerCase())} se hizo el ${esc(fd(p.fecha))}; queda con su nombre">${txt || '✓ Sí, se hizo'}</button>`;
-// etiqueta amarilla de la tarjeta (Modo lean): "¿Se hizo? Retiro del vacío jue 5 nov · ✓ Sí, se hizo"
+  `<button type="button" class="conf-btn" data-conf="${esc(p.v.id + '|' + p.campo + '|' + p.fecha)}" title="Confirma que ${esc(p.txt.toLowerCase())} se hizo el ${esc(fd(p.fecha))}; queda con su nombre">${txt || 'Confirmar que se hizo'}</button>`;
+// etiqueta amarilla de la tarjeta (Modo lean): "Sin confirmar: Retiro del vacío jue 5 nov [Confirmar que se hizo]". El botón NO lleva ✓:
 const etiquetaPorConfirmar = p => window.MODO_CLIENTE || !p ? '' :
-  `<span class="tg tg-conf" title="La fecha ya pasó pero nadie ha confirmado que se hizo: no se cuenta como hecho">¿Se hizo? ${esc(p.txt)} ${esc(fd(p.fecha))} · ${botonConfirmar(p)}</span>`;
+  `<span class="tg tg-conf" title="La fecha ya pasó pero nadie ha confirmado que se hizo: no se cuenta como hecho">⚠ Sin confirmar: ${esc(p.txt)} ${esc(fd(p.fecha))}</span>${botonConfirmar(p)}`;
 // debajo de un campo de fecha en la ventana del viaje: por confirmar, confirmado (por quién) o plan
 function estadoPaso(v, k){
   if (!pasosDe(v).some(p => p[0] === k)) return '';
   const f = fechaPaso(v, k); if (!f) return '';
   if (f > HOY) return `<div data-paso="${k}" class="sub paso-est">Plan (aún no pasa)</div>`;
   if (porConfirmar(v, k)) { const txt = (pasosDe(v).find(p => p[0] === k) || [])[1] || k;
-    return `<div data-paso="${k}" class="sub paso-est conf">⚠ Por confirmar · ${botonConfirmar({v, campo: k, fecha: f, txt})}</div>`; }
+    return `<div data-paso="${k}" class="sub paso-est conf">⚠ Sin confirmar · ${botonConfirmar({v, campo: k, fecha: f, txt})}</div>`; }
   return `<div data-paso="${k}" class="sub paso-est ok">✓ ${esc(textoConfirmacion(confirmacion(v, k)))}</div>`;
 }
 
@@ -3308,11 +3310,11 @@ function filasConfirmar(V){
 }
 function filaConfirmarHtml(x){
   const v = x.v, padre = v.padre ? ` <span class="sub">(subviaje de ${esc(v.padre)})</span>` : '';
-  const titulo = `¿Se hizo? ${esc(nombreTurno(v))}${padre}`;
+  const titulo = `Sin confirmar · ${esc(nombreTurno(v))}${padre}`;
   const detalle = x.P.map(p => `${esc(p.txt)} ${esc(fd(p.fecha))}${p.dias ? ` · <span style="${!p.naviera && p.dias > 1 ? 'color:var(--bad);font-weight:600' : ''}">hace ${p.dias} d sin confirmar</span>` : ' · hoy'}`).join('<br>')
     + '<br><span class="sub">Confírmelo con el conductor, la tirilla o el correo. Si no se hizo, abra el viaje y cambie la fecha (reprogramación).</span>';
   const pq = ' ' + x.P.map(p => p.txt.toLowerCase() + ' del ' + fd(p.fecha)).join(' y ');
-  const acc = [...x.P.map(p => botonConfirmar({v, ...p}, `✓ ${esc(p.txt)}`)),
+  const acc = [...x.P.map(p => botonConfirmar({v, ...p}, `Confirmar: ${esc(p.txt.toLowerCase())}`)),
     btnT('No se hizo: reprogramar', `data-t-abrir="${v.id}"`, 'Abre el viaje para poner la fecha nueva con su causa'),
     v.placa ? lnkT(ICONO_WA + 'Preguntar al conductor', waConductor(v, `¿se hizo${pq}? Confírmame por favor`)) : ''];
   return {titulo, detalle, acc};
@@ -4072,7 +4074,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // recarga solo con ?v=<nueva> (la dirección nueva evita la copia guardada del navegador y de GitHub Pages). Si hay una ventana
 // abierta o algo escrito sin guardar, no interrumpe: muestra arriba "Hay una versión nueva · Actualizar". La sesión "Ingresar como"
 // se conserva (sessionStorage). En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '42e8877045';
+const VERSION_TABLERO = 'f3ccb1b432';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 function actualizarTablero(v){ const u = new URL(location.href); u.searchParams.set('v', v); location.replace(u.toString()); }
