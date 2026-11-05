@@ -145,14 +145,14 @@ async function cargar(silencioso) {
 }
 // conductores enturnados y disponibles en la app Viajes ETP (turnos.html): vienen con los datos del tablero
 // (turnosConductores, Conductores.gs resumenTurnos_: últimos 10 días, sin los retirados); se piden aparte para no demorar Despacho
-let TURNOS = [], turnosHora = 0, DESTINOS = {}, VIAJES = [];   // DESTINOS: id del viaje -> país o bodega (Despacho no los trae)
+let TURNOS = [], turnosHora = 0, DESTINOS = {}, VIAJES = [], REGISTRO = null;   // REGISTRO: vehículos y conductores (cédula para la orden de cargue)   // DESTINOS: id del viaje -> país o bodega (Despacho no los trae)
 async function cargarTurnos(forzar) {
   if (!forzar && Date.now() - turnosHora < 5 * 60e3) return;
   try {
     const j = await (await fetch(API + '?' + new URLSearchParams({ formato: 'json', clave: CLAVE }))).json();
     if (!j.ok) return;
     TURNOS = j.turnosConductores || []; turnosHora = Date.now();
-    VIAJES = j.viajes || [];   // también para 📧 Orden de cargue (destino, motonave, puerto, fechas)
+    VIAJES = j.viajes || []; REGISTRO = j.registro || null;   // también para 📧 Orden de cargue (destino, motonave, puerto, fechas)
     VIAJES.forEach(v => { DESTINOS[v.id] = v.operacion === 'EXPO' ? v.pais : (v.bodega || v.destino); });
     if (D) { D.turnos = TURNOS; if (!$('#velo')) pintar(); }
   } catch (e) { /* sin turnos: Despacho sigue igual */ }
@@ -491,8 +491,9 @@ async function confirmarCargue(booking) {
     <form class="form" id="fcc" onsubmit="event.preventDefault()">
       <label class="full">Booking o pedido<select name="booking" onchange="pintarVehiculosCargue(true)">${B.map(x => `<option value="${esc(x.bk)}" ${x === sel ? 'selected' : ''}>${esc(x.viajes[0].operacion)} · ${x.viajes[0].operacion === 'IMPO' && x.viajes[0].pedido ? 'Pedido ' + esc(x.viajes[0].pedido) + ' · BL ' : ''}${esc(x.bk)} · ${esc(x.viajes.map(v => v.id).join(', '))} · ${esc(x.viajes[0].pais || x.viajes[0].bodega || '')}${x.viajes[0].fechaCargue ? ' · cargue ' + esc(x.viajes[0].fechaCargue) : ''}</option>`).join('')}</select>
         <span style="font-weight:400">Salen los viajes abiertos con vehículo asignado</span></label>
-      <div class="full ccgrupo">Tipo de orden<div id="ccTipos" style="display:flex;flex-wrap:wrap;gap:4px 16px">${Object.keys(CC_DATOS.tipos || {}).map(k => `<label style="flex-direction:row;align-items:center;gap:5px;font-weight:400;color:var(--text)"><input type="radio" name="tipo" value="${k}" onchange="aplicarTipoCargue(true)"> ${esc(CC_DATOS.tipos[k].titulo.replace('Orden de Cargue ', ''))}</label>`).join('')}</div></div>
+      <div class="full ccgrupo">Tipo de orden<div id="ccTipos" style="display:flex;flex-wrap:wrap;gap:4px 16px">${Object.keys(CC_DATOS.tipos || {}).map(k => `<label style="flex-direction:row;align-items:center;gap:5px;font-weight:400;color:var(--text)"><input type="radio" name="tipo" value="${k}" onchange="aplicarTipoCargue(true)"> ${esc(CC_DATOS.tipos[k].titulo.replace(/^Orden de (Cargue )?/, ''))}</label>`).join('')}</div></div>
       <div class="full" id="ccVeh"></div>
+      <label class="full ccveh" style="font-weight:400;color:var(--text)"><input type="checkbox" name="cedula" onchange="aplicarTipoCargue()"> Incluir la cédula del conductor <span style="color:var(--muted)">(si la bodega o la planta la pide para el ingreso; sale del registro de conductores)</span></label>
       <label><span id="ccHoraLbl">Hora de llegada</span><input type="time" name="hora" value="07:00" required>
         <span style="font-weight:400">La fecha sale del tablero (la de cada vehículo, arriba)</span></label>
       <label><span id="ccLugarLbl">Lugar</span><input name="lugar" list="ccLugares" placeholder="Patio, planta o puerto" required oninput="this.dataset.auto=''"><datalist id="ccLugares">${(CC_DATOS.lugares || []).map(x => `<option value="${esc(x)}">`).join('')}</datalist></label>
@@ -522,12 +523,17 @@ const DIAS_C = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'], MES_C = ['en
 const fdAnio = f => { const d = new Date(f + 'T12:00'); return `${DIAS_C[d.getDay()]} ${d.getDate()} ${MES_C[d.getMonth()]} ${d.getFullYear()}`; };   // como el tablero, con el año
 const tipoCargue = () => { const f = $('#fcc'), k = f && (f.querySelector('[name=tipo]:checked') || {}).value; return k && CC_DATOS.tipos[k] ? CC_DATOS.tipos[k] : null; };
 const fechaTablero = (v, T) => String((T.campos || []).map(k => v[k]).find(x => /^\d{4}-\d{2}-\d{2}/.test(String(x || ''))) || '').slice(0, 10);
+// el conductor en el registro por su nombre o un alias (sin tildes ni mayúsculas; como buscarConductor del dominio)
+const nomC = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const cedulaRegistro = nombre => { const n = nomC(nombre); if (!n || !REGISTRO) return '';
+  const c = (REGISTRO.conductores || []).find(x => [x.nombre].concat(String(x.alias || '').split(/[\/,;]/)).some(a => nomC(a) === n)); return c && c.cedula || ''; };
 const PUERTOS = { BUN: 'Puerto de Buenaventura', CTG: 'Puerto de Cartagena', SMR: 'Puerto de Santa Marta' };
 const bookingSel = () => { const f = $('#fcc'); return f && bookingsCargue().find(b => b.bk === f.booking.value); };
 // el paso que sigue: IMPO retiro en puerto; EXPO vacío si el retiro es más adelante, si no llenado en planta
 function tipoSugerido(x) {
   const v = x.viajes[0], hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
-  if (v.operacion === 'IMPO') return 'puerto';
+  // IMPO: retiro en puerto si la cita o el retiro es mañana o después; si no, el descargue en la bodega
+  if (v.operacion === 'IMPO') return String(v.citaRetiro || v.fechaRetiro || '').slice(0, 10) > hoy ? 'puerto' : 'descargue';
   // la orden se manda antes del paso: retiro mañana o después → vacío; retiro hoy o ya pasó → llenado (se puede cambiar)
   return !v.fechaRetiro || String(v.fechaRetiro).slice(0, 10) > hoy ? 'vacio' : 'llenado';
 }
@@ -539,8 +545,12 @@ function aplicarTipoCargue(aMano) {
   // la fecha de cada vehículo según el tipo, tal como está en el tablero; sin fecha: hay que llenarla allá
   x.viajes.forEach(y => { const el = f.querySelector(`[data-cc-fecha="${CSS.escape(y.id)}"]`); if (!el) return; const fe = fechaTablero(y, T);
     el.innerHTML = fe ? `📅 ${esc(T.paso)}: <b>${esc(fdAnio(fe))}</b>` : `<span style="color:var(--bad)">⚠ sin fecha de ${esc(T.paso)} en el tablero: llénela allá primero</span>`; });
+  // cédula (solo si se marca "Incluir la cédula"): se muestra la del registro; el servidor la vuelve a buscar al enviar
+  x.viajes.forEach(y => { const el = f.querySelector(`[data-cc-cc="${CSS.escape(y.id)}"]`); if (!el) return;
+    const cc = f.cedula.checked ? cedulaRegistro(y.conductor) : null;
+    el.innerHTML = !f.cedula.checked ? '' : cc ? `· 🪪 CC <b>${esc(cc)}</b>` : '<span style="color:var(--bad)">· ⚠ sin cédula en el registro</span>'; });
   // lugar: se cambia solo si estaba vacío o lo había puesto la sugerencia anterior (no se borra lo que escribió la persona)
-  const lugar = tipo === 'vacio' ? (v.patio ? 'Patio ' + v.patio : '') : tipo === 'puerto' ? (PUERTOS[String(v.puerto || '').toUpperCase()] || (v.puerto ? 'Puerto de ' + v.puerto : '')) : '';   // la base trae BUN o "Cartagena"
+  const lugar = tipo === 'vacio' ? (v.patio ? 'Patio ' + v.patio : '') : tipo === 'puerto' ? (PUERTOS[String(v.puerto || '').toUpperCase()] || (v.puerto ? 'Puerto de ' + v.puerto : '')) : tipo === 'descargue' ? (v.bodega || '') : '';   // la base trae BUN o "Cartagena"
   if (!f.lugar.value || f.lugar.dataset.auto) { f.lugar.value = lugar; f.lugar.dataset.auto = lugar ? '1' : ''; }
 }
 function pintarVehiculosCargue(cambio) {
@@ -551,7 +561,7 @@ function pintarVehiculosCargue(cambio) {
     + x.viajes.map(v => `<label class="ccveh" style="display:flex;gap:8px;border:1px solid var(--line);border-radius:8px;padding:7px 10px;margin-bottom:5px;font-weight:400">
       <input type="checkbox" data-cc-viaje="${esc(v.id)}" checked><span><b class="placa">${esc(v.placa)}</b> · ${esc(v.conductor || '')}${v.conductor ? '' : '<span class="tarde">sin conductor</span>'}
       <span class="sub" style="color:var(--muted)"> · ${esc(v.id)}${v.contenedor ? ' · ' + esc(v.contenedor) : ''}</span>
-      <br><span data-cc-fecha="${esc(v.id)}" style="font-size:13px"></span></span></label>`).join('');
+      <br><span data-cc-fecha="${esc(v.id)}" style="font-size:13px"></span> <span data-cc-cc="${esc(v.id)}" style="font-size:13px"></span></span></label>`).join('');
   // tipo de orden: solo los de la operación del viaje (EXPO: vacío o llenado; IMPO: retiro en puerto), con el paso que sigue marcado
   f.querySelectorAll('[name=tipo]').forEach(r => { const ok = (CC_DATOS.tipos[r.value] || {}).op === v0.operacion; r.parentElement.style.display = ok ? '' : 'none'; r.disabled = !ok; });
   const marcado = f.querySelector('[name=tipo]:checked');
@@ -576,7 +586,7 @@ function leerOrdenCargue(file) {
 }
 function datosCargue() {
   const f = $('#fcc'), marcadas = campo => [...f.querySelectorAll(`[data-cc-${campo}]:checked`)].map(i => i.getAttribute(`data-cc-${campo}`));
-  return { booking: f.booking.value, tipo: (f.querySelector('[name=tipo]:checked') || {}).value, viajes: marcadas('viaje'), hora: f.hora.value, lugar: f.lugar.value.trim(), comentario: f.comentario.value.trim(),
+  return { booking: f.booking.value, tipo: (f.querySelector('[name=tipo]:checked') || {}).value, viajes: marcadas('viaje'), hora: f.hora.value, cedula: f.cedula.checked, lugar: f.lugar.value.trim(), comentario: f.comentario.value.trim(),
     firma: { nombre: f.fnombre.value.trim(), cargo: f.fcargo.value.trim() }, para: marcadas('para'), cc: marcadas('cc'), ccOtros: f.ccOtros.value.trim() };
 }
 const estadoCargue = (txt, color) => { const e = $('#ccEstado'); if (e) e.innerHTML = `<span style="color:${color || 'inherit'}">${txt}</span>`; };
