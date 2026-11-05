@@ -3813,7 +3813,7 @@ $('#comEnviar').onclick = () => {
 };
 /* ---------- resumen-cliente.js · 📨 Resumen al cliente: elegir los viajes, probar y enviar ---------- */
 // Capa: pantalla (solo el equipo). El status de los viajes ya no le sale solo a Reckitt (Código.gs AVISO_CLIENTE.revisar): aquí se
-// ven los viajes que irían (con algún paso hoy o con un aviso de hito en cola, ya marcados) y los demás abiertos para agregarlos.
+// ven los viajes que irían (con algún paso hoy, un aviso de hito en cola, en curso o del mismo booking de otro marcado; ya marcados) y los demás abiertos para agregarlos.
 // Buscador arriba de la lista (booking, pedido, destino, viaje, solicitante, etapa): filtra las dos listas y "Marcar los encontrados".
 // Destinatarios: casillas con la lista de Código.gs DESTINATARIOS_RESUMEN (el Equipo ETP va en copia); se recuerda la última
 // elección en este navegador. "Enviar prueba" lo manda solo a calidad@ (sin copias, dice a quién iría; no marca la cola); "Enviar al
@@ -3829,7 +3829,7 @@ async function abrirResumenCliente(){
   } catch(e) { $('#rcLista').innerHTML = `<p class="missing">No se pudo cargar: ${esc(e.message)}</p>`; }
 }
 function filaResCli(x, marcado){
-  const por = [x.hoy && x.hoy.length && 'hoy: ' + x.hoy.join(', '), x.avisos && x.avisos.length && 'aviso: ' + x.avisos.join(' · ')].filter(Boolean).join(' · ');
+  const por = [x.hoy && x.hoy.length && 'hoy: ' + x.hoy.join(', '), x.avisos && x.avisos.length && 'aviso: ' + x.avisos.join(' · '), x.motivo].filter(Boolean).join(' · ');
   const texto = minus([x.id, x.operacion, x.ref, x.destino, x.solicitante, x.ahora, por].join(' '));   // lo que encuentra el buscador
   return `<label class="rc-fila" data-buscar="${esc(texto)}"><input type="checkbox" data-rc="${esc(x.id)}" ${marcado ? 'checked' : ''}>
     <span><b>${esc(x.operacion)} · ${esc([x.ref, x.destino].filter(Boolean).join(' · ') || x.id)}</b> <span class="sub">${esc(x.id)} · ${esc(x.solicitante || '')}</span><br>
@@ -3841,7 +3841,7 @@ function pintarResumenCliente(){
   $('#rcPara').innerHTML = '<b>Enviar a:</b><div class="rc-para">' + (R.destinatarios || []).map(d => `<label title="${esc(d.correos.join(', '))}"><input type="checkbox" data-rc-para="${esc(d.k)}" ${(prev ? prev.includes(d.k) : d.porDefecto) ? 'checked' : ''}> ${esc(d.nombre)}</label>`).join('') + '</div>';
   $('#rcLista').innerHTML = `<div class="rc-buscar"><input id="rcBuscar" placeholder="Buscar por booking, pedido, destino, viaje, solicitante…" autocomplete="off">
       <button type="button" class="btn" id="rcMarcar" title="Marca todos los viajes que muestra la búsqueda">Marcar los encontrados</button></div>`
-    + (cand.length ? `<h4 style="margin:8px 0 4px">Con algún paso hoy o aviso pendiente · ${cand.length}</h4>${cand.map(x => filaResCli(x, true)).join('')}`
+    + (cand.length ? `<h4 style="margin:8px 0 4px">Paso hoy, aviso pendiente, en curso o mismo booking · ${cand.length}</h4>${cand.map(x => filaResCli(x, true)).join('')}`
       : '<p class="sub">Hoy ningún viaje tiene pasos ni avisos pendientes.</p>')
     + (R.otros.length ? `<details style="margin-top:10px"><summary><b>Agregar otros viajes abiertos · ${R.otros.length}</b></summary>${R.otros.map(x => filaResCli(x, false)).join('')}</details>` : '');
   contarResCli();
@@ -3889,7 +3889,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // recarga solo con ?v=<nueva> (la dirección nueva evita la copia guardada del navegador y de GitHub Pages). Si hay una ventana
 // abierta o algo escrito sin guardar, no interrumpe: muestra arriba "Hay una versión nueva · Actualizar". La sesión "Ingresar como"
 // se conserva (sessionStorage). En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'f70f86381a';
+const VERSION_TABLERO = 'abac7a654d';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 function actualizarTablero(v){ const u = new URL(location.href); u.searchParams.set('v', v); location.replace(u.toString()); }
