@@ -374,6 +374,8 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
 .calif-item{margin-top:6px}
 .calif-acc{margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 #ovReg{z-index:60}   /* Completar datos se abre encima de la ventana del viaje (registro.js) */
+.quien-lista{display:grid;gap:8px}   /* Ingresar como (base.js elegirUsuario) */
+.quien-lista .btn{justify-content:space-between;display:flex;width:100%;text-align:left}
 </style>
 </head>
 <body>
@@ -390,6 +392,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
     </nav>
     <div class="spacer"></div>
     <div class="conn"><span class="dot" id="connDot"></span><span id="connTxt">Modo demo</span></div>
+    <button class="btn solo-interno" id="btnQuien" title="Quién está usando el tablero: su nombre queda en lo que guarda. Clic para cambiar" onclick="elegirUsuario()">👤 Ingresar como…</button>
     <button class="btn" id="btnTheme" title="Cambiar tema">◐</button>
     <a class="btn solo-interno" id="lnkDespacho" style="text-decoration:none;color:inherit" href="despacho.html" target="_blank" rel="noopener" title="Asignaciones de conductores: cita, instrucciones, imágenes, enlace por WhatsApp y revisión de la aceptación (cédula y selfie)">🚛 Despacho</a>
     <button class="btn primary solo-interno" id="btnBarrido" title="Lee ya mismo el buzón de calidad@ (últimos 2 días) y muestra qué correos de Reckitt y sus agentes no están en la base">⟳ Buscar correos ahora</button>
@@ -1346,12 +1349,43 @@ async function api(action, datos = {}){
     body: JSON.stringify({action, clave: window.CLAVE, ...datos})});
   return r.json();
 }
-// quien usa este navegador: el nombre que escribió una vez (o el que trae el enlace de su correo); queda en lo que guarda,
-// aprueba o cierra. usuarioActual cae al genérico de la configuración; pedirUsuario lo pregunta si aún no lo hay
-const usuarioGuardado = () => { try { return localStorage.getItem('rkt-usuario') || ''; } catch(e) { return ''; } };
+// INGRESAR COMO: al abrir el tablero (solo el equipo) cada persona elige quién es de la lista EQUIPO; ese nombre queda en todo lo
+// que guarda, aprueba o cierra (Historial, registro, calificaciones…) y no se escribe a mano. Vale mientras la pestaña esté abierta
+// (sessionStorage): cada vez que se entra se vuelve a elegir; se recuerda el último para tenerlo a un clic. Todavía sin clave
+// personal: el siguiente paso es que cada uno tenga la suya y el servidor ponga el nombre (ver docs/DECISIONES.md).
+const EQUIPO = [
+  {nombre: 'Eider Zea', area: 'Operaciones'}, {nombre: 'Jorge Mogollón', area: 'Operaciones'},
+  {nombre: 'Pedro González', area: 'Facturación'}, {nombre: 'Gerencia', area: 'Gerencia'}, {nombre: 'Bernardo Aristizábal', area: 'Calidad'},
+];
+const usuarioGuardado = () => { try { return sessionStorage.getItem('rkt-quien') || ''; } catch(e) { return ''; } };
 const usuarioActual = () => usuarioGuardado() || CFG.USUARIO || '';
-const guardarUsuario = u => { u = String(u || '').trim().slice(0, 60); if (u) try { localStorage.setItem('rkt-usuario', u); } catch(e){} return u; };
-const pedirUsuario = pregunta => usuarioGuardado() || guardarUsuario(prompt(pregunta) || '');
+// el nombre ya no se cambia desde las casillas: guardarUsuario devuelve el de la sesión (si no hay sesión, el que llega)
+const guardarUsuario = u => usuarioGuardado() || String(u || '').trim().slice(0, 60);
+const pedirUsuario = pregunta => usuarioGuardado() || String(prompt(pregunta) || '').trim().slice(0, 60);
+const CASILLAS_USUARIO = '#mUsuario,#regUsuario,#progUsuario,#barridoUsuario,#propUsuario,#subUsuario';
+function fijarUsuario(){
+  const u = usuarioGuardado();
+  document.querySelectorAll(CASILLAS_USUARIO).forEach(i => { i.value = u; i.readOnly = !!u; i.title = u ? 'Ingresó como ' + u + ' (se cambia arriba, en 👤)' : ''; });
+  const b = $('#btnQuien'); if (b) b.textContent = u ? '👤 ' + u : '👤 Ingresar como…';
+}
+function elegirUsuario(sugerido){
+  let ultimo = ''; try { ultimo = localStorage.getItem('rkt-usuario') || ''; } catch(e){}
+  const pre = EQUIPO.some(p => p.nombre === sugerido) ? sugerido : ultimo;
+  $('#ovQuien')?.remove();
+  document.body.insertAdjacentHTML('beforeend', `<div class="ov open" id="ovQuien" style="z-index:70"><div class="modal" role="dialog" aria-modal="true" style="width:min(420px,100%)">
+    <h3>Ingresar como…</h3><div class="sub" style="margin-bottom:12px">Su nombre queda en todo lo que guarde, apruebe o cierre en el tablero.</div>
+    <div class="quien-lista">${EQUIPO.map(p => `<button type="button" class="btn${p.nombre === pre ? ' primary' : ''}" data-quien="${esc(p.nombre)}">${esc(p.nombre)} <span class="sub">${esc(p.area)}</span></button>`).join('')}</div>
+    <div class="sub" style="margin-top:10px">¿No está en la lista? Pídale a Calidad que lo agregue.</div></div></div>`);
+  $('#ovQuien').onclick = e => {
+    const b = e.target.closest('[data-quien]'); if (!b) return;
+    const p = EQUIPO.find(x => x.nombre === b.dataset.quien);
+    try { sessionStorage.setItem('rkt-quien', p.nombre); localStorage.setItem('rkt-usuario', p.nombre);
+      // Facturación no se bloquea por las líneas rojas de los coordinadores (turno.js esFacturacion)
+      if (p.area === 'Facturación') sessionStorage.setItem('rkt-area', 'Facturación'); else sessionStorage.removeItem('rkt-area'); } catch(e){}
+    $('#ovQuien').remove(); fijarUsuario(); if (typeof render === 'function') render();
+    toast('Ingresó como ' + p.nombre);
+  };
+}
 // hora de Colombia, sin depender del reloj ni de la zona del computador: fecha, minutos del día, "HH:MM" y día ('Mon'…)
 function ahoraBogota(){
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {timeZone: 'America/Bogota', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit',
@@ -4124,8 +4158,9 @@ cargar().then(ok => { if (ok === false) return; if (window.MODO_CLIENTE) documen
     document.querySelector('#nav [data-v="viajes"]')?.click(); $('#q').value = clave; renderTabla(); }
   if (vid) { const u = new URL(location.href); u.searchParams.delete('viaje'); history.replaceState(null, '', u); }
   // enlace de un correo por área (ej. el de Facturación): ?vista=acciones&area=Facturación&usuario=Pedro González
+  // el ?usuario= del enlace solo sugiere el nombre en "Ingresar como": ya no queda guardado en el navegador (base.js elegirUsuario)
   const qp = new URLSearchParams(location.search);
-  if (qp.get('usuario')) guardarUsuario(qp.get('usuario'));
+  if (!window.MODO_CLIENTE) { fijarUsuario(); if (!usuarioGuardado()) elegirUsuario(qp.get('usuario')); }
   if (AREAS.includes(qp.get('area'))) { accArea = qp.get('area'); renderAcciones();
     if (accArea === 'Facturación') try { sessionStorage.setItem('rkt-area', accArea); } catch(e){} renderTurno(); }
   const vista = qp.get('vista') || 'turno';
