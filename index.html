@@ -373,6 +373,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
 .calif-just input{width:100%;margin-top:4px;box-sizing:border-box}
 .calif-item{margin-top:6px}
 .calif-acc{margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+#ovReg{z-index:60}   /* Completar datos se abre encima de la ventana del viaje (registro.js) */
 </style>
 </head>
 <body>
@@ -511,6 +512,14 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
     <div class="sub">Lo que los conductores marcaron en la app Viajes ETP. Asignar abre el viaje con el vehículo y el conductor puestos: revise y guarde.</div>
     <div id="turnosLista" style="margin-top:10px"></div>
     <div class="mfoot"><button class="btn" id="turnosCerrar">Cerrar</button></div>
+  </div>
+</div>
+<div class="ov" id="ovReg">
+  <div class="modal" role="dialog" aria-modal="true" style="width:min(760px,100%)">
+    <h3>🪪 Completar datos del registro</h3>
+    <div class="sub">Para asignar un vehículo y un conductor a un viaje deben estar completos en el registro: así se les puede llamar en viajes futuros. Se guardan en las pestañas Vehículos y Conductores de la base.</div>
+    <div id="regCuerpo" style="margin-top:8px"></div>
+    <div class="mfoot"><input id="regUsuario" placeholder="Su nombre (queda en el registro)" style="width:230px;margin-right:auto"><button class="btn" id="regCerrar">Cancelar</button><button class="btn primary" id="regGuardar">Guardar datos</button></div>
   </div>
 </div>
 <div class="ov" id="ovCom">
@@ -1370,7 +1379,8 @@ async function cargar(){
     window.PREGUNTAS = j.preguntas || [];   // preguntas al agente LogxIA (preguntas.js)
     window.TURNOS_C = j.turnosConductores || [];   // conductores enturnados y disponibles (app Viajes ETP)
     window.CONDUCTORES = j.conductores || [];
-    window.CALIF = j.calificaciones || null;   // calificación de conductores, solo el equipo (calificacion.js)
+    window.CALIF = j.calificaciones || null;
+    window.REGISTRO = j.registro || null;   // vehículos y conductores con sus datos, solo el equipo (registro.js)   // calificación de conductores, solo el equipo (calificacion.js)
     window.SEG_INICIO = j.seguimiento || '';
     window.CLAVE = clave;
     if (j.interno) $('#lnkDespacho').href = 'despacho.html?clave=' + encodeURIComponent(clave);   // Despacho entra con la misma clave del equipo
@@ -1396,7 +1406,7 @@ async function guardarCambio(id, cambios, usuario){
   const mal = ['contenedor', 'placa'].map(k => k in cambios ? datoMalEscrito(k, cambios[k]) : '').filter(Boolean);
   if (mal.length) { toast('No se guardó: ' + mal.join(' · ')); return false; }
   if (cambios.contenedor) cambios.contenedor = limpioId(cambios.contenedor);
-  const anterior = v.estado;
+  const anterior = v.estado, previo = Object.fromEntries(Object.keys(cambios).map(k => [k, v[k]]));   // para deshacer si la base no lo acepta
   Object.assign(v, cambios, {actualizado: new Date().toISOString()});
   if ('estado' in cambios) v.estadoHoja = cambios.estado;
   etapasViajes();
@@ -1409,6 +1419,7 @@ async function guardarCambio(id, cambios, usuario){
       const j = await api('update', {id, cambios:enBase, usuario, telefono: telefonoPara(id)});
       toast(j.ok ? (j.cambios ? `Guardado en la base: ${j.cambios} dato${j.cambios===1?'':'s'}` : 'Sin cambios en la base') : 'No se guardó: ' + (j.error||'error'));
       // F2: aviso del hito (avisos.js); asignación única: enlace del conductor (asignacion.js)
+      if (!j.ok) { Object.assign(v, previo); etapasViajes(); }
       if (j.ok && j.cambios) ofrecerAviso(v, cambios, usuario).then(() => ofrecerEnlaceConductor(v, j.asignacion));
     }catch(e){ toast('No se pudo guardar en la base, intente de nuevo'); }
   }
@@ -1742,6 +1753,7 @@ const MOTIVOS = {
   ronda: ['Sin contacto con los conductores', 'Urgencia operativa en curso', 'Otro'],
   seg: ['Conductor sin señal: se confirma en la próxima ronda', 'Esperando confirmación del puerto o la bodega', 'Otro'],
   cob: ['Sin vehículo disponible', 'Reckitt no ha confirmado la fecha', 'Viaje por reprogramar o cancelar', 'Otro'],
+  reg: ['El conductor o el propietario no responde: se completa en la próxima ronda', 'Vehículo de un tercero: datos por confirmar con la empresa', 'Otro'],
   cli: ['Esperando respuesta de Reckitt', 'Depende de otro (agente, naviera, aduana)', 'Otro'],
 };
 // excepción de una fila: "exc|<fila>|<motivo>"; Gerencia la aprueba ("ok|<fila>") o la rechaza ("no|<fila>").
@@ -1764,8 +1776,9 @@ function menusTurno(r){
   return [
     {id: 'seg', titulo: 'Seguimiento', meta: 'Todos los vehículos con seguimiento en esta ronda', vacio: 'Ningún vehículo en movimiento',
      ayuda: r ? `Ronda ${r.n} de ${RONDAS.length}: ¿dónde está cada vehículo? Los que no avanzan (en rojo) van primero: confirme con el conductor y registre si llegó o la novedad.` : `Primera ronda a las ${RONDAS[0]}:00`,
-     filas: V.filter(v => enSeguimiento([v]).length || sinActualizar(v).length).map(v => ({k: `seg${r ? r.n : 0}|${v.id}`, tipo: 'seg', v, p: pulsoViaje(v), roja: !!sinActualizar(v).length}))
-       .sort((a, b) => b.roja - a.roja || b.p.hace - a.p.hace)},
+     // primero los datos del registro que faltan (registro.js: vehículo y conductor completos), luego dónde va cada vehículo
+     filas: [...filasRegistro(V), ...V.filter(v => enSeguimiento([v]).length || sinActualizar(v).length).map(v => ({k: `seg${r ? r.n : 0}|${v.id}`, tipo: 'seg', v, p: pulsoViaje(v), roja: !!sinActualizar(v).length}))
+       .sort((a, b) => b.roja - a.roja || b.p.hace - a.p.hace)]},
     {id: 'cob', titulo: 'Cobertura', meta: `Ningún viaje sin vehículo a ${HORAS_COBERTURA} h o menos`, vacio: `Todos los viajes de las próximas ${HORAS_COBERTURA} h tienen vehículo`,
      ayuda: `Asigne vehículo a los viajes que arrancan en ${HORAS_COBERTURA} h o menos. Al guardar placa y conductor, el viaje sale de la lista.`,
      filas: cob.map(v => ({k: 'cob|' + v.id, tipo: 'cob', v, roja: true})),
@@ -1795,7 +1808,8 @@ function estadoTurno(){
   const vigenteExc = k => viva(excepcionDe(k, R));
   const rondaExc = excepcionDe('ronda' + n, R), rondaSaltada = viva(rondaExc);
   M.forEach(m => m.filas.forEach(x => { x.exc = excepcionDe(x.k, R); x.hecha = !x.roja && (x.tipo === 'nota' ? [...R.keys()].some(c => c.startsWith('nota|')) : R.has(x.k)); x.bloquea = !!x.roja && !vigenteExc(x.k) && !(m.id === 'seg' && rondaSaltada); }));
-  const segPend = M[0].filas.filter(x => !x.hecha && !vigenteExc(x.k)).length, resta = r ? r.vence - r.ahora : 0;
+  // los datos del registro de viajes a más de 72 h se piden, pero no impiden cerrar la ronda (registro.js filasRegistro)
+  const segPend = M[0].filas.filter(x => !x.hecha && !vigenteExc(x.k) && !(x.tipo === 'reg' && !x.roja)).length, resta = r ? r.vence - r.ahora : 0;
   const rondaHecha = !r || rondaSaltada || !segPend, rondaVencida = !!r && !rondaHecha && resta <= 0;
   const rojas = M.map((m, i) => m.filas.filter(x => x.bloquea).length + (i === 0 && rondaVencida ? 1 : 0));
   const excepciones = [...R.values()].filter(x => x.clave.startsWith('exc|')).map(x => { const k = x.clave.slice(4).split('|').slice(0, -1).join('|'); return {k, ...excepcionDe(k, R)}; });
@@ -1811,7 +1825,8 @@ const lnkT = (txt, url) => `<a class="link" href="${url}" target="_blank" rel="n
 function filaTurno(x, rev){
   const v = x.v, abrirV = v ? btnT('Abrir viaje', `data-t-abrir="${v.id}"`) : '', buscar = v ? clavesBusqueda(v).slice(0, 2).map(([k, c]) => lnkT(`🔎 ${esc(k)} ${esc(c)}`, urlBusqueda(c))).join(' ') : '';
   let titulo = '', detalle = '', acc = [], marca = rev ? '↺ Volver a la lista' : '✓ Revisado';
-  if (x.tipo === 'seg') {
+  if (x.tipo === 'reg') { ({titulo, detalle, acc} = filaRegistroHtml(x)); marca = ''; }   // registro.js
+  else if (x.tipo === 'seg') {
     const p = x.p;
     titulo = `${esc(v.placa)} · ${esc(v.operacion)} ${esc(v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || ''))} <span class="sub">· ${esc([v.conductor, refCliente(v), v.id].filter(Boolean).join(' · '))}</span>`;
     detalle = `📍 <b>${esc(p.donde)}</b>${p.quieto ? ` · <span style="${x.roja ? 'color:var(--bad);font-weight:600' : ''}">${esc(p.quieto)}</span>` : ''}`
@@ -1882,7 +1897,7 @@ function mensajeGrupo(){
   return `🚛 *Entrapetrol · viajes disponibles*\n${L.map((v, i) => `${i + 1}) ${fd(primerEvento(v))} · ${v.operacion}${v.unidad ? ' ' + v.unidad.replace('1X', '') + "'" : ''} · ${ruta(v)}`).join('\n')}\n\nEnturnarse o reportar disponibilidad aquí 👇\n${APP_TURNOS}`;
 }
 // selector del motivo de una excepción (en la misma fila)
-const tipoExc = k => k.startsWith('ronda') ? 'ronda' : k.startsWith('seg') ? 'seg' : k.startsWith('cob') ? 'cob' : 'cli';
+const tipoExc = k => k.startsWith('ronda') ? 'ronda' : k.startsWith('reg|') ? 'reg' : k.startsWith('seg') ? 'seg' : k.startsWith('cob') ? 'cob' : 'cli';
 const selectorMotivo = k => `<div class="tr-motivo"><select data-t-motivo="${esc(k)}">${MOTIVOS[tipoExc(k)].map(m => `<option>${esc(m)}</option>`).join('')}</select>
   ${btnT('Enviar a Gerencia', `data-t-excok="${esc(k)}"`)} ${btnT('Cancelar', 'data-t-exccancel="1"')}</div>`;
 // Gerencia: excepciones del día por aprobar
@@ -1954,6 +1969,9 @@ $('#v-turno').onclick = e => {   // incluye el reloj de la ronda (#turnoReloj)
   else if (d.tGsalir) { try { sessionStorage.removeItem('rkt-gerencia'); } catch(e){} renderTurno(); }
   else if ((d.tAprobar || d.tRechazar) && esGerencia()) { const k = d.tAprobar || d.tRechazar;
     if (confirm(`¿${d.tAprobar ? 'Aprobar' : 'Rechazar'} esta excepción como Gerencia?\n\nQueda registrado con su nombre y la hora.`)) marcarRevisado((d.tAprobar ? 'ok|' : 'no|') + k); }
+  else if (d.tVer) marcarVerificado(d.nombre, d.tVer);   // registro.js: respuesta al mensaje de prueba
+  else if (d.tReg) { const x = filasRegistro(viajes.filter(v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre)).find(y => y.k === d.tReg);   // registro.js
+    if (x) abrirRegistro(x.clase === 'P' ? x.nombre : '', x.clase === 'C' ? x.v.conductor : ''); }
   else if (d.tAbrir) abrir(d.tAbrir);
   else if (d.tActualizar) abrir(d.tActualizar);   // la ventana del viaje ofrece el siguiente paso (→ etapa hoy) y los datos
   else if (d.tNovedad) { abrir(d.tNovedad); const b = $('#mStates [data-e="Novedad"]'); if (b && !b.classList.contains('on')) b.click(); $('[data-tnov="Incidente"]')?.click(); const o = $('#novTexto'); if (o) { o.scrollIntoView({block: 'center'}); o.focus(); } }   // novedades.js
@@ -2806,6 +2824,8 @@ $('#mSave').onclick = () => {
   // contenedor o placa mal escritos (dominio.js datoMalEscrito): la ventana queda abierta en el campo para corregirlo
   const mal = ['contenedor', 'placa'].find(k => k in cambios && datoMalEscrito(k, cambios[k]));
   if (mal) { $(`#mForm [data-k=${mal}]`)?.focus(); return toast(datoMalEscrito(mal, cambios[mal])); }
+  // placa o conductor nuevos: solo con sus datos completos en el registro (registro.js); al completarlos se vuelve a guardar
+  if (!registroCompleto(cambios.placa, cambios.conductor, () => $('#mSave').click())) return;
   guardarUsuario(usuario);
   if (Object.keys(cambios).length) guardarCambio(editId, cambios, usuario);
   cerrar();
@@ -2929,6 +2949,138 @@ $('#ov').addEventListener('change', e => {
   s.parentElement.querySelector('.calif-just').classList.toggle('hidden', Number(s.value) < 0);
   totalCalif();
 });
+/* ---------- Registro de vehículos y conductores: completar los datos ---------- */
+// El registro (pestañas Vehículos y Conductores de la base; Base.gs leerRegistro_) llega solo al equipo en window.REGISTRO.
+// Para asignar placa o conductor en un viaje deben estar completos: vehículo con propietario y su celular, conductor con cédula y
+// celular. Si falta algo, la ventana "Completar datos" lo pide y, al guardar (doPost 'registro'), sigue con lo que se estaba
+// haciendo. El servidor exige lo mismo al guardar el viaje. Mi turno (Seguimiento) lista primero los que faltan de los viajes de los
+// próximos 7 días y bloquea por los que arrancan en 72 h o menos o están en movimiento.
+const REG = () => window.REGISTRO || null;
+const placaR = p => String(p || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const celR = t => { t = String(t || '').replace(/\D/g, '').replace(/^57(?=3\d{9}$)/, ''); return /^3\d{9}$/.test(t) ? t : ''; };
+const listaR = x => String(x || '').split(/\s*[\/,;]\s*/).map(s => s.trim()).filter(Boolean);
+const realR = x => x && !/^(pend|cancel|sin info)/i.test(String(x));
+const vehiculoReg = placa => REG() && placaR(placa) ? REG().vehiculos.find(x => placaR(x.placa) === placaR(placa)) || null : null;
+const conductorReg = nombre => REG() && nombre ? REG().conductores.find(x => [x.nombre, ...listaR(x.alias)].some(a => claveCond(a) === claveCond(nombre))) || null : null;
+// lo que falta, en palabras ([] = completo); sin registro cargado (cliente o error) no se exige nada
+function faltaVehiculo(placa){
+  if (!REG() || !realR(placa)) return [];
+  const v = vehiculoReg(placa); if (!v) return ['no está en el registro'];
+  return [!v.propietario && 'propietario', !celR(v.celularPropietario) && 'celular del propietario'].filter(Boolean);
+}
+function faltaConductor(nombre){
+  if (!REG() || !realR(nombre)) return [];
+  const c = conductorReg(nombre); if (!c) return ['no está en el registro'];
+  return [!c.cedula && 'cédula', !celR(c.celular) && 'celular'].filter(Boolean);
+}
+
+// MENSAJE DE PRUEBA: al registrar o cambiar el celular de un conductor se abre WhatsApp a ese número con este texto; cuando
+// responde, el coordinador marca en Mi turno si es él (Sí) o no (se quita el celular y se vuelve a pedir). Columna "Celular verificado".
+const mensajePrueba = nombre => `Hola ${String(nombre || '').split(' ')[0]}, te escribe Operaciones de ENTRAPETROL. Estamos registrando este número para avisarte de viajes y novedades. Por favor responde *SÍ* y tus dos apellidos para confirmar que eres ${nombre}. Si no eres tú, responde *NO*. ¡Gracias!`;
+const verificado = c => /^s[ií]/i.test(String(c && c.verificado || ''));
+async function marcarVerificado(nombre, resultado){
+  if (resultado === 'No' && !confirm(`¿El número no es de ${nombre}?\n\nSe quita el celular del registro y hay que pedir el correcto.`)) return;
+  const usuario = usuarioActual() || pedirUsuario('¿Quién confirma? (queda con su nombre)'); if (!usuario) return;
+  try {
+    const j = await api('registro', {tipo: 'verificar', datos: {nombre, resultado}, usuario});
+    if (!j.ok) throw new Error(j.error || 'error');
+    window.REGISTRO = j.registro; renderTurno();
+    toast(resultado === 'Sí' ? `Celular de ${nombre} confirmado` : `Celular quitado: pida el número correcto de ${nombre}`);
+  } catch(e) { toast('No se guardó: ' + e.message); }
+}
+
+let regContinuar = null, regPide = {};
+/** true si placa y conductor están completos; si no, abre "Completar datos" y, al guardar, llama a continuar(). */
+function registroCompleto(placa, conductor, continuar){
+  const fv = faltaVehiculo(placa), fc = faltaConductor(conductor);
+  if (!fv.length && !fc.length) return true;
+  abrirRegistro(fv.length ? placa : '', fc.length ? conductor : '', continuar);
+  return false;
+}
+function abrirRegistro(placa, conductor, continuar){
+  regContinuar = continuar || null; regPide = {placa: realR(placa) ? placaR(placa) : '', conductor: realR(conductor) ? String(conductor).trim().toUpperCase() : ''};
+  const v = vehiculoReg(regPide.placa) || {}, c = conductorReg(regPide.conductor) || {};
+  const campo = (id, l, val, ph, extra = '') => `<div><label>${l}</label><input id="${id}" value="${esc(val || '')}" placeholder="${esc(ph)}" ${extra}></div>`;
+  $('#regCuerpo').innerHTML =
+    (regPide.placa ? `<fieldset class="mgrupo"><legend>🚚 Vehículo ${esc(regPide.placa)} ${vehiculoReg(regPide.placa) ? '' : '<span class="sub">· nuevo en el registro</span>'}</legend><div class="fgrid3">
+      ${campo('regEmpresa', 'Empresa', v.empresa || 'ENTRAPETROL', 'ENTRAPETROL o el tercero')}
+      ${campo('regProp', 'Propietario *', v.propietario, 'Nombre o empresa dueña del vehículo')}
+      ${campo('regCelProp', 'Celular del propietario *', v.celularPropietario, '3001234567', 'inputmode="numeric"')}</div></fieldset>` : '')
+    + (regPide.conductor ? `<fieldset class="mgrupo"><legend>🧑‍✈️ Conductor ${esc(regPide.conductor)} ${conductorReg(regPide.conductor) ? '' : '<span class="sub">· nuevo en el registro</span>'}</legend><div class="fgrid3">
+      ${campo('regNombre', 'Nombre completo *', c.nombre || regPide.conductor, 'Nombres y apellidos como en la cédula')}
+      ${campo('regCedula', 'Cédula *', c.cedula, 'Solo números', 'inputmode="numeric"')}
+      ${campo('regCel', 'Celular *', c.celular, '3001234567', 'inputmode="numeric"')}</div></fieldset>` : '');
+  $('#regUsuario').value = usuarioGuardado() || $('#mUsuario')?.value || '';
+  $('#ovReg').classList.add('open');
+  ($('#regCuerpo input:not([value]), #regCuerpo input[value=""]') || $('#regCuerpo input'))?.focus();
+}
+const valR = id => ($('#' + id)?.value || '').trim();
+async function guardarRegistroUI(){
+  const usuario = valR('regUsuario'); if (!usuario) { $('#regUsuario').focus(); return toast('Escriba su nombre'); }
+  const envios = [];
+  if (regPide.placa) {
+    if (valR('regProp').length < 3) { $('#regProp').focus(); return toast('Escriba el propietario'); }
+    if (!celR(valR('regCelProp'))) { $('#regCelProp').focus(); return toast('Celular del propietario: 10 dígitos, empieza por 3'); }
+    envios.push({tipo: 'vehiculo', datos: {placa: regPide.placa, empresa: valR('regEmpresa'), propietario: valR('regProp'), celularPropietario: valR('regCelProp')}});
+  }
+  if (regPide.conductor) {
+    if (valR('regNombre').split(/\s+/).length < 2) { $('#regNombre').focus(); return toast('Escriba nombre y apellido'); }
+    if (!/^\d{5,11}$/.test(valR('regCedula').replace(/\D/g, ''))) { $('#regCedula').focus(); return toast('Cédula: solo números, de 5 a 11 dígitos'); }
+    if (!celR(valR('regCel'))) { $('#regCel').focus(); return toast('Celular del conductor: 10 dígitos, empieza por 3'); }
+    envios.push({tipo: 'conductor', datos: {nombre: valR('regNombre'), cedula: valR('regCedula'), celular: valR('regCel'), comoAparece: regPide.conductor, placa: regPide.placa}});
+  }
+  guardarUsuario(usuario);
+  // celular nuevo o cambiado: mensaje de prueba por WhatsApp (se abre ya, con el clic, para que el navegador no lo bloquee)
+  if (regPide.conductor) { const c = conductorReg(regPide.conductor);
+    if (!c || celR(c.celular) !== celR(valR('regCel'))) window.open(waLink('57' + celR(valR('regCel')), mensajePrueba(valR('regNombre').toUpperCase())), '_blank'); }
+  const b = $('#regGuardar'); b.disabled = true; b.textContent = 'Guardando…';
+  try {
+    for (const e of envios) {
+      const j = await api('registro', {...e, usuario});
+      if (!j.ok) throw new Error(j.error || 'error');
+      window.REGISTRO = j.registro;
+    }
+    $('#ovReg').classList.remove('open'); toast('Datos guardados en el registro');
+    if (typeof renderTurno === 'function') renderTurno();
+    const seguir = regContinuar; regContinuar = null; if (seguir) seguir();
+  } catch(e) { toast('No se guardó: ' + e.message); }
+  finally { b.disabled = false; b.textContent = 'Guardar datos'; }
+}
+// Mi turno · Seguimiento: vehículos y conductores de los viajes de los próximos 7 días (o en movimiento) con datos incompletos.
+// Bloquea (roja) si el viaje arranca en 72 h o menos o ya está en movimiento. Una fila por vehículo o conductor.
+function filasRegistro(V){
+  if (!REG()) return [];
+  const filas = new Map();
+  V.filter(v => v.placa || v.conductor).forEach(v => {
+    const d = primerEvento(v) ? diffDias(primerEvento(v)) : null, mov = enSeguimiento([v]).length > 0;
+    if (!mov && (d === null || d > 7)) return;
+    const roja = mov || (d !== null && d <= 3);
+    [['P', v.placa, faltaVehiculo(v.placa)], ['C', v.conductor, faltaConductor(v.conductor)]].forEach(([t, x, falta]) => {
+      if (!falta.length) return;
+      const nombre = t === 'P' ? placaR(x) : ((conductorReg(x) || {}).nombre || String(x).toUpperCase());   // el nombre del registro, no el del viaje
+      const k = `reg|${t}|${t === 'P' ? nombre : claveCond(nombre)}`, prev = filas.get(k);
+      if (!prev) filas.set(k, {k, tipo: 'reg', clase: t, nombre, falta, v, roja});
+      else if (roja && !prev.roja) Object.assign(prev, {v, roja});
+    });
+    // celular completo pero sin confirmar con el mensaje de prueba: se pide, no bloquea
+    const c = realR(v.conductor) && conductorReg(v.conductor);
+    if (c && c.cedula && celR(c.celular) && !verificado(c)) { const k = 'ver|' + claveCond(c.nombre);
+      if (!filas.has(k)) filas.set(k, {k, tipo: 'reg', clase: 'V', nombre: c.nombre, celular: celR(c.celular), estadoVer: c.verificado, falta: ['confirmar celular'], v, roja: false}); }
+  });
+  return [...filas.values()].sort((a, b) => b.roja - a.roja || String(primerEvento(a.v) || '').localeCompare(String(primerEvento(b.v) || '')));
+}
+function filaRegistroHtml(x){
+  const d = primerEvento(x.v) ? diffDias(primerEvento(x.v)) : null;
+  if (x.clase === 'V') return {titulo: `📲 Confirmar celular · ${esc(x.nombre)} <span class="sub">(${esc(x.celular)})</span>`,
+    detalle: `${x.estadoVer ? esc(x.estadoVer) : 'Nunca se le envió el mensaje de prueba'} · cuando responda, marque si es él · ${esc(nombreTurno(x.v))}`,
+    acc: [lnkT(ICONO_WA + 'Enviar prueba', waLink('57' + x.celular, mensajePrueba(x.nombre))),
+      btnT('✓ Respondió: es él', `data-t-ver="Sí" data-nombre="${esc(x.nombre)}"`), btnT('✖ No es él', `data-t-ver="No" data-nombre="${esc(x.nombre)}"`)]};
+  return {titulo: `🪪 Completar datos · ${esc(x.nombre)} <span class="sub">(${x.clase === 'P' ? 'vehículo' : 'conductor'})</span>`,
+    detalle: `Falta: <b>${esc(x.falta.join(', '))}</b> · ${esc(nombreTurno(x.v))}${d !== null ? ' · ' + (d < 0 ? 'en curso' : d === 0 ? 'hoy' : d === 1 ? 'mañana' : fd(primerEvento(x.v))) : ''}`,
+    acc: [btnT('🪪 Completar', `data-t-reg="${esc(x.k)}"`, 'Abre los datos que faltan; se guardan en el registro de la base')]};
+}
+$('#regGuardar').onclick = guardarRegistroUI;
+$('#regCerrar').onclick = () => { regContinuar = null; $('#ovReg').classList.remove('open'); };
 /* ---------- llenar datos desde correos (con revisión y aprobación) ---------- */
 let PROP = [];
 // cada área revisa lo suyo: los datos de cobro (relación de Pedro y aprobación de Reckitt) son de Facturación; el resto, de Operaciones
