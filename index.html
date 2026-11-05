@@ -1433,6 +1433,11 @@ function hitosDe(v){
     [v.fechaUrbano, 'Urbano al destino final', v.bodega]]
     .filter(([f]) => f).map(([f, que, donde]) => ({f: String(f).slice(0, 10), que, donde}));
 }
+// qué se dibuja sobre la parada en curso (5-nov, pedido del usuario; lo usan lean.js y el correo al cliente de Cliente.gs):
+// en la motonave un barco con el contenedor, en el arribo (destino de la EXPO, puerto de llegada de la IMPO) el contenedor en una
+// grúa, en lo demás (tierra) la tractomula
+const iconoEtapa = (v, et) => et === 'Motonave' ? 'barco'
+  : (v.operacion === 'EXPO' && et === 'Destino') || (v.operacion === 'IMPO' && et === 'Origen') ? 'grua' : 'camion';
 // la etapa de la operación como se ve en la tarjeta: "En camino a puerto · cita de ingreso jue 5 nov", "Zarpó ✔"…
 // cliente = la ve Reckitt (tablero de solo lectura o resumen por correo): la tirilla es un documento interno, no se menciona
 function etapaAhora(v, P, n, cliente){
@@ -2621,17 +2626,14 @@ function renderMotonaves(){
 // paradas, avance, bodegaCargue y contenedorDeBooking están en el dominio (dominio.js): también los usa el correo al cliente
 function miniAvance(v){ const {P,n} = avance(v); return `<span class="mini" title="${esc(n<P.length ? 'En: '+P[n][0] : 'Completo')}">${P.map((_,i)=>`<i class="${i<n?'ok':i===n?'ya':''}"></i>`).join('')}</span>`; }
 
-// icono sobre la parada en curso (5-nov, igual que el correo al cliente en Cliente.gs): en la motonave un barco con el contenedor
-// encima, en el arribo (destino de la EXPO, puerto de llegada de la IMPO) el contenedor en una grúa; en lo demás el camión
-function iconoParada(v, et){
-  if (et === 'Motonave') return '<span class="ico barco" title="En la motonave"><i class="cab"></i><i class="cont"></i><i class="casco"></i><i class="agua"></i></span>';
-  if ((v.operacion === 'EXPO' && et === 'Destino') || (v.operacion === 'IMPO' && et === 'Origen'))
-    return '<span class="ico grua" title="Arribo"><i class="brazo"></i><i class="torre"></i><i class="cable"></i><i class="cont"></i></span>';
-  // tractomula igual a la del correo (5-nov: el camioncito de 3 llantas "parece hormiga"): contenedor fucsia en el remolque (3 ejes),
-  // cabina con ventana, 2 ejes atrás y 1 adelante
-  return '<span class="ico camion" title="En camino"><i class="carga"></i><i class="chasis"></i><i class="cabina"></i><i class="vent"></i>'
-    + [3, 9, 15, 27, 33, 44].map(x => `<i class="ll" style="left:${x}px"></i>`).join('') + '</span>';
-}
+// dibujo sobre la parada en curso: cuál va lo decide el dominio (iconoEtapa, el mismo del correo al cliente); aquí solo las piezas
+// que pinta estilos.css (.ruta .ico). Tractomula: contenedor fucsia en remolque de 3 ejes, cabina con ventana, 2 ejes atrás y 1 adelante
+const ICONOS_RUTA = {
+  barco: '<span class="ico barco" title="En la motonave"><i class="cab"></i><i class="cont"></i><i class="casco"></i><i class="agua"></i></span>',
+  grua: '<span class="ico grua" title="Arribo"><i class="brazo"></i><i class="torre"></i><i class="cable"></i><i class="cont"></i></span>',
+  camion: '<span class="ico camion" title="En camino"><i class="carga"></i><i class="chasis"></i><i class="cabina"></i><i class="vent"></i>'
+    + [3, 9, 15, 27, 33, 44].map(x => `<i class="ll" style="left:${x}px"></i>`).join('') + '</span>' };
+const iconoParada = (v, et) => ICONOS_RUTA[iconoEtapa(v, et)];
 function leadFactura(v){
   const fin = fechaFinTransporte(v);
   if (!fin) return null;
@@ -4354,7 +4356,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '47d14338f0';
+const VERSION_TABLERO = 'c403338d95';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
