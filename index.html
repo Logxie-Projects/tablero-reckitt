@@ -398,7 +398,9 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
 .quien-lista .btn{justify-content:space-between;display:flex;width:100%;text-align:left}
 /* resumen al cliente: los botones de enviar siempre a la vista, fijos abajo de la ventana (en el celular quedaban debajo de la lista) */
 #ovResCli .mfoot{position:sticky;bottom:-1px;background:var(--surface);padding:10px 0 4px;margin-bottom:-4px;border-top:1px solid var(--border);z-index:2;flex-wrap:wrap}
-#ovResCli #rcEstado{position:sticky;bottom:64px;background:var(--surface);z-index:2}
+/* indicador bajo los botones: hora y resultado de cada vez que se presiona (resumen-cliente.js anotarResCli) */
+#rcHist{flex-basis:100%;font-size:12px;font-weight:600;line-height:1.45;margin-top:2px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
 .rc-fila{display:flex;gap:10px;align-items:flex-start;padding:7px 4px;border-bottom:1px solid var(--border);cursor:pointer}   /* resumen-cliente.js */
 .rc-fila input{margin-top:3px}
 .rc-para{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:4px;font-size:13px;color:var(--text)}   /* resumen-cliente.js */
@@ -565,7 +567,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
     <div class="sub">Status de los viajes para Reckitt, sin enlaces. Marque los que van; "Enviar prueba" lo manda solo a calidad@ para revisarlo.</div>
     <div class="sub" id="rcPara" style="margin-top:6px"></div>
     <div id="rcLista" style="margin-top:8px;max-height:55vh;overflow:auto"></div>
-    <div id="rcEstado" class="sub" style="margin-top:8px;font-weight:600" role="status" aria-live="polite"></div><div class="mfoot"><span class="sub" id="rcN" style="margin-right:auto"></span><button class="btn" id="rcCerrar">Cerrar</button><button class="btn" id="rcPrueba">Enviar prueba (a calidad@)</button><button class="btn primary" id="rcEnviar">Enviar al cliente</button></div>
+    <div class="mfoot"><span class="sub" id="rcN" style="margin-right:auto"></span><button class="btn" id="rcCerrar">Cerrar</button><button class="btn" id="rcPrueba">Enviar prueba (a calidad@)</button><button class="btn primary" id="rcEnviar">Enviar al cliente</button><div id="rcHist" class="rc-hist" role="status" aria-live="polite"></div></div>
   </div>
 </div>
 <div class="ov" id="ovCom">
@@ -4189,7 +4191,7 @@ let RES_CLI = null;
 async function abrirResumenCliente(){
   $('#rcLista').innerHTML = '<p class="sub">Cargando los viajes…</p>'; $('#rcPara').textContent = ''; $('#ovResCli').classList.add('open');
   // mientras carga (5 a 15 s en el celular) no se puede enviar: antes los botones se veían activos y al presionarlos no pasaba nada
-  $('#rcPrueba').disabled = $('#rcEnviar').disabled = true; $('#rcN').textContent = 'Cargando… los botones se activan al terminar'; estadoResCli('');
+  $('#rcPrueba').disabled = $('#rcEnviar').disabled = true; $('#rcN').textContent = 'Cargando… los botones se activan al terminar'; pintarHistResCli();
   try {
     const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=resumenCliente&clave=' + encodeURIComponent(claveActual()))).json();
     if (!j.ok) throw new Error(j.error || 'error');
@@ -4226,27 +4228,43 @@ const nombresPara = () => [...document.querySelectorAll('#rcPara [data-rc-para]:
 function contarResCli(){
   const n = elegidosResCli().length, p = paraResCli().filter(k => k !== 'etp').length;
   // con los botones apagados se dice por qué (antes solo se veían grises y "no hacían nada")
-  $('#rcN').textContent = `${n} viaje${n === 1 ? '' : 's'} · ${p} destinatario${p === 1 ? '' : 's'} de Reckitt${!n ? ' · marque al menos un viaje' : !p ? ' · marque al menos un destinatario de Reckitt' : ''}`;
-  $('#rcEnviar').disabled = $('#rcPrueba').disabled = !n || !p;
+  $('#rcN').textContent = `${n} viaje${n === 1 ? '' : 's'} · ${p} destinatario${p === 1 ? '' : 's'} de Reckitt${!n ? ' · marque al menos un viaje' : !p ? ' · para enviar al cliente marque al menos un destinatario' : ''}`;
+  // los botones ya no se apagan por falta de datos (5-nov: apagados se veían iguales y "no hacían nada"): al presionar, el
+  // indicador de abajo dice qué falta. Solo se apagan mientras carga la lista o mientras se envía
+  $('#rcEnviar').disabled = $('#rcPrueba').disabled = false;
 }
-// el resultado queda escrito en la ventana (no solo en un aviso que desaparece): así se sabe si salió o por qué no
-const estadoResCli = (txt, color) => { const e = $('#rcEstado'); if (e) { e.textContent = txt; e.style.color = color || ''; } };
+// indicador debajo de los botones: cada vez que se presiona queda una línea con la hora y el resultado (las últimas 6 de esta sesión),
+// para saber si se presionó, si salió o por qué no
+let histResCli = []; try { histResCli = JSON.parse(sessionStorage.getItem('rkt-rc-hist') || '[]'); } catch(e){}
+function pintarHistResCli(){
+  const h = $('#rcHist'); if (!h) return;
+  const color = {ok: 'var(--ok)', mal: 'var(--bad)', va: 'var(--warn)', nada: 'var(--muted)'};
+  h.innerHTML = histResCli.slice(-6).reverse().map(x => `<div style="color:${color[x.e] || ''}">${esc(x.hora)} · ${esc(x.que)} · ${esc(x.txt)}</div>`).join('');
+  try { sessionStorage.setItem('rkt-rc-hist', JSON.stringify(histResCli.slice(-6))); } catch(e){}
+}
+const anotarResCli = (que, txt, e) => { const x = {hora: new Date().toLocaleTimeString('es-CO', {timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', second: '2-digit'}), que, txt, e};
+  histResCli.push(x); pintarHistResCli(); return x; };
+const cambiarResCli = (x, txt, e) => { x.txt = txt; x.e = e; pintarHistResCli(); };
 async function enviarResCli(prueba){
-  const viajesSel = elegidosResCli(); if (!viajesSel.length) return estadoResCli('Marque al menos un viaje', 'var(--bad)');
+  const que = prueba ? 'Prueba' : 'Al cliente';
+  const x = anotarResCli(que, 'presionado', 'va');   // queda constancia de que el botón se presionó
+  const viajesSel = elegidosResCli(); if (!viajesSel.length) return cambiarResCli(x, '✖ no se envió: marque al menos un viaje', 'mal');
+  const para = paraResCli();
+  // la prueba solo va a calidad@: no necesita destinatarios; el envío al cliente sí
+  if (!prueba && !para.filter(k => k !== 'etp').length) return cambiarResCli(x, '✖ no se envió: marque al menos un destinatario de Reckitt en "Enviar a"', 'mal');
   // sin nombre: se abre "Ingresar como" (base.js) y se vuelve a presionar; nada de prompt()/confirm(), que el celular puede bloquear
-  const usuario = pedirUsuario(); if (!usuario) return estadoResCli('Elija quién es (Ingresar como) y vuelva a presionar', 'var(--warn)');
-  const para = paraResCli(); try { localStorage.setItem('rkt-rc-para', JSON.stringify(para)); } catch(e){}
-  if (!prueba && !await preguntarSiNo(`¿Enviar a Reckitt el status de ${viajesSel.length} viaje${viajesSel.length === 1 ? '' : 's'}?\n\nPara: ${nombresPara().join(', ')}`, 'Sí, enviar')) return estadoResCli('Envío cancelado');
+  const usuario = pedirUsuario(); if (!usuario) return cambiarResCli(x, '✖ no se envió: elija quién es (Ingresar como) y vuelva a presionar', 'mal');
+  try { localStorage.setItem('rkt-rc-para', JSON.stringify(para)); } catch(e){}
+  if (!prueba && !await preguntarSiNo(`¿Enviar a Reckitt el status de ${viajesSel.length} viaje${viajesSel.length === 1 ? '' : 's'}?\n\nPara: ${nombresPara().join(', ')}`, 'Sí, enviar')) return cambiarResCli(x, 'cancelado', 'nada');
   const b = prueba ? $('#rcPrueba') : $('#rcEnviar'), txt = b.textContent; b.disabled = true; b.textContent = 'Enviando…';
-  estadoResCli('Enviando…');
+  cambiarResCli(x, `enviando ${viajesSel.length} viaje${viajesSel.length === 1 ? '' : 's'}…`, 'va');
   try {
     const j = await api('resumenCliente', {viajes: viajesSel, para, usuario, prueba: !!prueba});
     if (!j.ok) throw new Error(j.error || 'error');
-    const hora = ahoraBogota().hhmm || '';
-    const ok = prueba ? `✓ Prueba enviada a ${j.para} ${hora}: revise el correo` : `✓ Resumen enviado a Reckitt ${hora} · ${j.viajes} viaje${j.viajes === 1 ? '' : 's'}`;
-    estadoResCli(ok, 'var(--ok)'); toast(ok);
-    if (!prueba) setTimeout(() => $('#ovResCli').classList.remove('open'), 2500);
-  } catch(e) { estadoResCli('✖ No se envió: ' + e.message, 'var(--bad)'); toast('No se envió: ' + e.message); }
+    const ok = prueba ? `✓ enviada a ${j.para} (${j.viajes} viaje${j.viajes === 1 ? '' : 's'}): revise Recibidos` : `✓ enviado a Reckitt (${j.viajes} viaje${j.viajes === 1 ? '' : 's'}) · ${(j.para || []).join(', ')}`;
+    cambiarResCli(x, ok, 'ok'); toast(que + ' ' + ok);
+    if (!prueba) setTimeout(() => $('#ovResCli').classList.remove('open'), 4000);
+  } catch(e) { cambiarResCli(x, '✖ no se envió: ' + e.message, 'mal'); toast('No se envió: ' + e.message); }
   finally { b.textContent = txt; contarResCli(); }
 }
 $('#btnResCli').onclick = abrirResumenCliente;
@@ -4267,7 +4285,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '03d830f921';
+const VERSION_TABLERO = '3956a1efcb';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
