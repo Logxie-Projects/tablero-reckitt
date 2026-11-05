@@ -378,6 +378,8 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
 .quien-lista .btn{justify-content:space-between;display:flex;width:100%;text-align:left}
 .rc-fila{display:flex;gap:10px;align-items:flex-start;padding:7px 4px;border-bottom:1px solid var(--border);cursor:pointer}   /* resumen-cliente.js */
 .rc-fila input{margin-top:3px}
+.rc-para{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:4px;font-size:13px;color:var(--text)}   /* resumen-cliente.js */
+.rc-para label{display:flex;gap:5px;align-items:center;cursor:pointer}
 </style>
 </head>
 <body>
@@ -3808,9 +3810,10 @@ $('#comEnviar').onclick = () => {
 /* ---------- resumen-cliente.js · 📨 Resumen al cliente: elegir los viajes, probar y enviar ---------- */
 // Capa: pantalla (solo el equipo). El status de los viajes ya no le sale solo a Reckitt (Código.gs AVISO_CLIENTE.revisar): aquí se
 // ven los viajes que irían (con algún paso hoy o con un aviso de hito en cola, ya marcados) y los demás abiertos para agregarlos.
-// "Enviar prueba" lo manda solo a calidad@ (sin copias, no marca la cola); "Enviar al cliente" lo manda a los solicitantes con la
-// copia de AVISO_CLIENTE. El correo no lleva enlaces (Cliente.gs). Datos: GET ?que=resumenCliente (vistaResumenCliente_);
-// envío: doPost 'resumenCliente' {viajes, usuario, prueba}.
+// Destinatarios: casillas con la lista de Código.gs DESTINATARIOS_RESUMEN (el Equipo ETP va en copia); se recuerda la última
+// elección en este navegador. "Enviar prueba" lo manda solo a calidad@ (sin copias, dice a quién iría; no marca la cola); "Enviar al
+// cliente" lo manda a los elegidos. El correo no lleva enlaces (Cliente.gs). Datos: GET ?que=resumenCliente (vistaResumenCliente_);
+// envío: doPost 'resumenCliente' {viajes, para (claves), usuario, prueba}.
 let RES_CLI = null;
 async function abrirResumenCliente(){
   $('#rcLista').innerHTML = '<p class="sub">Cargando los viajes…</p>'; $('#rcPara').textContent = ''; $('#ovResCli').classList.add('open');
@@ -3826,24 +3829,31 @@ function filaResCli(x, marcado){
     <span><b>${esc(x.operacion)} · ${esc([x.ref, x.destino].filter(Boolean).join(' · ') || x.id)}</b> <span class="sub">${esc(x.id)} · ${esc(x.solicitante || '')}</span><br>
     <span class="sub">${esc(x.ahora || '')}${por ? ' · ' + esc(por) : ''}${x.primer && !por ? ' · ' + fd(x.primer) : ''}</span></span></label>`;
 }
+const paraGuardado = () => { try { return JSON.parse(localStorage.getItem('rkt-rc-para') || 'null'); } catch(e) { return null; } };
 function pintarResumenCliente(){
-  const R = RES_CLI, cand = R.grupos.flatMap(g => g.viajes);
-  const para = [...new Set(R.grupos.flatMap(g => g.para))], copia = [...new Set(R.grupos.flatMap(g => g.copia))];
-  $('#rcPara').innerHTML = para.length ? `Para: <b>${esc(para.join(', '))}</b>${copia.length ? ` · copia: ${esc(copia.join(', '))}` : ''}` : 'Los viajes que elija van a su solicitante (Jhonier, Diana, Willington) con la copia de siempre.';
+  const R = RES_CLI, cand = R.grupos.flatMap(g => g.viajes), prev = paraGuardado();
+  $('#rcPara').innerHTML = '<b>Enviar a:</b><div class="rc-para">' + (R.destinatarios || []).map(d => `<label title="${esc(d.correos.join(', '))}"><input type="checkbox" data-rc-para="${esc(d.k)}" ${(prev ? prev.includes(d.k) : d.porDefecto) ? 'checked' : ''}> ${esc(d.nombre)}</label>`).join('') + '</div>';
   $('#rcLista').innerHTML = (cand.length ? `<h4 style="margin:8px 0 4px">Con algún paso hoy o aviso pendiente · ${cand.length}</h4>${cand.map(x => filaResCli(x, true)).join('')}`
       : '<p class="sub">Hoy ningún viaje tiene pasos ni avisos pendientes.</p>')
     + (R.otros.length ? `<details style="margin-top:10px"><summary><b>Agregar otros viajes abiertos · ${R.otros.length}</b></summary>${R.otros.map(x => filaResCli(x, false)).join('')}</details>` : '');
   contarResCli();
 }
 const elegidosResCli = () => [...document.querySelectorAll('#rcLista [data-rc]:checked')].map(i => i.dataset.rc);
-function contarResCli(){ const n = elegidosResCli().length; $('#rcN').textContent = `${n} viaje${n === 1 ? '' : 's'} elegido${n === 1 ? '' : 's'}`; $('#rcEnviar').disabled = $('#rcPrueba').disabled = !n; }
+const paraResCli = () => [...document.querySelectorAll('#rcPara [data-rc-para]:checked')].map(i => i.dataset.rcPara);
+const nombresPara = () => [...document.querySelectorAll('#rcPara [data-rc-para]:checked')].map(i => i.parentElement.textContent.trim());
+function contarResCli(){
+  const n = elegidosResCli().length, p = paraResCli().filter(k => k !== 'etp').length;
+  $('#rcN').textContent = `${n} viaje${n === 1 ? '' : 's'} · ${p} destinatario${p === 1 ? '' : 's'} de Reckitt`;
+  $('#rcEnviar').disabled = $('#rcPrueba').disabled = !n || !p;
+}
 async function enviarResCli(prueba){
   const viajesSel = elegidosResCli(); if (!viajesSel.length) return;
   const usuario = usuarioActual() || pedirUsuario('¿Quién envía? (queda con su nombre)'); if (!usuario) return;
-  if (!prueba && !confirm(`¿Enviar a Reckitt el status de ${viajesSel.length} viaje${viajesSel.length === 1 ? '' : 's'}?\n\n${$('#rcPara').textContent}`)) return;
+  const para = paraResCli(); try { localStorage.setItem('rkt-rc-para', JSON.stringify(para)); } catch(e){}
+  if (!prueba && !confirm(`¿Enviar a Reckitt el status de ${viajesSel.length} viaje${viajesSel.length === 1 ? '' : 's'}?\n\nPara: ${nombresPara().join(', ')}`)) return;
   const b = prueba ? $('#rcPrueba') : $('#rcEnviar'), txt = b.textContent; b.disabled = true; b.textContent = 'Enviando…';
   try {
-    const j = await api('resumenCliente', {viajes: viajesSel, usuario, prueba: !!prueba});
+    const j = await api('resumenCliente', {viajes: viajesSel, para, usuario, prueba: !!prueba});
     if (!j.ok) throw new Error(j.error || 'error');
     toast(prueba ? `Prueba enviada a ${j.para}: revise el correo` : `Resumen enviado a Reckitt · ${j.viajes} viajes`);
     if (!prueba) $('#ovResCli').classList.remove('open');
@@ -3853,6 +3863,7 @@ async function enviarResCli(prueba){
 $('#btnResCli').onclick = abrirResumenCliente;
 $('#rcCerrar').onclick = () => $('#ovResCli').classList.remove('open');
 $('#rcLista').addEventListener('change', contarResCli);
+$('#rcPara').addEventListener('change', contarResCli);
 $('#rcPrueba').onclick = () => enviarResCli(true);
 $('#rcEnviar').onclick = () => enviarResCli(false);
 /* ---------- navegación y eventos ---------- */
