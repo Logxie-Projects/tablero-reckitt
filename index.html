@@ -380,6 +380,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
 .rc-fila input{margin-top:3px}
 .rc-para{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:4px;font-size:13px;color:var(--text)}   /* resumen-cliente.js */
 .rc-para label{display:flex;gap:5px;align-items:center;cursor:pointer}
+.aviso-version{position:sticky;top:0;z-index:80;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;padding:8px 16px;background:#fef3c7;color:#92400e;font-weight:600;border-bottom:1px solid #f59e0b}   /* version.js */
 </style>
 </head>
 <body>
@@ -3866,6 +3867,30 @@ $('#rcLista').addEventListener('change', contarResCli);
 $('#rcPara').addEventListener('change', contarResCli);
 $('#rcPrueba').onclick = () => enviarResCli(true);
 $('#rcEnviar').onclick = () => enviarResCli(false);
+/* ---------- version.js · el tablero se actualiza solo cuando se publica una versión nueva ---------- */
+// Capa: pantalla. generar_publico.py pone en VERSION_TABLERO la huella de esta publicación y escribe publico/version.json con la
+// misma huella. Cada REVISAR_VERSION_MIN minutos (y al volver a la pestaña) el tablero lee version.json sin caché: si cambió, se
+// recarga solo con ?v=<nueva> (la dirección nueva evita la copia guardada del navegador y de GitHub Pages). Si hay una ventana
+// abierta o algo escrito sin guardar, no interrumpe: muestra arriba "Hay una versión nueva · Actualizar". La sesión "Ingresar como"
+// se conserva (sessionStorage). En la copia local sin publicar (app/index.html) no hace nada.
+const VERSION_TABLERO = '22cc0de3cb';
+const REVISAR_VERSION_MIN = 5;
+const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
+function actualizarTablero(v){ const u = new URL(location.href); u.searchParams.set('v', v); location.replace(u.toString()); }
+async function revisarVersion(){
+  if (VERSION_TABLERO.startsWith('__')) return;
+  try {
+    const j = await (await fetch('version.json?t=' + Date.now(), {cache: 'no-store'})).json();
+    if (!j.v || j.v === VERSION_TABLERO) return;
+    if (!ocupado()) return actualizarTablero(j.v);
+    if ($('#avisoVersion')) return;
+    document.body.insertAdjacentHTML('afterbegin', `<div id="avisoVersion" class="aviso-version">Hay una versión nueva del tablero.
+      <button type="button" class="btn primary" onclick="actualizarTablero('${esc(j.v)}')">Actualizar ahora</button>
+      <span class="sub">(guarde antes lo que esté escribiendo)</span></div>`);
+  } catch(e) { /* sin conexión: se intenta en la próxima vuelta */ }
+}
+setInterval(revisarVersion, REVISAR_VERSION_MIN * 60e3);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) revisarVersion(); });
 /* ---------- navegación y eventos ---------- */
 $('#nav').onclick = e => { const b=e.target.closest('button'); if(!b) return;
   document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on', x===b));
