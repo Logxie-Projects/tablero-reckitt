@@ -2364,14 +2364,20 @@ function pasosViaje(v){
     .map(p => ({...p, h: (String(crudo[p.que] || '').match(/T(\d\d:\d\d)/) || [])[1] || ''}))
     .filter(p => { const k = p.f + p.que; return !vistos.has(k) && vistos.add(k); });
 }
-// los pasos del viaje que caen en los días elegidos, en orden
+// pasos de días anteriores que nadie ha confirmado (dominio pasosPorConfirmar), del viaje y de sus subviajes: entran en la
+// reunión aunque su fecha ya pasó, para preguntar si se hicieron (5-nov). Solo el equipo; el cliente ve los días de la reunión
+const atrasadosReunion = v => window.MODO_CLIENTE ? [] : [v, ...hijosDe(v)].flatMap(x => pasosPorConfirmar(x).filter(p => p.fecha < HOY)
+  .map(p => ({f: p.fecha, que: `${p.txt}${x.padre ? ' (subviaje)' : ''} · sin confirmar`, donde: '', h: '', atrasado: true})));
+// los pasos del viaje que caen en los días elegidos y, antes, los atrasados sin confirmar, en orden
 const pasosReunion = v => { const dias = diasReunion(Number(G.dia) || 0);
-  return pasosViaje(v).filter(p => dias.includes(p.f)).sort((a, b) => (a.f + (a.h || '99')).localeCompare(b.f + (b.h || '99'))); };
+  return [...atrasadosReunion(v), ...pasosViaje(v).filter(p => dias.includes(p.f))].sort((a, b) => (a.f + (a.h || '99')).localeCompare(b.f + (b.h || '99'))); };
 const enReunion = v => !G.dia || pasosReunion(v).length > 0;
-// orden: el día y la hora del primer paso en la reunión
+// orden: el día y la hora del primer paso en la reunión (los atrasados sin confirmar van primero)
 const claveReunion = v => { const p = pasosReunion(v)[0]; return p ? p.f + (p.h || '99') : '9999'; };
-const diaReunion = v => (pasosReunion(v)[0] || {}).f || '';
+// grupo: los atrasados van juntos bajo "Sin confirmar · días anteriores"
+const diaReunion = v => { const f = (pasosReunion(v)[0] || {}).f || ''; return f && f < HOY ? 'antes' : f; };
 function tituloDia(f){
+  if (f === 'antes') return '⚠ Sin confirmar · días anteriores (¿se hicieron?)';
   const i = diasReunion(3).indexOf(f);
   return `${['Hoy', 'Mañana', 'Pasado mañana'][i] || ''}${i >= 0 ? ' · ' : ''}${fd(f)}`;
 }
@@ -4074,7 +4080,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // recarga solo con ?v=<nueva> (la dirección nueva evita la copia guardada del navegador y de GitHub Pages). Si hay una ventana
 // abierta o algo escrito sin guardar, no interrumpe: muestra arriba "Hay una versión nueva · Actualizar". La sesión "Ingresar como"
 // se conserva (sessionStorage). En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'f3ccb1b432';
+const VERSION_TABLERO = 'cf50d63785';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 function actualizarTablero(v){ const u = new URL(location.href); u.searchParams.set('v', v); location.replace(u.toString()); }
