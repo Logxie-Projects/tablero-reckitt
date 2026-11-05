@@ -394,6 +394,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
     <button class="btn primary solo-interno" id="btnBarrido" title="Lee ya mismo el buzón de calidad@ (últimos 2 días) y muestra qué correos de Reckitt y sus agentes no están en la base">⟳ Buscar correos ahora</button>
     <button class="btn correo solo-interno" id="btnCorreos" title="Datos que LogxIA encontró en los correos, para revisar y aprobar">✉ Llenar datos desde correos<span class="badge" id="nProp"></span></button>
     <button class="btn solo-interno" id="btnTurnos" title="Conductores que se enturnaron en un viaje o avisaron que están disponibles en la app Viajes ETP, de cualquier fecha; asignar o escribirles">🙋 Turnos<span class="badge" id="nTurnos"></span></button>
+    <button class="btn solo-interno" id="btnComunicado" title="Comunicado a los conductores por WhatsApp (seguridad, vías, viajes disponibles, documentos): plantilla lista para el canal de avisos de la comunidad">📣 Comunicado</button>
     <button class="btn solo-interno" id="btnDocs" title="Confirmaciones de booking y cartas de retiro que llegan con la programación de Jhonier, archivadas en Drive por mes; marca lo que falta">📎 Documentos de contenedores</button>
     <button class="btn" id="btnCsv">Exportar CSV</button>
   </div>
@@ -510,6 +511,16 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
     <div class="sub">Lo que los conductores marcaron en la app Viajes ETP. Asignar abre el viaje con el vehículo y el conductor puestos: revise y guarde.</div>
     <div id="turnosLista" style="margin-top:10px"></div>
     <div class="mfoot"><button class="btn" id="turnosCerrar">Cerrar</button></div>
+  </div>
+</div>
+<div class="ov" id="ovCom">
+  <div class="modal" role="dialog" aria-modal="true" style="width:min(640px,100%)">
+    <h3>📣 Comunicado a los conductores</h3>
+    <div class="sub">Elija la plantilla, complete lo que va entre [ ] y ábralo en WhatsApp: elija la comunidad <b>Conductores ENTRAPETROL → Avisos</b> y envíe.</div>
+    <div style="margin-top:10px"><label>Tipo</label> <select id="comTipo"></select></div>
+    <textarea id="comTexto" style="width:100%;min-height:300px;margin-top:8px;box-sizing:border-box;font:13px/1.45 inherit"></textarea>
+    <div class="sub" id="comAviso" style="color:var(--warn)"></div>
+    <div class="mfoot"><button class="btn" id="comCerrar">Cerrar</button><button class="btn" id="comCopiar">Copiar texto</button><button class="btn primary" id="comEnviar">Abrir WhatsApp</button></div>
   </div>
 </div>
 <div class="ov" id="ovProg">
@@ -3516,6 +3527,54 @@ $('#turnosLista').addEventListener('change', e => {
   $('#ovTurnos').classList.remove('open');
   asignarSugerido(s.value, s.dataset.eElegir, s.dataset.conductor, s.dataset.telefono);
 });
+/* ---------- Comunicados a los conductores (WhatsApp) ---------- */
+// Botón "📣 Comunicado" (solo el equipo): plantillas de seguridad, vías, viajes disponibles, documentos y general; el texto se
+// edita y "Abrir WhatsApp" lo deja listo (wa.me sin número: WhatsApp pide el chat). Se envía al canal de avisos de la Comunidad
+// de WhatsApp "Conductores ENTRAPETROL": solo los administradores escriben y los conductores no ven los números de los demás.
+// No guarda nada en la base: lo enviado queda en WhatsApp.
+const APP_TURNOS_URL = 'https://logxie-projects.github.io/tablero-reckitt/turnos.html';
+const FIRMA_COM = '— Operaciones ENTRAPETROL';
+const fechaLarga = () => new Date(ahoraBogota().fecha + 'T12:00:00').toLocaleDateString('es-CO', {weekday: 'long', day: 'numeric', month: 'long'});
+// viajes de los próximos 7 días sin vehículo, sin datos del cliente (solo ruta, fecha y unidad)
+function viajesParaComunicado(){
+  const hoy = ahoraBogota().fecha, hasta = new Date(Date.parse(hoy) + 7 * 864e5).toISOString().slice(0, 10);
+  return viajes.filter(v => !v.padre && !esPrueba(v) && situacion(v) === 'Abierto' && !tieneVehiculo(v))
+    .map(v => ({v, f: v.operacion === 'IMPO' ? (v.citaRetiro || v.fechaRetiro || v.fechaCargue) : (v.fechaRetiro || v.fechaCargue)}))
+    .filter(x => x.f && x.f >= hoy && x.f <= hasta).sort((a, b) => String(a.f).localeCompare(String(b.f)))
+    .map(({v, f}) => `• ${fd(f)} · ${v.operacion === 'EXPO' ? 'Exportación' : 'Importación'} ${v.operacion === 'EXPO' ? 'Cali → ' + (v.puerto || 'puerto') + (v.pais ? ' (' + v.pais + ')' : '') : (v.puerto || 'puerto') + ' → ' + (v.bodega || v.destino || 'bodega')}${v.unidad ? ' · ' + v.unidad : ''}`);
+}
+const PLANTILLAS_COM = {
+  'Seguridad': () => `🦺 *COMUNICADO DE SEGURIDAD · ENTRAPETROL*\n${fechaLarga()}\n\nCompañeros conductores:\n\n[Escriba aquí el mensaje]\n\nRecuerden siempre:\n• Cinturón puesto y nada de celular al volante.\n• Respetar los límites de velocidad y las pausas activas cada 2 horas.\n• Elementos de protección en patio, planta y puerto: casco, chaleco, botas y gafas.\n• Cualquier novedad, repórtenla en la app Viajes ETP o a Operaciones.\n\n${FIRMA_COM}`,
+  'Vías y clima': () => `⚠️ *ESTADO DE VÍAS · ENTRAPETROL*\n${fechaLarga()}\n\nVía: [ej. Cali – Buenaventura]\nSituación: [cierre, paso restringido, derrumbe, paro, lluvias]\nDesde / hasta: [hora o fecha]\nRecomendación: [ruta alterna, esperar en patio, salir más temprano]\n\nAntes de salir confirmen con Operaciones.\n\n${FIRMA_COM}`,
+  'Viajes disponibles': () => { const L = viajesParaComunicado();
+    return `🚛 *VIAJES DISPONIBLES · ENTRAPETROL*\n${fechaLarga()}\n\n${L.length ? L.join('\n') : '[No hay viajes sin vehículo en los próximos 7 días: escriba los que quiera ofrecer]'}\n\nPara tomar uno, enturnese en la app Viajes ETP:\n${APP_TURNOS_URL}\n\n${FIRMA_COM}`; },
+  'Documentos': () => `📄 *DOCUMENTOS AL DÍA · ENTRAPETROL*\n${fechaLarga()}\n\nAntes de cada viaje verifiquen que tienen vigentes:\n• Licencia de conducción, SOAT y revisión técnico-mecánica.\n• Seguridad social (ARL, EPS, pensión) del mes.\n• Documentos del contenedor: carta de retiro, comodato o booking que les envíe Operaciones.\n\n[Agregue aquí lo que cambió, si aplica]\n\nSin documentos completos no se puede despachar.\n\n${FIRMA_COM}`,
+  'Puerto y patios': () => `⚓ *INSTRUCCIÓN DE PUERTO / PATIO · ENTRAPETROL*\n${fechaLarga()}\n\nLugar: [puerto o patio]\nInstrucción: [horario de citas, documentos que piden, cambio de procedimiento]\n\n${FIRMA_COM}`,
+  'General': () => `📣 *COMUNICADO · ENTRAPETROL*\n${fechaLarga()}\n\n[Escriba aquí el mensaje]\n\n${FIRMA_COM}`,
+};
+function abrirComunicado(tipo){
+  tipo = tipo || 'Seguridad';
+  $('#comTipo').innerHTML = Object.keys(PLANTILLAS_COM).map(k => `<option ${k === tipo ? 'selected' : ''}>${esc(k)}</option>`).join('');
+  $('#comTexto').value = PLANTILLAS_COM[tipo]();
+  avisoCorchetes();
+  $('#ovCom').classList.add('open');
+}
+// quedan "[…]" sin llenar: se avisa antes de enviar
+const corchetes = () => ($('#comTexto').value.match(/\[[^\]]+\]/g) || []);
+function avisoCorchetes(){ const n = corchetes().length; $('#comAviso').textContent = n ? `Faltan ${n} espacio${n === 1 ? '' : 's'} por llenar entre [ ].` : ''; }
+$('#btnComunicado').onclick = () => abrirComunicado();
+$('#comTipo').onchange = e => {
+  if ($('#comTexto').dataset.editado === '1' && !confirm('Se reemplaza el texto que escribió. ¿Seguir?')) { e.target.value = e.target.dataset.antes || 'Seguridad'; return; }
+  $('#comTexto').value = PLANTILLAS_COM[e.target.value](); $('#comTexto').dataset.editado = ''; e.target.dataset.antes = e.target.value; avisoCorchetes();
+};
+$('#comTexto').oninput = () => { $('#comTexto').dataset.editado = '1'; avisoCorchetes(); };
+$('#comCerrar').onclick = () => $('#ovCom').classList.remove('open');
+$('#comCopiar').onclick = async () => { try { await navigator.clipboard.writeText($('#comTexto').value); toast('Texto copiado'); } catch(e) { $('#comTexto').select(); toast('Seleccionado: copie con Ctrl+C'); } };
+$('#comEnviar').onclick = () => {
+  if (corchetes().length && !confirm('Quedan espacios entre [ ] sin llenar. ¿Enviar así?')) return;
+  window.open(waLink('', $('#comTexto').value), '_blank');
+  toast('En WhatsApp elija la comunidad "Conductores ENTRAPETROL" → Avisos');
+};
 /* ---------- navegación y eventos ---------- */
 $('#nav').onclick = e => { const b=e.target.closest('button'); if(!b) return;
   document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on', x===b));
