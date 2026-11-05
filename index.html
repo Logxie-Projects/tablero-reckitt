@@ -1971,7 +1971,7 @@ $('#v-turno').onclick = e => {   // incluye el reloj de la ronda (#turnoReloj)
     if (confirm(`¿${d.tAprobar ? 'Aprobar' : 'Rechazar'} esta excepción como Gerencia?\n\nQueda registrado con su nombre y la hora.`)) marcarRevisado((d.tAprobar ? 'ok|' : 'no|') + k); }
   else if (d.tVer) marcarVerificado(d.nombre, d.tVer);   // registro.js: respuesta al mensaje de prueba
   else if (d.tReg) { const x = filasRegistro(viajes.filter(v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre)).find(y => y.k === d.tReg);   // registro.js
-    if (x) abrirRegistro(x.clase === 'P' ? x.nombre : '', x.clase === 'C' ? x.v.conductor : ''); }
+    if (x) abrirRegistro(x.clase === 'P' ? x.nombre : x.v.placa, x.v.conductor); }   // vehículo y conductor del viaje: lo que falta es obligatorio, lo demás se puede corregir
   else if (d.tAbrir) abrir(d.tAbrir);
   else if (d.tActualizar) abrir(d.tActualizar);   // la ventana del viaje ofrece el siguiente paso (→ etapa hoy) y los datos
   else if (d.tNovedad) { abrir(d.tNovedad); const b = $('#mStates [data-e="Novedad"]'); if (b && !b.classList.contains('on')) b.click(); $('[data-tnov="Incidente"]')?.click(); const o = $('#novTexto'); if (o) { o.scrollIntoView({block: 'center'}); o.focus(); } }   // novedades.js
@@ -3003,19 +3003,22 @@ let regContinuar = null, regPide = {};
 function registroCompleto(placa, conductor, continuar){
   const fv = faltaVehiculo(placa), fc = faltaConductor(conductor);
   if (!fv.length && !fc.length) return true;
-  abrirRegistro(fv.length ? placa : '', fc.length ? conductor : '', continuar);
+  abrirRegistro(placa, conductor, continuar);
   return false;
 }
+// se muestran el vehículo y el conductor del viaje (aunque uno esté completo, para corregirlo si algo cambió); lo que falta es obligatorio
 function abrirRegistro(placa, conductor, continuar){
   regContinuar = continuar || null; regPide = {placa: realR(placa) ? placaR(placa) : '', conductor: realR(conductor) ? String(conductor).trim().toUpperCase() : ''};
+  regPide.reqP = faltaVehiculo(regPide.placa).length > 0; regPide.reqC = faltaConductor(regPide.conductor).length > 0;
   const v = vehiculoReg(regPide.placa) || {}, c = conductorReg(regPide.conductor) || {};
   const campo = (id, l, val, ph, extra = '') => `<div><label>${l}</label><input id="${id}" value="${esc(val || '')}" placeholder="${esc(ph)}" ${extra}></div>`;
+  const opcional = '<span class="sub">· completo: corrija solo si algo cambió</span>';
   $('#regCuerpo').innerHTML =
-    (regPide.placa ? `<fieldset class="mgrupo"><legend>🚚 Vehículo ${esc(regPide.placa)} ${vehiculoReg(regPide.placa) ? '' : '<span class="sub">· nuevo en el registro</span>'}</legend><div class="fgrid3">
+    (regPide.placa ? `<fieldset class="mgrupo"><legend>🚚 Vehículo ${esc(regPide.placa)} ${!vehiculoReg(regPide.placa) ? '<span class="sub">· nuevo en el registro</span>' : regPide.reqP ? '' : opcional}</legend><div class="fgrid3">
       ${campo('regEmpresa', 'Empresa', v.empresa || 'ENTRAPETROL', 'ENTRAPETROL o el tercero')}
       ${campo('regProp', 'Propietario *', v.propietario, 'Nombre o empresa dueña del vehículo')}
       ${campo('regCelProp', 'Celular del propietario *', v.celularPropietario, '3001234567', 'inputmode="numeric"')}</div></fieldset>` : '')
-    + (regPide.conductor ? `<fieldset class="mgrupo"><legend>🧑‍✈️ Conductor ${esc(regPide.conductor)} ${conductorReg(regPide.conductor) ? '' : '<span class="sub">· nuevo en el registro</span>'}</legend><div class="fgrid3">
+    + (regPide.conductor ? `<fieldset class="mgrupo"><legend>🧑‍✈️ Conductor ${esc(regPide.conductor)} ${!conductorReg(regPide.conductor) ? '<span class="sub">· nuevo en el registro</span>' : regPide.reqC ? '' : opcional}${c.verificado ? ` <span class="sub">· celular ${esc(String(c.verificado).split(' · ')[0])}</span>` : ''}</legend><div class="fgrid3">
       ${campo('regNombre', 'Nombre completo *', c.nombre || regPide.conductor, 'Nombres y apellidos como en la cédula')}
       ${campo('regCedula', 'Cédula *', c.cedula, 'Solo números', 'inputmode="numeric"')}
       ${campo('regCel', 'Celular *', c.celular, '3001234567', 'inputmode="numeric"')}</div></fieldset>` : '');
@@ -3026,13 +3029,16 @@ function abrirRegistro(placa, conductor, continuar){
 const valR = id => ($('#' + id)?.value || '').trim();
 async function guardarRegistroUI(){
   const usuario = valR('regUsuario'); if (!usuario) { $('#regUsuario').focus(); return toast('Escriba su nombre'); }
-  const envios = [];
-  if (regPide.placa) {
+  const envios = [], v0 = vehiculoReg(regPide.placa) || {}, c0 = conductorReg(regPide.conductor) || {};
+  // se envía lo obligatorio y lo que se corrigió; lo completo sin cambios no se toca
+  const cambioV = regPide.placa && (regPide.reqP || valR('regEmpresa') !== (v0.empresa || 'ENTRAPETROL') || valR('regProp').toUpperCase() !== String(v0.propietario || '').toUpperCase() || celR(valR('regCelProp')) !== celR(v0.celularPropietario));
+  const cambioC = regPide.conductor && (regPide.reqC || valR('regNombre').toUpperCase() !== String(c0.nombre || '').toUpperCase() || valR('regCedula').replace(/\D/g, '') !== String(c0.cedula || '') || celR(valR('regCel')) !== celR(c0.celular));
+  if (cambioV) {
     if (valR('regProp').length < 3) { $('#regProp').focus(); return toast('Escriba el propietario'); }
     if (!celR(valR('regCelProp'))) { $('#regCelProp').focus(); return toast('Celular del propietario: 10 dígitos, empieza por 3'); }
     envios.push({tipo: 'vehiculo', datos: {placa: regPide.placa, empresa: valR('regEmpresa'), propietario: valR('regProp'), celularPropietario: valR('regCelProp')}});
   }
-  if (regPide.conductor) {
+  if (cambioC) {
     if (valR('regNombre').split(/\s+/).length < 2) { $('#regNombre').focus(); return toast('Escriba nombre y apellido'); }
     if (!/^\d{5,11}$/.test(valR('regCedula').replace(/\D/g, ''))) { $('#regCedula').focus(); return toast('Cédula: solo números, de 5 a 11 dígitos'); }
     if (!celR(valR('regCel'))) { $('#regCel').focus(); return toast('Celular del conductor: 10 dígitos, empieza por 3'); }
@@ -3040,8 +3046,8 @@ async function guardarRegistroUI(){
   }
   guardarUsuario(usuario);
   // celular nuevo o cambiado: mensaje de prueba por WhatsApp (se abre ya, con el clic, para que el navegador no lo bloquee)
-  if (regPide.conductor) { const c = conductorReg(regPide.conductor);
-    if (!c || celR(c.celular) !== celR(valR('regCel'))) window.open(waLink('57' + celR(valR('regCel')), mensajePrueba(valR('regNombre').toUpperCase())), '_blank'); }
+  if (cambioC) { const c = c0;
+    if (!c.nombre || celR(c.celular) !== celR(valR('regCel'))) window.open(waLink('57' + celR(valR('regCel')), mensajePrueba(valR('regNombre').toUpperCase())), '_blank'); }
   const b = $('#regGuardar'); b.disabled = true; b.textContent = 'Guardando…';
   try {
     for (const e of envios) {
