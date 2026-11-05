@@ -64,6 +64,10 @@ input[type=search]{border:1px solid var(--line);background:var(--surface);border
 .form{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .form label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--muted)}
 .form .full{grid-column:1/-1}
+.form>*{min-width:0}
+.form select{width:100%;max-width:100%}
+.ccveh{flex-direction:row!important;align-items:flex-start!important}
+.ccgrupo{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--muted)}
 .form input,.form select,.form textarea{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 10px;font-weight:400;font-size:14px}
 .form textarea{min-height:80px}
 .pie{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
@@ -141,14 +145,15 @@ async function cargar(silencioso) {
 }
 // conductores enturnados y disponibles en la app Viajes ETP (turnos.html): vienen con los datos del tablero
 // (turnosConductores, Conductores.gs resumenTurnos_: últimos 10 días, sin los retirados); se piden aparte para no demorar Despacho
-let TURNOS = [], turnosHora = 0, DESTINOS = {};   // DESTINOS: id del viaje -> país o bodega (Despacho no los trae)
+let TURNOS = [], turnosHora = 0, DESTINOS = {}, VIAJES = [];   // DESTINOS: id del viaje -> país o bodega (Despacho no los trae)
 async function cargarTurnos(forzar) {
   if (!forzar && Date.now() - turnosHora < 5 * 60e3) return;
   try {
     const j = await (await fetch(API + '?' + new URLSearchParams({ formato: 'json', clave: CLAVE }))).json();
     if (!j.ok) return;
     TURNOS = j.turnosConductores || []; turnosHora = Date.now();
-    (j.viajes || []).forEach(v => { DESTINOS[v.id] = v.operacion === 'EXPO' ? v.pais : (v.bodega || v.destino); });
+    VIAJES = j.viajes || [];   // también para 📧 Confirmar vehículo a cargue (destino, motonave, puerto)
+    VIAJES.forEach(v => { DESTINOS[v.id] = v.operacion === 'EXPO' ? v.pais : (v.bodega || v.destino); });
     if (D) { D.turnos = TURNOS; if (!$('#velo')) pintar(); }
   } catch (e) { /* sin turnos: Despacho sigue igual */ }
 }
@@ -200,6 +205,7 @@ function pintar() {
     <div class="der">
       <input type="search" placeholder="Buscar booking, placa, conductor" value="${esc(filtro)}" oninput="filtro=this.value;pintar();this.focus();this.setSelectionRange(this.value.length,this.value.length)">
       <button class="b" onclick="cargar();cargarTurnos(true)">🔄</button>
+      <button class="b" onclick="confirmarCargue()" title="Correo al cliente con placa, conductor, hora de llegada, lugar de cargue y la orden de cargue">📧 Confirmar vehículo a cargue</button>
       <button class="b b-pri" onclick="formulario()">+ Nueva asignación</button>
     </div>
   </header>
@@ -249,6 +255,7 @@ function tarjetas(lista) {
         <button class="b b-mini b-wa" onclick="whatsapp('${a.token}')">💬 WhatsApp</button>
         <button class="b b-mini" onclick="formulario('${a.token}')">✏️ Cita / archivos</button>
         <button class="b b-mini" onclick="detalle('${a.token}')">📋 Detalle</button>
+        ${activa(a) && a.booking ? `<button class="b b-mini" onclick='confirmarCargue(${esc(JSON.stringify(String(a.booking)))})'>📧 Confirmar a cargue</button>` : ''}
         ${activa(a) ? `<button class="b b-mini" onclick="cerrar('${a.token}','terminar')">✔ Terminar</button>
           <button class="b b-mini" onclick="cerrar('${a.token}','anular')">⛔ Anular</button>` : ''}
       </div></div>`;
@@ -453,12 +460,122 @@ function detalle(token) {
   cargarFotos();
 }
 
+/* ---------- 📧 Confirmación de vehículo para cargue (6-nov) ---------- */
+// Correo al cliente: se elige el booking (abierto, con vehículo), los vehículos que van, la hora de llegada, el lugar de cargue, un
+// comentario, la orden de cargue (imagen: se ve dentro del correo y va adjunta) y la firma; Para y CC con casillas de la lista de
+// destinatarios (Código.gs DESTINATARIOS_RESUMEN) y hasta 3 correos a mano en CC. Lo arma y envía Cliente.gs confirmarCargue_.
+// "Ver correo" lo muestra antes; "Enviar prueba" va solo a calidad+prueba@. La firma y el último Para/CC se recuerdan en este equipo.
+let CC_DATOS = null, CC_IMG = null;
+const bookingsCargue = () => {
+  const L = VIAJES.filter(v => v.booking && v.placa && !v.padre && (v.situacion || 'Abierto') === 'Abierto' && !/^(sin info|pend)/i.test(v.booking));
+  const g = {}; L.forEach(v => { (g[v.booking] = g[v.booking] || []).push(v); });
+  return Object.keys(g).map(bk => ({ bk, viajes: g[bk], fecha: g[bk].map(v => v.fechaCargue || '9').sort()[0] }))
+    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+};
+async function confirmarCargue(booking) {
+  ventana('<h2>📧 Confirmación de vehículo para cargue</h2><div class="vacio">Cargando…</div>');
+  try {
+    if (!VIAJES.length) await cargarTurnos(true);
+    if (!CC_DATOS) { const j = await (await fetch(API + '?' + new URLSearchParams({ formato: 'json', que: 'confirmarCargue', clave: CLAVE }))).json(); if (!j.ok) throw new Error(j.error); CC_DATOS = j; }
+  } catch (e) { return ventana(`<h2>📧 Confirmación de vehículo para cargue</h2><p style="color:var(--bad)">No se pudo cargar: ${esc(e.message)}</p><div class="pie"><button class="b" onclick="cerrarVentana()">Cerrar</button></div>`); }
+  CC_IMG = null;
+  const B = bookingsCargue(), hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+  const sel = B.find(x => x.bk === booking) || B.find(x => x.fecha >= hoy) || B[0];   // sin booking: el próximo cargue
+  const prev = (() => { try { return JSON.parse(ls.get('cc_cargue') || '{}'); } catch (e) { return {}; } })();
+  const firma = prev.firma || { nombre: USUARIO, cargo: 'Operaciones · ENTRAPETROL' };
+  const cli = CC_DATOS.destinatarios.filter(d => !d.copia), casilla = (d, campo, on) =>
+    `<label style="flex-direction:row;align-items:center;gap:5px;font-weight:400;color:var(--text)" title="${esc(d.correos.join(', '))}"><input type="checkbox" data-cc-${campo}="${esc(d.k)}" ${on ? 'checked' : ''}>${esc(d.nombre)}</label>`;
+  ventana(`<h2>📧 Confirmación de vehículo para cargue</h2>
+    ${B.length ? '' : '<p style="color:var(--warn)">No hay bookings abiertos con vehículo asignado.</p>'}
+    <form class="form" id="fcc" onsubmit="event.preventDefault()">
+      <label class="full">Booking<select name="booking" onchange="pintarVehiculosCargue()">${B.map(x => `<option value="${esc(x.bk)}" ${x === sel ? 'selected' : ''}>${esc(x.bk)} · ${esc(x.viajes.map(v => v.id).join(', '))} · ${esc(x.viajes[0].pais || x.viajes[0].bodega || '')}${x.viajes[0].fechaCargue ? ' · cargue ' + esc(x.viajes[0].fechaCargue) : ''}</option>`).join('')}</select>
+        <span style="font-weight:400">Salen los bookings abiertos con vehículo asignado</span></label>
+      <div class="full" id="ccVeh"></div>
+      <label>Hora de llegada a cargue<input type="datetime-local" name="llegada" required></label>
+      <label>Lugar de cargue<input name="lugar" list="ccLugares" placeholder="Planta o bodega" required><datalist id="ccLugares">${(CC_DATOS.lugares || []).map(x => `<option value="${esc(x)}">`).join('')}</datalist></label>
+      <label class="full">Comentario<textarea name="comentario" maxlength="1000" placeholder="Ej.: el vehículo llega con el contenedor vacío retirado ayer en patio"></textarea></label>
+      <div class="full ccgrupo">Orden de cargue (imagen o foto · también se puede pegar con Ctrl+V)
+        <input type="file" name="orden" accept="image/*" onchange="leerOrdenCargue(this.files[0])"><div id="ccImg" style="font-weight:400"></div></div>
+      <label>Firma: nombre<input name="fnombre" required value="${esc(firma.nombre || '')}"></label>
+      <label>Firma: cargo<input name="fcargo" value="${esc(firma.cargo || '')}"></label>
+      <div class="full ccgrupo">Para (persona del cliente)<div style="display:flex;flex-wrap:wrap;gap:4px 14px">${cli.map(d => casilla(d, 'para', prev.para ? prev.para.includes(d.k) : d.k === 'jhonier')).join('')}</div></div>
+      <div class="full ccgrupo">CC<div style="display:flex;flex-wrap:wrap;gap:4px 14px">${CC_DATOS.destinatarios.map(d => casilla(d, 'cc', prev.cc ? prev.cc.includes(d.k) : !!d.copia)).join('')}</div>
+        <input name="ccOtros" placeholder="Otro correo en copia (hasta 3, separados por coma)" value="${esc(prev.ccOtros || '')}"></div>
+      <div class="full" id="ccEstado" style="font-size:13px"></div>
+      <div class="pie full"><button type="button" class="b" onclick="cerrarVentana()">Cancelar</button>
+        <button type="button" class="b" onclick="verCorreoCargue()">👁 Ver correo</button>
+        <button type="button" class="b" onclick="enviarCargue(true)">Enviar prueba (a calidad@)</button>
+        <button type="button" class="b b-pri" id="ccEnviar" onclick="enviarCargue(false)">📧 Enviar al cliente</button></div>
+    </form>`, true);
+  pintarVehiculosCargue();
+  $('#velo').addEventListener('paste', e => { const f = [...(e.clipboardData || {}).files || []].find(x => /^image\//.test(x.type)); if (f) { e.preventDefault(); leerOrdenCargue(f); } });
+}
+function pintarVehiculosCargue() {
+  const f = $('#fcc'); if (!f) return;
+  const x = bookingsCargue().find(b => b.bk === f.booking.value); if (!x) return $('#ccVeh').innerHTML = '';
+  $('#ccVeh').innerHTML = `<div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px">Vehículos del booking (los marcados van en el correo)</div>`
+    + x.viajes.map(v => `<label class="ccveh" style="display:flex;gap:8px;border:1px solid var(--line);border-radius:8px;padding:7px 10px;margin-bottom:5px;font-weight:400">
+      <input type="checkbox" data-cc-viaje="${esc(v.id)}" checked><span><b class="placa">${esc(v.placa)}</b> · ${esc(v.conductor || '')}${v.conductor ? '' : '<span class="tarde">sin conductor</span>'}
+      <span class="sub" style="color:var(--muted)"> · ${esc(v.id)}${v.fechaCargue ? ' · cargue ' + esc(v.fechaCargue) : ''}${v.contenedor ? ' · ' + esc(v.contenedor) : ''}</span></span></label>`).join('');
+  // la hora de llegada sugiere el día de cargue programado (la hora la pone quien envía)
+  const dia = x.viajes.map(v => v.fechaCargue).filter(Boolean).sort()[0];
+  if (dia && !f.llegada.value) f.llegada.value = dia.slice(0, 10) + 'T07:00';
+}
+// la imagen se reduce a 1600 px y JPEG para que el correo no pese (una foto del celular pasa de 4 MB a ~300 KB)
+function leerOrdenCargue(file) {
+  if (!file) return;
+  if (!/^image\//.test(file.type)) return toast('La orden de cargue debe ser una imagen (JPG o PNG)');
+  const img = new Image();
+  img.onload = () => { const k = Math.min(1, 1600 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+    const url = c.toDataURL('image/jpeg', 0.85);
+    CC_IMG = { tipo: 'image/jpeg', b64: url.split(',')[1] };
+    $('#ccImg').innerHTML = `<div style="display:flex;gap:10px;align-items:center;margin-top:6px"><img src="${url}" style="max-width:120px;max-height:90px;border:1px solid var(--line);border-radius:6px">
+      <span>${esc(file.name || 'imagen pegada')} · ${Math.round(CC_IMG.b64.length * 0.75 / 1024)} KB <button type="button" class="b b-mini" onclick="CC_IMG=null;$('#ccImg').innerHTML='';$('#fcc').orden.value=''">✕ Quitar</button></span></div>`; };
+  img.onerror = () => toast('No se pudo leer la imagen (si es HEIC del iPhone, envíela como JPG o tome captura)');
+  img.src = URL.createObjectURL(file);
+}
+function datosCargue() {
+  const f = $('#fcc'), marcadas = campo => [...f.querySelectorAll(`[data-cc-${campo}]:checked`)].map(i => i.getAttribute(`data-cc-${campo}`));
+  return { booking: f.booking.value, viajes: marcadas('viaje'), llegada: f.llegada.value, lugar: f.lugar.value.trim(), comentario: f.comentario.value.trim(),
+    firma: { nombre: f.fnombre.value.trim(), cargo: f.fcargo.value.trim() }, para: marcadas('para'), cc: marcadas('cc'), ccOtros: f.ccOtros.value.trim() };
+}
+const estadoCargue = (txt, color) => { const e = $('#ccEstado'); if (e) e.innerHTML = `<span style="color:${color || 'inherit'}">${txt}</span>`; };
+async function verCorreoCargue() {
+  const d = datosCargue(); estadoCargue('Armando el correo…');
+  try {
+    const r = await postear(Object.assign({ action: 'confirmarCargue', vista: true }, d));
+    if (!r.ok) return estadoCargue('✖ ' + esc(r.error), 'var(--bad)');
+    estadoCargue(`Para: <b>${esc(r.para.join(', '))}</b>${r.copia.length ? ' · CC: ' + esc(r.copia.join(', ')) : ''}`);
+    const w = window.open('', '_blank'); if (!w) return toast('El navegador bloqueó la ventana del correo');
+    w.document.write(`<title>Vista del correo</title><body style="background:#eef0f4;padding:20px;margin:0">${r.html}${CC_IMG ? `<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;font-family:Arial"><tr><td style="padding:0 26px 20px"><span style="color:#667085;font-size:12px">📎 Orden de cargue (en el correo va aquí, antes de la firma, y adjunta)</span><br><img src="data:image/jpeg;base64,${CC_IMG.b64}" width="548" style="display:block;border:1px solid #d0d5dd;margin-top:6px"></td></tr></table>` : ''}</body>`); w.document.close();
+  } catch (e) { estadoCargue('✖ ' + esc(e.message), 'var(--bad)'); }
+}
+async function enviarCargue(prueba) {
+  const d = datosCargue();
+  if (!d.viajes.length) return estadoCargue('✖ Marque al menos un vehículo', 'var(--bad)');
+  if (!prueba && !CC_IMG && !confirm('No adjuntó la orden de cargue. ¿Enviar sin ella?')) return;
+  if (!prueba && !confirm(`¿Enviar la confirmación del booking ${d.booking} (${d.viajes.length} vehículo${d.viajes.length === 1 ? '' : 's'}) al cliente?`)) return;
+  try { ls.set('cc_cargue', JSON.stringify({ firma: d.firma, para: d.para, cc: d.cc, ccOtros: d.ccOtros })); } catch (e) { }
+  const b = $('#ccEnviar'); b.disabled = true; estadoCargue(prueba ? 'Enviando la prueba…' : 'Enviando al cliente…', 'var(--warn)');
+  try {
+    const r = await postear(Object.assign({ action: 'confirmarCargue', prueba, imagen: CC_IMG }, d));
+    if (!r.ok) throw new Error(r.error);
+    estadoCargue(prueba ? `✓ Prueba enviada a ${esc(r.para.join(', '))}: revise Recibidos` : `✓ Enviado a ${esc(r.para.join(', '))}${r.copia.length ? ' · CC: ' + esc(r.copia.join(', ')) : ''}`, 'var(--ok)');
+    toast(prueba ? 'Prueba enviada' : 'Confirmación enviada al cliente');
+    if (!prueba) { CC_DATOS = null; setTimeout(cerrarVentana, 3500); }
+  } catch (e) { estadoCargue('✖ No se envió: ' + esc(e.message), 'var(--bad)'); }
+  finally { b.disabled = false; }
+}
+
 /* ---------- utilidades ---------- */
-function ventana(html) {
+// fijo = la ventana no se cierra al hacer clic afuera (formularios largos: no perder lo escrito)
+function ventana(html, fijo) {
   cerrarVentana();
   const v = document.createElement('div'); v.className = 'velo'; v.id = 'velo';
   v.innerHTML = `<div class="ven">${html}</div>`;
-  v.addEventListener('mousedown', e => { if (e.target === v) cerrarVentana(); });
+  v.addEventListener('mousedown', e => { if (e.target === v && !fijo) cerrarVentana(); });
   document.body.appendChild(v);
 }
 function cerrarVentana() { const v = $('#velo'); if (v) v.remove(); }
