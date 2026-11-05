@@ -313,13 +313,24 @@ table.prog td:last-child{min-width:260px}
 .paso-est.ok{color:var(--ok)}
 .ruta .caja b{display:block;color:var(--text);font-size:12px;font-weight:600;overflow-wrap:anywhere}
 .ruta .camion{position:absolute;top:-20px;left:50%;transform:translateX(-50%) scaleX(-1);font-size:15px}
+/* barco y grúa sobre la parada en curso (lean.js iconoParada; mismo dibujo que el correo al cliente) */
+.ruta .ico{position:absolute;top:-25px;left:50%;transform:translateX(-50%);width:44px;height:22px}
+.ruta .ico i{position:absolute;display:block}
+.ruta .barco .cab{left:6px;top:5px;width:6px;height:8px;background:var(--text);border-radius:1px 1px 0 0}
+.ruta .barco .cont{left:15px;top:4px;width:22px;height:9px;background:var(--accent);border-radius:1px}
+.ruta .barco .casco{left:2px;top:13px;width:40px;height:7px;background:var(--text);border-radius:0 0 12px 3px}
+.ruta .barco .agua{left:0;top:21px;width:44px;height:2px;background:#7dd3fc;border-radius:1px}
+.ruta .grua .brazo{left:4px;top:0;width:36px;height:3px;background:var(--text);border-radius:1px}
+.ruta .grua .torre{left:8px;top:0;width:3px;height:22px;background:var(--text)}
+.ruta .grua .cable{left:29px;top:3px;width:1px;height:5px;background:var(--text)}
+.ruta .grua .cont{left:19px;top:8px;width:20px;height:9px;background:var(--accent);border-radius:1px}
 .ruta .esp{display:flex;gap:6px;margin-top:4px}
 .ruta .esp span{flex:1;text-align:center;font-size:10px;color:var(--warn)}
 .ruta .pie{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;border-top:1px solid var(--border);padding-top:8px;font-size:12px;color:var(--muted)}
 .mini{display:inline-flex;align-items:center;gap:2px;vertical-align:middle}
 .mini i{width:7px;height:7px;border-radius:50%;border:1.5px solid var(--border);display:block}
 .mini i.ok{background:var(--ok);border-color:var(--ok)} .mini i.ya{background:var(--accent);border-color:var(--accent)}
-@media (max-width:640px){.ruta .cuerpo{grid-template-columns:1fr}.ruta .linea{flex-direction:column}.ruta .linea:before,.ruta .linea .hecho,.ruta .esp{display:none}.ruta .par{display:flex;gap:8px;text-align:left;align-items:flex-start}.ruta .pt{margin:4px 0 0}.ruta .caja{margin-top:0;flex:1}.ruta .camion{display:none}}
+@media (max-width:640px){.ruta .cuerpo{grid-template-columns:1fr}.ruta .linea{flex-direction:column}.ruta .linea:before,.ruta .linea .hecho,.ruta .esp{display:none}.ruta .par{display:flex;gap:8px;text-align:left;align-items:flex-start}.ruta .pt{margin:4px 0 0}.ruta .caja{margin-top:0;flex:1}.ruta .camion,.ruta .ico{display:none}}
 .modos{display:inline-flex;border:1px solid var(--border);border-radius:99px;overflow:hidden;margin:8px 0}
 .modos button{border:0;background:var(--surface);padding:5px 12px;font-size:12px;cursor:pointer;color:var(--muted)}
 .modos button.on{background:var(--accent);color:#fff;font-weight:600}
@@ -2603,6 +2614,14 @@ function renderMotonaves(){
 // paradas, avance, bodegaCargue y contenedorDeBooking están en el dominio (dominio.js): también los usa el correo al cliente
 function miniAvance(v){ const {P,n} = avance(v); return `<span class="mini" title="${esc(n<P.length ? 'En: '+P[n][0] : 'Completo')}">${P.map((_,i)=>`<i class="${i<n?'ok':i===n?'ya':''}"></i>`).join('')}</span>`; }
 
+// icono sobre la parada en curso (5-nov, igual que el correo al cliente en Cliente.gs): en la motonave un barco con el contenedor
+// encima, en el arribo (destino de la EXPO, puerto de llegada de la IMPO) el contenedor en una grúa; en lo demás el camión
+function iconoParada(v, et){
+  if (et === 'Motonave') return '<span class="ico barco" title="En la motonave"><i class="cab"></i><i class="cont"></i><i class="casco"></i><i class="agua"></i></span>';
+  if ((v.operacion === 'EXPO' && et === 'Destino') || (v.operacion === 'IMPO' && et === 'Origen'))
+    return '<span class="ico grua" title="Arribo"><i class="brazo"></i><i class="torre"></i><i class="cable"></i><i class="cont"></i></span>';
+  return '<span class="camion">🚚</span>';
+}
 function leadFactura(v){
   const fin = fechaFinTransporte(v);
   if (!fin) return null;
@@ -2722,7 +2741,7 @@ function rutaPedido(v){
       ${window.MODO_CLIENTE || esNacional(v) ? '' : `<button type="button" class="subv" onclick="event.stopPropagation();nuevoSubviaje('${v.id}')"><span>+</span> Subviaje</button>`}
     </div><div>
       <div class="linea"><div class="hecho" style="width:${P.length>1 ? Math.min(86, 86*Math.max(0,n-1)/(P.length-1)) : 0}%"></div>
-        ${P.map(([et, lugar, , det], i)=>`<div class="par ${i<n?'ok':i===n?'ya':''}${i>=n && P[i][4] && !window.MODO_CLIENTE ? ' conf' : ''}"><div class="pt"></div>${i===n?'<span class="camion">🚚</span>':''}
+        ${P.map(([et, lugar, , det], i)=>`<div class="par ${i<n?'ok':i===n?'ya':''}${i>=n && P[i][4] && !window.MODO_CLIENTE ? ' conf' : ''}"><div class="pt"></div>${i===n?iconoParada(v, et):''}
           <div class="caja">${et}<b>${esc(lugar)}</b>${det.filter(Boolean).map(esc).join('<br>')}</div></div>`).join('')}</div>
       <div class="esp"><span></span>${esperas.map(d=> `<span>${d===null?'':d+' d'}</span>`).join('')}</div>
       ${hijosDe(v).map(s => tarjetaHijo(s, v)).join('')}
@@ -4285,7 +4304,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '3956a1efcb';
+const VERSION_TABLERO = '27f0eef2b7';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
