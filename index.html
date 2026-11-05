@@ -994,9 +994,13 @@ function sinActualizar(v){
  * aprobar); "Pendiente" e "Incidente" abren una acción de Operaciones (Acciones y Mi turno) hasta que alguien la marca hecha.
  * Si el texto niega o habla de después ("no", "sin", "falta", "aún no", "mañana", "esperando"), no se propone ninguna fecha.
  * La fecha propuesta es la del día de la novedad ("ayer" = el día anterior) y solo si en el viaje falta o estaba más adelante. */
+// 5-nov (usuario): "CARGANDO CONTENEDOR VACIO" proponía la fecha de llenado. Un verbo en curso ("cargando", "llenando",
+// "descargando") no confirma que el paso se hizo (regla: no se da por hecho sin confirmación), y "vacío" habla del retiro del
+// contenedor vacío, no del llenado. Solo cuentan los verbos terminados (cargado, llenado, entregado, terminó de…).
+const NOVEDAD_EN_CURSO = /\b\w+(ando|iendo)\b/;
 const LECTURA_NOVEDAD = {
-  EXPO: [['fechaRetiro', /(retir|recog)\w*\s+(el\s+|del\s+)?(vacio|contenedor)|vacio\s+retirad/, 'Vacío retirado'],
-    ['fechaCargue', /\b(cargad|llenad|cargando|llenando)|termin\w*\s+(de\s+)?(cargar|llenar)/, 'Llenado en planta'],
+  EXPO: [['fechaRetiro', /(retirad|recogid)\w*\s+(el\s+|del\s+)?(vacio|contenedor)|vacio\s+(retirad|recogid|cargad)|cargad\w*\s+(el\s+)?(contenedor\s+)?vacio/, 'Vacío retirado'],
+    ['fechaCargue', /^(?!.*\bvacio\b).*(\b(cargad|llenad)|termin\w*\s+(de\s+)?(cargar|llenar))/, 'Llenado en planta'],
     ['fechaEntregaPuerto', /(entreg|ingres|descarg)\w*\s+(a|en|al)\s+(el\s+)?puerto/, 'Entregado en puerto']],
   IMPO: [['fechaRetiro', /(retir|sali)\w*\s+(de|del|en)\s+(el\s+)?puerto/, 'Retirado de puerto'],
     ['fechaCargue', /(entreg|descarg)\w*\s+(en\s+|a\s+)?(la\s+)?(bodega|cliente)|\bdescargad/, 'Entregado en bodega'],
@@ -1007,7 +1011,7 @@ const LECTURA_NOVEDAD = {
 const NOVEDAD_NIEGA = /\b(no|sin|falta|faltan|aun no|todavia no|pendiente|manana|esperando)\b|programad|reprogram/;
 function interpretarNovedad(v, tipo, texto, fecha){
   const t = minus(texto), dia = String(fecha || HOY).slice(0, 10), cuando = /\bayer\b/.test(t) ? addDias(dia, -1) : dia;
-  const fechas = tipo === 'Interna' || tipo === 'Cambio' || NOVEDAD_NIEGA.test(t) ? [] : (LECTURA_NOVEDAD[v.operacion] || [])
+  const fechas = tipo === 'Interna' || tipo === 'Cambio' || NOVEDAD_NIEGA.test(t) || NOVEDAD_EN_CURSO.test(t) ? [] : (LECTURA_NOVEDAD[v.operacion] || [])
     .filter(([k, re]) => re.test(t) && (!v[k] || String(v[k]).slice(0, 10) > cuando))
     .map(([campo, , etiqueta]) => ({campo, valor: cuando, etiqueta}));
   const accion = tipo === 'Incidente' ? {prioridad: 'Alta', accion: 'Operaciones: atender el incidente reportado · ' + String(texto).trim()}
@@ -4410,7 +4414,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '28d7aeff14';
+const VERSION_TABLERO = '216a35e037';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
