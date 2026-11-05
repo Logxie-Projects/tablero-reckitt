@@ -1556,6 +1556,19 @@ const guardarUsuario = u => usuarioGuardado() || String(u || '').trim().slice(0,
 // navegadores del celular (WhatsApp, Gmail) lo bloquean sin avisar y el botón "no hacía nada" (5-nov)
 const pedirUsuario = () => { const u = usuarioGuardado(); if (u) return u;
   elegirUsuario(); toast('Primero elija quién es y vuelva a presionar'); return ''; };
+// pide un texto dentro del tablero (en vez de prompt(), que esos navegadores bloquean): promesa con el texto, o '' si cancela
+function pedirTexto(texto, ejemplo = '', si = 'Aceptar'){
+  return new Promise(ok => {
+    $('#ovTexto')?.remove();
+    document.body.insertAdjacentHTML('beforeend', `<div class="ov open" id="ovTexto" style="z-index:75"><div class="modal" role="dialog" aria-modal="true" style="width:min(440px,100%)">
+      <div style="white-space:pre-line;margin-bottom:8px">${esc(texto)}</div><input id="ovTextoIn" placeholder="${esc(ejemplo)}" style="width:100%">
+      <div class="mfoot"><button type="button" class="btn" data-tx="0">Cancelar</button><button type="button" class="btn primary" data-tx="1">${esc(si)}</button></div></div></div>`);
+    const fin = v => { $('#ovTexto').remove(); ok(v); };
+    $('#ovTexto').onclick = e => { const b = e.target.closest('[data-tx]'); if (b) fin(b.dataset.tx === '1' ? $('#ovTextoIn').value.trim() : ''); else if (e.target.id === 'ovTexto') fin(''); };
+    $('#ovTextoIn').onkeydown = e => { if (e.key === 'Enter') fin($('#ovTextoIn').value.trim()); };
+    setTimeout(() => $('#ovTextoIn')?.focus(), 50);
+  });
+}
 // pregunta Sí / No dentro del tablero (en vez de confirm(), que esos navegadores también bloquean): devuelve una promesa true / false
 function preguntarSiNo(texto, si = 'Sí', no = 'Cancelar'){
   return new Promise(ok => {
@@ -4248,7 +4261,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '345f5ca2d5';
+const VERSION_TABLERO = '535fa603f1';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -4375,12 +4388,14 @@ function respuestaReporte(){
 // envía el mismo reporte por correo, a los destinatarios que escriba quien lo pide (solo con clave del equipo)
 async function enviarReporteCorreo(){
   if (!CFG.SHEETS_API_URL || !claveActual()) return toast('El envío por correo funciona desde el tablero publicado');
-  const para = (prompt('¿A qué correo(s) lo envío? (separados por coma)', '') || '').split(/[,;\s]+/).map(s=>s.trim()).filter(s=>/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s));
-  if (!para.length) return;
-  if (!confirm(`Se enviará el reporte de errores y acciones pendientes a:\n${para.join('\n')}\n\n¿Confirmas?`)) return;
+  // correos y confirmación dentro del tablero (base.js pedirTexto / preguntarSiNo): prompt() y confirm() los bloquea el celular
+  const txt = await pedirTexto('¿A qué correo(s) lo envío? (separados por coma)', 'nombre@empresa.com', 'Siguiente');
+  const para = (txt || '').split(/[,;\s]+/).map(s=>s.trim()).filter(s=>/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s));
+  if (!para.length) { if (txt) burbuja('No reconocí ningún correo válido. Escríbalo así: nombre@empresa.com', 'bot'); return; }
+  if (!await preguntarSiNo(`Se enviará el reporte de errores y acciones pendientes a:\n${para.join('\n')}\n\n¿Confirma?`, 'Sí, enviar')) return;
   const b = burbuja('<span class="typing">Enviando…</span>', 'bot');
   try {
-    const j = await api('enviarReporte', {para}).catch(() => ({ok: false, error: 'sin conexión'}));
+    const j = await api('enviarReporte', {para, usuario: usuarioActual()}).catch(() => ({ok: false, error: 'sin conexión'}));
     b.innerHTML = j.ok ? `✅ Reporte enviado a ${para.map(esc).join(', ')}.` : `No se pudo enviar: ${esc(j.error||'error')}`;
   } catch(e){ b.innerHTML = 'No se pudo enviar el correo. Intente de nuevo.'; }
 }
