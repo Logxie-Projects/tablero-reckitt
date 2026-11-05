@@ -2189,15 +2189,27 @@ function filaTurno(x, rev){
 const enturnadosDe = v => (window.TURNOS_C || []).filter(t => t.tipo === 'Turno' && t.viajeId === v.id);
 const disponiblesPara = v => (window.TURNOS_C || []).filter(t => t.tipo === 'Disponible' && (!t.desde || !primerEvento(v) || t.desde <= primerEvento(v)));
 const APP_TURNOS = 'https://logxie-projects.github.io/tablero-reckitt/turnos.html';
-// mensaje para el grupo de WhatsApp de conductores: los viajes sin vehículo de los próximos 7 días (sin datos del cliente);
+// mensaje para el grupo de WhatsApp de conductores: TODOS los viajes sin vehículo (5-nov: "solo muestra 3 y tenemos muchos sin
+// asignar"; antes eran solo los de 7 días), en tres grupos: esta semana, más adelante y fecha por confirmar. Sin datos del cliente.
 // WhatsApp no deja publicar en grupos desde un sistema: se abre con el texto listo y el coordinador elige el grupo
+const sinVehiculoGrupo = () => viajes.filter(v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre && !tieneVehiculo(v)
+  && (!primerEvento(v) || diffDias(primerEvento(v)) >= -1));
 function mensajeGrupo(){
-  const L = viajes.filter(v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre && !tieneVehiculo(v) && primerEvento(v) && diffDias(primerEvento(v)) >= -1 && diffDias(primerEvento(v)) <= 7)
-    .sort((a, b) => primerEvento(a).localeCompare(primerEvento(b)));
+  const T = sinVehiculoGrupo(), orden = (a, b) => primerEvento(a).localeCompare(primerEvento(b));
+  const semana = T.filter(v => primerEvento(v) && diffDias(primerEvento(v)) <= 7).sort(orden);
+  const despues = T.filter(v => primerEvento(v) && diffDias(primerEvento(v)) > 7).sort(orden);
+  const sinFecha = T.filter(v => !primerEvento(v));
   const puerto = v => ({BUN: 'Buenaventura', CTG: 'Cartagena'})[String(v.puerto || '').toUpperCase()] || v.puerto || 'por confirmar';
   const ruta = v => esNacional(v) ? `${v.carga ? v.carga + ' · ' : ''}${v.origen || 'origen'} → ${v.bodega || v.destino || 'destino'}`
     : v.operacion === 'IMPO' ? `puerto ${puerto(v)} → ${v.bodega || v.destino || 'bodega'}` : `vacío → cargue Reckitt Cali → puerto ${puerto(v)}`;
-  return `🚛 *Entrapetrol · viajes disponibles*\n${L.map((v, i) => `${i + 1}) ${fd(primerEvento(v))} · ${v.operacion}${v.unidad ? ' ' + v.unidad.replace('1X', '') + "'" : ''} · ${ruta(v)}`).join('\n')}\n\nEnturnarse o reportar disponibilidad aquí 👇\n${APP_TURNOS}`;
+  let i = 0;
+  // la unidad: "1X40" → 40' (pies); otra (carga suelta LCL…) tal cual
+  const unidad = v => !v.unidad ? '' : /^1X\d+$/i.test(v.unidad) ? ' ' + v.unidad.replace(/^1X/i, '') + "'" : ' · ' + v.unidad;
+  const linea = v => `${++i}) ${primerEvento(v) ? fd(primerEvento(v)) : 'fecha por confirmar'} · ${v.operacion}${unidad(v)} · ${ruta(v)}`;
+  const bloque = (titulo, L) => L.length ? `\n\n*${titulo}*\n${L.map(linea).join('\n')}` : '';
+  return `🚛 *Entrapetrol · viajes disponibles (${T.length})*`
+    + bloque('Esta semana', semana) + bloque('Más adelante', despues) + bloque('Fecha por confirmar', sinFecha)
+    + `\n\nEnturnarse o reportar disponibilidad aquí 👇\n${APP_TURNOS}`;
 }
 // selector del motivo de una excepción (en la misma fila)
 const tipoExc = k => k.startsWith('ronda') ? 'ronda' : k.startsWith('reg|') ? 'reg' : k.startsWith('conf|') ? 'conf' : k.startsWith('seg') ? 'seg' : k.startsWith('cob') ? 'cob' : 'cli';
@@ -2245,7 +2257,7 @@ function renderTurno(){
   cont.innerHTML = bloqueGerencia(T) + bloqueCalifGerencia() + `<div class="tr-meta"><b>Meta:</b> ${esc(m.meta)}</div><div class="sub" style="margin:2px 0 6px">${esc(m.ayuda)}</div>
     ${pend.map(x => filaTurno(x, false)).join('') || `<div class="tr-vacio">✓ ${esc(m.vacio)}${M[M.indexOf(m) + 1] ? ` · ${btnT('Siguiente: ' + M[M.indexOf(m) + 1].titulo + ' →', `data-t-menu="${M[M.indexOf(m) + 1].id}"`)}` : ''}</div>`}
     ${m.despues ? `<div class="sub tr-vacio">ℹ ${esc(m.despues)}</div>` : ''}
-    ${m.id === 'cob' ? `<div class="tr-vacio"><a class="btn" href="${waLink('', mensajeGrupo())}" target="_blank" rel="noopener">${ICONO_WA}Publicar viajes en el grupo de conductores</a> <span class="sub">Abre WhatsApp con el mensaje listo: elija el grupo y envíe. Los conductores responden en la app de turnos.</span></div>` : ''}
+    ${m.id === 'cob' ? `<div class="tr-vacio"><a class="btn" href="${waLink('', mensajeGrupo())}" target="_blank" rel="noopener">${ICONO_WA}Publicar ${sinVehiculoGrupo().length} viajes sin vehículo en el grupo de conductores</a> <span class="sub">Abre WhatsApp con el mensaje listo: elija el grupo y envíe. Los conductores responden en la app de turnos.</span></div>` : ''}
     ${hechos.length ? `<details class="tr-rev"><summary class="sub">Hechos hoy (${hechos.length})</summary>${hechos.map(x => filaTurno(x, R.get(x.k))).join('')}</details>` : ''}`;
 }
 // la clave se escribe aquí y la comprueba el Apps Script; el tablero solo guarda "es Gerencia" mientras la pestaña esté abierta.
@@ -4414,7 +4426,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '216a35e037';
+const VERSION_TABLERO = '9cb800b105';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
