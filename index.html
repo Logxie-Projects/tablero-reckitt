@@ -226,6 +226,16 @@ table.prog td:last-child{min-width:260px}
   .toolbar input{min-width:0;flex:1}
   .fgrid,.det{grid-template-columns:1fr 1fr}.states{grid-template-columns:repeat(2,1fr)}
   .hbar{grid-template-columns:90px 1fr 30px}
+  /* celular (5-nov): el encabezado con todos sus botones ocupaba 584 de 812 px fijo arriba; aquí se va con la página */
+  header{position:static}
+  .gbar{position:static}
+  /* Errores y Acciones: la tabla (863–1286 px de ancho) quedaba en una caja con scroll lateral que se tragaba el dedo y no
+     dejaba bajar; en el celular cada fila es una tarjeta a lo ancho de la pantalla */
+  #v-errores .tbl-wrap, #v-acciones .tbl-wrap{overflow:visible}
+  #v-errores table, #v-acciones table, #v-errores tbody, #v-acciones tbody, #v-errores tr, #v-acciones tr{display:block;width:100%}
+  #v-errores thead, #v-acciones thead, #v-errores tr:has(> th), #v-acciones tr:has(> th){display:none}
+  #v-errores tr, #v-acciones tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;padding:6px 8px;background:var(--surface)}
+  #v-errores td, #v-acciones td{display:block;border:0;padding:3px 2px;white-space:normal;max-width:none;width:auto}
 }
 
 /* ---- Modo lean: ruta del pedido ---- */
@@ -4062,7 +4072,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // recarga solo con ?v=<nueva> (la dirección nueva evita la copia guardada del navegador y de GitHub Pages). Si hay una ventana
 // abierta o algo escrito sin guardar, no interrumpe: muestra arriba "Hay una versión nueva · Actualizar". La sesión "Ingresar como"
 // se conserva (sessionStorage). En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '3413c12e7a';
+const VERSION_TABLERO = '42e8877045';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 function actualizarTablero(v){ const u = new URL(location.href); u.searchParams.set('v', v); location.replace(u.toString()); }
