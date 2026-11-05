@@ -4238,14 +4238,16 @@ function pintarResumenCliente(){
       <button type="button" class="btn" id="rcMarcar" title="Marca todos los viajes que muestra la búsqueda">Marcar los encontrados</button></div>`
     + (cand.length ? `<h4 style="margin:8px 0 4px">Paso hoy, aviso pendiente, en curso o mismo booking · ${cand.length}</h4>${cand.map(x => filaResCli(x, true)).join('')}`
       : '<p class="sub">Hoy ningún viaje tiene pasos ni avisos pendientes.</p>')
-    + (R.otros.length ? `<details style="margin-top:10px"><summary><b>Agregar otros viajes abiertos · ${R.otros.length}</b></summary>${R.otros.map(x => filaResCli(x, false)).join('')}</details>` : '');
+    + (R.otros.length ? `<details style="margin-top:10px"><summary><b>Agregar otros viajes abiertos · ${R.otros.length}</b></summary>${R.otros.map(x => filaResCli(x, false)).join('')}</details>` : '')
+    // 5-nov: también se pueden mandar viajes cerrados (los de los últimos 45 días, el más reciente primero; Cliente.gs vistaResumenCliente_)
+    + ((R.cerrados || []).length ? `<details style="margin-top:10px"><summary><b>Agregar viajes cerrados (últimos 45 días) · ${R.cerrados.length}</b></summary>${R.cerrados.map(x => filaResCli(x, false)).join('')}</details>` : '');
   contarResCli();
 }
 // buscador: muestra solo los viajes que contienen todas las palabras escritas (los marcados no se pierden: solo se ocultan)
 function filtrarResCli(){
   const q = minus($('#rcBuscar').value).split(/\s+/).filter(Boolean);
   document.querySelectorAll('#rcLista .rc-fila').forEach(f => f.classList.toggle('hidden', !q.every(w => f.dataset.buscar.includes(w))));
-  const d = $('#rcLista details'); if (d && q.length) d.open = true;   // la búsqueda también mira "Agregar otros viajes"
+  if (q.length) document.querySelectorAll('#rcLista details').forEach(d => { d.open = true; });   // la búsqueda también mira "otros" y "cerrados"
 }
 const elegidosResCli = () => [...document.querySelectorAll('#rcLista [data-rc]:checked')].map(i => i.dataset.rc);
 const paraResCli = () => [...document.querySelectorAll('#rcPara [data-rc-para]:checked')].map(i => i.dataset.rcPara);
@@ -4310,7 +4312,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'ff48848647';
+const VERSION_TABLERO = '123bdf9cee';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
