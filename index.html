@@ -2976,7 +2976,16 @@ function faltaConductor(nombre){
 
 // MENSAJE DE PRUEBA: al registrar o cambiar el celular de un conductor se abre WhatsApp a ese número con este texto; cuando
 // responde, el coordinador marca en Mi turno si es él (Sí) o no (se quita el celular y se vuelve a pedir). Columna "Celular verificado".
-const mensajePrueba = nombre => `Hola ${String(nombre || '').split(' ')[0]}, te escribe Operaciones de ENTRAPETROL. Estamos registrando este número para avisarte de viajes y novedades. Por favor responde *SÍ* y tus dos apellidos para confirmar que eres ${nombre}. Si no eres tú, responde *NO*. ¡Gracias!`;
+// el mismo mensaje recuerda los requisitos de ingreso a Reckitt (pedido del usuario, 4-nov)
+const mensajePrueba = nombre => `Hola ${String(nombre || '').split(' ')[0]}, te escribe Operaciones de ENTRAPETROL. Estamos registrando este número para avisarte de viajes y novedades. Por favor responde *SÍ* y tus dos apellidos para confirmar que eres ${nombre}. Si no eres tú, responde *NO*.
+
+Te recordamos los *requisitos de ingreso a Reckitt*:
+• Documentos impresos
+• Equipo de protección personal
+• Extintor
+• Llantas en buen estado
+
+¡Gracias!`;
 const verificado = c => /^s[ií]/i.test(String(c && c.verificado || ''));
 async function marcarVerificado(nombre, resultado){
   if (resultado === 'No' && !confirm(`¿El número no es de ${nombre}?\n\nSe quita el celular del registro y hay que pedir el correcto.`)) return;
