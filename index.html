@@ -396,6 +396,9 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
 #ovReg{z-index:60}   /* Completar datos se abre encima de la ventana del viaje (registro.js) */
 .quien-lista{display:grid;gap:8px}   /* Ingresar como (base.js elegirUsuario) */
 .quien-lista .btn{justify-content:space-between;display:flex;width:100%;text-align:left}
+/* resumen al cliente: los botones de enviar siempre a la vista, fijos abajo de la ventana (en el celular quedaban debajo de la lista) */
+#ovResCli .mfoot{position:sticky;bottom:-1px;background:var(--surface);padding:10px 0 4px;margin-bottom:-4px;border-top:1px solid var(--border);z-index:2;flex-wrap:wrap}
+#ovResCli #rcEstado{position:sticky;bottom:64px;background:var(--surface);z-index:2}
 .rc-fila{display:flex;gap:10px;align-items:flex-start;padding:7px 4px;border-bottom:1px solid var(--border);cursor:pointer}   /* resumen-cliente.js */
 .rc-fila input{margin-top:3px}
 .rc-para{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:4px;font-size:13px;color:var(--text)}   /* resumen-cliente.js */
@@ -4185,6 +4188,8 @@ $('#comEnviar').onclick = () => {
 let RES_CLI = null;
 async function abrirResumenCliente(){
   $('#rcLista').innerHTML = '<p class="sub">Cargando los viajes…</p>'; $('#rcPara').textContent = ''; $('#ovResCli').classList.add('open');
+  // mientras carga (5 a 15 s en el celular) no se puede enviar: antes los botones se veían activos y al presionarlos no pasaba nada
+  $('#rcPrueba').disabled = $('#rcEnviar').disabled = true; $('#rcN').textContent = 'Cargando… los botones se activan al terminar'; estadoResCli('');
   try {
     const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=resumenCliente&clave=' + encodeURIComponent(claveActual()))).json();
     if (!j.ok) throw new Error(j.error || 'error');
@@ -4220,7 +4225,8 @@ const paraResCli = () => [...document.querySelectorAll('#rcPara [data-rc-para]:c
 const nombresPara = () => [...document.querySelectorAll('#rcPara [data-rc-para]:checked')].map(i => i.parentElement.textContent.trim());
 function contarResCli(){
   const n = elegidosResCli().length, p = paraResCli().filter(k => k !== 'etp').length;
-  $('#rcN').textContent = `${n} viaje${n === 1 ? '' : 's'} · ${p} destinatario${p === 1 ? '' : 's'} de Reckitt`;
+  // con los botones apagados se dice por qué (antes solo se veían grises y "no hacían nada")
+  $('#rcN').textContent = `${n} viaje${n === 1 ? '' : 's'} · ${p} destinatario${p === 1 ? '' : 's'} de Reckitt${!n ? ' · marque al menos un viaje' : !p ? ' · marque al menos un destinatario de Reckitt' : ''}`;
   $('#rcEnviar').disabled = $('#rcPrueba').disabled = !n || !p;
 }
 // el resultado queda escrito en la ventana (no solo en un aviso que desaparece): así se sabe si salió o por qué no
@@ -4261,7 +4267,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '535fa603f1';
+const VERSION_TABLERO = '03d830f921';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
