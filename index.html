@@ -773,7 +773,8 @@ function cobro(v){
     : situacion(v)==='Cerrado' ? 'Sin servicio' : 'Aún no facturable';
   return {tarifa, extra, aprob, fact, total: tarifa + (aprob==='Aprobado' ? extra : 0)};
 }
-const dDias = (a, b) => a && b ? diffDias(b) - diffDias(a) : null;
+// solo con dos fechas ISO; con otro valor (p. ej. 'sí' de una parada cumplida por tirilla sin fecha) no hay días: null, no NaN
+const dDias = (a, b) => /^\d{4}-\d{2}-\d{2}/.test(a || '') && /^\d{4}-\d{2}-\d{2}/.test(b || '') ? diffDias(b) - diffDias(a) : null;
 // [hito, campo del plan, campos de fecha (programada o real) que lo mueven]
 const HITOS_PLAN = {
   EXPO: [['Retiro del vacío','planRetiro',['fechaRetiro']], ['Llenado en planta','planCargue',['fechaCargue']],
@@ -1567,7 +1568,8 @@ setInterval(async () => {
 }, REFRESCO_MIN * 60e3);
 
 // todo, también el estado (Asignado, En tránsito…), se escribe en la pestaña Seguimiento EXPO / IMPO de la base
-async function guardarCambio(id, cambios, usuario){
+// opciones.confirma = false: las fechas son planes (citas que trae un correo, lo que propone el chat): no confirman ningún paso
+async function guardarCambio(id, cambios, usuario, opciones = {}){
   const v = viajes.find(x=>x.id===id);
   // contenedor o placa con el formato del otro (dominio.js datoMalEscrito): no se guarda, se avisa qué está mal
   const mal = ['contenedor', 'placa'].map(k => k in cambios ? datoMalEscrito(k, cambios[k]) : '').filter(Boolean);
@@ -1578,10 +1580,9 @@ async function guardarCambio(id, cambios, usuario){
   if ('estado' in cambios) v.estadoHoja = cambios.estado;
   // escribir a mano la fecha de hoy o pasada de un paso = confirmarlo con su nombre (dominio PASOS_CONFIRMAR; la base hace lo
   // mismo en Base.gs actualizarSeguimiento_). Una fecha futura es un plan: no confirma nada
-  const confNuevas = pasosDe(v).map(p => p[0]).filter(k => k in cambios && fechaPaso(cambios, k) && fechaPaso(cambios, k) <= HOY && fechaPaso(cambios, k) !== fechaPaso(previo, k))
-    .map(k => [k, fechaPaso(cambios, k), usuario || 'equipo', 'fecha', HOY].join('|'));
   const confAntes = v.confirmados || '';
-  if (confNuevas.length) v.confirmados = [confAntes, ...confNuevas].filter(Boolean).join(';;');
+  if (opciones.confirma !== false) pasosDe(v).map(p => p[0]).filter(k => k in cambios && fechaPaso(cambios, k) !== fechaPaso(previo, k))
+    .forEach(k => anotarConfirmacion(v, k, fechaPaso(cambios, k), usuario, 'fecha'));   // confirmar.js
   etapasViajes();
   if (!v.vistoPor && hayControlVisto()) v.vistoPor = usuario || 'equipo';
   historial.push({fecha:v.actualizado, id, placa:v.placa, estadoAnterior:anterior, estadoNuevo:v.estado, observacion:cambios.observacion||'', usuario:usuario||CFG.USUARIO||''});
@@ -1589,11 +1590,12 @@ async function guardarCambio(id, cambios, usuario){
   if (window.CLAVE && Object.keys(enBase).length){
     render();
     try{
-      const j = await api('update', {id, cambios:enBase, usuario, telefono: telefonoPara(id)});
+      const j = await api('update', {id, cambios:enBase, usuario, telefono: telefonoPara(id), ...(opciones.confirma === false ? {fuente: 'plan'} : {})});
       toast(j.ok ? (j.cambios ? `Guardado en la base: ${j.cambios} dato${j.cambios===1?'':'s'}` : 'Sin cambios en la base') : 'No se guardó: ' + (j.error||'error'));
       // F2: aviso del hito (avisos.js); asignación única: enlace del conductor (asignacion.js)
       if (!j.ok) { Object.assign(v, previo); v.confirmados = confAntes; etapasViajes(); }
       else if (j.confirmados !== undefined) { v.confirmados = j.confirmados; etapasViajes(); }
+      if (j.ok && j.aviso) { v.confirmados = confAntes; etapasViajes(); toast(j.aviso); }   // guardado, pero sin confirmar el paso
       if (j.ok && j.cambios) ofrecerAviso(v, cambios, usuario).then(() => ofrecerEnlaceConductor(v, j.asignacion));
     }catch(e){ toast('No se pudo guardar en la base, intente de nuevo'); }
   }
@@ -2366,7 +2368,7 @@ function pasosViaje(v){
 }
 // pasos de días anteriores que nadie ha confirmado (dominio pasosPorConfirmar), del viaje y de sus subviajes: entran en la
 // reunión aunque su fecha ya pasó, para preguntar si se hicieron (5-nov). Solo el equipo; el cliente ve los días de la reunión
-const atrasadosReunion = v => window.MODO_CLIENTE ? [] : [v, ...hijosDe(v)].flatMap(x => pasosPorConfirmar(x).filter(p => p.fecha < HOY)
+const atrasadosReunion = v => window.MODO_CLIENTE ? [] : [v, ...hijosDe(v)].flatMap(x => pasosPorConfirmar(x).filter(p => p.fecha < HOY && !p.naviera)
   .map(p => ({f: p.fecha, que: `${p.txt}${x.padre ? ' (subviaje)' : ''} · sin confirmar`, donde: '', h: '', atrasado: true})));
 // los pasos del viaje que caen en los días elegidos y, antes, los atrasados sin confirmar, en orden
 const pasosReunion = v => { const dias = diasReunion(Number(G.dia) || 0);
@@ -3326,6 +3328,16 @@ function filaConfirmarHtml(x){
   return {titulo, detalle, acc};
 }
 
+// anota en el tablero una confirmación que la base guarda en la misma llamada (aprobar datos de correos, escribir la fecha), para
+// verla sin recargar; la próxima carga trae la columna real. Misma regla que Base.gs confirmarPasos_: solo pasos, fecha no futura, sin repetir
+function anotarConfirmacion(v, campo, fecha, quien, fuente){
+  const f = /^\d{4}-\d{2}-\d{2}/.test(fecha || '') ? fecha.slice(0, 10) : '';
+  if (!v || !f || f > HOY || !pasosDe(v).some(p => p[0] === campo) || confirmacionesDe(v).some(c => c.campo === campo && c.fecha === f)) return;
+  v.confirmados = [v.confirmados, [campo, f, quien || 'equipo', fuente || 'equipo', HOY].join('|')].filter(Boolean).join(';;');
+}
+// fuente según el origen de un dato aprobado (igual que Correos.gs decidirPropuestas_)
+const fuenteDeOrigen = o => /conductor/i.test(o || '') ? 'conductor' : /novedad/i.test(o || '') ? 'novedad' : 'correo';
+
 // guarda la confirmación (doPost 'confirmar'); el tablero la refleja de una vez y, si falla, la quita
 async function confirmarPaso(id, campo, fecha){
   const v = viajes.find(x => x.id === id); if (!v) return toast('No se encontró el viaje ' + id);
@@ -3417,7 +3429,8 @@ async function decidirPropuestas(aprobar){
     toast(aprobar ? `${j.aprobadas} dato${j.aprobadas===1?'':'s'} guardado${j.aprobadas===1?'':'s'} en la base` : `${j.rechazadas} rechazado${j.rechazadas===1?'':'s'}`);
     const usados = new Set(sel.map(p => p.clave));
     PROP = PROP.filter(p => !usados.has(p.clave));
-    if (aprobar) sel.forEach(p => { const v = viajes.find(x => x.id === p.viajeId); if (v) v[p.campo] = p.valor; });
+    // la base confirma el paso aprobado (Correos.gs decidirPropuestas_); aquí se anota igual para verlo sin recargar (confirmar.js)
+    if (aprobar) { sel.forEach(p => { const v = viajes.find(x => x.id === p.viajeId); if (v) { v[p.campo] = p.valor; anotarConfirmacion(v, p.campo, p.valor, usuario, fuenteDeOrigen(p.origen)); } }); etapasViajes(); }
     $('#propTodos').checked = false;
     pintarPropuestas(); render();
   } catch(e) { toast('No se pudo guardar: ' + e.message); }
@@ -3443,7 +3456,7 @@ async function aplicarAccion(b){
     if (!j.ok) throw new Error(j.error || 'error');
     const usados = new Set(P.map(p => p.clave));
     PROP = PROP.filter(p => !usados.has(p.clave));
-    P.forEach(p => { const v = viajes.find(x => x.id === p.viajeId); if (v) v[p.campo] = p.valor; });
+    P.forEach(p => { const v = viajes.find(x => x.id === p.viajeId); if (v) { v[p.campo] = p.valor; anotarConfirmacion(v, p.campo, p.valor, usuario, fuenteDeOrigen(p.origen)); } }); etapasViajes();
     $('#nProp').textContent = PROP.length || '';
     accionEnCurso = null;
     await marcarHecha(b.id, false, `aplicó ${j.aprobadas} dato${j.aprobadas === 1 ? '' : 's'} del correo`);
@@ -3760,7 +3773,8 @@ async function aplicarDesdeCorreo(c){
   if (!usuario) { $('#barridoUsuario').focus(); return toast('Escriba su nombre para actualizar el viaje'); }
   guardarUsuario(usuario);
   const ch = cambiosDeCorreo(c);
-  await guardarCambio(c.viajeId, ch, usuario + ' (desde correo ' + c.tipo + ')');
+  // la fecha de descargue del correo es una cita (plan): no confirma que el paso se hizo
+  await guardarCambio(c.viajeId, ch, usuario + ' (desde correo ' + c.tipo + ')', {confirma: false});
   Object.assign(c.enBase, ch); pintarBarrido();
 }
 async function crearExpoDesdeCorreo(c){
@@ -4080,7 +4094,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // recarga solo con ?v=<nueva> (la dirección nueva evita la copia guardada del navegador y de GitHub Pages). Si hay una ventana
 // abierta o algo escrito sin guardar, no interrumpe: muestra arriba "Hay una versión nueva · Actualizar". La sesión "Ingresar como"
 // se conserva (sessionStorage). En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'cf50d63785';
+const VERSION_TABLERO = '3082501f1d';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 function actualizarTablero(v){ const u = new URL(location.href); u.searchParams.set('v', v); location.replace(u.toString()); }
@@ -4288,7 +4302,8 @@ async function confirmarChat(btn){
     ch = conCausa(v, ch, mov, causa, caja.querySelector('.pc-det')?.value, usuario);
   }
   caja.querySelectorAll('button,input,select').forEach(x => x.disabled = true);
-  await guardarCambio(v.id, ch, usuario + ' (chat LogxIA)');
+  // lo que propone el chat se guarda como plan: confirmar que un paso se hizo es un clic aparte (confirmar.js)
+  await guardarCambio(v.id, ch, usuario + ' (chat LogxIA)', {confirma: false});
   burbuja(`✅ Guardado en <b>${esc(v.placa || v.id)}</b>: ${Object.keys(ch).filter(k => k!=='reprog' && !/^plan/.test(k)).map(k => esc(etiquetaCampo(v, k))).join(', ')}${mov.length ? ` (causa: ${esc(caja.querySelector('.pc-causa').value)})` : ''}. Queda en el Historial a nombre de ${esc(usuario)}.`, 'bot');
 }
 function cancelarChat(btn){ btn.closest('.pc').querySelectorAll('button,input,select').forEach(x => x.disabled = true); burbuja('Listo, no cambié nada.', 'bot'); }
