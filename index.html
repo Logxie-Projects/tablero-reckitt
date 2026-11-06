@@ -401,6 +401,9 @@ body.turno-bloqueado #nav button:not([data-v="turno"]):not([data-v="bandeja"]), 
 .bj-plegado[open]>summary{display:none}
 .bj-plegado .bj-item{border-top:0}
 .bj-area{font:inherit;font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text)}
+.bj-auto{margin:0 0 10px;padding:8px 10px;border-radius:10px;background:color-mix(in srgb,var(--ok) 10%,transparent);font-size:13px}
+.bj-auto>summary{cursor:pointer;color:var(--ok);font-weight:600}
+.bj-auto-l{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;padding:8px 0 2px;border-top:1px solid var(--border);margin-top:8px}
 .bj-mas{display:block;width:100%;margin-top:10px;padding:10px;border:1px dashed var(--border);border-radius:10px;background:none;font:inherit;color:var(--accent);font-weight:600;cursor:pointer}
 .tr-fila{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;padding:9px 10px;border-top:1px solid var(--border)}
 .tr-fila.rev{opacity:.55}
@@ -1818,6 +1821,7 @@ async function cargar(){
     window.SEG_INICIO = j.seguimiento || '';
     window.CLAVE = clave;
     if (j.interno) $('#lnkDespacho').href = 'despacho.html?clave=' + encodeURIComponent(clave);   // Despacho entra con la misma clave del equipo
+    if (j.interno) setTimeout(autocerrarHechas, 0);   // acciones que el viaje ya muestra hechas: se cierran solas (acciones.js)
     $('#connDot').classList.add('live'); $('#connTxt').textContent = `Hoja de Drive · ${j.hora || 'en línea'}`;
     return;
   }catch(e){ console.error(e); toast('No se pudo conectar con la hoja, intente recargar'); return false; }
@@ -2034,6 +2038,40 @@ async function marcarHecha(id, noEtp, nota){
     catch(e){ toast('No se pudo guardar en la bitácora'); }
   }
   if (editId) abrir(editId);
+  render();
+}
+// cierre automático (decisión 1 del 6-nov, docs/REGLAS-NEGOCIO.md): una acción que el viaje ya muestra hecha (pareceHecha: pasos
+// CONFIRMADOS, el dato ya anotado, el viaje ya creado; nunca una fecha sin confirmar) se cierra sola, con la nota de por qué y
+// "Deshacer" en la Bandeja. Las de criterio (responder, aprobar, tarifas, cotizar, reclamos) siguen a mano. Una que alguien
+// reabrió con Deshacer (resueltoPor "reabierta por …") no se vuelve a cerrar sola
+const POR_SISTEMA = 'Sistema · cerrada por el sistema: ';
+// también las que piden ENVIAR o AVISAR algo a alguien: que el viaje exista no dice que se le escribió (ej. LX-0185 "Enviar a
+// Gabriela placa y conductor": NAC-002 ya estaba creado, pero a ella no se le había enviado nada)
+const DE_CRITERIO = /respond|contest|aprob|tarifa|cotiz|negoci|reclam|queja|disculpa|enviar|envie|avisar|avise|informar|notificar|confirmar a /;
+let autocerrando = false;
+async function autocerrarHechas(){
+  if (window.MODO_CLIENTE || !claveActual() || autocerrando) return;
+  const L = (window.BITACORA || []).filter(b => b.estadoAccion !== 'Hecha' && !/^reabierta/i.test(b.resueltoPor || '')
+    && !DE_CRITERIO.test(minus(b.accion)) && pareceHecha(b));
+  if (!L.length) return;
+  autocerrando = true;
+  for (const b of L) { const usuario = POR_SISTEMA + pareceHecha(b);
+    try { const j = await api('resolver', {id: b.id, usuario});
+      if (j.ok) Object.assign(b, {estadoAccion: 'Hecha', resueltoEn: new Date().toISOString(), resueltoPor: usuario}); } catch(e) {} }
+  autocerrando = false;
+  render();
+}
+// las que el sistema cerró en las últimas 24 h (aviso de la Bandeja, con Deshacer)
+const cerradasPorSistema = () => (window.BITACORA || []).filter(b => b.estadoAccion === 'Hecha' && String(b.resueltoPor || '').startsWith(POR_SISTEMA)
+  && b.resueltoEn && Date.now() - new Date(b.resueltoEn) < 24 * 36e5);
+async function deshacerCierre(id){
+  const b = (window.BITACORA || []).find(x => x.id === id); if (!b) return;
+  if (!confirm(`¿Reabrir ${id}?\n\n${b.accion}\n\nVuelve a pendientes y el sistema no la cerrará sola otra vez.`)) return;
+  const usuario = usuarioActual();
+  try { const j = await api('resolver', {id, usuario, reabrir: true}); if (!j.ok) throw new Error(j.error || 'error');
+    Object.assign(b, {estadoAccion: 'Pendiente', resueltoEn: new Date().toISOString(), resueltoPor: 'reabierta por ' + usuario});
+    toast(`${id} volvió a pendientes`); }
+  catch(e) { toast('No se pudo reabrir: ' + e.message); }
   render();
 }
 // "Hacer aquí": las acciones que el tablero mismo puede hacer llevan un botón que abre esa pantalla. La acción se cierra sola
@@ -4627,7 +4665,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'c47f582b74';
+const VERSION_TABLERO = 'd912f9f0f9';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5214,7 +5252,11 @@ function renderBandeja(){
   const accExc = i => i.rojaSinExc ? btnT('⚠ No se puede: excepción', `data-t-exc="${esc(i.k)}"`, 'Pide a Gerencia que apruebe dejarlo así; queda registrado con su nombre') : '';
   // entrar o salir del modo Gerencia también desde aquí (antes solo en Mi turno): aprobar excepciones, no bloquearse
   const llave = esGerencia() ? ` · <span class="tr-ger">🔓 Modo Gerencia</span> ${btnT('Salir', 'data-t-gsalir="1"')}` : ` · ${btnT('🔑 Entrar como Gerencia', 'data-t-gerencia="1"', 'Con la clave de Gerencia: aprobar excepciones, editar novedades y no bloquearse en esta pestaña')}`;
-  cont.innerHTML = `<div class="bj-ronda sub">${ronda}${bloqueo}${llave}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}</div>` + bloqueGerencia(T) + barraOp
+  // lo que el sistema cerró solo (acciones.js autocerrarHechas), con su razón y Deshacer: visible pero plegado, 24 h
+  const C = cerradasPorSistema();
+  const avisoAuto = !C.length ? '' : `<details class="bj-auto"><summary>✔ El sistema cerró ${C.length} acci${C.length === 1 ? 'ón' : 'ones'} que el viaje ya muestra hecha${C.length === 1 ? '' : 's'} <span class="sub">· ver</span></summary>`
+    + C.map(b => `<div class="bj-auto-l"><div><b>${esc(b.id)}</b> ${esc(String(b.accion || '').slice(0, 120))}<br><span class="sub">✔ ${esc(String(b.resueltoPor).slice(POR_SISTEMA.length))}</span></div>${btnT('Deshacer', `data-b-deshacer="${b.id}"`, 'Vuelve a pendientes y no se cierra sola otra vez')}</div>`).join('') + '</details>';
+  cont.innerHTML = `<div class="bj-ronda sub">${ronda}${bloqueo}${llave}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}</div>` + bloqueGerencia(T) + avisoAuto + barraOp
     + `<div class="bj-resumen"><div><b>${nViajes} viaje${nViajes === 1 ? '' : 's'} necesita${nViajes === 1 ? '' : 'n'} algo</b>${R.L.length > nViajes ? ` · ${R.L.length - nViajes} grupo${R.L.length - nViajes === 1 ? '' : 's'} sin viaje` : ''}
       · <label class="sub">Área <select class="bj-area" data-b-areasel="1">${[['', 'Todas'], ...AREAS.map(a => [a, a])].map(([a, t]) => `<option value="${a}" ${bandejaArea === a ? 'selected' : ''}>${t} (${porArea(a)})</option>`).join('')}</select></label></div>
       <div class="chips">${`<button type="button" class="chip ${!bandejaFiltro ? 'on' : ''}" data-b-filtro="">Todo · ${R.L.length}</button>`}${BLOQUES.map(([k, t]) => cuenta(k) ? `<button type="button" class="chip ${bandejaFiltro === k ? 'on' : ''}" data-b-filtro="${k}" title="${esc(BLOQUES.find(x => x[0] === k)[3])}">${t} · ${cuenta(k)}</button>` : '').join('')}</div></div>`
@@ -5261,6 +5303,7 @@ $('#bandeja').onclick = e => {
   // marcas de Mi turno (Sigue igual, excepción, aprobar como Gerencia…): las atiende el mismo código de Mi turno (turno.js)
   if (Object.keys(d).some(k => /^t[A-Z]/.test(k))) return $('#v-turno').onclick(e);
   if (d.bFiltro !== undefined) { bandejaFiltro = d.bFiltro; bandejaTodo = false; renderBandeja(); }
+  else if (d.bDeshacer) deshacerCierre(d.bDeshacer);
   else if (d.bTodo) { bandejaTodo = true; renderBandeja(); }
   else if (d.bOp !== undefined) { bandejaOp = d.bOp; bandejaTodo = false; try { localStorage.setItem('bandejaOp', d.bOp); } catch(e) {} renderBandeja(); }
   else if (d.bAbrir) abrir(d.bAbrir);
