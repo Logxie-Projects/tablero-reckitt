@@ -1281,7 +1281,8 @@ const vigente = v => !['Cerrado','Cancelado'].includes(situacion(v));
 // en los correos, no lo ve el cliente ni sale en los viajes disponibles de los conductores (salvo turnos.html?prueba=1)
 const EMPRESA_PRUEBA = 'PRUEBA ETP';
 const esPrueba = v => minus(v.empresa) === minus(EMPRESA_PRUEBA);
-const viajesDe = (d, lista) => (lista || viajes).filter(v => coincide(v, d)).sort((a, b) => vigente(b) - vigente(a));
+// …y entre los vigentes, el viaje principal antes que sus subviajes (comparten pedido, DO y contenedor: IMPO-016 e IMPO-018)
+const viajesDe = (d, lista) => (lista || viajes).filter(v => coincide(v, d)).sort((a, b) => vigente(b) - vigente(a) || !!a.padre - !!b.padre);
 const viajeDe = (d, lista) => (d && d.viajeId && (lista || viajes).find(v => v.id === d.viajeId)) || viajesDe(d, lista)[0];
 
 /* ---------- acciones de LogxIA (bitácora): su viaje y si el avance del viaje ya las muestra hechas ----------
@@ -1289,8 +1290,16 @@ const viajeDe = (d, lista) => (d && d.viajeId && (lista || viajes).find(v => v.i
 // datos de la acción más los de su correo (datosNuevos: pedido, DO, contenedor… de un viaje nuevo o por aprobar)
 const datosNuevosDe = b => { try { return JSON.parse(b.datosNuevos || '{}'); } catch(e) { return {}; } };
 const datoDeAccion = b => { const dn = datosNuevosDe(b); return Object.assign({}, dn, b, {pedido: b.pedido || dn.pedido, do: b.do || dn.do, contenedor: b.contenedor || dn.contenedor}); };
-// viaje de la acción: el que LogxIA ligó (viajeId) o el que coincide por un dato fuerte, primero los vigentes (viajeDe)
-const viajeDeAccion = (b, lista) => viajeDe(datoDeAccion(b), lista) || null;
+// viaje creado desde la acción: su observación lleva el id de la acción ("Acción LX-0185 · correo de…", ej. el viaje nacional)
+const viajeCreadoDeAccion = (b, lista) => !b || !b.id ? null
+  : (lista || viajes).find(v => situacion(v) !== 'Cancelado' && new RegExp('\\b' + b.id + '\\b').test(String(v.observacion || ''))) || null;
+// viaje de la acción: el que LogxIA ligó (viajeId) o el que coincide por un dato fuerte, primero los vigentes (viajeDe);
+// si no, el que se creó desde ella
+const viajeDeAccion = (b, lista) => viajeDe(datoDeAccion(b), lista) || viajeCreadoDeAccion(b, lista) || null;
+// "anotar en el viaje" un dato que trae el correo: [cómo lo dice la acción (captura el valor), campo del viaje, cómo se nombra]
+const DATOS_ANOTAR = [
+  [/(?:se devuelve|devolver(?: el vacio)?|devolucion(?: del vacio)?) en ([a-z][a-z ]*?)(?=\s*(?:\(|,|;|\.|$|segun\b|no\b|y\b))/, 'ciudadDevolucion', 'la devolución del vacío en'],
+];
 // acción que pide crear un viaje que ya está en la base (mismo booking, contenedor, DO, RBHY, OBD o pedido; nunca solo la
 // placa): no se ofrece crearlo otra vez (quedaría repetido); la acción dice cuál es y el equipo la cierra con un clic.
 // Cuenta también un viaje CERRADO (ya se hizo y hasta se facturó: pasó con EXPO-001 y la acción LX-0060); uno cancelado no
@@ -1307,6 +1316,12 @@ function pareceHecha(b, lista){
   const v = b.estadoAccion !== 'Hecha' && (viajeDeAccion(b, lista) || yaCreado(b, lista)); if (!v) return '';
   // un paso cuenta hecho solo si está confirmado (cumplido); una fecha pasada sin confirmar no cierra la acción
   const t = minus(b.accion), ya = k => !!cumplido(v, k), impo = v.operacion === 'IMPO';
+  // el viaje se creó desde esta acción (ej. "＋ Crear viaje nacional"): lo que falta (placa, conductor…) sigue en el viaje
+  const creado = viajeCreadoDeAccion(b, lista);
+  if (creado) return `el viaje ${creado.id} ya se creó desde esta acción`;
+  // "anotar en el viaje" un dato: hecha si el viaje ya lo tiene (si después cambió a otro valor, vuelve a pedirse)
+  const anotar = DATOS_ANOTAR.map(([re, k, nombre]) => { const m = t.match(re); return m && [m[1].trim(), k, nombre]; }).filter(Boolean);
+  if (anotar.length) return anotar.every(([x, k]) => mismoDato(v[k], x)) ? anotar.map(([, k, nombre]) => `${nombre} ${v[k]} ya está en el viaje`).join(' y ') : '';
   // "revisar los datos del correo": si todo lo que trajo el correo ya está en el viaje, no queda nada por revisar
   if (/llenar datos desde correos/.test(t)) {
     const d = datosNuevosDe(b), ks = Object.keys(d).filter(k => d[k]);
@@ -2005,7 +2020,9 @@ function renderAcciones(){
     .map(([k,l,c])=>`<button class="chip ${accFiltro===k?'on':''}" data-acc="${k}">${l} · ${c}</button>`).join('')
     // área de Entrapetrol que la hace (conteo de pendientes)
     + '<span class="sub" style="margin:0 4px 0 10px">Área:</span>' + [['', 'Todas'], ...AREAS.map(a => [a, a])]
-      .map(([k, l]) => `<button class="chip ${accArea===k?'on':''}" data-area="${k}">${l}${k ? ' · ' + pend.filter(b => areaDe(b)===k).length : ''}</button>`).join('');
+      .map(([k, l]) => `<button class="chip ${accArea===k?'on':''}" data-area="${k}">${l}${k ? ' · ' + pend.filter(b => areaDe(b)===k).length : ''}</button>`).join('')
+    // las que el viaje ya muestra hechas (pareceHecha, dominio): se cierran juntas, tras confirmar la lista
+    + (pend.some(b => pareceHecha(b)) ? ` <button class="chip" style="border-color:var(--ok);color:var(--ok)" data-hechas="1" title="El viaje ya muestra que se hicieron: se cierran con esa nota">✔ Cerrar las que ya parecen hechas · ${pend.filter(b => pareceHecha(b)).length}</button>` : '');
   const vis = B.filter(b=> !accArea || areaDe(b)===accArea).filter(b=> accFiltro==='todas' || (accFiltro==='hecha' ? b.estadoAccion==='Hecha' : b.estadoAccion!=='Hecha' && (accFiltro!=='Alta' || b.prioridad==='Alta')))
     .sort((a,b)=> (a.estadoAccion==='Hecha') - (b.estadoAccion==='Hecha') || ord.indexOf(a.prioridad)-ord.indexOf(b.prioridad) || String(b.fechaCorreo).localeCompare(String(a.fechaCorreo)));
   const horas = b => b.registrado ? Math.max(0, Math.round((Date.now() - new Date(b.registrado)) / 36e5)) : 0;
@@ -2018,7 +2035,14 @@ function renderAcciones(){
       <td style="white-space:nowrap">${b.estadoAccion==='Hecha'?'':`${botonAtajo(b) ? botonAtajo(b) + '<br>' : ''}<button class="link" onclick="marcarHecha('${b.id}')">Marcar hecha</button><br><button class="link" onclick="marcarHecha('${b.id}', true)" title="La gestiona Reckitt, el agente de carga u otro: no le toca a Entrapetrol">No es para ETP</button>`}${v?`<br><button class="link" onclick="abrir('${v.id}')">Abrir viaje</button>`:''}</td></tr>`; }).join('')
     : '<tr><td class="sub" style="padding:20px">Sin acciones en este filtro 🎉</td></tr>';
 }
-$('#accFiltros').onclick = e => { const a=e.target.closest('[data-area]'); if (a) { accArea=a.dataset.area; return renderAcciones(); }
+async function cerrarParecenHechas(){
+  const L = (window.BITACORA || []).filter(b => b.estadoAccion !== 'Hecha' && pareceHecha(b)); if (!L.length) return;
+  if (!confirm(`¿Cerrar estas ${L.length} acciones? El viaje ya muestra que se hicieron:\n\n` + L.map(b => `• ${b.id}: ${pareceHecha(b)}`).join('\n'))) return;
+  for (const b of L) await marcarHecha(b.id);   // cada una queda con la nota "el viaje ya muestra que…"
+  renderAcciones();
+}
+$('#accFiltros').onclick = e => { if (e.target.closest('[data-hechas]')) return cerrarParecenHechas();
+  const a=e.target.closest('[data-area]'); if (a) { accArea=a.dataset.area; return renderAcciones(); }
   const b=e.target.closest('[data-acc]'); if(!b) return; accFiltro=b.dataset.acc; renderAcciones(); };
 
 /* ---------- Mi turno: el flujo del coordinador, un paso a la vez ---------- */
@@ -4536,7 +4560,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'b5a346bdac';
+const VERSION_TABLERO = 'eb3024d954';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
