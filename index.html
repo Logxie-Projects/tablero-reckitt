@@ -4604,7 +4604,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'a92e1eceaa';
+const VERSION_TABLERO = '71e1a8a040';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5016,6 +5016,11 @@ const BLOQUES = [
 const HORIZONTE_FALTA = 5;   // días: los faltantes de viajes que arrancan después quedan en Errores (revisión, no del día)
 const RE_ASIGNAR = /asignar vehiculo|programar vehiculo|placa y conductor|conductor y vehiculo|vehiculo planchon|programar (el )?vehiculo/;
 let bandejaFiltro = '';
+// área de Entrapetrol que hace cada tarea (como en Acciones y Llenar datos): acciones por areaDe (dominio), datos de correos por
+// areaProp (los de cobro son de Facturación), lo demás de Operaciones. Al entrar, la Bandeja muestra el área de quien ingresó
+// (Ingresar como: Eider y Jorge → Operaciones, Pedro → Facturación, Gerencia → Gerencia; Calidad ve todo).
+let bandejaArea = null;
+const areaInicial = () => { const p = EQUIPO.find(x => x.nombre === usuarioGuardado()); return p && AREAS.includes(p.area) ? p.area : ''; };
 
 // arma las tarjetas: {v (o null), titulo, items:[{b: bloque, html, acc, roja}], orden}
 function armarBandeja(){
@@ -5035,7 +5040,7 @@ function armarBandeja(){
   // 1 · Por crear: el correo pide un viaje que no existe (acción "Crear viaje" o "Crear viaje nacional" sin viaje)
   B.filter(b => (pideCrearViaje(b) && !yaCreado(b)) || ((atajoDe(b) || [])[0] === 'nacional')).forEach(b => {
     usadas.add(b.id);
-    add(null, {b: 'crear', k: 'a' + b.id, html: `${desdeCuando(b.fechaCorreo || b.registrado)}<b>${esc(b.accion)}</b><br><span class="sub">${esc(b.resumen || '')} · ${esc(b.remitente || '')}</span>`,
+    add(null, {b: 'crear', k: 'a' + b.id, area: areaDe(b), html: `${desdeCuando(b.fechaCorreo || b.registrado)}<b>${esc(b.accion)}</b><br><span class="sub">${esc(b.resumen || '')} · ${esc(b.remitente || '')}</span>`,
       acc: botonAtajo(b) + accHecha(b), roja: pedidoRojo(b)}, 'Viajes por crear');
   });
   vivos.forEach(v => {
@@ -5064,18 +5069,19 @@ function armarBandeja(){
         acc: btnT('✏️ Actualizar', `data-b-abrir="${v.id}"`) + (v.placa ? lnkT(ICONO_WA + 'Preguntar dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas')) : '')
           + btnT('📍 Sigue igual', `data-t-rev="${kSeg(v)}"`, 'Lo marca revisado en esta ronda para todo el equipo')}); }
     // 5 · Datos de correos (Llenar datos + los datos de cada acción): se aprueban o rechazan aquí; la acción que los trajo se cierra
-    const P = PROP.filter(p => todos.some(x => x.id === p.viajeId));
-    if (P.length) {
+    // una línea por área: los datos de cobro (extracostos, RBHY, factura…) son de Facturación, el resto de Operaciones
+    ['Operaciones', 'Facturación'].forEach(area => {
+      const P = PROP.filter(p => todos.some(x => x.id === p.viajeId) && areaProp(p) === area); if (!P.length) return;
       P.forEach(p => propUsadas.add(p.clave));
       const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
       // las acciones que trajeron esos datos y las que solo dicen "revise los datos del correo" de este viaje: una sola línea
       const deAcc = [...new Set([...P.map(p => (String(p.origen || '').match(/^Correo (LX-\d+)/) || [])[1]),
-        ...B.filter(b => /llenar datos desde correos/i.test(b.accion) && todos.some(x => x.id === viajeDeAccion(b)?.id)).map(b => b.id)].filter(Boolean))];
+        ...(area === 'Operaciones' ? B.filter(b => /llenar datos desde correos/i.test(b.accion) && todos.some(x => x.id === viajeDeAccion(b)?.id)).map(b => b.id) : [])].filter(Boolean))];
       deAcc.forEach(id => usadas.add(id));
-      add(v, {b: 'datos', ks: deAcc.map(id => 'a' + id), html: P.map(p => `${esc(p.etiqueta)}: ${p.actual ? `<s class="sub">${esc(fx(p.actual))}</s> → ` : ''}<b>${esc(fx(p.valor))}</b> <span class="sub">${esc(String(p.evidencia || '').slice(0, 90))}</span>`).join('<br>')
+      add(v, {b: 'datos', area, ks: deAcc.map(id => 'a' + id), html: P.map(p => `${esc(p.etiqueta)}: ${p.actual ? `<s class="sub">${esc(fx(p.actual))}</s> → ` : ''}<b>${esc(fx(p.valor))}</b> <span class="sub">${esc(String(p.evidencia || '').slice(0, 90))}</span>`).join('<br>')
         + (deAcc.length ? `<br><span class="sub">Vienen de ${deAcc.map(esc).join(', ')}: al aprobar o rechazar, se cierran</span>` : ''),
-        acc: btnT(`✔ Aprobar ${P.length}`, `data-b-aprobar="${v.id}"`) + btnT('Rechazar', `data-b-rechazar="${v.id}"`) + btnT('Ver uno por uno', 'data-b-prop="1"')});
-    }
+        acc: btnT(`✔ Aprobar ${P.length}`, `data-b-aprobar="${v.id}" data-area="${area}"`) + btnT('Rechazar', `data-b-rechazar="${v.id}" data-area="${area}"`) + btnT('Ver uno por uno', 'data-b-prop="1"')});
+    });
     // 7 · Falta (errores del viaje y de sus subviajes; sin los que ya salen arriba), solo si arranca en ≤ HORIZONTE_FALTA días o ya arrancó
     const pe = primerEvento(v), cerca = !pe || diffDias(pe) <= HORIZONTE_FALTA;
     if (cerca) {
@@ -5087,10 +5093,10 @@ function armarBandeja(){
   });
   // datos de correos de viajes que no están abiertos (ej. la aprobación de extracostos de un viaje ya cerrado, que es de Facturación)
   [...new Set(PROP.filter(p => !propUsadas.has(p.clave)).map(p => p.viajeId))].forEach(id => {
-    const v = viajes.find(x => x.id === id), P = PROP.filter(p => p.viajeId === id);
+    const v = viajes.find(x => x.id === id), P = PROP.filter(p => p.viajeId === id && !propUsadas.has(p.clave));
     P.forEach(p => propUsadas.add(p.clave));
     const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
-    add(v || null, {b: 'datos', html: `${v ? `<span class="tg">${esc(situacion(v))}</span> ` : ''}` + P.map(p => `${esc(p.etiqueta)}: ${p.actual ? `<s class="sub">${esc(fx(p.actual))}</s> → ` : ''}<b>${esc(fx(p.valor))}</b> <span class="sub">${esc(String(p.evidencia || '').slice(0, 90))}</span>`).join('<br>'),
+    add(v || null, {b: 'datos', area: P.every(p => areaProp(p) === 'Facturación') ? 'Facturación' : 'Operaciones', html: `${v ? `<span class="tg">${esc(situacion(v))}</span> ` : ''}` + P.map(p => `${esc(p.etiqueta)}: ${p.actual ? `<s class="sub">${esc(fx(p.actual))}</s> → ` : ''}<b>${esc(fx(p.valor))}</b> <span class="sub">${esc(String(p.evidencia || '').slice(0, 90))}</span>`).join('<br>'),
       acc: v ? btnT(`✔ Aprobar ${P.length}`, `data-b-aprobar="${v.id}"`) + btnT('Rechazar', `data-b-rechazar="${v.id}"`) : btnT('Ver en Llenar datos', 'data-b-prop="1"')}, v ? '' : 'Datos de viajes que no se encontraron');
   });
   // registro de vehículos y conductores (lo que falta para asignar): va en la tarjeta del viaje, bloque Falta
@@ -5105,7 +5111,7 @@ function armarBandeja(){
   // roja = la misma línea roja de Mi turno (bloquea el tablero mientras no tenga excepción vigente); su excepción, la misma
   // una línea que junta varias cosas (datos + sus acciones; sin vehículo + "asignar vehículo") lleva todas sus claves (ks):
   // es roja si cualquiera lo es, y la excepción se pide sobre esa
-  tarjetas.forEach(t => t.items.forEach(i => { const F = [i.k, ...(i.ks || [])].filter(Boolean).map(k => FILAS.get(k)).filter(Boolean);
+  tarjetas.forEach(t => t.items.forEach(i => { i.area = i.area || 'Operaciones'; const F = [i.k, ...(i.ks || [])].filter(Boolean).map(k => FILAS.get(k)).filter(Boolean);
     const f = F.find(x => x.bloquea) || F.find(x => x.roja) || F[0];
     if (f) i.k = f.k;
     i.roja = !!(f && f.bloquea); i.exc = f ? f.exc : null; i.rojaSinExc = !!(f && f.roja && !f.exc); }));
@@ -5130,6 +5136,11 @@ function soloEnOtra(R){
 function renderBandeja(){
   const cont = $('#bandeja'); if (!cont || window.MODO_CLIENTE) return;
   const R = armarBandeja(), F = soloEnOtra(R);
+  if (bandejaArea === null) bandejaArea = areaInicial();
+  // filtro por área: cada tarjeta muestra solo las tareas de esa área (y desaparece si no le queda ninguna)
+  const enArea = i => !bandejaArea || i.area === bandejaArea;
+  const L0 = R.L, porArea = a => L0.filter(t => t.items.some(i => !a || i.area === a)).length;
+  R.L = R.L.map(t => ({...t, items: t.items.filter(enArea)})).filter(t => t.items.length).map(t => ({...t, roja: t.items.some(i => i.roja)}));
   const cuenta = k => R.L.filter(t => t.items.some(i => i.b === k)).length;
   const nViajes = R.L.filter(t => t.v).length;
   $('#nBandeja').textContent = R.L.length || '';
@@ -5151,6 +5162,7 @@ function renderBandeja(){
   const accExc = i => i.rojaSinExc ? btnT('⚠ No se puede: excepción', `data-t-exc="${esc(i.k)}"`, 'Pide a Gerencia que apruebe dejarlo así; queda registrado con su nombre') : '';
   cont.innerHTML = `<div class="bj-ronda sub">${ronda}${bloqueo}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}</div>` + bloqueGerencia(T)
     + `<div class="bj-resumen"><b>${nViajes} viaje${nViajes === 1 ? '' : 's'} necesita${nViajes === 1 ? '' : 'n'} algo</b>${R.L.length > nViajes ? ` · ${R.L.length - nViajes} grupo${R.L.length - nViajes === 1 ? '' : 's'} sin viaje` : ''}
+      <div class="chips"><span class="sub" style="margin-right:4px">Área:</span>${[['', 'Todas'], ...AREAS.map(a => [a, a])].map(([a, t]) => `<button type="button" class="chip ${bandejaArea === a ? 'on' : ''}" data-b-area="${a}">${t} · ${porArea(a)}</button>`).join('')}</div>
       <div class="chips">${`<button type="button" class="chip ${!bandejaFiltro ? 'on' : ''}" data-b-filtro="">Todo · ${R.L.length}</button>`}${BLOQUES.map(([k, t]) => cuenta(k) ? `<button type="button" class="chip ${bandejaFiltro === k ? 'on' : ''}" data-b-filtro="${k}" title="${esc(BLOQUES.find(x => x[0] === k)[3])}">${t} · ${cuenta(k)}</button>` : '').join('')}</div></div>`
     + (ver.map(t => `<div class="bj-card${t.roja ? ' roja' : ''}"><div class="bj-h"><b>${esc(t.titulo)}</b>${t.v ? ` <span class="sub">${esc([t.v.contenedor, t.v.estado].filter(Boolean).join(' · '))}</span> ${btnT('Abrir viaje', `data-b-abrir="${t.v.id}"`)}` : ''}</div>`
       + BLOQUES.flatMap(([k, nombre, cls]) => t.items.filter(i => i.b === k && (!bandejaFiltro || bandejaFiltro === k)).map(i => `<div class="bj-item${i.roja ? ' roja' : ''}"><span class="pill ${cls}">${nombre}</span><div class="bj-txt">${i.html}${extra(i)}</div><div class="tr-acc">${i.acc || ''}${accExc(i)}</div></div>`)).join('')
@@ -5161,9 +5173,10 @@ function renderBandeja(){
 }
 
 // aprobar o rechazar los datos de los correos de un viaje (los mismos de "Llenar datos"); la acción que los trajo se cierra si ya no le quedan
-async function decidirBandeja(id, aprobar){
+async function decidirBandeja(id, aprobar, area){
   const v = viajes.find(x => x.id === id); if (!v) return;
-  const todos = [v, ...hijosDe(v)], P = PROP.filter(p => todos.some(x => x.id === p.viajeId)); if (!P.length) return;
+  // solo los datos de esa línea: los del área (Operaciones o Facturación) si la línea es de un área
+  const todos = [v, ...hijosDe(v)], P = PROP.filter(p => todos.some(x => x.id === p.viajeId) && (!area || areaProp(p) === area)); if (!P.length) return;
   const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
   if (!await preguntarSiNo(`¿${aprobar ? 'Guardar en la base' : 'Rechazar'} estos datos del correo en ${id}?\n\n${P.map(p => `• ${p.etiqueta}: ${p.actual ? fx(p.actual) : 'vacío'} → ${fx(p.valor)}`).join('\n')}`, aprobar ? 'Sí, guardar' : 'Sí, rechazar')) return;
   const usuario = pedirUsuario(); if (!usuario) return;
@@ -5175,7 +5188,9 @@ async function decidirBandeja(id, aprobar){
     if (aprobar) { P.forEach(p => { const x = viajes.find(y => y.id === p.viajeId); if (x) { x[p.campo] = p.valor; anotarConfirmacion(x, p.campo, p.valor, usuario, fuenteDeOrigen(p.origen)); } }); etapasViajes(); }
     // la acción de LogxIA que trajo esos datos se cierra si ya no le quedan datos por decidir (R1 de la propuesta)
     const ids = [...new Set([...P.map(p => (String(p.origen || '').match(/^Correo (LX-\d+)/) || [])[1]),
-      ...(window.BITACORA || []).filter(b => b.estadoAccion !== 'Hecha' && /llenar datos desde correos/i.test(b.accion) && todos.some(x => x.id === viajeDeAccion(b)?.id)).map(b => b.id)].filter(Boolean))];
+      // "revise los datos del correo": se cierra solo cuando al viaje ya no le quedan datos de Operaciones por decidir
+      ...((area && area !== 'Operaciones') || PROP.some(p => todos.some(x => x.id === p.viajeId) && areaProp(p) === 'Operaciones') ? []
+        : (window.BITACORA || []).filter(b => b.estadoAccion !== 'Hecha' && /llenar datos desde correos/i.test(b.accion) && todos.some(x => x.id === viajeDeAccion(b)?.id)).map(b => b.id))].filter(Boolean))];
     for (const lx of ids) { const b = (window.BITACORA || []).find(x => x.id === lx);
       if (b && b.estadoAccion !== 'Hecha' && !datosDeAccion(b).length) await marcarHecha(lx, false, `${aprobar ? 'aprobó' : 'rechazó'} los datos del correo en la Bandeja`); }
     toast(aprobar ? `${j.aprobadas} dato${j.aprobadas === 1 ? '' : 's'} guardado${j.aprobadas === 1 ? '' : 's'}` : `${j.rechazadas} rechazado${j.rechazadas === 1 ? '' : 's'}`);
@@ -5189,11 +5204,12 @@ $('#bandeja').onclick = e => {
   // marcas de Mi turno (Sigue igual, excepción, aprobar como Gerencia…): las atiende el mismo código de Mi turno (turno.js)
   if (Object.keys(d).some(k => /^t[A-Z]/.test(k))) return $('#v-turno').onclick(e);
   if (d.bFiltro !== undefined) { bandejaFiltro = d.bFiltro; renderBandeja(); }
+  else if (d.bArea !== undefined) { bandejaArea = d.bArea; renderBandeja(); }
   else if (d.bAbrir) abrir(d.bAbrir);
   else if (d.bHecha) marcarHecha(d.bHecha);
   else if (d.bNoetp) marcarHecha(d.bNoetp, true);
-  else if (d.bAprobar) decidirBandeja(d.bAprobar, true);
-  else if (d.bRechazar) decidirBandeja(d.bRechazar, false);
+  else if (d.bAprobar) decidirBandeja(d.bAprobar, true, d.area);
+  else if (d.bRechazar) decidirBandeja(d.bRechazar, false, d.area);
   else if (d.bProp) abrirPropuestas();
   else if (d.bAsignar) asignarSugerido(d.bAsignar, d.placa, d.conductor, d.telefono);
   else if (d.bReg) { const x = filasRegistro(viajes.filter(v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre)).find(y => y.k === d.bReg);
