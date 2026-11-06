@@ -3048,7 +3048,10 @@ const FILTROS_LINEA = [['', 'Todo'], ['Novedad', 'Equipo'], ['Conductor', 'Condu
 const grupoEvento = t => ({'Novedad': 'Novedad', 'Conductor': 'Conductor', 'Correo': 'Correo', 'Cambio de plan': 'Reprogramación', 'Incidente': 'Reprogramación'})[t] || 'Cambio';
 // 5-nov: Gerencia (modo Gerencia, turno.js) puede corregir el texto y el tipo de una novedad del equipo o del conductor; queda
 // marcada "✏ editada" con quién, cuándo y qué decía antes (Novedades.gs editarNovedad_). Las del sistema no se editan.
-const editable = e => !window.MODO_CLIENTE && esGerencia() && e.n && e.n.fila && (e.tipo === 'Novedad' || e.tipo === 'Conductor');
+// 6-nov ("solo Gerencia, más fácil"): los botones salen siempre para el equipo, no solo en modo Gerencia; al guardar o borrar se
+// pide la clave de Gerencia si no se dio en esta pestaña (cambioDeGerencia) y el servidor la vuelve a comprobar
+const editable = e => !window.MODO_CLIENTE && e.n && e.n.fila && (e.tipo === 'Novedad' || e.tipo === 'Conductor');
+const marcaGer = () => esGerencia() || claveGerenciaSesion ? '' : ' (Gerencia)';
 const marcaEditada = e => !e.n || !e.n.editada ? '' : ` <span class="sub nov-editada" title="${esc(String(e.n.editada).split(' ;; ').map(x => 'Editada por ' + x).join('\n'))}">✏ editada</span>`;
 let EVENTOS_LINEA = [];
 function itemEvento(e, i){
@@ -3056,7 +3059,7 @@ function itemEvento(e, i){
     : e.tipo === 'Programación' ? 'Programación de Reckitt' : e.tipo === 'Correo' ? `Correo${e.prioridad ? ' · ' + e.prioridad : ''}${e.hecha ? ' · ✔ hecha' : ''}` : e.tipo;
   const ic = e.tipo === 'Novedad' ? iconoNovedad(e.sub) : e.tipo === 'Conductor' ? '🚛' : e.tipo === 'Cambio' ? '⚙' : (ICONO_EVENTO[e.tipo] || '•');
   return `<div class="nov-it nov-${grupoEvento(e.tipo)}" data-nev="${i}"><span class="nov-ic">${ic}</span><div style="flex:1;min-width:0"><span class="sub">${esc(fechaNovedad({fecha: e.fecha}))}${e.quien ? ' · ' + esc(e.quien) : ''}</span>${marcaEditada(e)}
-    ${editable(e) ? ` <button type="button" class="link" data-nedit="${i}" title="Corregir el texto o el tipo (queda el rastro de la edición)">✏ Editar</button> <button type="button" class="link" data-nborrar="${i}" title="Borrar una novedad mal escrita (en la hoja queda marcada como borrada)" style="color:var(--bad)">🗑 Borrar</button>` : ''}
+    ${editable(e) ? ` <button type="button" class="link" data-nedit="${i}" title="Solo Gerencia: corregir el texto o el tipo (pide la clave de Gerencia; queda el rastro de la edición)">✏ Editar${marcaGer()}</button> <button type="button" class="link" data-nborrar="${i}" title="Solo Gerencia: borrar una novedad mal escrita (pide la clave; en la hoja queda marcada como borrada)" style="color:var(--bad)">🗑 Borrar${marcaGer()}</button>` : ''}
     <div class="nov-cuerpo"><b>${esc(titulo)}</b> · ${esc(e.texto)}${e.costo ? ` <span style="color:var(--warn)">· costo extra ${pesos(e.costo)}</span>` : ''}${e.incidente ? ` <span style="color:var(--bad)">· ⚠ ${esc(e.incidente)}</span>` : ''}</div></div></div>`;
 }
 function listaLinea(v){
@@ -3090,7 +3093,7 @@ document.addEventListener('click', e => {
   const tipos = ev.tipo === 'Conductor' ? '' : `<select class="nov-etipo">${TIPOS_NOVEDAD.map(([t, ic]) => `<option ${t === ev.n.tipo ? 'selected' : ''} value="${esc(t)}">${ic} ${esc(t)}</option>`).join('')}</select> `;
   caja.querySelector('.nov-cuerpo').innerHTML = `<div class="nov-editar">${tipos}<textarea class="nov-etexto" rows="2">${esc(ev.n.texto)}</textarea>
     <div style="margin-top:4px"><button type="button" class="btn primary" data-nguardar="${b.dataset.nedit}">Guardar corrección</button> <button type="button" class="btn" data-ncancelar>Cancelar</button>
-    <span class="sub">Queda marcada como editada, con lo que decía antes.</span></div></div>`;
+    <span class="sub">Queda marcada como editada, con lo que decía antes.${claveGerenciaSesion ? '' : ' Al guardar se pide la clave de Gerencia.'}</span></div></div>`;
   b.remove(); caja.querySelector('.nov-etexto').focus();
 });
 document.addEventListener('click', e => { if (!e.target.closest('[data-ncancelar]')) return;
@@ -4604,7 +4607,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '45ec18cf05';
+const VERSION_TABLERO = '48e90f8ddc';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5170,7 +5173,9 @@ function renderBandeja(){
   const extra = i => (i.exc ? `<div class="sub tr-exc tr-exc-${i.exc.estado}">${EXC[i.exc.estado](i.exc)} · ${esc(i.exc.motivo)} (${esc(i.exc.usuario)} ${esc(i.exc.hora)})</div>` : '')
     + (excAbierta && excAbierta === i.k ? selectorMotivo(i.k) : '');
   const accExc = i => i.rojaSinExc ? btnT('⚠ No se puede: excepción', `data-t-exc="${esc(i.k)}"`, 'Pide a Gerencia que apruebe dejarlo así; queda registrado con su nombre') : '';
-  cont.innerHTML = `<div class="bj-ronda sub">${ronda}${bloqueo}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}</div>` + bloqueGerencia(T)
+  // entrar o salir del modo Gerencia también desde aquí (antes solo en Mi turno): aprobar excepciones, no bloquearse
+  const llave = esGerencia() ? ` · <span class="tr-ger">🔓 Modo Gerencia</span> ${btnT('Salir', 'data-t-gsalir="1"')}` : ` · ${btnT('🔑 Entrar como Gerencia', 'data-t-gerencia="1"', 'Con la clave de Gerencia: aprobar excepciones, editar novedades y no bloquearse en esta pestaña')}`;
+  cont.innerHTML = `<div class="bj-ronda sub">${ronda}${bloqueo}${llave}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}</div>` + bloqueGerencia(T)
     + `<div class="bj-resumen"><b>${nViajes} viaje${nViajes === 1 ? '' : 's'} necesita${nViajes === 1 ? '' : 'n'} algo</b>${R.L.length > nViajes ? ` · ${R.L.length - nViajes} grupo${R.L.length - nViajes === 1 ? '' : 's'} sin viaje` : ''}
       <div class="chips"><span class="sub" style="margin-right:4px">Área:</span>${[['', 'Todas'], ...AREAS.map(a => [a, a])].map(([a, t]) => `<button type="button" class="chip ${bandejaArea === a ? 'on' : ''}" data-b-area="${a}">${t} · ${porArea(a)}</button>`).join('')}</div>
       <div class="chips">${`<button type="button" class="chip ${!bandejaFiltro ? 'on' : ''}" data-b-filtro="">Todo · ${R.L.length}</button>`}${BLOQUES.map(([k, t]) => cuenta(k) ? `<button type="button" class="chip ${bandejaFiltro === k ? 'on' : ''}" data-b-filtro="${k}" title="${esc(BLOQUES.find(x => x[0] === k)[3])}">${t} · ${cuenta(k)}</button>` : '').join('')}</div></div>`
