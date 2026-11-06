@@ -917,7 +917,10 @@ const textoConfirmacion = c => !c ? '' : c.fuente === 'anterior' ? FUENTES_CONFI
 function etapaOperacion(v){
   if (situacion(v)==='Cancelado' || v.estadoHoja==='Cancelado') return 'Cancelado';
   const ya = k => !!cumplido(v, k);
-  const sub = hijosDe(v)[0], urbanoHecho = !!(sub && cumplido(sub, 'fechaUrbano')), dePaso = sub && !urbanoHecho;
+  // en la bodega de paso solo si el descargue allí está CONFIRMADO (6-nov: IMPO-015 salía "En bodega de paso" con el contenedor
+  // aún en el puerto, solo por tener el subviaje programado); el urbano confirmado también lo prueba
+  const sub = hijosDe(v)[0], urbanoHecho = !!(sub && cumplido(sub, 'fechaUrbano'));
+  const dePaso = !!sub && !urbanoHecho && !!cumplido(sub, 'fechaDescargueSub');
   // IMPO con el contenedor vaciado en la bodega de paso: el vacío vuelve desde allí, sin esperar el urbano (lleva solo el producto)
   const vacioDevuelto = !esLCL(v) && (ya('fechaDevolucion') || !!v.tirillaDevolucion);
   if (v.operacion === 'IMPO' && dePaso && vaciadoSub(sub) && vacioDevuelto) return 'Vacío devuelto';
@@ -4574,7 +4577,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '240c521242';
+const VERSION_TABLERO = 'f99627fea1';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
