@@ -90,6 +90,18 @@ input[type=search]{border:1px solid var(--line);background:var(--surface);border
 .comparar figure{margin:0;background:var(--surface-2);border-radius:10px;padding:8px;text-align:center}
 .comparar img{width:100%;height:320px;object-fit:contain;border-radius:8px;background:#000;cursor:zoom-in}
 .comparar figcaption{font-size:12px;color:var(--muted);margin-top:4px;font-weight:700}
+/* 👤 Conductores */
+.filtros{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.filtros .b.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.filtros .num{background:var(--surface-2);border-radius:99px;padding:0 6px;font-size:12px}
+.conds td{font-size:13px}
+.conds tr.arch td{color:var(--muted);background:var(--surface-2)}
+.prs{max-width:300px}
+.pr{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:2px 6px;margin:0 4px 4px 0;background:var(--warn-soft);color:var(--warn)}
+.pr-Duplicado{background:var(--bad-soft);color:var(--bad)}
+.si{color:var(--ok);font-weight:700}
+td.antes{color:var(--bad);text-decoration:line-through;text-decoration-color:rgba(220,38,38,.4)}
+td.despues{color:var(--ok);font-weight:600}
 @media (max-width:600px){.form{grid-template-columns:1fr} header .der{margin-left:0}}
 </style>
 </head>
@@ -141,6 +153,7 @@ async function cargar(silencioso) {
     if (!USUARIO) return login();   // falta el nombre: se pide en el formulario (prompt() no funciona en todos los navegadores)
     D = d; D.turnos = turnosHora ? TURNOS : null; pintar();
     cargarTurnos();
+    if (pestana === 'conductores') cargarConductores();
   } catch (e) { if (!silencioso) toast('No se pudo cargar: ' + e.message); }
 }
 // conductores enturnados y disponibles en la app Viajes ETP (turnos.html): vienen con los datos del tablero
@@ -226,8 +239,9 @@ function pintar() {
       <button class="${pestana === 'libres' ? 'on' : ''}" onclick="pestana='libres';pintar()">Viajes sin asignar<span class="num">${libres.length}</span></button>
       <button class="${pestana === 'term' ? 'on' : ''}" onclick="pestana='term';pintar()">Terminadas / anuladas<span class="num">${term.length}</span></button>
       <button class="${pestana === 'turnos' ? 'on' : ''}" onclick="pestana='turnos';pintar()">🙋 Enturnados<span class="num">${nEnt}</span>${nDisp ? `<span class="num" title="Disponibles">🟢 ${nDisp}</span>` : ''}</button>
+      <button class="${pestana === 'conductores' ? 'on' : ''}" onclick="pestana='conductores';cargarConductores();pintar()">👤 Conductores${CONDS ? `<span class="num">${condVigentes().length}</span>${condConProblema().length ? `<span class="num" style="background:var(--warn-soft);color:var(--warn)" title="Con algo por revisar">⚠ ${condConProblema().length}</span>` : ''}` : ''}</button>
     </div>
-    ${pestana === 'curso' ? tarjetas(curso.filter(pasa)) : pestana === 'term' ? tarjetas(term.filter(pasa).reverse()) : pestana === 'turnos' ? vistaTurnos(f) : tablaLibres(libres.filter(pasa))}
+    ${pestana === 'curso' ? tarjetas(curso.filter(pasa)) : pestana === 'term' ? tarjetas(term.filter(pasa).reverse()) : pestana === 'turnos' ? vistaTurnos(f) : pestana === 'conductores' ? vistaConductores(f) : tablaLibres(libres.filter(pasa))}
   </main>`;
 }
 
@@ -526,7 +540,8 @@ const fechaTablero = (v, T) => String((T.campos || []).map(k => v[k]).find(x => 
 // el conductor en el registro por su nombre o un alias (sin tildes ni mayúsculas; como buscarConductor del dominio)
 const nomC = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 const cedulaRegistro = nombre => { const n = nomC(nombre); if (!n || !REGISTRO) return '';
-  const c = (REGISTRO.conductores || []).find(x => [x.nombre].concat(String(x.alias || '').split(/[\/,;]/)).some(a => nomC(a) === n)); return c && c.cedula || ''; };
+  const L = (REGISTRO.conductores || []).filter(x => [x.nombre].concat(String(x.alias || '').split(/[\/,;]/)).some(a => nomC(a) === n));
+  const c = L.find(x => !/^archivad/i.test(x.estado || '')) || L[0]; return c && c.cedula || ''; };   // el vigente antes que el archivado
 const PUERTOS = { BUN: 'Puerto de Buenaventura', CTG: 'Puerto de Cartagena', SMR: 'Puerto de Santa Marta' };
 const bookingSel = () => { const f = $('#fcc'); return f && bookingsCargue().find(b => b.bk === f.booking.value); };
 // el paso que sigue: IMPO retiro en puerto; EXPO vacío si el retiro es más adelante, si no llenado en planta
@@ -636,6 +651,166 @@ async function enviarCargue(prueba) {
     if (!prueba) CC_DATOS = null;   // la ventana queda abierta con la constancia abajo; se cierra con Cancelar
   } catch (e) { estadoCargue('✖ No se envió: ' + esc(e.message), 'var(--bad)'); cambiarCargue(x, '✖ no se envió: ' + e.message, 'mal'); }
   finally { if (b) b.disabled = false; }
+}
+
+/* ---------- 👤 Conductores: revisar, editar y limpiar el registro (Registro.gs revisionConductores_ / cambiarConductores_) ---------- */
+// Lo que hay que revisar lo dice el servidor (dominio problemasConductores). Cada cambio: vista previa → la persona confirma →
+// se guarda. Nada se borra: lo fusionado o retirado queda "Archivado" y lo reemplazado queda en la pestaña Historial registro.
+let CONDS = null, condHora = 0, condFiltro = 'todos', condError = '', condPend = null;
+const condVigentes = () => (CONDS || []).filter(c => !/^archivad/i.test(c.estado || ''));
+const condConProblema = () => condVigentes().filter(c => c.problemas.length);
+async function cargarConductores(forzar) {
+  if (!forzar && CONDS && Date.now() - condHora < 2 * 60e3) return;
+  try {
+    const j = await (await fetch(API + '?' + new URLSearchParams({ formato: 'json', que: 'conductores', clave: CLAVE }))).json();
+    if (!j.ok) throw new Error(j.error || 'sin datos');
+    CONDS = j.conductores || []; condHora = Date.now(); condError = '';
+  } catch (e) { condError = e.message; }
+  if (pestana === 'conductores' && !$('#velo')) pintar();
+}
+const FILTROS_COND = [['todos', 'Todos'], ['problemas', '⚠ Por revisar'], ['Duplicado', 'Duplicados'], ['Cédula', 'Cédula'], ['Celular', 'Celular'],
+  ['Nombre', 'Nombre'], ['Placa', 'Placa'], ['archivados', '🗄 Archivados']];
+const archivadoC = c => /^archivad/i.test(c.estado || '');
+function pasaFiltroCond(c, k) {
+  if (k === 'archivados') return archivadoC(c);
+  if (archivadoC(c)) return false;
+  if (k === 'todos') return true;
+  if (k === 'problemas') return c.problemas.length > 0;
+  return c.problemas.some(p => p.tipo === k);
+}
+function vistaConductores(f) {
+  if (condError && !CONDS) return `<div class="vacio">No se pudo cargar el registro: ${esc(condError)} <button class="b b-mini" onclick="cargarConductores(true)">Reintentar</button></div>`;
+  if (!CONDS) return '<div class="vacio">Cargando el registro de conductores…</div>';
+  const busca = c => !f || JSON.stringify([c.nombre, c.cedula, c.celular, c.placas, c.alias]).toLowerCase().includes(f);
+  const lista = CONDS.map((c, i) => Object.assign({ i }, c)).filter(c => pasaFiltroCond(c, condFiltro) && busca(c))
+    .sort((a, b) => (b.problemas.length > 0) - (a.problemas.length > 0) || String(a.nombre).localeCompare(String(b.nombre)));
+  const n = k => CONDS.filter(c => pasaFiltroCond(c, k)).length;
+  const chip = p => `<span class="pr pr-${esc(p.tipo)}" title="${esc(p.msg)}">${esc(p.tipo === 'Duplicado' ? '🔗 ' + p.msg.replace(/^Posible duplicado de /, '≈ ') : p.tipo + ': ' + p.msg)}</span>`;
+  const verif = c => !c.celular ? '' : /^s[ií]/i.test(c.verificado || '') ? ' <span class="si" title="Celular confirmado">✓</span>' : ' <span class="sub" title="' + esc(c.verificado || 'Sin confirmar') + '">·sin confirmar</span>';
+  return `<div class="filtros">${FILTROS_COND.map(([k, t]) => `<button class="b b-mini ${condFiltro === k ? 'on' : ''}" onclick="condFiltro='${k}';pintar()">${t} <span class="num">${n(k)}</span></button>`).join('')}
+      <span class="sub" style="margin-left:auto">Registro leído ${esc(hace(new Date(condHora).toISOString()))}</span>
+      <button class="b b-mini" onclick="cargarConductores(true)">🔄 Recargar</button></div>
+    <p class="sub" style="margin:0 0 10px">Use la búsqueda de arriba (nombre, cédula, celular o placa). Cada cambio muestra primero qué se va a cambiar y solo se guarda al confirmar. Nada se borra: lo que se fusiona o se retira queda archivado.</p>
+    ${!lista.length ? '<div class="vacio">Ningún conductor con ese filtro.</div>' : `<div class="tabla"><table class="conds"><thead><tr><th>Conductor</th><th>Cédula</th><th>Celular</th><th>Placas</th><th>Viajes</th><th>Estado</th><th>Por revisar</th><th></th></tr></thead><tbody>
+    ${lista.map(c => `<tr class="${archivadoC(c) ? 'arch' : ''}"><td><b>${esc(c.nombre)}</b>${c.alias ? `<div class="sub">también: ${esc(c.alias)}</div>` : ''}</td>
+      <td>${esc(c.cedula || '—')}</td><td>${esc(c.celular || '—')}${verif(c)}</td>
+      <td>${String(c.placas || '').split(/\s*,\s*/).filter(Boolean).map(p => `<span class="placa">${esc(p)}</span>`).join(' ') || '—'}</td>
+      <td>${c.viajes || 0}${c.ultimoViaje ? `<div class="sub">último ${esc(diaTxt(c.ultimoViaje))}</div>` : ''}</td>
+      <td><span class="sub">${esc(c.estado || '')}</span>${c.falta && !archivadoC(c) ? `<div class="sub tarde">falta: ${esc(c.falta)}</div>` : ''}</td>
+      <td class="prs">${c.problemas.map(chip).join('') || (archivadoC(c) ? '' : '<span class="si">✓</span>')}</td>
+      <td style="white-space:nowrap">${archivadoC(c) ? `<button class="b b-mini" onclick="restaurarCond(${c.i})">↩ Restaurar</button>` :
+        `<button class="b b-mini" onclick="editarCond(${c.i})">✏️ Editar</button>
+        <button class="b b-mini" onclick="fusionarCond(${c.i})">🔗 Fusionar</button>
+        <button class="b b-mini" onclick="archivarCond(${c.i})">🗄 Archivar</button>`}</td></tr>`).join('')}
+    </tbody></table></div>`}`;
+}
+const problemasHtml = c => c.problemas.length ? `<div class="nov" style="margin-bottom:10px">${c.problemas.map(p => '⚠ ' + esc(p.tipo + ': ' + p.msg)).join('<br>')}</div>` : '';
+function editarCond(i) {
+  const c = CONDS[i];
+  ventana(`<h2>✏️ Editar conductor</h2>${problemasHtml(c)}
+    <form class="form" id="fcond" onsubmit="event.preventDefault();previaEditar(${i})">
+      <label class="full">Nombre completo (MAYÚSCULAS)<input name="nombre" value="${esc(c.nombre)}" required></label>
+      <label>Cédula (solo números)<input name="cedula" value="${esc(c.cedula)}" inputmode="numeric"></label>
+      <label>Celular (10 dígitos)<input name="celular" value="${esc(c.celular)}" inputmode="tel"></label>
+      <label class="full">Placas (separadas por coma)<input name="placas" value="${esc(c.placas)}"></label>
+      <label class="full">También escrito como (separado por /)<input name="alias" value="${esc(c.alias)}"></label>
+      <label>Estado<select name="estado">${[['', 'Automático (Completo / Por completar)'], ['Bloqueado', 'Bloqueado'], ['Inactivo', 'Inactivo']].map(([v, t]) =>
+        `<option value="${v}" ${(/^bloquead/i.test(c.estado) ? 'Bloqueado' : /^inactiv/i.test(c.estado) ? 'Inactivo' : '') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+      <div class="full sub">Si cambia el nombre, el anterior queda en "También escrito como" para que los viajes lo sigan reconociendo. Si cambia el celular, queda pendiente de confirmar.</div>
+    </form>
+    <div class="pie"><button class="b" onclick="arreglarFormato()" title="Solo corrige el formato de lo que ya está escrito: mayúsculas, espacios, puntos de la cédula, guiones de las placas">🧹 Arreglar formato</button>
+      <button class="b" onclick="cerrarVentana()">Cancelar</button><button class="b b-pri" form="fcond">Ver cambios</button></div>`, true);
+}
+// solo formato de lo ya escrito (no inventa datos): la persona lo ve en el formulario y en la vista previa antes de guardar
+function arreglarFormato() {
+  const f = $('#fcond'); if (!f) return;
+  f.nombre.value = f.nombre.value.trim().toUpperCase().replace(/\s+/g, ' ');
+  if (/^[\d.\s-]+$/.test(f.cedula.value)) f.cedula.value = f.cedula.value.replace(/\D/g, '');
+  const cel = f.celular.value.replace(/\D/g, '').replace(/^57(?=\d{10}$)/, ''); if (cel.length === 10) f.celular.value = cel;
+  f.placas.value = f.placas.value.split(/\s*,\s*/).filter(Boolean).map(p => { const x = p.toUpperCase().replace(/[^A-Z0-9]/g, ''); return /^[A-Z]{3}\d{3}$/.test(x) ? x : p.trim(); }).join(', ');
+  f.alias.value = f.alias.value.split(/\s*\/\s*/).filter(Boolean).map(a => a.trim().toUpperCase().replace(/\s+/g, ' ')).join(' / ');
+  toast('Formato corregido en el formulario: revise y pulse Ver cambios');
+}
+function previaEditar(i) {
+  const f = $('#fcond'), c = CONDS[i];
+  previa({ op: 'editar', antes: c.fila, nuevo: { nombre: f.nombre.value, cedula: f.cedula.value, celular: f.celular.value, placas: f.placas.value, alias: f.alias.value, estado: f.estado.value } },
+    '✏️ Editar ' + c.nombre, () => editarCond(i));
+}
+function fusionarCond(i) {
+  const c = CONDS[i], dups = [...new Set([].concat(...c.problemas.filter(p => p.tipo === 'Duplicado').map(p => p.con)))];
+  const otros = CONDS.map((x, j) => Object.assign({ j }, x)).filter(x => x.j !== i && !archivadoC(x));
+  const fila = x => `<label class="ccveh" style="gap:8px;font-weight:400;color:var(--text)"><input type="checkbox" name="sale" value="${x.j}" ${dups.includes(x.j) ? 'checked' : ''}>
+    <span><b>${esc(x.nombre)}</b> · cédula ${esc(x.cedula || '—')} · cel ${esc(x.celular || '—')} · ${esc(x.placas || 'sin placas')} · ${x.viajes || 0} viajes</span></label>`;
+  ventana(`<h2>🔗 Fusionar duplicados</h2>
+    <p class="sub">Queda <b>${esc(c.nombre)}</b> (cédula ${esc(c.cedula || '—')}, cel ${esc(c.celular || '—')}). Los que marque se unen a él: sus nombres pasan a "También escrito como", sus placas se suman y quedan archivados (no se borran).</p>
+    <form class="form" id="ffus" onsubmit="event.preventDefault();previaFusion(${i})">
+      <div class="full archivos"><b class="sub">Posibles duplicados</b>${dups.length ? dups.map(j => fila(Object.assign({ j }, CONDS[j]))).join('') : '<span class="sub">El sistema no encontró duplicados de este conductor. Puede buscar otro abajo.</span>'}</div>
+      <label class="full">Agregar otro conductor<select name="otro" onchange="agregarFusion(this)"><option value="">— elegir —</option>${otros.filter(x => !dups.includes(x.j)).sort((a, b) => a.nombre.localeCompare(b.nombre)).map(x => `<option value="${x.j}">${esc(x.nombre)} · ${esc(x.cedula || 'sin cédula')}</option>`).join('')}</select></label>
+      <div class="full archivos" id="fusExtra"></div>
+    </form>
+    <div class="pie"><button class="b" onclick="cerrarVentana()">Cancelar</button><button class="b b-pri" form="ffus">Ver cambios</button></div>`, true);
+  FUS_FILA = fila;
+}
+let FUS_FILA = null, FUS_ELEGIR = {};
+function agregarFusion(sel) {
+  const j = Number(sel.value); if (sel.value === '' || document.querySelector(`#ffus [name=sale][value="${j}"]`)) return;
+  $('#fusExtra').insertAdjacentHTML('beforeend', FUS_FILA(Object.assign({ j }, CONDS[j])));
+  document.querySelector(`#ffus [name=sale][value="${j}"]`).checked = true; sel.value = '';
+}
+function previaFusion(i, elegir) {
+  const js = [...document.querySelectorAll('#ffus [name=sale]:checked')].map(x => Number(x.value));
+  if (js.length) FUS_ELEGIR = { i, js };
+  const sel = FUS_ELEGIR.i === i ? FUS_ELEGIR.js : js;
+  if (!sel.length) return toast('Marque al menos un conductor para fusionar');
+  previa({ op: 'fusionar', queda: CONDS[i].fila, salen: sel.map(j => CONDS[j].fila), elegir: elegir || {} }, '🔗 Fusionar en ' + CONDS[i].nombre, () => fusionarCond(i));
+}
+const CAMPOS_ELEGIR = { nombre: 'Nombre', cedula: 'Cédula', celular: 'Celular' };
+// los conductores tienen datos distintos: la persona elige cuál queda (solo entre los que ya están en el registro)
+function elegirFusion(i, r) {
+  ventana(`<h2>🔗 ¿Qué dato queda?</h2><p class="sub">Los conductores tienen datos distintos. Elija el correcto (solo los que ya están en el registro).</p>
+    <form class="form" id="felegir" onsubmit="event.preventDefault();previaFusion(${i},Object.fromEntries(new FormData(this)))">
+    ${Object.keys(CAMPOS_ELEGIR).map(k => { const o = (r.elegir && r.elegir[k]) || null, fijo = !o && r.opciones ? (r.opciones[k] || [])[0] : '';
+      return o ? `<div class="full ccgrupo">${CAMPOS_ELEGIR[k]}${o.map((x, n) => `<label class="ccveh" style="gap:8px;font-weight:400;color:var(--text)"><input type="radio" name="${k}" value="${esc(x)}" ${n ? '' : 'required'}> ${esc(x)}</label>`).join('')}</div>`
+        : `<div class="full sub">${CAMPOS_ELEGIR[k]}: ${esc(fijo || '—')} (el mismo en todos)</div>`; }).join('')}
+    </form>
+    <div class="pie"><button class="b" onclick="fusionarCond(${i})">Volver</button><button class="b b-pri" form="felegir">Ver cambios</button></div>`, true);
+}
+function archivarCond(i) {
+  const c = CONDS[i];
+  ventana(`<h2>🗄 Archivar conductor</h2>
+    <p class="sub"><b>${esc(c.nombre)}</b> · cédula ${esc(c.cedula || '—')} · ${c.viajes || 0} viajes. No se borra: queda en la hoja con Estado "Archivado", deja de contar en el registro y no se puede asignar. Se puede restaurar.</p>
+    <form class="form" id="farch" onsubmit="event.preventDefault();previa({op:'archivar',antes:CONDS[${i}].fila,motivo:this.motivo.value},'🗄 Archivar ${esc(c.nombre).replace(/'/g, '')}',()=>archivarCond(${i}))">
+      <label class="full">Motivo<input name="motivo" required minlength="4" placeholder="Ej.: fila repetida sin datos, ya no trabaja con nosotros"></label></form>
+    <div class="pie"><button class="b" onclick="cerrarVentana()">Cancelar</button><button class="b b-pri" form="farch">Ver cambios</button></div>`, true);
+}
+function restaurarCond(i) { previa({ op: 'restaurar', antes: CONDS[i].fila }, '↩ Restaurar ' + CONDS[i].nombre, () => cerrarVentana()); }
+// paso 1: el servidor dice qué cambiaría (sin escribir); paso 2: la persona confirma y se guarda
+async function previa(body, titulo, volver) {
+  ventana(`<h2>${esc(titulo)}</h2><div class="vacio">Calculando los cambios…</div>`, true);
+  let r;
+  try { r = await postear(Object.assign({ action: 'conductores', vista: true }, body)); } catch (e) { r = { ok: false, error: e.message }; }
+  if (r.ok && r.elegir) return elegirFusion(CONDS.findIndex(c => c.fila === body.queda), r);
+  CONDS_VOLVER = volver;
+  if (!r.ok) return ventana(`<h2>${esc(titulo)}</h2><div class="nov">✖ ${esc(r.error)}</div>
+    <div class="pie"><button class="b" onclick="CONDS_VOLVER()">Volver</button>${/cambió en la hoja/.test(r.error) ? '<button class="b b-pri" onclick="cerrarVentana();cargarConductores(true)">🔄 Recargar la lista</button>' : ''}</div>`, true);
+  condPend = body;
+  ventana(`<h2>${esc(titulo)}</h2><p class="sub">Esto es lo que se va a cambiar en el registro. Revise y confirme.</p>
+    <div class="tabla"><table><thead><tr><th>Conductor</th><th>Campo</th><th>Antes</th><th>Después</th></tr></thead><tbody>
+    ${r.cambios.map(c => `<tr><td>${esc(c.conductor)}</td><td><b>${esc(c.campo)}</b></td><td class="antes">${esc(c.antes) || '<span class="sub">vacío</span>'}</td><td class="despues">${esc(c.despues) || `<span class="sub">${c.campo === 'Estado' ? 'automático (Completo / Por completar)' : 'vacío'}</span>`}</td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="sub">Lo de "Antes" queda guardado en la pestaña Historial registro con su nombre (${esc(USUARIO)}) y la fecha.</p>
+    <div class="pie"><button class="b" onclick="CONDS_VOLVER()">Volver</button><button class="b b-pri" id="bconf" onclick="confirmarCond()">✔ Confirmar y guardar</button></div>`, true);
+}
+let CONDS_VOLVER = () => cerrarVentana();
+async function confirmarCond() {
+  const b = $('#bconf'); if (!condPend) return; if (b) { b.disabled = true; b.textContent = 'Guardando…'; }
+  let r;
+  try { r = await postear(Object.assign({ action: 'conductores' }, condPend)); } catch (e) { r = { ok: false, error: e.message }; }
+  if (!r.ok) { if (b) { b.disabled = false; b.textContent = '✔ Confirmar y guardar'; } return toast('✖ No se guardó: ' + r.error); }
+  condPend = null; FUS_ELEGIR = {};
+  CONDS = r.conductores || CONDS; condHora = Date.now();
+  if (r.registro) REGISTRO = r.registro;   // la orden de cargue usa la cédula del registro
+  cerrarVentana(); pintar(); toast('✔ Guardado: ' + r.cambios.length + ' cambio(s) en el registro');
 }
 
 /* ---------- utilidades ---------- */

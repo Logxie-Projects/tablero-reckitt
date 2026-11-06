@@ -1483,11 +1483,56 @@ const aliasDe = x => String(x || '').split(/\s*[\/,;]\s*/).map(s => s.trim()).fi
 // placa o conductor de verdad (no "PENDIENTE", "CANCELADO", "SIN INFO")
 const textoReal = x => !!x && !/^(pend|cancel|sin info)/i.test(String(x));
 const buscarVehiculo = (lista, placa) => placaNorm(placa) ? (lista || []).find(v => placaNorm(v.placa) === placaNorm(placa)) || null : null;
-const buscarConductor = (lista, nombre) => nombre ? (lista || []).find(c => [c.nombre, ...aliasDe(c.alias)].some(a => nombreClave(a) === nombreClave(nombre))) || null : null;
+// Archivado (Despacho · Conductores): fusionado en otro conductor o retirado del registro. No se borra: queda en la hoja.
+const archivadoReg = x => /^archivad/i.test(String(x && x.estado || ''));
+// el conductor por nombre o "También escrito como"; si el nombre está en uno vigente y en uno archivado, gana el vigente
+const buscarConductor = (lista, nombre) => { if (!nombre) return null;
+  const L = (lista || []).filter(c => [c.nombre, ...aliasDe(c.alias)].some(a => nombreClave(a) === nombreClave(nombre)));
+  return L.find(c => !archivadoReg(c)) || L[0] || null; };
 const faltaVehiculoReg = v => !v ? ['no está en el registro'] : [!v.propietario && 'propietario', !celularCO(v.celularPropietario) && 'celular del propietario'].filter(Boolean);
 const faltaConductorReg = c => !c ? ['no está en el registro'] : [!c.cedula && 'cédula', !celularCO(c.celular) && 'celular'].filter(Boolean);
 const celularConfirmado = c => /^s[ií]/i.test(String(c && c.verificado || ''));
 const bloqueadoReg = x => /^bloquead/i.test(String(x && x.estado || ''));
+// placa de vehículo de carga: tres letras y tres números (ABC123)
+const placaValida = p => /^[A-Z]{3}\d{3}$/.test(String(p || ''));
+// cédula: solo números, de 6 a 10 dígitos ('' = vacía o mal escrita)
+const cedulaValida = c => /^\d{6,10}$/.test(String(c || '').trim());
+/**
+ * Despacho · Conductores: qué revisar en cada conductor del registro (lista = filas del registro, en el mismo orden).
+ * Devuelve, por conductor, [{tipo, msg, con}] (con = posiciones de los posibles duplicados). Solo señala: la persona decide y
+ * aprueba cada cambio. Los archivados no se revisan ni cuentan como duplicado.
+ */
+function problemasConductores(lista){
+  const L = (lista || []).map(c => ({ c, ced: String(c.cedula || '').replace(/\D/g, ''), cel: celularCO(c.celular),
+    toks: nombreClave(c.nombre).split(' ').filter(Boolean), nombres: [c.nombre, ...aliasDe(c.alias)].map(nombreClave).filter(Boolean) }));
+  // nombre parecido: las mismas palabras en otro orden, o todas las de uno (al menos dos) dentro del otro
+  const parecido = (a, b) => a.length >= 2 && b.length >= 2 && (a.length <= b.length ? a.every(t => b.includes(t)) : b.every(t => a.includes(t)));
+  return L.map((x, i) => {
+    const c = x.c, out = [], add = (tipo, msg, con) => out.push({ tipo, msg, con: con || [] });
+    if (archivadoReg(c)) return out;
+    const nombre = String(c.nombre || ''), cedTxt = String(c.cedula || '').trim();
+    if (nombre !== nombre.trim() || /\s{2,}/.test(nombre)) add('Nombre', 'Espacios de más');
+    if (nombre !== nombre.toUpperCase()) add('Nombre', 'Minúsculas mezcladas (el registro va en MAYÚSCULAS)');
+    if (/\d/.test(nombre)) add('Nombre', 'Tiene números');
+    else if (/[^A-Za-zÀ-ÿ .'-]/.test(nombre)) add('Nombre', 'Tiene signos raros');
+    if (x.toks.length < 2) add('Nombre', 'Una sola palabra: falta el apellido');
+    if (!cedTxt) add('Cédula', 'Vacía');
+    else if (/\D/.test(cedTxt)) add('Cédula', 'Con puntos, espacios o letras: ' + cedTxt);
+    else if (!cedulaValida(cedTxt)) add('Cédula', cedTxt.length + ' dígitos (una cédula tiene de 6 a 10)');
+    if (!String(c.celular || '').trim()) add('Celular', 'Vacío');
+    else if (!x.cel) add('Celular', 'Mal escrito (10 dígitos que empiezan por 3): ' + c.celular);
+    aliasDe(c.placas).forEach(p => { if (!placaValida(p))
+      add('Placa', p + (placaValida(placaNorm(p)) ? ': con espacios, guiones o minúsculas' : ': no es una placa (tres letras y tres números)')); });
+    L.forEach((y, j) => { if (j === i || archivadoReg(y.c)) return;
+      const por = x.ced && x.ced === y.ced ? 'misma cédula'
+        : x.nombres.some(a => y.nombres.includes(a)) ? 'mismo nombre'
+        : x.cel && x.cel === y.cel ? 'mismo celular'
+        : parecido(x.toks, y.toks) ? 'nombre parecido' + (x.ced && y.ced ? ', cédulas distintas' : '') : '';
+      if (por) add('Duplicado', 'Posible duplicado de ' + y.c.nombre + ' (' + por + ')', [j]);
+    });
+    return out;
+  });
+}
 // calificación: 10 puntos = 5 estrellas, redondeado a media estrella
 const estrellasDePuntos = p => Math.round(Number(p) || 0) / 2;
 /* ---------- Subviaje: su propia etapa (descargue en patio intermedio y urbano al destino final) ---------- */
@@ -4442,7 +4487,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '1c0d1b925a';
+const VERSION_TABLERO = '0921693838';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
