@@ -390,6 +390,18 @@ body.turno-bloqueado #nav button:not([data-v="turno"]):not([data-v="bandeja"]), 
 .bj-txt{min-width:0} .ok-txt{color:var(--ok);font-weight:600}
 .bj-pie{margin-top:16px;padding:10px;border:1px dashed var(--border);border-radius:10px;display:flex;flex-direction:column;gap:6px}
 @media (max-width:700px){.bj-item{grid-template-columns:1fr}}
+/* el texto no se aprieta: si los botones no caben al lado, bajan debajo del texto (antes quedaba una palabra por renglón) */
+.bj-item .tr-acc{max-width:46%}
+@media (max-width:1100px){.bj-item{grid-template-columns:118px minmax(0,1fr)}.bj-item .tr-acc{grid-column:2;max-width:none;justify-content:flex-start}}
+@media (max-width:700px){.bj-item .tr-acc{grid-column:1}}
+.bj-plegado{border-top:1px solid var(--border)} .bj-card .bj-plegado:first-of-type{border-top:0}
+.bj-plegado>summary{cursor:pointer;padding:7px 10px;font-size:13px;color:var(--muted);list-style:none;display:flex;gap:10px;align-items:center}
+.bj-plegado>summary::-webkit-details-marker{display:none}
+.bj-plegado>summary .pill{width:118px;box-sizing:border-box}
+.bj-plegado[open]>summary{display:none}
+.bj-plegado .bj-item{border-top:0}
+.bj-area{font:inherit;font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text)}
+.bj-mas{display:block;width:100%;margin-top:10px;padding:10px;border:1px dashed var(--border);border-radius:10px;background:none;font:inherit;color:var(--accent);font-weight:600;cursor:pointer}
 .tr-fila{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;padding:9px 10px;border-top:1px solid var(--border)}
 .tr-fila.rev{opacity:.55}
 .tr-txt{min-width:0}
@@ -4615,7 +4627,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'f96d14d3b9';
+const VERSION_TABLERO = 'c47f582b74';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5034,7 +5046,10 @@ let bandejaArea = null;
 // barra de operación (6-nov): IMPO, EXPO y Nacional por separado, para que cada uno vea menos trabajo a la vez. Se recuerda en este
 // navegador; "Todas" muestra todo. Lo que no es de ningún viaje ni operación sale en "Otros"
 const OPS_BANDEJA = [['IMPO', 'Importación'], ['EXPO', 'Exportación'], ['NACIONAL', 'Nacional'], ['General', 'Otros']];
-let bandejaOp = (() => { try { return localStorage.getItem('bandejaOp') || ''; } catch(e) { return ''; } })();
+// para no abrumar (6-nov): primero las BANDEJA_PRIMERAS tarjetas más urgentes (y todas las rojas); el resto con "Ver los otros"
+const BANDEJA_PRIMERAS = 8;
+let bandejaTodo = false;
+let bandejaOp =(() => { try { return localStorage.getItem('bandejaOp') || ''; } catch(e) { return ''; } })();
 // cómo se lee un dato del correo en la Bandeja. El equipo no aprueba el dato: decide si lo que dice el correo se GUARDA en el
 // viaje. La aprobación de extracostos la da Reckitt (6-nov: el correo de Samir Bastidas "Autorización facturación" salía como
 // "Aprobar" en Facturación, como si Facturación aprobara los costos): se dice "Reckitt aprobó los extracostos"
@@ -5193,16 +5208,21 @@ function renderBandeja(){
     vencida: e => `✖ La aprobación venció a las ${e.vence}: hay que resolverlo`, rechazada: e => `✖ Excepción rechazada por ${esc(e.aprobo?.usuario || 'Gerencia')}: hay que resolverlo`};
   const extra = i => (i.exc ? `<div class="sub tr-exc tr-exc-${i.exc.estado}">${EXC[i.exc.estado](i.exc)} · ${esc(i.exc.motivo)} (${esc(i.exc.usuario)} ${esc(i.exc.hora)})</div>` : '')
     + (excAbierta && excAbierta === i.k ? selectorMotivo(i.k) : '');
+  // "Falta" (lo menos urgente) va plegado en una línea: "Faltan 3 datos · ver"; se abre si es roja o si se filtra por Falta
+  const plegar = (i, h) => i.b !== 'falta' || i.roja || bandejaFiltro === 'falta' ? h
+    : (n => `<details class="bj-plegado"><summary><span class="pill p-ok">Falta</span> Faltan ${n} dato${n === 1 ? '' : 's'} para el próximo paso <span class="sub">· ver</span></summary>${h}</details>`)(i.html.split('<br>').length);
   const accExc = i => i.rojaSinExc ? btnT('⚠ No se puede: excepción', `data-t-exc="${esc(i.k)}"`, 'Pide a Gerencia que apruebe dejarlo así; queda registrado con su nombre') : '';
   // entrar o salir del modo Gerencia también desde aquí (antes solo en Mi turno): aprobar excepciones, no bloquearse
   const llave = esGerencia() ? ` · <span class="tr-ger">🔓 Modo Gerencia</span> ${btnT('Salir', 'data-t-gsalir="1"')}` : ` · ${btnT('🔑 Entrar como Gerencia', 'data-t-gerencia="1"', 'Con la clave de Gerencia: aprobar excepciones, editar novedades y no bloquearse en esta pestaña')}`;
   cont.innerHTML = `<div class="bj-ronda sub">${ronda}${bloqueo}${llave}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}</div>` + bloqueGerencia(T) + barraOp
-    + `<div class="bj-resumen"><b>${nViajes} viaje${nViajes === 1 ? '' : 's'} necesita${nViajes === 1 ? '' : 'n'} algo</b>${R.L.length > nViajes ? ` · ${R.L.length - nViajes} grupo${R.L.length - nViajes === 1 ? '' : 's'} sin viaje` : ''}
-      <div class="chips"><span class="sub" style="margin-right:4px">Área:</span>${[['', 'Todas'], ...AREAS.map(a => [a, a])].map(([a, t]) => `<button type="button" class="chip ${bandejaArea === a ? 'on' : ''}" data-b-area="${a}">${t} · ${porArea(a)}</button>`).join('')}</div>
+    + `<div class="bj-resumen"><div><b>${nViajes} viaje${nViajes === 1 ? '' : 's'} necesita${nViajes === 1 ? '' : 'n'} algo</b>${R.L.length > nViajes ? ` · ${R.L.length - nViajes} grupo${R.L.length - nViajes === 1 ? '' : 's'} sin viaje` : ''}
+      · <label class="sub">Área <select class="bj-area" data-b-areasel="1">${[['', 'Todas'], ...AREAS.map(a => [a, a])].map(([a, t]) => `<option value="${a}" ${bandejaArea === a ? 'selected' : ''}>${t} (${porArea(a)})</option>`).join('')}</select></label></div>
       <div class="chips">${`<button type="button" class="chip ${!bandejaFiltro ? 'on' : ''}" data-b-filtro="">Todo · ${R.L.length}</button>`}${BLOQUES.map(([k, t]) => cuenta(k) ? `<button type="button" class="chip ${bandejaFiltro === k ? 'on' : ''}" data-b-filtro="${k}" title="${esc(BLOQUES.find(x => x[0] === k)[3])}">${t} · ${cuenta(k)}</button>` : '').join('')}</div></div>`
-    + (ver.map(t => `<div class="bj-card${t.roja ? ' roja' : ''}"><div class="bj-h"><b>${esc(t.titulo)}</b>${t.v ? ` <span class="sub">${esc([t.v.contenedor, t.v.estado].filter(Boolean).join(' · '))}</span> ${btnT('Abrir viaje', `data-b-abrir="${t.v.id}"`)}` : ''}</div>`
-      + BLOQUES.flatMap(([k, nombre, cls]) => t.items.filter(i => i.b === k && (!bandejaFiltro || bandejaFiltro === k)).map(i => `<div class="bj-item${i.roja ? ' roja' : ''}"><span class="pill ${cls}">${nombre}</span><div class="bj-txt">${i.html}${extra(i)}</div><div class="tr-acc">${i.acc || ''}${accExc(i)}</div></div>`)).join('')
+    + (ver.filter((t, ix) => bandejaTodo || ix < BANDEJA_PRIMERAS || t.roja).map(t => `<div class="bj-card${t.roja ? ' roja' : ''}"><div class="bj-h"><b>${esc(t.titulo)}</b>${t.v ? ` <span class="sub">${esc([t.v.contenedor, t.v.estado].filter(Boolean).join(' · '))}</span> ${btnT('Abrir viaje', `data-b-abrir="${t.v.id}"`)}` : ''}</div>`
+      + BLOQUES.flatMap(([k, nombre, cls]) => t.items.filter(i => i.b === k && (!bandejaFiltro || bandejaFiltro === k)).map(i => plegar(i, `<div class="bj-item${i.roja ? ' roja' : ''}"><span class="pill ${cls}">${nombre}</span><div class="bj-txt">${i.html}${extra(i)}</div><div class="tr-acc">${i.acc || ''}${accExc(i)}</div></div>`))).join('')
       + '</div>').join('') || '<div class="tr-vacio">✓ Nada pendiente en este filtro</div>')
+    + (!bandejaTodo && ver.length > ver.filter((t, ix) => ix < BANDEJA_PRIMERAS || t.roja).length
+      ? `<button type="button" class="bj-mas" data-b-todo="1">Ver los otros ${ver.length - ver.filter((t, ix) => ix < BANDEJA_PRIMERAS || t.roja).length} viajes (menos urgentes)</button>` : '')
     + `<div class="bj-pie"><div><b>${F.length ? `⚠ ${F.length} cosa${F.length === 1 ? '' : 's'} solo en otra pantalla` : '✓ Nada queda solo en otra pantalla'}</b> <span class="sub">(si queda en 0 varios días, la Bandeja ya cubre Mi turno, Acciones y Llenar datos)</span></div>
       ${F.length ? `<details><summary class="sub">Ver cuáles</summary>${F.map(([p, t]) => `<div class="sub">• <b>${esc(p)}</b>: ${esc(t)}</div>`).join('')}</details>` : ''}
       ${errLejos ? `<div class="sub">${errLejos} viaje${errLejos === 1 ? '' : 's'} que arranca${errLejos === 1 ? '' : 'n'} en más de ${HORIZONTE_FALTA} días con datos por completar: quedan en Errores, no en la bandeja del día.</div>` : ''}</div>`;
@@ -5234,14 +5254,15 @@ async function decidirBandeja(id, aprobar, area){
   } catch(e) { toast('No se pudo guardar: ' + e.message); }
 }
 
+$('#bandeja').onchange = e => { if (e.target.dataset.bAreasel) { bandejaArea = e.target.value; bandejaTodo = false; renderBandeja(); } };
 $('#bandeja').onclick = e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   const d = b.dataset;
   // marcas de Mi turno (Sigue igual, excepción, aprobar como Gerencia…): las atiende el mismo código de Mi turno (turno.js)
   if (Object.keys(d).some(k => /^t[A-Z]/.test(k))) return $('#v-turno').onclick(e);
-  if (d.bFiltro !== undefined) { bandejaFiltro = d.bFiltro; renderBandeja(); }
-  else if (d.bArea !== undefined) { bandejaArea = d.bArea; renderBandeja(); }
-  else if (d.bOp !== undefined) { bandejaOp = d.bOp; try { localStorage.setItem('bandejaOp', d.bOp); } catch(e) {} renderBandeja(); }
+  if (d.bFiltro !== undefined) { bandejaFiltro = d.bFiltro; bandejaTodo = false; renderBandeja(); }
+  else if (d.bTodo) { bandejaTodo = true; renderBandeja(); }
+  else if (d.bOp !== undefined) { bandejaOp = d.bOp; bandejaTodo = false; try { localStorage.setItem('bandejaOp', d.bOp); } catch(e) {} renderBandeja(); }
   else if (d.bAbrir) abrir(d.bAbrir);
   else if (d.bHecha) marcarHecha(d.bHecha);
   else if (d.bNoetp) marcarHecha(d.bNoetp, true);
