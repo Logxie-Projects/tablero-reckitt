@@ -1482,7 +1482,10 @@ const nombreClave = s => minus(s).replace(/\s+/g, ' ');
 const aliasDe = x => String(x || '').split(/\s*[\/,;]\s*/).map(s => s.trim()).filter(Boolean);
 // placa o conductor de verdad (no "PENDIENTE", "CANCELADO", "SIN INFO")
 const textoReal = x => !!x && !/^(pend|cancel|sin info)/i.test(String(x));
-const buscarVehiculo = (lista, placa) => placaNorm(placa) ? (lista || []).find(v => placaNorm(v.placa) === placaNorm(placa)) || null : null;
+// el vehículo por placa; si la placa está en uno vigente y en uno archivado, gana el vigente
+const buscarVehiculo = (lista, placa) => { if (!placaNorm(placa)) return null;
+  const L = (lista || []).filter(v => placaNorm(v.placa) === placaNorm(placa));
+  return L.find(v => !archivadoReg(v)) || L[0] || null; };
 // Archivado (Despacho · Conductores): fusionado en otro conductor o retirado del registro. No se borra: queda en la hoja.
 const archivadoReg = x => /^archivad/i.test(String(x && x.estado || ''));
 // el conductor por nombre o "También escrito como"; si el nombre está en uno vigente y en uno archivado, gana el vigente
@@ -1530,6 +1533,34 @@ function problemasConductores(lista){
         : parecido(x.toks, y.toks) ? 'nombre parecido' + (x.ced && y.ced ? ', cédulas distintas' : '') : '';
       if (por) add('Duplicado', 'Posible duplicado de ' + y.c.nombre + ' (' + por + ')', [j]);
     });
+    return out;
+  });
+}
+/**
+ * Despacho · Vehículos: qué revisar en cada vehículo del registro (lista = filas del registro, en el mismo orden; conductores =
+ * el registro de conductores, para ver si el celular del propietario es el de un conductor). Devuelve [{tipo, msg, con}] por vehículo.
+ */
+function problemasVehiculos(lista, conductores){
+  const L = lista || [], celCond = {};
+  (conductores || []).forEach(c => { const t = celularCO(c.celular); if (t && !archivadoReg(c)) celCond[t] = c; });
+  return L.map((v, i) => {
+    const out = [], add = (tipo, msg, con) => out.push({ tipo, msg, con: con || [] });
+    if (archivadoReg(v)) return out;
+    const placa = String(v.placa || ''), prop = String(v.propietario || ''), cel = celularCO(v.celularPropietario);
+    if (!placaValida(placa)) add('Placa', placa + (placaValida(placaNorm(placa)) ? ': con espacios, guiones o minúsculas' : ': no es una placa (tres letras y tres números)'));
+    const dup = L.map((y, j) => j).filter(j => j !== i && !archivadoReg(L[j]) && placaNorm(L[j].placa) === placaNorm(placa));
+    if (dup.length) add('Duplicado', 'La placa ' + placaNorm(placa) + ' está ' + (dup.length + 1) + ' veces', dup);
+    if (!prop.trim()) add('Propietario', 'Vacío');
+    else {
+      if (prop !== prop.trim() || /\s{2,}/.test(prop)) add('Propietario', 'Espacios de más');
+      if (prop !== prop.toUpperCase()) add('Propietario', 'Minúsculas mezcladas (el registro va en MAYÚSCULAS)');
+    }
+    if (!String(v.celularPropietario || '').trim()) add('Celular', 'Celular del propietario vacío');
+    else if (!cel) add('Celular', 'Celular del propietario mal escrito (10 dígitos que empiezan por 3): ' + v.celularPropietario);
+    // el propietario que también maneja (por su nombre o "También escrito como") puede tener el mismo celular
+    else if (celCond[cel] && !buscarConductor([celCond[cel]], prop))
+      add('Celular', 'El celular del propietario es el registrado del conductor ' + celCond[cel].nombre + ': revise de quién es');
+    if (!String(v.empresa || '').trim()) add('Empresa', 'Vacía');
     return out;
   });
 }
@@ -4505,7 +4536,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '5d3dac1753';
+const VERSION_TABLERO = 'b5a346bdac';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)

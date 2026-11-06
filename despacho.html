@@ -239,7 +239,7 @@ function pintar() {
       <button class="${pestana === 'libres' ? 'on' : ''}" onclick="pestana='libres';pintar()">Viajes sin asignar<span class="num">${libres.length}</span></button>
       <button class="${pestana === 'term' ? 'on' : ''}" onclick="pestana='term';pintar()">Terminadas / anuladas<span class="num">${term.length}</span></button>
       <button class="${pestana === 'turnos' ? 'on' : ''}" onclick="pestana='turnos';pintar()">🙋 Enturnados<span class="num">${nEnt}</span>${nDisp ? `<span class="num" title="Disponibles">🟢 ${nDisp}</span>` : ''}</button>
-      <button class="${pestana === 'conductores' ? 'on' : ''}" onclick="pestana='conductores';cargarConductores();pintar()">👤 Conductores${CONDS ? `<span class="num">${condVigentes().length}</span>${condConProblema().length ? `<span class="num" style="background:var(--warn-soft);color:var(--warn)" title="Con algo por revisar">⚠ ${condConProblema().length}</span>` : ''}` : ''}</button>
+      <button class="${pestana === 'conductores' ? 'on' : ''}" onclick="pestana='conductores';cargarConductores();pintar()">👤 Conductores y vehículos${CONDS ? `<span class="num">${condVigentes().length}</span>${(condConProblema().length + vehConProblema()) ? `<span class="num" style="background:var(--warn-soft);color:var(--warn)" title="Con algo por revisar">⚠ ${condConProblema().length + vehConProblema()}</span>` : ''}` : ''}</button>
     </div>
     ${pestana === 'curso' ? tarjetas(curso.filter(pasa)) : pestana === 'term' ? tarjetas(term.filter(pasa).reverse()) : pestana === 'turnos' ? vistaTurnos(f) : pestana === 'conductores' ? vistaConductores(f) : tablaLibres(libres.filter(pasa))}
   </main>`;
@@ -656,15 +656,16 @@ async function enviarCargue(prueba) {
 /* ---------- 👤 Conductores: revisar, editar y limpiar el registro (Registro.gs revisionConductores_ / cambiarConductores_) ---------- */
 // Lo que hay que revisar lo dice el servidor (dominio problemasConductores). Cada cambio: vista previa → la persona confirma →
 // se guarda. Nada se borra: lo fusionado o retirado queda "Archivado" y lo reemplazado queda en la pestaña Historial registro.
-let CONDS = null, condHora = 0, condFiltro = 'todos', condError = '', condPend = null;
+let CONDS = null, VEHS = null, condHora = 0, condFiltro = 'todos', condError = '', condPend = null, condVista = 'conductores';   // condVista: conductores | vehiculos
 const condVigentes = () => (CONDS || []).filter(c => !/^archivad/i.test(c.estado || ''));
 const condConProblema = () => condVigentes().filter(c => c.problemas.length);
+const vehConProblema = () => (VEHS || []).filter(v => !/^archivad/i.test(v.estado || '') && v.problemas.length).length;
 async function cargarConductores(forzar) {
   if (!forzar && CONDS && Date.now() - condHora < 2 * 60e3) return;
   try {
     const j = await (await fetch(API + '?' + new URLSearchParams({ formato: 'json', que: 'conductores', clave: CLAVE }))).json();
     if (!j.ok) throw new Error(j.error || 'sin datos');
-    CONDS = j.conductores || []; condHora = Date.now(); condError = '';
+    CONDS = j.conductores || []; VEHS = j.vehiculos || []; condHora = Date.now(); condError = '';
   } catch (e) { condError = e.message; }
   if (pestana === 'conductores' && !$('#velo')) pintar();
 }
@@ -681,13 +682,14 @@ function pasaFiltroCond(c, k) {
 function vistaConductores(f) {
   if (condError && !CONDS) return `<div class="vacio">No se pudo cargar el registro: ${esc(condError)} <button class="b b-mini" onclick="cargarConductores(true)">Reintentar</button></div>`;
   if (!CONDS) return '<div class="vacio">Cargando el registro de conductores…</div>';
+  if (condVista === 'vehiculos') return selectorRegistro() + vistaVehiculos(f);
   const busca = c => !f || JSON.stringify([c.nombre, c.cedula, c.celular, c.placas, c.alias]).toLowerCase().includes(f);
   const lista = CONDS.map((c, i) => Object.assign({ i }, c)).filter(c => pasaFiltroCond(c, condFiltro) && busca(c))
     .sort((a, b) => (b.problemas.length > 0) - (a.problemas.length > 0) || String(a.nombre).localeCompare(String(b.nombre)));
   const n = k => CONDS.filter(c => pasaFiltroCond(c, k)).length;
   const chip = p => `<span class="pr pr-${esc(p.tipo)}" title="${esc(p.msg)}">${esc(p.tipo === 'Duplicado' ? '🔗 ' + p.msg.replace(/^Posible duplicado de /, '≈ ') : p.tipo + ': ' + p.msg)}</span>`;
   const verif = c => !c.celular ? '' : /^s[ií]/i.test(c.verificado || '') ? ' <span class="si" title="Celular confirmado">✓</span>' : ' <span class="sub" title="' + esc(c.verificado || 'Sin confirmar') + '">·sin confirmar</span>';
-  return `<div class="filtros">${FILTROS_COND.map(([k, t]) => `<button class="b b-mini ${condFiltro === k ? 'on' : ''}" onclick="condFiltro='${k}';pintar()">${t} <span class="num">${n(k)}</span></button>`).join('')}
+  return selectorRegistro() + `<div class="filtros">${FILTROS_COND.map(([k, t]) => `<button class="b b-mini ${condFiltro === k ? 'on' : ''}" onclick="condFiltro='${k}';pintar()">${t} <span class="num">${n(k)}</span></button>`).join('')}
       <span class="sub" style="margin-left:auto">Registro leído ${esc(hace(new Date(condHora).toISOString()))}</span>
       <button class="b b-mini" onclick="cargarConductores(true)">🔄 Recargar</button></div>
     <p class="sub" style="margin:0 0 10px">Use la búsqueda de arriba (nombre, cédula, celular o placa). Cada cambio muestra primero qué se va a cambiar y solo se guarda al confirmar. Nada se borra: lo que se fusiona o se retira queda archivado.</p>
@@ -784,6 +786,72 @@ function archivarCond(i) {
     <div class="pie"><button class="b" onclick="cerrarVentana()">Cancelar</button><button class="b b-pri" form="farch">Ver cambios</button></div>`, true);
 }
 function restaurarCond(i) { previa({ op: 'restaurar', antes: CONDS[i].fila }, '↩ Restaurar ' + CONDS[i].nombre, () => cerrarVentana()); }
+
+/* ---------- 🚚 Vehículos del registro: placa, empresa, propietario y su celular (Registro.gs cambiarVehiculos_) ---------- */
+function selectorRegistro() {
+  const nV = (VEHS || []).filter(v => !archivadoC(v) && v.problemas.length).length, nC = condConProblema().length;
+  const b = (k, t, n) => `<button class="${condVista === k ? 'on' : ''}" onclick="condVista='${k}';condFiltro='todos';pintar()">${t}${n ? `<span class="num" style="background:var(--warn-soft);color:var(--warn)">⚠ ${n}</span>` : ''}</button>`;
+  return `<div class="tabs" style="margin-bottom:10px">${b('conductores', '👤 Conductores', nC)}${b('vehiculos', '🚚 Vehículos y propietarios', nV)}</div>`;
+}
+const FILTROS_VEH = [['todos', 'Todos'], ['problemas', '⚠ Por revisar'], ['Duplicado', 'Placa repetida'], ['Placa', 'Placa'], ['Propietario', 'Propietario'],
+  ['Celular', 'Celular'], ['Empresa', 'Empresa'], ['archivados', '🗄 Archivados']];
+function vistaVehiculos(f) {
+  const L = VEHS || [], busca = v => !f || JSON.stringify([v.placa, v.empresa, v.propietario, v.celularPropietario, v.conductores]).toLowerCase().includes(f);
+  const lista = L.map((v, i) => Object.assign({ i }, v)).filter(v => pasaFiltroCond(v, condFiltro) && busca(v))
+    .sort((a, b) => (b.problemas.length > 0) - (a.problemas.length > 0) || String(a.placa).localeCompare(String(b.placa)));
+  const n = k => L.filter(v => pasaFiltroCond(v, k)).length;
+  const chip = p => `<span class="pr pr-${esc(p.tipo)}" title="${esc(p.msg)}">${esc(p.tipo + ': ' + p.msg)}</span>`;
+  return `<div class="filtros">${FILTROS_VEH.map(([k, t]) => `<button class="b b-mini ${condFiltro === k ? 'on' : ''}" onclick="condFiltro='${k}';pintar()">${t} <span class="num">${n(k)}</span></button>`).join('')}
+      <span class="sub" style="margin-left:auto">Registro leído ${esc(hace(new Date(condHora).toISOString()))}</span>
+      <button class="b b-mini" onclick="cargarConductores(true)">🔄 Recargar</button></div>
+    <p class="sub" style="margin:0 0 10px">Para asignar un vehículo a un viaje debe tener propietario y su celular. Busque arriba por placa, propietario, celular o conductor. Cada cambio muestra primero qué se va a cambiar y solo se guarda al confirmar; nada se borra.</p>
+    ${!lista.length ? '<div class="vacio">Ningún vehículo con ese filtro.</div>' : `<div class="tabla"><table class="conds"><thead><tr><th>Placa</th><th>Empresa</th><th>Propietario</th><th>Celular propietario</th><th>Conductores</th><th>Viajes</th><th>Estado</th><th>Por revisar</th><th></th></tr></thead><tbody>
+    ${lista.map(v => `<tr class="${archivadoC(v) ? 'arch' : ''}"><td><span class="placa">${esc(v.placa)}</span></td><td>${esc(v.empresa || '—')}</td>
+      <td>${esc(v.propietario || '—')}</td><td>${esc(v.celularPropietario || '—')}</td><td class="sub">${esc(v.conductores || '—')}</td>
+      <td>${v.viajes || 0}${v.ultimoViaje ? `<div class="sub">último ${esc(diaTxt(v.ultimoViaje))}</div>` : ''}</td>
+      <td><span class="sub">${esc(v.estado || '')}</span>${v.falta && !archivadoC(v) ? `<div class="sub tarde">falta: ${esc(v.falta)}</div>` : ''}</td>
+      <td class="prs">${v.problemas.map(chip).join('') || (archivadoC(v) ? '' : '<span class="si">✓</span>')}</td>
+      <td style="white-space:nowrap">${archivadoC(v) ? `<button class="b b-mini" onclick="restaurarVeh(${v.i})">↩ Restaurar</button>` :
+        `<button class="b b-mini" onclick="editarVeh(${v.i})">✏️ Editar</button> <button class="b b-mini" onclick="archivarVeh(${v.i})">🗄 Archivar</button>`}</td></tr>`).join('')}
+    </tbody></table></div>`}`;
+}
+function editarVeh(i) {
+  const v = VEHS[i], est = /^bloquead/i.test(v.estado) ? 'Bloqueado' : /^inactiv/i.test(v.estado) ? 'Inactivo' : '';
+  ventana(`<h2>✏️ Editar vehículo <span class="placa">${esc(v.placa)}</span></h2>${problemasHtml(v)}
+    <form class="form" id="fveh" onsubmit="event.preventDefault();previaVeh(${i})">
+      <label>Placa<input name="placa" value="${esc(v.placa)}" required></label>
+      <label>Empresa<input name="empresa" value="${esc(v.empresa)}" placeholder="ENTRAPETROL o la del tercero"></label>
+      <label class="full">Propietario (nombre o empresa dueña)<input name="propietario" value="${esc(v.propietario)}"></label>
+      <label>Celular del propietario<input name="celularPropietario" value="${esc(v.celularPropietario)}" inputmode="tel"></label>
+      <label>Estado<select name="estado">${[['', 'Automático (Completo / Por completar)'], ['Bloqueado', 'Bloqueado'], ['Inactivo', 'Inactivo']].map(([x, t]) =>
+        `<option value="${x}" ${est === x ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+      <label class="full">Conductores que lo han manejado (separados por /)<input name="conductores" value="${esc(v.conductores)}"></label>
+      <div class="full sub">Si corrige la placa, corríjala también en los viajes que la tienen mal: el mantenimiento de cada hora vuelve a agregar las placas de los viajes.</div>
+    </form>
+    <div class="pie"><button class="b" onclick="arreglarFormatoVeh()" title="Solo corrige el formato de lo escrito: mayúsculas, espacios, guiones de la placa">🧹 Arreglar formato</button>
+      <button class="b" onclick="cerrarVentana()">Cancelar</button><button class="b b-pri" form="fveh">Ver cambios</button></div>`, true);
+}
+function arreglarFormatoVeh() {
+  const f = $('#fveh'); if (!f) return;
+  const p = f.placa.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); if (/^[A-Z]{3}\d{3}$/.test(p)) f.placa.value = p;
+  ['empresa', 'propietario'].forEach(k => { f[k].value = f[k].value.trim().toUpperCase().replace(/\s+/g, ' '); });
+  const cel = f.celularPropietario.value.replace(/\D/g, '').replace(/^57(?=\d{10}$)/, ''); if (cel.length === 10) f.celularPropietario.value = cel;
+  toast('Formato corregido en el formulario: revise y pulse Ver cambios');
+}
+function previaVeh(i) {
+  const f = $('#fveh'), v = VEHS[i];
+  previa({ action: 'vehiculos', op: 'editar', antes: v.fila, nuevo: { placa: f.placa.value, empresa: f.empresa.value, propietario: f.propietario.value,
+    celularPropietario: f.celularPropietario.value, conductores: f.conductores.value, estado: f.estado.value } }, '✏️ Editar ' + v.placa, () => editarVeh(i));
+}
+function archivarVeh(i) {
+  const v = VEHS[i];
+  ventana(`<h2>🗄 Archivar vehículo <span class="placa">${esc(v.placa)}</span></h2>
+    <p class="sub">${esc(v.propietario || 'Sin propietario')} · ${v.viajes || 0} viajes. No se borra: queda en la hoja con Estado "Archivado", no se puede asignar y se puede restaurar.</p>
+    <form class="form" id="farchv" onsubmit="event.preventDefault();previa({action:'vehiculos',op:'archivar',antes:VEHS[${i}].fila,motivo:this.motivo.value},'🗄 Archivar ${esc(v.placa)}',()=>archivarVeh(${i}))">
+      <label class="full">Motivo<input name="motivo" required minlength="4" placeholder="Ej.: placa mal escrita repetida, vehículo vendido"></label></form>
+    <div class="pie"><button class="b" onclick="cerrarVentana()">Cancelar</button><button class="b b-pri" form="farchv">Ver cambios</button></div>`, true);
+}
+function restaurarVeh(i) { previa({ action: 'vehiculos', op: 'restaurar', antes: VEHS[i].fila }, '↩ Restaurar ' + VEHS[i].placa, () => cerrarVentana()); }
 // paso 1: el servidor dice qué cambiaría (sin escribir); paso 2: la persona confirma y se guarda
 async function previa(body, titulo, volver) {
   ventana(`<h2>${esc(titulo)}</h2><div class="vacio">Calculando los cambios…</div>`, true);
@@ -795,7 +863,7 @@ async function previa(body, titulo, volver) {
     <div class="pie"><button class="b" onclick="CONDS_VOLVER()">Volver</button>${/cambió en la hoja/.test(r.error) ? '<button class="b b-pri" onclick="cerrarVentana();cargarConductores(true)">🔄 Recargar la lista</button>' : ''}</div>`, true);
   condPend = body;
   ventana(`<h2>${esc(titulo)}</h2><p class="sub">Esto es lo que se va a cambiar en el registro. Revise y confirme.</p>
-    <div class="tabla"><table><thead><tr><th>Conductor</th><th>Campo</th><th>Antes</th><th>Después</th></tr></thead><tbody>
+    <div class="tabla"><table><thead><tr><th>Conductor / placa</th><th>Campo</th><th>Antes</th><th>Después</th></tr></thead><tbody>
     ${r.cambios.map(c => `<tr><td>${esc(c.conductor)}</td><td><b>${esc(c.campo)}</b></td><td class="antes">${esc(c.antes) || '<span class="sub">vacío</span>'}</td><td class="despues">${esc(c.despues) || `<span class="sub">${c.campo === 'Estado' ? 'automático (Completo / Por completar)' : 'vacío'}</span>`}</td></tr>`).join('')}
     </tbody></table></div>
     <p class="sub">Lo de "Antes" queda guardado en la pestaña Historial registro con su nombre (${esc(USUARIO)}) y la fecha.</p>
@@ -808,7 +876,7 @@ async function confirmarCond() {
   try { r = await postear(Object.assign({ action: 'conductores' }, condPend)); } catch (e) { r = { ok: false, error: e.message }; }
   if (!r.ok) { if (b) { b.disabled = false; b.textContent = '✔ Confirmar y guardar'; } return toast('✖ No se guardó: ' + r.error); }
   condPend = null; FUS_ELEGIR = {};
-  CONDS = r.conductores || CONDS; condHora = Date.now();
+  CONDS = r.conductores || CONDS; VEHS = r.vehiculos || VEHS; condHora = Date.now();
   if (r.registro) REGISTRO = r.registro;   // la orden de cargue usa la cédula del registro
   cerrarVentana(); pintar(); toast('✔ Guardado: ' + r.cambios.length + ' cambio(s) en el registro');
 }
