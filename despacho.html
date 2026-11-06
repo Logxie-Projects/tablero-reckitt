@@ -562,8 +562,12 @@ function pintarVehiculosCargue(cambio) {
       <input type="checkbox" data-cc-viaje="${esc(v.id)}" checked><span><b class="placa">${esc(v.placa)}</b> · ${esc(v.conductor || '')}${v.conductor ? '' : '<span class="tarde">sin conductor</span>'}
       <span class="sub" style="color:var(--muted)"> · ${esc(v.id)}${v.contenedor ? ' · ' + esc(v.contenedor) : ''}</span>
       <br><span data-cc-fecha="${esc(v.id)}" style="font-size:13px"></span> <span data-cc-cc="${esc(v.id)}" style="font-size:13px"></span></span></label>`).join('');
-  // tipo de orden: solo los de la operación del viaje (EXPO: vacío o llenado; IMPO: retiro en puerto), con el paso que sigue marcado
-  f.querySelectorAll('[name=tipo]').forEach(r => { const ok = (CC_DATOS.tipos[r.value] || {}).op === v0.operacion; r.parentElement.style.display = ok ? '' : 'none'; r.disabled = !ok; });
+  // tipo de orden: se eligen solo los de la operación del viaje (EXPO: vacío o llenado; IMPO: retiro en puerto o descargue en bodega), con el paso que sigue marcado
+  // los de la otra operación se ven en gris con "(solo importación)" para que se sepa que existen
+  f.querySelectorAll('[name=tipo]').forEach(r => { const op = (CC_DATOS.tipos[r.value] || {}).op, ok = op === v0.operacion; r.disabled = !ok;
+    r.parentElement.style.opacity = ok ? '' : '.45'; r.parentElement.title = ok ? '' : `Elija un ${op === 'IMPO' ? 'pedido de importación' : 'booking de exportación'}`;
+    let s = r.parentElement.querySelector('.cc-solo'); if (!s) { s = document.createElement('span'); s.className = 'cc-solo'; s.style.fontSize = '12px'; r.parentElement.appendChild(s); }
+    s.textContent = ok ? '' : ` (solo${op === 'IMPO' ? 'importación' : 'exportación'})`; });
   const marcado = f.querySelector('[name=tipo]:checked');
   if (cambio || !marcado || marcado.disabled) { const t = f.querySelector(`[name=tipo][value="${tipoSugerido(x)}"]`); if (t) t.checked = true; }
   if (cambio) f.lugar.value = '';   // otro viaje: el lugar se vuelve a sugerir
