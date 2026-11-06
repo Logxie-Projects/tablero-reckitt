@@ -105,7 +105,7 @@ td.num,th.num{color:var(--muted);font-variant-numeric:tabular-nums;text-align:ri
 .badge:empty{display:none}
 .sev{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;color:#fff}
 .sev-Alta{background:var(--bad)}.sev-Media{background:var(--warn)}
-body.cliente #nav [data-v="turno"], body.cliente #nav [data-v="errores"], body.cliente #nav [data-v="acciones"], body.cliente .link[onclick^="abrir"], body.cliente .solo-interno{display:none!important}
+body.cliente #nav [data-v="bandeja"], body.cliente #nav [data-v="turno"], body.cliente #nav [data-v="errores"], body.cliente #nav [data-v="acciones"], body.cliente .link[onclick^="abrir"], body.cliente .solo-interno{display:none!important}
 .accion{font-size:12px;line-height:1.35;max-width:280px;white-space:normal}
 .accion .pri{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:1px}
 .lx-item{border:1px solid var(--border);border-radius:10px;padding:10px;margin-top:8px;font-size:13px}
@@ -367,8 +367,22 @@ table.prog td:last-child{min-width:260px}
 .tr-gerencia{margin-top:12px;padding:8px 10px;border:1px solid var(--warn);border-radius:10px;background:color-mix(in srgb, var(--warn) 8%, transparent)}
 .tr-vencida{color:var(--bad);font-weight:700}
 /* ronda vencida: solo queda Mi turno (y la ventana del viaje para actualizar) */
-body.turno-bloqueado #nav button:not([data-v="turno"]), body.turno-bloqueado #gbar{pointer-events:none;opacity:.35}
+body.turno-bloqueado #nav button:not([data-v="turno"]):not([data-v="bandeja"]), body.turno-bloqueado #gbar{pointer-events:none;opacity:.35}
 .tr-n{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:99px;background:var(--accent);color:#fff;font-size:12px;flex:none}
+/* Bandeja (prueba, bandeja.js): una tarjeta por viaje con sus líneas por bloque */
+.bj-resumen{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.bj-card{border:1px solid var(--border);border-radius:10px;margin-top:10px;overflow:hidden}
+.bj-card.roja{border-left:3px solid var(--bad)}
+.bj-h{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;padding:8px 10px;background:var(--surface-2,transparent);border-bottom:1px solid var(--border)}
+.bj-item{display:grid;grid-template-columns:118px minmax(0,1fr) auto;gap:10px;align-items:start;padding:8px 10px;border-top:1px solid var(--border);font-size:13px}
+.bj-item:first-of-type{border-top:0}
+.bj-item.roja .bj-txt{color:var(--text)}
+.bj-item .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;text-align:center}
+.p-bad{background:color-mix(in srgb,var(--bad) 16%,transparent);color:var(--bad)} .p-warn{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+.p-ok{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)} .p-acc{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
+.bj-txt{min-width:0} .ok-txt{color:var(--ok);font-weight:600}
+.bj-pie{margin-top:16px;padding:10px;border:1px dashed var(--border);border-radius:10px;display:flex;flex-direction:column;gap:6px}
+@media (max-width:700px){.bj-item{grid-template-columns:1fr}}
 .tr-fila{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;padding:9px 10px;border-top:1px solid var(--border)}
 .tr-fila.rev{opacity:.55}
 .tr-txt{min-width:0}
@@ -439,6 +453,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
   <div class="bar">
     <div class="brand"><div class="logo">▲</div><div>Control de Transporte · Reckitt<small>Operación IMPO / EXPO</small></div></div>
     <nav id="nav">
+      <button data-v="bandeja" title="Prueba: todo lo que pide trabajo en una tarjeta por viaje (junta Mi turno, Acciones, Llenar datos y Errores)">Bandeja <small>prueba</small> <span class="badge" id="nBandeja"></span></button>
       <button data-v="turno">Mi turno <span class="badge" id="nTurno"></span></button>
       <button data-v="tablero" class="on">Tablero</button>
       <button data-v="viajes">Viajes</button>
@@ -466,6 +481,13 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
 <main>
   <div class="gbar" id="gbar"></div>
   <!-- TABLERO -->
+  <section id="v-bandeja" class="hidden">
+    <div class="card">
+      <h2 style="margin:0">Bandeja <span class="tg">prueba</span></h2>
+      <div class="sub">Todo lo que pide trabajo, una tarjeta por viaje: por crear, por tomar, sin vehículo, ¿pasó?, datos de correos, pedidos y lo que falta. Lo que haga aquí queda igual en Mi turno, Acciones, Llenar datos y Errores, que siguen como siempre.</div>
+      <div id="bandeja" style="margin-top:10px"></div>
+    </div>
+  </section>
   <section id="v-turno" class="hidden">
     <div class="card">
       <div class="toolbar" style="justify-content:space-between;align-items:flex-start">
@@ -2351,7 +2373,8 @@ function renderTurno(){
   // líneas rojas: se bloquea todo el tablero y se lleva al primer paso que las tiene
   document.body.classList.toggle('turno-bloqueado', T.bloqueado);
   const primeraRoja = M.findIndex((m, i) => T.rojas[i]);
-  if (T.bloqueado && $('#v-turno').classList.contains('hidden')) $('#nav [data-v="turno"]').click();
+  // la Bandeja (prueba, bandeja.js) también muestra las líneas rojas: con el bloqueo se puede trabajar desde ella
+  if (T.bloqueado && $('#v-turno').classList.contains('hidden') && $('#v-bandeja')?.classList.contains('hidden')) $('#nav [data-v="turno"]').click();
   // un paso se abre cuando los anteriores no tienen líneas rojas; los que TIENEN líneas rojas están siempre abiertos (son
   // igual de urgentes: ej. Cobertura con viajes sin vehículo a 72 h); Gerencia ve todos los pasos sin orden, y mientras Gerencia
   // quita el bloqueo (pausa) todos los pasos quedan abiertos para el equipo (5-nov: "desbloqueé y Eider no veía Cobertura")
@@ -3790,7 +3813,7 @@ async function cargarPropuestas(intentos = 3){
   for (let i = 0; i < intentos; i++) {
     try {
       const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=propuestas&clave=' + encodeURIComponent(claveActual()))).json();
-      if (j.ok) { PROP = j.propuestas || []; $('#nProp').textContent = PROP.length || ''; return true; }
+      if (j.ok) { PROP = j.propuestas || []; $('#nProp').textContent = PROP.length || ''; if (typeof renderBandeja === 'function') renderBandeja(); return true; }   // la Bandeja (prueba) los muestra por viaje
     } catch(e) {}
     await new Promise(r => setTimeout(r, 3000 * (i + 1)));
   }
@@ -4577,7 +4600,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'f99627fea1';
+const VERSION_TABLERO = '410176e7a2';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -4603,8 +4626,8 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) revi
 /* ---------- navegación y eventos ---------- */
 $('#nav').onclick = e => { const b=e.target.closest('button'); if(!b) return;
   document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on', x===b));
-  document.body.classList.toggle('en-turno', b.dataset.v==='turno');   // Mi turno no usa la barra de filtros global
-  ['turno','tablero','viajes','motonaves','errores','acciones'].forEach(v=>$('#v-'+v).classList.toggle('hidden', v!==b.dataset.v)); };
+  document.body.classList.toggle('en-turno', ['turno','bandeja'].includes(b.dataset.v));   // Mi turno y la Bandeja no usan la barra de filtros global
+  ['bandeja','turno','tablero','viajes','motonaves','errores','acciones'].forEach(v=>$('#v-'+v).classList.toggle('hidden', v!==b.dataset.v)); };
 $('#proximos').onclick = e => { const b = e.target.closest('[data-ag]'); if (!b) return;
   if (b.dataset.ag==='act') agAct = b.dataset.val; else agDia = b.dataset.val;
   renderProximos(); };
@@ -4967,10 +4990,181 @@ const leida = id => { try { return (localStorage.getItem('rkt-preg-leidas') || '
 function marcarLeidas(){ const ids = (window.PREGUNTAS || []).filter(p => p.estado === 'Respondida').map(p => p.id);
   try { localStorage.setItem('rkt-preg-leidas', ids.join(',')); } catch(e){} }
 $('#chatMsgs').addEventListener('click', e => { const b = e.target.closest('[data-preguntar]'); if (b) { b.disabled = true; preguntarALogxia(b.dataset.preguntar); } });
+/* ---------- bandeja.js · Bandeja (prueba, desde 6-nov): todo lo que pide trabajo, una tarjeta por viaje ----------
+ * Capa: pantalla. No tiene reglas ni datos propios: junta lo que ya calculan Mi turno, Acciones, Llenar datos y Errores
+ * (dominio.js: sinCobertura, pasosPorConfirmar, sinActualizar, validar, pareceHecha, yaCreado; acciones.js BITACORA;
+ * propuestas.js PROP; registro.js filasRegistro) y lo ordena por viaje en 7 bloques. Cada botón usa la función de siempre
+ * (abrir, confirmarPaso, marcarHecha, hacerAqui, la aprobación de 'decidir'), así que lo hecho aquí se ve igual en las otras
+ * pantallas y al revés. Un mismo hecho sale una vez (ej. "sin vehículo" = Cobertura + error de placa + acción "asignar").
+ * Abajo, "Solo en otra pantalla": lo que las otras pantallas piden y la bandeja no muestra (debe quedar en 0).
+ * Si la prueba sirve, reemplaza a Mi turno (docs/REGLAS-NEGOCIO.md "Bandeja"); si no, se quita esta pestaña y nada cambia. */
+
+const BLOQUES = [
+  ['crear', 'Por crear', 'p-acc', 'El correo pide un viaje que no está en la base'],
+  ['tomar', 'Por tomar', 'p-acc', 'Viaje nuevo: nadie del equipo lo ha tomado'],
+  ['vehiculo', 'Sin vehículo', 'p-bad', `Arranca en ${HORAS_COBERTURA} h o menos y no tiene placa`],
+  ['paso', '¿Pasó?', 'p-warn', 'La fecha llegó y nadie confirmó si se hizo'],
+  ['datos', 'Datos de correos', 'p-warn', 'Valores nuevos de los correos para aprobar'],
+  ['pedido', 'Pedido', 'p-warn', 'Lo que pide un correo y solo una persona puede hacer'],
+  ['falta', 'Falta', 'p-ok', 'Datos que faltan para el próximo paso'],
+];
+const HORIZONTE_FALTA = 5;   // días: los faltantes de viajes que arrancan después quedan en Errores (revisión, no del día)
+const RE_ASIGNAR = /asignar vehiculo|programar vehiculo|placa y conductor|conductor y vehiculo|vehiculo planchon|programar (el )?vehiculo/;
+let bandejaFiltro = '';
+
+// arma las tarjetas: {v (o null), titulo, items:[{b: bloque, html, acc, roja}], orden}
+function armarBandeja(){
+  const B = (window.BITACORA || []).filter(b => b.estadoAccion !== 'Hecha');
+  const vivos = viajes.filter(v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre);
+  const tarjetas = new Map(), usadas = new Set(), propUsadas = new Set(), hoyViajes = new Set();
+  const tarjeta = (v, titulo) => { const k = v ? v.id : titulo; if (!tarjetas.has(k)) tarjetas.set(k, {v, titulo: titulo || nombreTurno(v), items: []}); return tarjetas.get(k); };
+  const padreDe = v => v && v.padre ? viajes.find(x => x.id === v.padre) || v : v;
+  const add = (v, it, titulo) => { tarjeta(v, titulo).items.push(it); if (v) hoyViajes.add(v.id); };
+  const accHecha = b => btnT('Marcar hecha', `data-b-hecha="${b.id}"`) + btnT('No es para ETP', `data-b-noetp="${b.id}"`);
+  const pista = b => { const p = pareceHecha(b); return p ? ` <span class="ok-txt">✔ Ya hecha según el viaje: ${esc(p)}</span>` : ''; };
+
+  // 1 · Por crear: el correo pide un viaje que no existe (acción "Crear viaje" o "Crear viaje nacional" sin viaje)
+  B.filter(b => (pideCrearViaje(b) && !yaCreado(b)) || ((atajoDe(b) || [])[0] === 'nacional')).forEach(b => {
+    usadas.add(b.id);
+    add(null, {b: 'crear', html: `${desdeCuando(b.fechaCorreo || b.registrado)}<b>${esc(b.accion)}</b><br><span class="sub">${esc(b.resumen || '')} · ${esc(b.remitente || '')}</span>`,
+      acc: botonAtajo(b) + accHecha(b), roja: pedidoRojo(b)}, 'Viajes por crear');
+  });
+  vivos.forEach(v => {
+    const hijos = hijosDe(v), todos = [v, ...hijos];
+    // 2 · Por tomar
+    if (esNuevo(v)) add(v, {b: 'tomar', html: `Nadie lo ha tomado: ábralo y presione <b>Tomar</b>`, acc: btnT('Abrir y tomar', `data-b-abrir="${v.id}"`)});
+    // 3 · Sin vehículo (Cobertura + error "sin vehículo" + acción "asignar vehículo": una sola línea)
+    if (sinCobertura(v)) {
+      const asignar = B.filter(b => !usadas.has(b.id) && viajeDeAccion(b)?.id === v.id && RE_ASIGNAR.test(minus(b.accion)));
+      asignar.forEach(b => usadas.add(b.id));
+      const d = diffDias(primerEvento(v)), sug = sugeridos(v).slice(0, 3);
+      add(v, {b: 'vehiculo', roja: true, html: `Arranca ${d < 0 ? 'desde el ' : d === 0 ? 'hoy, ' : d === 1 ? 'mañana, ' : ''}${fd(primerEvento(v))} y no tiene placa`
+        + (asignar.length ? `<br><span class="sub">También lo pide ${asignar.map(b => esc(b.id)).join(', ')}: al guardar la placa, márquela hecha</span>` : ''),
+        acc: btnT('Asignar en el viaje', `data-b-abrir="${v.id}"`) + sug.map(s => btnT(`🚚 ${esc(s.placa)} · ${esc(String(s.conductor).split(' ').slice(0, 2).join(' '))}`, `data-b-asignar="${v.id}" data-placa="${esc(s.placa)}" data-conductor="${esc(s.conductor)}" data-telefono="${esc(s.telefono || '')}"`, 'Ya hizo esta ruta: se revisa y se guarda')).join('')
+          + asignar.map(b => btnT(`${esc(b.id)} hecha`, `data-b-hecha="${b.id}"`)).join('')});
+    }
+    // 4 · ¿Pasó? (por confirmar + sin actualizar de la misma fecha: una pregunta)
+    todos.forEach(x => pasosPorConfirmar(x).forEach(p => add(v, {b: 'paso', roja: !p.naviera && p.dias > 1,
+      html: `${x.padre ? `Subviaje ${esc(x.id)} · ` : ''}<b>${esc(p.txt)}</b> ${esc(fd(p.fecha))}${p.dias ? ` · hace ${p.dias} d` : ' · hoy'}`,
+      acc: botonConfirmar({v: x, ...p}, 'Sí, se hizo') + btnT('No: nueva fecha', `data-b-abrir="${x.id}"`, 'Abre el viaje para poner la fecha nueva con su causa')})));
+    if (!pasosPorConfirmar(v).length) sinActualizar(v).forEach(s => add(v, {b: 'paso', roja: true, html: `${esc(s.msg)}<br><span class="sub">${esc(s.porque || '')}</span>`,
+      acc: btnT('Actualizar el viaje', `data-b-abrir="${v.id}"`) + (v.placa ? lnkT(ICONO_WA + 'Preguntar dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas')) : '')}));
+    // 5 · Datos de correos (Llenar datos + los datos de cada acción): se aprueban o rechazan aquí; la acción que los trajo se cierra
+    const P = PROP.filter(p => todos.some(x => x.id === p.viajeId));
+    if (P.length) {
+      P.forEach(p => propUsadas.add(p.clave));
+      const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
+      // las acciones que trajeron esos datos y las que solo dicen "revise los datos del correo" de este viaje: una sola línea
+      const deAcc = [...new Set([...P.map(p => (String(p.origen || '').match(/^Correo (LX-\d+)/) || [])[1]),
+        ...B.filter(b => /llenar datos desde correos/i.test(b.accion) && todos.some(x => x.id === viajeDeAccion(b)?.id)).map(b => b.id)].filter(Boolean))];
+      deAcc.forEach(id => usadas.add(id));
+      add(v, {b: 'datos', html: P.map(p => `${esc(p.etiqueta)}: ${p.actual ? `<s class="sub">${esc(fx(p.actual))}</s> → ` : ''}<b>${esc(fx(p.valor))}</b> <span class="sub">${esc(String(p.evidencia || '').slice(0, 90))}</span>`).join('<br>')
+        + (deAcc.length ? `<br><span class="sub">Vienen de ${deAcc.map(esc).join(', ')}: al aprobar o rechazar, se cierran</span>` : ''),
+        acc: btnT(`✔ Aprobar ${P.length}`, `data-b-aprobar="${v.id}"`) + btnT('Rechazar', `data-b-rechazar="${v.id}"`) + btnT('Ver uno por uno', 'data-b-prop="1"')});
+    }
+    // 7 · Falta (errores del viaje y de sus subviajes; sin los que ya salen arriba), solo si arranca en ≤ HORIZONTE_FALTA días o ya arrancó
+    const pe = primerEvento(v), cerca = !pe || diffDias(pe) <= HORIZONTE_FALTA;
+    if (cerca) {
+      const E = todos.flatMap(x => validar(x).map(e => ({...e, x}))).filter(e => e.tipo !== 'Alerta' && e.campo !== 'Seguimiento'
+        && !(sinCobertura(v) && e.x === v && /veh[ií]culo/i.test(e.msg)));
+      if (E.length) add(v, {b: 'falta', roja: E.some(e => e.sev === 'Alta'), html: E.map(e => `${e.x.padre ? `Subviaje ${esc(e.x.id)} · ` : ''}${esc(e.msg)}`).join('<br>'),
+        acc: btnT('Completar en el viaje', `data-b-abrir="${v.id}"`) + clavesBusqueda(v).slice(0, 1).map(([k, c]) => lnkT(`🔎 ${esc(k)} ${esc(c)}`, urlBusqueda(c))).join('')});
+    }
+  });
+  // datos de correos de viajes que no están abiertos (ej. la aprobación de extracostos de un viaje ya cerrado, que es de Facturación)
+  [...new Set(PROP.filter(p => !propUsadas.has(p.clave)).map(p => p.viajeId))].forEach(id => {
+    const v = viajes.find(x => x.id === id), P = PROP.filter(p => p.viajeId === id);
+    P.forEach(p => propUsadas.add(p.clave));
+    const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
+    add(v || null, {b: 'datos', html: `${v ? `<span class="tg">${esc(situacion(v))}</span> ` : ''}` + P.map(p => `${esc(p.etiqueta)}: ${p.actual ? `<s class="sub">${esc(fx(p.actual))}</s> → ` : ''}<b>${esc(fx(p.valor))}</b> <span class="sub">${esc(String(p.evidencia || '').slice(0, 90))}</span>`).join('<br>'),
+      acc: v ? btnT(`✔ Aprobar ${P.length}`, `data-b-aprobar="${v.id}"`) + btnT('Rechazar', `data-b-rechazar="${v.id}"`) : btnT('Ver en Llenar datos', 'data-b-prop="1"')}, v ? '' : 'Datos de viajes que no se encontraron');
+  });
+  // registro de vehículos y conductores (lo que falta para asignar): va en la tarjeta del viaje, bloque Falta
+  filasRegistro(vivos).forEach(x => { const v = padreDe(x.v); const h = filaRegistroHtml(x);
+    add(v, {b: 'falta', roja: !!x.roja, html: `Registro: ${h.titulo}<br><span class="sub">${h.detalle}</span>`, acc: btnT('Completar registro', `data-b-reg="${esc(x.k)}"`)}); });
+  // 6 · Pedidos: el resto de las acciones (con viaje en su tarjeta; sin viaje, en "Pedidos sin viaje")
+  B.filter(b => !usadas.has(b.id)).forEach(b => { const v = padreDe(viajeDeAccion(b));
+    add(v && vivos.includes(v) ? v : null, {b: 'pedido', roja: pedidoRojo(b), area: areaDe(b),
+      html: `${desdeCuando(b.fechaCorreo || b.registrado)}${areaDe(b) !== 'Operaciones' ? `<span class="tg">${esc(areaDe(b))}</span> ` : ''}${esc(b.accion)}${pista(b)}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>`,
+      acc: botonAtajo(b) + accHecha(b)}, v && vivos.includes(v) ? '' : 'Pedidos sin viaje');
+    usadas.add(b.id); });
+  // orden: el bloque más urgente de la tarjeta, luego si tiene líneas rojas, luego la fecha
+  const rango = t => Math.min(...t.items.map(i => BLOQUES.findIndex(x => x[0] === i.b)));
+  const L = [...tarjetas.values()].map(t => ({...t, rango: rango(t), roja: t.items.some(i => i.roja)}))
+    .sort((a, b) => a.rango - b.rango || b.roja - a.roja || String(a.v ? primerEvento(a.v) || '9' : '0').localeCompare(String(b.v ? primerEvento(b.v) || '9' : '0')));
+  return {L, usadas, propUsadas, hoyViajes, B, vivos};
+}
+
+// lo que las otras pantallas piden y la bandeja no muestra: debe quedar en 0 para poder reemplazar Mi turno
+function soloEnOtra(R){
+  const fuera = [];
+  R.B.filter(b => !R.usadas.has(b.id)).forEach(b => fuera.push(['Acciones', `${b.id} · ${b.accion}`]));
+  PROP.filter(p => !R.propUsadas.has(p.clave)).forEach(p => fuera.push(['Llenar datos', `${p.viajeId} · ${p.etiqueta}: ${p.valor}`]));
+  try { menusTurno(rondaActual()).forEach(m => m.filas.forEach(x => { const v = x.v && (x.v.padre ? viajes.find(y => y.id === x.v.padre) : x.v);
+    if (v && ['seg', 'cob', 'conf', 'reg', 'dato'].includes(x.tipo) && !R.hoyViajes.has(v.id) && !(x.tipo === 'seg' && !x.roja) && !(x.tipo === 'dato' && primerEvento(v) && diffDias(primerEvento(v)) > HORIZONTE_FALTA))
+      fuera.push(['Mi turno · ' + m.titulo, `${v.id} · ${x.tipo === 'dato' ? x.e[0].msg : x.tipo}`]); })); } catch(e) {}
+  return fuera;
+}
+
+function renderBandeja(){
+  const cont = $('#bandeja'); if (!cont || window.MODO_CLIENTE) return;
+  const R = armarBandeja(), F = soloEnOtra(R);
+  const cuenta = k => R.L.filter(t => t.items.some(i => i.b === k)).length;
+  const nViajes = R.L.filter(t => t.v).length;
+  $('#nBandeja').textContent = R.L.length || '';
+  const errLejos = R.vivos.filter(v => primerEvento(v) && diffDias(primerEvento(v)) > HORIZONTE_FALTA && validar(v).some(e => e.tipo !== 'Alerta')).length;
+  const ver = R.L.filter(t => !bandejaFiltro || t.items.some(i => i.b === bandejaFiltro));
+  cont.innerHTML = `<div class="bj-resumen"><b>${nViajes} viaje${nViajes === 1 ? '' : 's'} necesita${nViajes === 1 ? '' : 'n'} algo</b>${R.L.length > nViajes ? ` · ${R.L.length - nViajes} grupo${R.L.length - nViajes === 1 ? '' : 's'} sin viaje` : ''}
+      <div class="chips">${`<button type="button" class="chip ${!bandejaFiltro ? 'on' : ''}" data-b-filtro="">Todo · ${R.L.length}</button>`}${BLOQUES.map(([k, t]) => cuenta(k) ? `<button type="button" class="chip ${bandejaFiltro === k ? 'on' : ''}" data-b-filtro="${k}" title="${esc(BLOQUES.find(x => x[0] === k)[3])}">${t} · ${cuenta(k)}</button>` : '').join('')}</div></div>`
+    + (ver.map(t => `<div class="bj-card${t.roja ? ' roja' : ''}"><div class="bj-h"><b>${esc(t.titulo)}</b>${t.v ? ` <span class="sub">${esc([t.v.contenedor, t.v.estado].filter(Boolean).join(' · '))}</span> ${btnT('Abrir viaje', `data-b-abrir="${t.v.id}"`)}` : ''}</div>`
+      + BLOQUES.flatMap(([k, nombre, cls]) => t.items.filter(i => i.b === k && (!bandejaFiltro || bandejaFiltro === k)).map(i => `<div class="bj-item${i.roja ? ' roja' : ''}"><span class="pill ${cls}">${nombre}</span><div class="bj-txt">${i.html}</div><div class="tr-acc">${i.acc || ''}</div></div>`)).join('')
+      + '</div>').join('') || '<div class="tr-vacio">✓ Nada pendiente en este filtro</div>')
+    + `<div class="bj-pie"><div><b>${F.length ? `⚠ ${F.length} cosa${F.length === 1 ? '' : 's'} solo en otra pantalla` : '✓ Nada queda solo en otra pantalla'}</b> <span class="sub">(si queda en 0 varios días, la Bandeja ya cubre Mi turno, Acciones y Llenar datos)</span></div>
+      ${F.length ? `<details><summary class="sub">Ver cuáles</summary>${F.map(([p, t]) => `<div class="sub">• <b>${esc(p)}</b>: ${esc(t)}</div>`).join('')}</details>` : ''}
+      ${errLejos ? `<div class="sub">${errLejos} viaje${errLejos === 1 ? '' : 's'} que arranca${errLejos === 1 ? '' : 'n'} en más de ${HORIZONTE_FALTA} días con datos por completar: quedan en Errores, no en la bandeja del día.</div>` : ''}</div>`;
+}
+
+// aprobar o rechazar los datos de los correos de un viaje (los mismos de "Llenar datos"); la acción que los trajo se cierra si ya no le quedan
+async function decidirBandeja(id, aprobar){
+  const v = viajes.find(x => x.id === id); if (!v) return;
+  const todos = [v, ...hijosDe(v)], P = PROP.filter(p => todos.some(x => x.id === p.viajeId)); if (!P.length) return;
+  const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
+  if (!await preguntarSiNo(`¿${aprobar ? 'Guardar en la base' : 'Rechazar'} estos datos del correo en ${id}?\n\n${P.map(p => `• ${p.etiqueta}: ${p.actual ? fx(p.actual) : 'vacío'} → ${fx(p.valor)}`).join('\n')}`, aprobar ? 'Sí, guardar' : 'Sí, rechazar')) return;
+  const usuario = pedirUsuario(); if (!usuario) return;
+  const datos = P.map(({clave, viajeId, campo, valor, evidencia, origen}) => ({clave, viajeId, campo, valor, evidencia, origen}));
+  try {
+    const j = await api('decidir', {usuario, aprobar: aprobar ? datos : [], rechazar: aprobar ? [] : datos});
+    if (!j.ok) throw new Error(j.error || 'error');
+    const usados = new Set(P.map(p => p.clave)); PROP = PROP.filter(p => !usados.has(p.clave)); $('#nProp').textContent = PROP.length || '';
+    if (aprobar) { P.forEach(p => { const x = viajes.find(y => y.id === p.viajeId); if (x) { x[p.campo] = p.valor; anotarConfirmacion(x, p.campo, p.valor, usuario, fuenteDeOrigen(p.origen)); } }); etapasViajes(); }
+    // la acción de LogxIA que trajo esos datos se cierra si ya no le quedan datos por decidir (R1 de la propuesta)
+    const ids = [...new Set([...P.map(p => (String(p.origen || '').match(/^Correo (LX-\d+)/) || [])[1]),
+      ...(window.BITACORA || []).filter(b => b.estadoAccion !== 'Hecha' && /llenar datos desde correos/i.test(b.accion) && todos.some(x => x.id === viajeDeAccion(b)?.id)).map(b => b.id)].filter(Boolean))];
+    for (const lx of ids) { const b = (window.BITACORA || []).find(x => x.id === lx);
+      if (b && b.estadoAccion !== 'Hecha' && !datosDeAccion(b).length) await marcarHecha(lx, false, `${aprobar ? 'aprobó' : 'rechazó'} los datos del correo en la Bandeja`); }
+    toast(aprobar ? `${j.aprobadas} dato${j.aprobadas === 1 ? '' : 's'} guardado${j.aprobadas === 1 ? '' : 's'}` : `${j.rechazadas} rechazado${j.rechazadas === 1 ? '' : 's'}`);
+    render();
+  } catch(e) { toast('No se pudo guardar: ' + e.message); }
+}
+
+$('#bandeja').onclick = e => {
+  const b = e.target.closest('button'); if (!b || b.disabled) return;
+  const d = b.dataset;
+  if (d.bFiltro !== undefined) { bandejaFiltro = d.bFiltro; renderBandeja(); }
+  else if (d.bAbrir) abrir(d.bAbrir);
+  else if (d.bHecha) marcarHecha(d.bHecha);
+  else if (d.bNoetp) marcarHecha(d.bNoetp, true);
+  else if (d.bAprobar) decidirBandeja(d.bAprobar, true);
+  else if (d.bRechazar) decidirBandeja(d.bRechazar, false);
+  else if (d.bProp) abrirPropuestas();
+  else if (d.bAsignar) asignarSugerido(d.bAsignar, d.placa, d.conductor, d.telefono);
+  else if (d.bReg) { const x = filasRegistro(viajes.filter(v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre)).find(y => y.k === d.bReg);
+    if (x) abrirRegistro(x.clase === 'P' ? x.nombre : x.v.placa, x.v.conductor); }
+};
 /* ---------- inicio.js · arranque del tablero ---------- */
 // Capa: pantalla. render() repinta todas las vistas; carga los datos (datos.js), pide "Ingresar como" al equipo (base.js) y atiende
 // los enlaces de los correos (?viaje=, ?vista=, ?area=, ?usuario=). Se carga de último.
-function render(){ pintarSugerencias(); pintarPreguntas(); renderGbar(); renderTurno(); renderLean(); renderErrores(); renderAcciones(); renderKpis(); renderChartDias(); renderChartEstados(); renderChartPais(); renderChartMix(); renderAlertas(); renderProximos(); renderFeed(); renderChips(); renderTabla(); renderMotonaves(); contarEnturnados(); }
+function render(){ pintarSugerencias(); pintarPreguntas(); renderGbar(); renderTurno(); renderBandeja(); renderLean(); renderErrores(); renderAcciones(); renderKpis(); renderChartDias(); renderChartEstados(); renderChartPais(); renderChartMix(); renderAlertas(); renderProximos(); renderFeed(); renderChips(); renderTabla(); renderMotonaves(); contarEnturnados(); }
 // pantalla de acceso cuando la página trae los datos de la hoja con clave
 function pedirClave(errada){
   document.body.insertAdjacentHTML('beforeend', `<div class="ov open" style="background:var(--bg)"><form class="modal" style="width:min(380px,100%)" onsubmit="event.preventDefault(); location.search='?clave='+encodeURIComponent(this.clave.value.trim())">
