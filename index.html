@@ -372,13 +372,23 @@ body.turno-bloqueado #nav button:not([data-v="turno"]):not([data-v="bandeja"]), 
 /* Bandeja (prueba, bandeja.js): una tarjeta por viaje con sus líneas por bloque */
 .bj-resumen{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
 .bj-ronda{margin-bottom:10px}
-.bj-ops{display:flex;border-bottom:2px solid var(--border);margin:0 0 12px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
-.bj-op{background:none;border:0;border-bottom:3px solid transparent;margin-bottom:-2px;padding:9px 16px;font:inherit;font-weight:600;color:var(--muted);cursor:pointer;white-space:nowrap}
-.bj-op:hover{color:var(--text)}
-.bj-op.on{color:var(--accent);border-bottom-color:var(--accent)}
+/* 3 separadores grandes como pestañas de carpeta (OPERACIÓN NACIONAL, IMPORTACIONES, EXPORTACIONES); Todas y Otros pequeños a la derecha */
+.bj-ops{display:flex;align-items:flex-end;gap:6px;border-bottom:3px solid var(--accent);margin:4px 0 14px}
+.bj-op{font:inherit;cursor:pointer;white-space:nowrap}
+.bj-op.grande{flex:1 1 0;min-width:0;padding:14px 10px;border:1px solid var(--border);border-bottom:0;border-radius:12px 12px 0 0;background:var(--surface-2,#f2f4f7);color:var(--muted);font-size:15px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis}
+.bj-op.grande:hover{color:var(--text)}
+.bj-op.grande.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.bj-op.grande.on .bj-opn{background:#fff;color:var(--accent)}
+.bj-ops-chicas{display:flex;flex-direction:column;gap:2px;padding-bottom:4px}
+.bj-op.chica{background:none;border:0;padding:2px 8px;font-size:12px;font-weight:600;color:var(--muted);text-align:left}
+.bj-op.chica.on{color:var(--accent);text-decoration:underline}
+@media (max-width:700px){.bj-op.grande{font-size:12px;padding:10px 4px;letter-spacing:0}}
 .bj-opn{display:inline-block;min-width:20px;padding:0 6px;margin-left:4px;border-radius:10px;background:var(--border);font-size:.85em;text-align:center}
-.bj-op.on .bj-opn{background:var(--accent);color:#fff}
+.bj-op.chica.on .bj-opn{background:var(--accent);color:#fff}
 .bj-card{border:1px solid var(--border);border-radius:10px;margin-top:10px;overflow:hidden}
+.bj-fecha{font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--border);color:var(--text);white-space:nowrap}
+.bj-fecha.hoy{background:color-mix(in srgb,var(--warn) 22%,transparent)}
+.bj-fecha.atras{background:color-mix(in srgb,var(--bad) 15%,transparent);color:var(--bad)}
 .bj-card.roja{border-left:3px solid var(--bad)}
 .bj-h{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;padding:8px 10px;background:var(--surface-2,transparent);border-bottom:1px solid var(--border)}
 .bj-item{display:grid;grid-template-columns:118px minmax(0,1fr) auto;gap:10px;align-items:start;padding:8px 10px;border-top:1px solid var(--border);font-size:13px}
@@ -4665,7 +4675,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'd912f9f0f9';
+const VERSION_TABLERO = 'bd716c3bf3';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5083,7 +5093,10 @@ let bandejaFiltro = '';
 let bandejaArea = null;
 // barra de operación (6-nov): IMPO, EXPO y Nacional por separado, para que cada uno vea menos trabajo a la vez. Se recuerda en este
 // navegador; "Todas" muestra todo. Lo que no es de ningún viaje ni operación sale en "Otros"
-const OPS_BANDEJA = [['IMPO', 'Importación'], ['EXPO', 'Exportación'], ['NACIONAL', 'Nacional'], ['General', 'Otros']];
+// 6-nov: tres separadores grandes, como pestañas de carpeta: OPERACIÓN NACIONAL, IMPORTACIONES, EXPORTACIONES (siempre a la
+// vista, aunque estén en 0). "Todas" y "Otros" (sin operación) quedan pequeños a la derecha
+const OPS_BANDEJA = [['NACIONAL', 'Operación nacional'], ['IMPO', 'Importaciones'], ['EXPO', 'Exportaciones'], ['General', 'Otros']];
+const OPS_GRANDES = ['NACIONAL', 'IMPO', 'EXPO'];
 // para no abrumar (6-nov): primero las BANDEJA_PRIMERAS tarjetas más urgentes (y todas las rojas); el resto con "Ver los otros"
 const BANDEJA_PRIMERAS = 8;
 let bandejaTodo = false;
@@ -5100,6 +5113,10 @@ const botonesDato = (id, n, area) => btnT(`✔ Guardar en el viaje${n > 1 ? ' ('
   + btnT('Descartar', `data-b-rechazar="${id}"${area ? ` data-area="${area}"` : ''}`, 'No se guarda y no vuelve a aparecer');
 const areaInicial = () => { const p = EQUIPO.find(x => x.nombre === usuarioGuardado()); return p && AREAS.includes(p.area) ? p.area : ''; };
 
+// la fecha de la próxima acción de la tarjeta (el orden de la Bandeja): atrasada, hoy, mañana o el día
+const fechaTarjeta = t => { if (!t.fecha) return ''; const d = diffDias(t.fecha);
+  return `<span class="bj-fecha ${d < 0 ? 'atras' : d === 0 ? 'hoy' : ''}">📅 ${d < 0 ? `${t.v ? 'Atrasado' : 'Pedido'} desde ${fd(t.fecha)}` : d === 0 ? 'Hoy' : d === 1 ? 'Mañana' : fd(t.fecha)}</span>`; };
+
 // arma las tarjetas: {v (o null), titulo, items:[{b: bloque, html, acc, roja}], orden}
 function armarBandeja(){
   // rondas, líneas rojas y excepciones: las de Mi turno (turno.js estadoTurno), con las mismas claves ("cob|ID", "conf|ID",
@@ -5112,7 +5129,8 @@ function armarBandeja(){
   const tarjeta = (v, titulo) => { const k = v ? v.id : titulo; if (!tarjetas.has(k)) tarjetas.set(k, {v, titulo: titulo || nombreTurno(v), items: []}); return tarjetas.get(k); };
   const padreDe = v => v && v.padre ? viajes.find(x => x.id === v.padre) || v : v;
   // op: la operación del viaje (IMPO, EXPO, NACIONAL) para la barra de arriba; sin viaje, la que dice la acción (dominio operacionAccion)
-  const add = (v, it, titulo, b) => { it.op = v ? v.operacion : (b && operacionAccion(b)) || 'General'; tarjeta(v, titulo).items.push(it); if (v) hoyViajes.add(v.id); };
+  const add = (v, it, titulo, b) => { if (b) { const f = new Date(b.fechaCorreo || b.registrado); if (!isNaN(f)) it.desde = f.toISOString().slice(0, 10); }
+    it.op = v ? v.operacion : (b && operacionAccion(b)) || 'General'; tarjeta(v, titulo).items.push(it); if (v) hoyViajes.add(v.id); };
   const accHecha = b => btnT('Marcar hecha', `data-b-hecha="${b.id}"`) + btnT('No es para ETP', `data-b-noetp="${b.id}"`);
   const pista = b => { const p = pareceHecha(b); return p ? ` <span class="ok-txt">✔ Ya hecha según el viaje: ${esc(p)}</span>` : ''; };
 
@@ -5194,10 +5212,17 @@ function armarBandeja(){
     const f = F.find(x => x.bloquea) || F.find(x => x.roja) || F[0];
     if (f) i.k = f.k;
     i.roja = !!(f && f.bloquea); i.exc = f ? f.exc : null; i.rojaSinExc = !!(f && f.roja && !f.exc); }));
-  // orden: el bloque más urgente de la tarjeta, luego si tiene líneas rojas, luego la fecha
+  // orden (6-nov): por la fecha de la próxima acción, la más cercana primero (lo atrasado arriba); las rojas antes que todo porque
+  // bloquean. Fecha de la tarjeta: el próximo paso sin confirmar del viaje o de sus subviajes (pasosDe); sin pasos pendientes, el
+  // primer evento; sin viaje, el día del correo que la pide (ya pasó: va arriba)
   const rango = t => Math.min(...t.items.map(i => BLOQUES.findIndex(x => x[0] === i.b)));
-  const L = [...tarjetas.values()].map(t => ({...t, rango: rango(t), roja: t.items.some(i => i.roja)}))
-    .sort((a, b) => a.rango - b.rango || b.roja - a.roja || String(a.v ? primerEvento(a.v) || '9' : '0').localeCompare(String(b.v ? primerEvento(b.v) || '9' : '0')));
+  const fechaAccion = t => {
+    if (!t.v) { const d = t.items.map(i => i.desde).filter(Boolean).sort()[0]; return d || ''; }
+    const F = [t.v, ...hijosDe(t.v)].flatMap(x => pasosDe(x).map(p => p[0]).filter(k => fechaPaso(x, k) && !cumplido(x, k)).map(k => fechaPaso(x, k))).sort();
+    return F[0] || String(primerEvento(t.v) || '').slice(0, 10);
+  };
+  const L = [...tarjetas.values()].map(t => ({...t, rango: rango(t), roja: t.items.some(i => i.roja), fecha: fechaAccion(t)}))
+    .sort((a, b) => b.roja - a.roja || (a.fecha || '9').localeCompare(b.fecha || '9') || a.rango - b.rango);
   return {L, usadas, propUsadas, hoyViajes, B, vivos, T};
 }
 
@@ -5224,8 +5249,8 @@ function renderBandeja(){
   const deOp = (t, o) => t.items.filter(i => !o || i.op === o);
   const opN = o => R.L.filter(t => deOp(t, o).length).length, opRoja = o => R.L.some(t => deOp(t, o).some(i => i.roja));
   if (bandejaOp && !opN(bandejaOp) && !OPS_BANDEJA.some(([o]) => o === bandejaOp)) bandejaOp = '';
-  const barraOp = `<div class="bj-ops">${[['', 'Todas'], ...OPS_BANDEJA].filter(([o]) => !o || o === bandejaOp || opN(o)).map(([o, t]) =>
-    `<button type="button" class="bj-op ${bandejaOp === o ? 'on' : ''}" data-b-op="${o}">${opRoja(o) ? '⛔ ' : ''}${t} <span class="bj-opn">${opN(o)}</span></button>`).join('')}</div>`;
+  const botonOp = ([o, t]) => `<button type="button" class="bj-op ${OPS_GRANDES.includes(o) ? 'grande' : 'chica'} ${bandejaOp === o ? 'on' : ''}" data-b-op="${o}">${opRoja(o) ? '⛔ ' : ''}${t} <span class="bj-opn">${opN(o)}</span></button>`;
+  const barraOp = `<div class="bj-ops">${OPS_BANDEJA.filter(([o]) => OPS_GRANDES.includes(o)).map(botonOp).join('')}<div class="bj-ops-chicas">${[['', 'Todas'], ...OPS_BANDEJA.filter(([o]) => !OPS_GRANDES.includes(o) && (o === bandejaOp || opN(o)))].map(botonOp).join('')}</div></div>`;
   const nTotal = opN('');
   R.L = R.L.map(t => ({...t, items: deOp(t, bandejaOp)})).filter(t => t.items.length).map(t => ({...t, roja: t.items.some(i => i.roja)}));
   const cuenta = k => R.L.filter(t => t.items.some(i => i.b === k)).length;
@@ -5260,7 +5285,7 @@ function renderBandeja(){
     + `<div class="bj-resumen"><div><b>${nViajes} viaje${nViajes === 1 ? '' : 's'} necesita${nViajes === 1 ? '' : 'n'} algo</b>${R.L.length > nViajes ? ` · ${R.L.length - nViajes} grupo${R.L.length - nViajes === 1 ? '' : 's'} sin viaje` : ''}
       · <label class="sub">Área <select class="bj-area" data-b-areasel="1">${[['', 'Todas'], ...AREAS.map(a => [a, a])].map(([a, t]) => `<option value="${a}" ${bandejaArea === a ? 'selected' : ''}>${t} (${porArea(a)})</option>`).join('')}</select></label></div>
       <div class="chips">${`<button type="button" class="chip ${!bandejaFiltro ? 'on' : ''}" data-b-filtro="">Todo · ${R.L.length}</button>`}${BLOQUES.map(([k, t]) => cuenta(k) ? `<button type="button" class="chip ${bandejaFiltro === k ? 'on' : ''}" data-b-filtro="${k}" title="${esc(BLOQUES.find(x => x[0] === k)[3])}">${t} · ${cuenta(k)}</button>` : '').join('')}</div></div>`
-    + (ver.filter((t, ix) => bandejaTodo || ix < BANDEJA_PRIMERAS || t.roja).map(t => `<div class="bj-card${t.roja ? ' roja' : ''}"><div class="bj-h"><b>${esc(t.titulo)}</b>${t.v ? ` <span class="sub">${esc([t.v.contenedor, t.v.estado].filter(Boolean).join(' · '))}</span> ${btnT('Abrir viaje', `data-b-abrir="${t.v.id}"`)}` : ''}</div>`
+    + (ver.filter((t, ix) => bandejaTodo || ix < BANDEJA_PRIMERAS || t.roja).map(t => `<div class="bj-card${t.roja ? ' roja' : ''}"><div class="bj-h">${fechaTarjeta(t)}<b>${esc(t.titulo)}</b>${t.v ? ` <span class="sub">${esc([t.v.contenedor, t.v.estado].filter(Boolean).join(' · '))}</span> ${btnT('Abrir viaje', `data-b-abrir="${t.v.id}"`)}` : ''}</div>`
       + BLOQUES.flatMap(([k, nombre, cls]) => t.items.filter(i => i.b === k && (!bandejaFiltro || bandejaFiltro === k)).map(i => plegar(i, `<div class="bj-item${i.roja ? ' roja' : ''}"><span class="pill ${cls}">${nombre}</span><div class="bj-txt">${i.html}${extra(i)}</div><div class="tr-acc">${i.acc || ''}${accExc(i)}</div></div>`))).join('')
       + '</div>').join('') || '<div class="tr-vacio">✓ Nada pendiente en este filtro</div>')
     + (!bandejaTodo && ver.length > ver.filter((t, ix) => ix < BANDEJA_PRIMERAS || t.roja).length
