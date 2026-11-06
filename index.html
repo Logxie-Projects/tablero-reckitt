@@ -371,6 +371,7 @@ body.turno-bloqueado #nav button:not([data-v="turno"]):not([data-v="bandeja"]), 
 .tr-n{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:99px;background:var(--accent);color:#fff;font-size:12px;flex:none}
 /* Bandeja (prueba, bandeja.js): una tarjeta por viaje con sus líneas por bloque */
 .bj-resumen{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.bj-ronda{margin-bottom:10px}
 .bj-card{border:1px solid var(--border);border-radius:10px;margin-top:10px;overflow:hidden}
 .bj-card.roja{border-left:3px solid var(--bad)}
 .bj-h{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;padding:8px 10px;background:var(--surface-2,transparent);border-bottom:1px solid var(--border)}
@@ -2103,13 +2104,15 @@ async function marcarRevisado(k){
   const antes = window.TURNO || [], revisado = !revisados().has(k);
   const hora = ahoraBogota().hhmm;
   window.TURNO = revisado ? [...antes, {clave: k, estado: 'Revisado', usuario, hora}] : antes.filter(x => x.clave !== k);
-  renderTurno();
+  repintarTurno();
   try {
     const j = await api('turno', {k, revisado, usuario});
     if (!j.ok) throw new Error(j.error || 'error');
-    window.TURNO = j.turno || window.TURNO; renderTurno();
-  } catch(e) { window.TURNO = antes; renderTurno(); toast('No se guardó la marca: ' + e.message); }
+    window.TURNO = j.turno || window.TURNO; repintarTurno();
+  } catch(e) { window.TURNO = antes; repintarTurno(); toast('No se guardó la marca: ' + e.message); }
 }
+// Mi turno y la Bandeja (prueba, bandeja.js) usan las mismas marcas, rondas y excepciones: se repintan juntas
+const repintarTurno = () => { renderTurno(); if (typeof renderBandeja === 'function') renderBandeja(); };
 // hitosDe (lo que pasa en el viaje en cada fecha) está en el dominio (dominio.js)
 // WhatsApp con el mensaje armado; el coordinador elige el contacto (la base aún no guarda el teléfono del conductor)
 const waConductor = (v, pregunta) => waLink('', 
@@ -2421,21 +2424,22 @@ async function entrarGerencia(){
     if (!j.ok) return toast(j.error || 'Clave de Gerencia incorrecta');
     claveGerenciaSesion = codigo;
     try { sessionStorage.setItem('rkt-gerencia', '1'); } catch(e){}
-    toast('Modo Gerencia: el tablero no se bloquea en esta pestaña'); renderTurno();
+    toast('Modo Gerencia: el tablero no se bloquea en esta pestaña'); repintarTurno();
   } catch(e) { toast('No se pudo verificar la clave'); }
 }
-setInterval(() => { if (window.BITACORA) renderTurno(); }, 60e3);   // el reloj de la ronda y el bloqueo avanzan solos
+setInterval(() => { if (window.BITACORA) repintarTurno(); }, 60e3);   // el reloj de la ronda y el bloqueo avanzan solos
 $('#v-turno').onclick = e => {   // incluye el reloj de la ronda (#turnoReloj)
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   const d = b.dataset;
   if (d.tMenu) { turnoMenu = d.tMenu; renderTurno(); }
-  else if (d.tExc) { excAbierta = d.tExc; renderTurno(); }
-  else if (d.tExccancel) { excAbierta = ''; renderTurno(); }
-  else if (d.tExcok) { const motivo = $(`[data-t-motivo="${CSS.escape(d.tExcok)}"]`).value; excAbierta = ''; marcarRevisado(`exc|${d.tExcok}|${motivo}`); }
+  else if (d.tExc) { excAbierta = d.tExc; repintarTurno(); }
+  else if (d.tExccancel) { excAbierta = ''; repintarTurno(); }
+  // excepción: el motivo del selector que está junto al botón (en Mi turno o en la Bandeja)
+  else if (d.tExcok) { const motivo = (b.closest('.tr-motivo') || document).querySelector(`[data-t-motivo="${CSS.escape(d.tExcok)}"]`).value; excAbierta = ''; marcarRevisado(`exc|${d.tExcok}|${motivo}`); }
   else if (d.tGerencia) entrarGerencia();
   else if (d.tPausa && esGerencia()) pausarBloqueo();
   else if (d.tPausafin && esGerencia()) terminarPausa();
-  else if (d.tGsalir) { try { sessionStorage.removeItem('rkt-gerencia'); } catch(e){} renderTurno(); }
+  else if (d.tGsalir) { try { sessionStorage.removeItem('rkt-gerencia'); } catch(e){} repintarTurno(); }
   else if ((d.tAprobar || d.tRechazar) && esGerencia()) { const k = d.tAprobar || d.tRechazar;
     if (confirm(`¿${d.tAprobar ? 'Aprobar' : 'Rechazar'} esta excepción como Gerencia?\n\nQueda registrado con su nombre y la hora.`)) marcarRevisado((d.tAprobar ? 'ok|' : 'no|') + k); }
   else if (d.tVer) marcarVerificado(d.nombre, d.tVer);   // registro.js: respuesta al mensaje de prueba
@@ -4600,7 +4604,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '410176e7a2';
+const VERSION_TABLERO = 'a92e1eceaa';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5004,6 +5008,7 @@ const BLOQUES = [
   ['tomar', 'Por tomar', 'p-acc', 'Viaje nuevo: nadie del equipo lo ha tomado'],
   ['vehiculo', 'Sin vehículo', 'p-bad', `Arranca en ${HORAS_COBERTURA} h o menos y no tiene placa`],
   ['paso', '¿Pasó?', 'p-warn', 'La fecha llegó y nadie confirmó si se hizo'],
+  ['donde', '¿Dónde va?', 'p-acc', 'Vehículo en movimiento: confirmar en cada ronda dónde va (o "Sigue igual")'],
   ['datos', 'Datos de correos', 'p-warn', 'Valores nuevos de los correos para aprobar'],
   ['pedido', 'Pedido', 'p-warn', 'Lo que pide un correo y solo una persona puede hacer'],
   ['falta', 'Falta', 'p-ok', 'Datos que faltan para el próximo paso'],
@@ -5014,6 +5019,10 @@ let bandejaFiltro = '';
 
 // arma las tarjetas: {v (o null), titulo, items:[{b: bloque, html, acc, roja}], orden}
 function armarBandeja(){
+  // rondas, líneas rojas y excepciones: las de Mi turno (turno.js estadoTurno), con las mismas claves ("cob|ID", "conf|ID",
+  // "seg2|ID", "aLX-…", registro), así que una excepción o un "Sigue igual" vale en las dos pantallas
+  const T = estadoTurno(), r = T.r, FILAS = new Map(T.M.flatMap(m => m.filas).map(x => [x.k, x]));
+  const kSeg = v => `seg${r ? r.n : 0}|${v.id}`;
   const B = (window.BITACORA || []).filter(b => b.estadoAccion !== 'Hecha');
   const vivos = viajes.filter(v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre);
   const tarjetas = new Map(), usadas = new Set(), propUsadas = new Set(), hoyViajes = new Set();
@@ -5026,7 +5035,7 @@ function armarBandeja(){
   // 1 · Por crear: el correo pide un viaje que no existe (acción "Crear viaje" o "Crear viaje nacional" sin viaje)
   B.filter(b => (pideCrearViaje(b) && !yaCreado(b)) || ((atajoDe(b) || [])[0] === 'nacional')).forEach(b => {
     usadas.add(b.id);
-    add(null, {b: 'crear', html: `${desdeCuando(b.fechaCorreo || b.registrado)}<b>${esc(b.accion)}</b><br><span class="sub">${esc(b.resumen || '')} · ${esc(b.remitente || '')}</span>`,
+    add(null, {b: 'crear', k: 'a' + b.id, html: `${desdeCuando(b.fechaCorreo || b.registrado)}<b>${esc(b.accion)}</b><br><span class="sub">${esc(b.resumen || '')} · ${esc(b.remitente || '')}</span>`,
       acc: botonAtajo(b) + accHecha(b), roja: pedidoRojo(b)}, 'Viajes por crear');
   });
   vivos.forEach(v => {
@@ -5038,17 +5047,22 @@ function armarBandeja(){
       const asignar = B.filter(b => !usadas.has(b.id) && viajeDeAccion(b)?.id === v.id && RE_ASIGNAR.test(minus(b.accion)));
       asignar.forEach(b => usadas.add(b.id));
       const d = diffDias(primerEvento(v)), sug = sugeridos(v).slice(0, 3);
-      add(v, {b: 'vehiculo', roja: true, html: `Arranca ${d < 0 ? 'desde el ' : d === 0 ? 'hoy, ' : d === 1 ? 'mañana, ' : ''}${fd(primerEvento(v))} y no tiene placa`
+      add(v, {b: 'vehiculo', k: 'cob|' + v.id, ks: asignar.map(b => 'a' + b.id), html: `Arranca ${d < 0 ? 'desde el ' : d === 0 ? 'hoy, ' : d === 1 ? 'mañana, ' : ''}${fd(primerEvento(v))} y no tiene placa`
         + (asignar.length ? `<br><span class="sub">También lo pide ${asignar.map(b => esc(b.id)).join(', ')}: al guardar la placa, márquela hecha</span>` : ''),
         acc: btnT('Asignar en el viaje', `data-b-abrir="${v.id}"`) + sug.map(s => btnT(`🚚 ${esc(s.placa)} · ${esc(String(s.conductor).split(' ').slice(0, 2).join(' '))}`, `data-b-asignar="${v.id}" data-placa="${esc(s.placa)}" data-conductor="${esc(s.conductor)}" data-telefono="${esc(s.telefono || '')}"`, 'Ya hizo esta ruta: se revisa y se guarda')).join('')
           + asignar.map(b => btnT(`${esc(b.id)} hecha`, `data-b-hecha="${b.id}"`)).join('')});
     }
     // 4 · ¿Pasó? (por confirmar + sin actualizar de la misma fecha: una pregunta)
-    todos.forEach(x => pasosPorConfirmar(x).forEach(p => add(v, {b: 'paso', roja: !p.naviera && p.dias > 1,
+    todos.forEach(x => pasosPorConfirmar(x).forEach(p => add(v, {b: 'paso', k: 'conf|' + x.id,
       html: `${x.padre ? `Subviaje ${esc(x.id)} · ` : ''}<b>${esc(p.txt)}</b> ${esc(fd(p.fecha))}${p.dias ? ` · hace ${p.dias} d` : ' · hoy'}`,
       acc: botonConfirmar({v: x, ...p}, 'Sí, se hizo') + btnT('No: nueva fecha', `data-b-abrir="${x.id}"`, 'Abre el viaje para poner la fecha nueva con su causa')})));
-    if (!pasosPorConfirmar(v).length) sinActualizar(v).forEach(s => add(v, {b: 'paso', roja: true, html: `${esc(s.msg)}<br><span class="sub">${esc(s.porque || '')}</span>`,
+    if (!pasosPorConfirmar(v).length) sinActualizar(v).forEach(s => add(v, {b: 'paso', k: kSeg(v), html: `${esc(s.msg)}<br><span class="sub">${esc(s.porque || '')}</span>`,
       acc: btnT('Actualizar el viaje', `data-b-abrir="${v.id}"`) + (v.placa ? lnkT(ICONO_WA + 'Preguntar dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas')) : '')}));
+    // ¿Dónde va? (seguimiento de la ronda): vehículos en movimiento sin nada atrasado; "Sigue igual" lo marca revisado en esta ronda
+    else if (!sinActualizar(v).length && enSeguimiento([v]).length && !T.R.has(kSeg(v))) { const p = pulsoViaje(v);
+      add(v, {b: 'donde', k: kSeg(v), html: `📍 <b>${esc(p.donde)}</b>${p.quieto ? ' · ' + esc(p.quieto) : ''}${p.espera ? '<br>' + esc(p.espera) : ''}${p.app ? '<br>' + esc(p.app) : ''}`,
+        acc: btnT('✏️ Actualizar', `data-b-abrir="${v.id}"`) + (v.placa ? lnkT(ICONO_WA + 'Preguntar dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas')) : '')
+          + btnT('📍 Sigue igual', `data-t-rev="${kSeg(v)}"`, 'Lo marca revisado en esta ronda para todo el equipo')}); }
     // 5 · Datos de correos (Llenar datos + los datos de cada acción): se aprueban o rechazan aquí; la acción que los trajo se cierra
     const P = PROP.filter(p => todos.some(x => x.id === p.viajeId));
     if (P.length) {
@@ -5058,7 +5072,7 @@ function armarBandeja(){
       const deAcc = [...new Set([...P.map(p => (String(p.origen || '').match(/^Correo (LX-\d+)/) || [])[1]),
         ...B.filter(b => /llenar datos desde correos/i.test(b.accion) && todos.some(x => x.id === viajeDeAccion(b)?.id)).map(b => b.id)].filter(Boolean))];
       deAcc.forEach(id => usadas.add(id));
-      add(v, {b: 'datos', html: P.map(p => `${esc(p.etiqueta)}: ${p.actual ? `<s class="sub">${esc(fx(p.actual))}</s> → ` : ''}<b>${esc(fx(p.valor))}</b> <span class="sub">${esc(String(p.evidencia || '').slice(0, 90))}</span>`).join('<br>')
+      add(v, {b: 'datos', ks: deAcc.map(id => 'a' + id), html: P.map(p => `${esc(p.etiqueta)}: ${p.actual ? `<s class="sub">${esc(fx(p.actual))}</s> → ` : ''}<b>${esc(fx(p.valor))}</b> <span class="sub">${esc(String(p.evidencia || '').slice(0, 90))}</span>`).join('<br>')
         + (deAcc.length ? `<br><span class="sub">Vienen de ${deAcc.map(esc).join(', ')}: al aprobar o rechazar, se cierran</span>` : ''),
         acc: btnT(`✔ Aprobar ${P.length}`, `data-b-aprobar="${v.id}"`) + btnT('Rechazar', `data-b-rechazar="${v.id}"`) + btnT('Ver uno por uno', 'data-b-prop="1"')});
     }
@@ -5067,7 +5081,7 @@ function armarBandeja(){
     if (cerca) {
       const E = todos.flatMap(x => validar(x).map(e => ({...e, x}))).filter(e => e.tipo !== 'Alerta' && e.campo !== 'Seguimiento'
         && !(sinCobertura(v) && e.x === v && /veh[ií]culo/i.test(e.msg)));
-      if (E.length) add(v, {b: 'falta', roja: E.some(e => e.sev === 'Alta'), html: E.map(e => `${e.x.padre ? `Subviaje ${esc(e.x.id)} · ` : ''}${esc(e.msg)}`).join('<br>'),
+      if (E.length) add(v, {b: 'falta', html: E.map(e => `${e.x.padre ? `Subviaje ${esc(e.x.id)} · ` : ''}${esc(e.msg)}`).join('<br>'),
         acc: btnT('Completar en el viaje', `data-b-abrir="${v.id}"`) + clavesBusqueda(v).slice(0, 1).map(([k, c]) => lnkT(`🔎 ${esc(k)} ${esc(c)}`, urlBusqueda(c))).join('')});
     }
   });
@@ -5081,18 +5095,25 @@ function armarBandeja(){
   });
   // registro de vehículos y conductores (lo que falta para asignar): va en la tarjeta del viaje, bloque Falta
   filasRegistro(vivos).forEach(x => { const v = padreDe(x.v); const h = filaRegistroHtml(x);
-    add(v, {b: 'falta', roja: !!x.roja, html: `Registro: ${h.titulo}<br><span class="sub">${h.detalle}</span>`, acc: btnT('Completar registro', `data-b-reg="${esc(x.k)}"`)}); });
+    add(v, {b: 'falta', k: x.k, html: `Registro: ${h.titulo}<br><span class="sub">${h.detalle}</span>`, acc: btnT('Completar registro', `data-b-reg="${esc(x.k)}"`)}); });
   // 6 · Pedidos: el resto de las acciones (con viaje en su tarjeta; sin viaje, en "Pedidos sin viaje")
   B.filter(b => !usadas.has(b.id)).forEach(b => { const v = padreDe(viajeDeAccion(b));
-    add(v && vivos.includes(v) ? v : null, {b: 'pedido', roja: pedidoRojo(b), area: areaDe(b),
+    add(v && vivos.includes(v) ? v : null, {b: 'pedido', k: 'a' + b.id, area: areaDe(b),
       html: `${desdeCuando(b.fechaCorreo || b.registrado)}${areaDe(b) !== 'Operaciones' ? `<span class="tg">${esc(areaDe(b))}</span> ` : ''}${esc(b.accion)}${pista(b)}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>`,
       acc: botonAtajo(b) + accHecha(b)}, v && vivos.includes(v) ? '' : 'Pedidos sin viaje');
     usadas.add(b.id); });
+  // roja = la misma línea roja de Mi turno (bloquea el tablero mientras no tenga excepción vigente); su excepción, la misma
+  // una línea que junta varias cosas (datos + sus acciones; sin vehículo + "asignar vehículo") lleva todas sus claves (ks):
+  // es roja si cualquiera lo es, y la excepción se pide sobre esa
+  tarjetas.forEach(t => t.items.forEach(i => { const F = [i.k, ...(i.ks || [])].filter(Boolean).map(k => FILAS.get(k)).filter(Boolean);
+    const f = F.find(x => x.bloquea) || F.find(x => x.roja) || F[0];
+    if (f) i.k = f.k;
+    i.roja = !!(f && f.bloquea); i.exc = f ? f.exc : null; i.rojaSinExc = !!(f && f.roja && !f.exc); }));
   // orden: el bloque más urgente de la tarjeta, luego si tiene líneas rojas, luego la fecha
   const rango = t => Math.min(...t.items.map(i => BLOQUES.findIndex(x => x[0] === i.b)));
   const L = [...tarjetas.values()].map(t => ({...t, rango: rango(t), roja: t.items.some(i => i.roja)}))
     .sort((a, b) => a.rango - b.rango || b.roja - a.roja || String(a.v ? primerEvento(a.v) || '9' : '0').localeCompare(String(b.v ? primerEvento(b.v) || '9' : '0')));
-  return {L, usadas, propUsadas, hoyViajes, B, vivos};
+  return {L, usadas, propUsadas, hoyViajes, B, vivos, T};
 }
 
 // lo que las otras pantallas piden y la bandeja no muestra: debe quedar en 0 para poder reemplazar Mi turno
@@ -5114,10 +5135,25 @@ function renderBandeja(){
   $('#nBandeja').textContent = R.L.length || '';
   const errLejos = R.vivos.filter(v => primerEvento(v) && diffDias(primerEvento(v)) > HORIZONTE_FALTA && validar(v).some(e => e.tipo !== 'Alerta')).length;
   const ver = R.L.filter(t => !bandejaFiltro || t.items.some(i => i.b === bandejaFiltro));
-  cont.innerHTML = `<div class="bj-resumen"><b>${nViajes} viaje${nViajes === 1 ? '' : 's'} necesita${nViajes === 1 ? '' : 'n'} algo</b>${R.L.length > nViajes ? ` · ${R.L.length - nViajes} grupo${R.L.length - nViajes === 1 ? '' : 's'} sin viaje` : ''}
+  const T = R.T, r = T.r, nRojas = T.rojas.reduce((a, b) => a + b, 0);
+  // la ronda y el bloqueo, como en Mi turno (mismas reglas y marcas)
+  const ronda = !r ? `Sin ronda en curso · rondas a las ${RONDAS.map(h => h + ':00').join(', ')}`
+    : T.rondaHecha ? `✓ Ronda ${r.n} de ${RONDAS.length} ${T.rondaExc ? 'con excepción' : 'hecha'}${r.n < RONDAS.length ? ` · la siguiente a las ${RONDAS[r.n]}:00` : ''}`
+    : T.rondaVencida ? `<span class="tr-vencida">⛔ Ronda ${r.n} vencida a las ${hhmm(r.vence)}: falta confirmar dónde va cada vehículo</span> ${btnT('No se puede: excepción', `data-t-exc="ronda${r.n}"`)}`
+    : `<span class="${T.resta <= 30 ? 'tr-urge' : ''}">⏱ Ronda ${r.n} de ${RONDAS.length} · faltan ${hhmm(T.resta)} (vence ${hhmm(r.vence)})</span>`;
+  const bloqueo = !nRojas ? '' : T.bloqueado ? ` · <span class="tr-vencida">⛔ Tablero bloqueado: ${nRojas} línea${nRojas === 1 ? '' : 's'} roja${nRojas === 1 ? '' : 's'} (abajo, en rojo)</span>`
+    : enPausa() ? ` · <span class="tr-urge">⏸ Bloqueo en pausa hasta las ${pausaHasta()} (Gerencia) · ${nRojas} línea${nRojas === 1 ? '' : 's'} roja${nRojas === 1 ? '' : 's'}</span>`
+    : ` · <span class="tr-urge">${nRojas} línea${nRojas === 1 ? '' : 's'} roja${nRojas === 1 ? '' : 's'}${esGerencia() ? ' (Gerencia no se bloquea)' : ''}</span>`;
+  const EXC = {pendiente: e => '⏳ Excepción esperando a Gerencia', aprobada: e => `✓ Excepción aprobada por ${esc(e.aprobo?.usuario || 'Gerencia')} · vale hasta las ${e.vence}`,
+    vencida: e => `✖ La aprobación venció a las ${e.vence}: hay que resolverlo`, rechazada: e => `✖ Excepción rechazada por ${esc(e.aprobo?.usuario || 'Gerencia')}: hay que resolverlo`};
+  const extra = i => (i.exc ? `<div class="sub tr-exc tr-exc-${i.exc.estado}">${EXC[i.exc.estado](i.exc)} · ${esc(i.exc.motivo)} (${esc(i.exc.usuario)} ${esc(i.exc.hora)})</div>` : '')
+    + (excAbierta && excAbierta === i.k ? selectorMotivo(i.k) : '');
+  const accExc = i => i.rojaSinExc ? btnT('⚠ No se puede: excepción', `data-t-exc="${esc(i.k)}"`, 'Pide a Gerencia que apruebe dejarlo así; queda registrado con su nombre') : '';
+  cont.innerHTML = `<div class="bj-ronda sub">${ronda}${bloqueo}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}</div>` + bloqueGerencia(T)
+    + `<div class="bj-resumen"><b>${nViajes} viaje${nViajes === 1 ? '' : 's'} necesita${nViajes === 1 ? '' : 'n'} algo</b>${R.L.length > nViajes ? ` · ${R.L.length - nViajes} grupo${R.L.length - nViajes === 1 ? '' : 's'} sin viaje` : ''}
       <div class="chips">${`<button type="button" class="chip ${!bandejaFiltro ? 'on' : ''}" data-b-filtro="">Todo · ${R.L.length}</button>`}${BLOQUES.map(([k, t]) => cuenta(k) ? `<button type="button" class="chip ${bandejaFiltro === k ? 'on' : ''}" data-b-filtro="${k}" title="${esc(BLOQUES.find(x => x[0] === k)[3])}">${t} · ${cuenta(k)}</button>` : '').join('')}</div></div>`
     + (ver.map(t => `<div class="bj-card${t.roja ? ' roja' : ''}"><div class="bj-h"><b>${esc(t.titulo)}</b>${t.v ? ` <span class="sub">${esc([t.v.contenedor, t.v.estado].filter(Boolean).join(' · '))}</span> ${btnT('Abrir viaje', `data-b-abrir="${t.v.id}"`)}` : ''}</div>`
-      + BLOQUES.flatMap(([k, nombre, cls]) => t.items.filter(i => i.b === k && (!bandejaFiltro || bandejaFiltro === k)).map(i => `<div class="bj-item${i.roja ? ' roja' : ''}"><span class="pill ${cls}">${nombre}</span><div class="bj-txt">${i.html}</div><div class="tr-acc">${i.acc || ''}</div></div>`)).join('')
+      + BLOQUES.flatMap(([k, nombre, cls]) => t.items.filter(i => i.b === k && (!bandejaFiltro || bandejaFiltro === k)).map(i => `<div class="bj-item${i.roja ? ' roja' : ''}"><span class="pill ${cls}">${nombre}</span><div class="bj-txt">${i.html}${extra(i)}</div><div class="tr-acc">${i.acc || ''}${accExc(i)}</div></div>`)).join('')
       + '</div>').join('') || '<div class="tr-vacio">✓ Nada pendiente en este filtro</div>')
     + `<div class="bj-pie"><div><b>${F.length ? `⚠ ${F.length} cosa${F.length === 1 ? '' : 's'} solo en otra pantalla` : '✓ Nada queda solo en otra pantalla'}</b> <span class="sub">(si queda en 0 varios días, la Bandeja ya cubre Mi turno, Acciones y Llenar datos)</span></div>
       ${F.length ? `<details><summary class="sub">Ver cuáles</summary>${F.map(([p, t]) => `<div class="sub">• <b>${esc(p)}</b>: ${esc(t)}</div>`).join('')}</details>` : ''}
@@ -5150,6 +5186,8 @@ async function decidirBandeja(id, aprobar){
 $('#bandeja').onclick = e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   const d = b.dataset;
+  // marcas de Mi turno (Sigue igual, excepción, aprobar como Gerencia…): las atiende el mismo código de Mi turno (turno.js)
+  if (Object.keys(d).some(k => /^t[A-Z]/.test(k))) return $('#v-turno').onclick(e);
   if (d.bFiltro !== undefined) { bandejaFiltro = d.bFiltro; renderBandeja(); }
   else if (d.bAbrir) abrir(d.bAbrir);
   else if (d.bHecha) marcarHecha(d.bHecha);
