@@ -2451,7 +2451,15 @@ function renderTurno(){
   // quita el bloqueo (pausa) todos los pasos quedan abiertos para el equipo (5-nov: "desbloqueé y Eider no veía Cobertura")
   const abierto = i => esGerencia() || enPausa() || primeraRoja < 0 || i <= primeraRoja || T.rojas[i] > 0;
   if (!abierto(M.findIndex(m => m.id === turnoMenu))) turnoMenu = M[primeraRoja].id;
-  const cuenta = m => { const h = m.filas.filter(x => x.hecha || (x.exc && ['pendiente', 'aprobada'].includes(x.exc.estado))).length; return {h, t: m.filas.length}; };
+  // los 3 separadores de la Bandeja (bandeja.js barraOperaciones, la misma operación elegida en las dos pantallas, 6-nov): cada
+  // paso muestra solo las líneas de esa operación. Las líneas sin viaje ni operación (Llenar datos, la nota del cierre) salen en
+  // todas. Las líneas rojas y el bloqueo no cambian: se cuentan en todas las operaciones (el ⛔ del separador avisa dónde están)
+  const opF = x => x.v ? x.v.operacion : x.b ? operacionAccion(x.b) || 'General' : '';
+  const enOp = x => !bandejaOp || !opF(x) || opF(x) === bandejaOp;
+  const todasF = M.flatMap(m => m.filas).filter(x => !x.hecha);
+  const barraOp = window.MODO_CLIENTE ? '' : barraOperaciones(o => todasF.filter(x => opF(x) && (!o || opF(x) === o)).length, o => todasF.some(x => x.roja && !x.exc && opF(x) && (!o || opF(x) === o)));
+  M.forEach(m => { m.filasOp = m.filas.filter(enOp); });
+  const cuenta = m => { const h = m.filasOp.filter(x => x.hecha || (x.exc && ['pendiente', 'aprobada'].includes(x.exc.estado))).length; return {h, t: m.filasOp.length}; };
   $('#nTurno').textContent = T.rojas.reduce((a, b) => a + b, 0) || '';
   $('#turnoMenus').innerHTML = M.map((m, i) => { const c = cuenta(m), roja = T.rojas[i];
     return `<button class="tr-menu ${turnoMenu === m.id ? 'on' : ''} ${roja ? 'roja' : c.h === c.t ? 'ok' : ''}" data-t-menu="${m.id}" ${abierto(i) ? '' : 'disabled title="Primero resuelva las líneas rojas del paso anterior"'}>
@@ -2471,11 +2479,14 @@ function renderTurno(){
   $('#turnoReloj').innerHTML = `${ronda}${rojas.length ? enPausa() ? ` · <span class="tr-urge">⏸ Bloqueo en pausa hasta las ${pausaHasta()} (Gerencia) · pendientes: ${rojas.join(', ')}</span>` : ` · <span class="tr-vencida">⛔ Tablero bloqueado: ${rojas.join(', ')}</span>` : ''}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}`;
   let m = M.find(x => x.id === turnoMenu);
   if (!m) { m = M[0]; turnoMenu = m.id; }   // el paso elegido ya no existe (ej. "Cierre del día" pasada la medianoche)
-  const pend = m.filas.filter(x => !x.hecha), hechos = m.filas.filter(x => x.hecha);
+  const pend = m.filasOp.filter(x => !x.hecha), hechos = m.filasOp.filter(x => x.hecha);
   // invitar por WhatsApp a los conductores a TODOS los viajes sin vehículo (no solo los de 72 h de Cobertura): siempre a la vista,
   // sin depender del paso ni del bloqueo (también está en la barra de arriba: #btnInvitar)
   const nInv = sinVehiculoGrupo().length;
   const invitar = nInv ? `<div class="tr-vacio" style="margin:0 0 8px"><a class="btn" href="${waLink('', mensajeGrupo())}" target="_blank" rel="noopener">${ICONO_WA}Invitar conductores por WhatsApp · ${nInv} viaje${nInv === 1 ? '' : 's'} sin vehículo</a> <span class="sub">Todos los viajes a futuro: abre WhatsApp con el mensaje listo; elija el grupo y envíe. Responden en la app de turnos.</span></div>` : '';
+  // los separadores van encima de los pasos (Seguimiento, Cobertura…): sus contadores también son de la operación elegida
+  let ops = $('#turnoOps'); if (!ops) { ops = document.createElement('div'); ops.id = 'turnoOps'; $('#turnoMenus').before(ops); }
+  ops.innerHTML = barraOp;
   cont.innerHTML = invitar + bloqueGerencia(T) + bloqueCalifGerencia() + `<div class="tr-meta"><b>Meta:</b> ${esc(m.meta)}</div><div class="sub" style="margin:2px 0 6px">${esc(m.ayuda)}</div>
     ${pend.map(x => filaTurno(x, false)).join('') || `<div class="tr-vacio">✓ ${esc(m.vacio)}${M[M.indexOf(m) + 1] ? ` · ${btnT('Siguiente: ' + M[M.indexOf(m) + 1].titulo + ' →', `data-t-menu="${M[M.indexOf(m) + 1].id}"`)}` : ''}</div>`}
     ${m.despues ? `<div class="sub tr-vacio">ℹ ${esc(m.despues)}</div>` : ''}
@@ -2500,6 +2511,7 @@ $('#v-turno').onclick = e => {   // incluye el reloj de la ronda (#turnoReloj)
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   const d = b.dataset;
   if (d.tMenu) { turnoMenu = d.tMenu; renderTurno(); }
+  else if (d.bOp !== undefined) elegirOperacion(d.bOp);   // los 3 separadores (bandeja.js)
   else if (d.tExc) { excAbierta = d.tExc; repintarTurno(); }
   else if (d.tExccancel) { excAbierta = ''; repintarTurno(); }
   // excepción: el motivo del selector que está junto al botón (en Mi turno o en la Bandeja)
@@ -4675,7 +4687,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'bd716c3bf3';
+const VERSION_TABLERO = '3cabdb455a';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5113,6 +5125,16 @@ const botonesDato = (id, n, area) => btnT(`✔ Guardar en el viaje${n > 1 ? ' ('
   + btnT('Descartar', `data-b-rechazar="${id}"${area ? ` data-area="${area}"` : ''}`, 'No se guarda y no vuelve a aparecer');
 const areaInicial = () => { const p = EQUIPO.find(x => x.nombre === usuarioGuardado()); return p && AREAS.includes(p.area) ? p.area : ''; };
 
+// los 3 separadores (los usan la Bandeja y Mi turno, con la misma operación elegida): opN(o) = cuántos, opRoja(o) = tiene líneas rojas
+function barraOperaciones(opN, opRoja){
+  const botonOp = ([o, t]) => `<button type="button" class="bj-op ${OPS_GRANDES.includes(o) ? 'grande' : 'chica'} ${bandejaOp === o ? 'on' : ''}" data-b-op="${o}">${opRoja(o) ? '⛔ ' : ''}${t} <span class="bj-opn">${opN(o)}</span></button>`;
+  return `<div class="bj-ops">${OPS_BANDEJA.filter(([o]) => OPS_GRANDES.includes(o)).map(botonOp).join('')}<div class="bj-ops-chicas">${[['', 'Todas'], ...OPS_BANDEJA.filter(([o]) => !OPS_GRANDES.includes(o) && (o === bandejaOp || opN(o)))].map(botonOp).join('')}</div></div>`;
+}
+function elegirOperacion(o){
+  bandejaOp = o; bandejaTodo = false; try { localStorage.setItem('bandejaOp', o); } catch(e) {}
+  renderTurno(); renderBandeja();
+}
+
 // la fecha de la próxima acción de la tarjeta (el orden de la Bandeja): atrasada, hoy, mañana o el día
 const fechaTarjeta = t => { if (!t.fecha) return ''; const d = diffDias(t.fecha);
   return `<span class="bj-fecha ${d < 0 ? 'atras' : d === 0 ? 'hoy' : ''}">📅 ${d < 0 ? `${t.v ? 'Atrasado' : 'Pedido'} desde ${fd(t.fecha)}` : d === 0 ? 'Hoy' : d === 1 ? 'Mañana' : fd(t.fecha)}</span>`; };
@@ -5249,8 +5271,7 @@ function renderBandeja(){
   const deOp = (t, o) => t.items.filter(i => !o || i.op === o);
   const opN = o => R.L.filter(t => deOp(t, o).length).length, opRoja = o => R.L.some(t => deOp(t, o).some(i => i.roja));
   if (bandejaOp && !opN(bandejaOp) && !OPS_BANDEJA.some(([o]) => o === bandejaOp)) bandejaOp = '';
-  const botonOp = ([o, t]) => `<button type="button" class="bj-op ${OPS_GRANDES.includes(o) ? 'grande' : 'chica'} ${bandejaOp === o ? 'on' : ''}" data-b-op="${o}">${opRoja(o) ? '⛔ ' : ''}${t} <span class="bj-opn">${opN(o)}</span></button>`;
-  const barraOp = `<div class="bj-ops">${OPS_BANDEJA.filter(([o]) => OPS_GRANDES.includes(o)).map(botonOp).join('')}<div class="bj-ops-chicas">${[['', 'Todas'], ...OPS_BANDEJA.filter(([o]) => !OPS_GRANDES.includes(o) && (o === bandejaOp || opN(o)))].map(botonOp).join('')}</div></div>`;
+  const barraOp = barraOperaciones(opN, opRoja);
   const nTotal = opN('');
   R.L = R.L.map(t => ({...t, items: deOp(t, bandejaOp)})).filter(t => t.items.length).map(t => ({...t, roja: t.items.some(i => i.roja)}));
   const cuenta = k => R.L.filter(t => t.items.some(i => i.b === k)).length;
@@ -5330,7 +5351,7 @@ $('#bandeja').onclick = e => {
   if (d.bFiltro !== undefined) { bandejaFiltro = d.bFiltro; bandejaTodo = false; renderBandeja(); }
   else if (d.bDeshacer) deshacerCierre(d.bDeshacer);
   else if (d.bTodo) { bandejaTodo = true; renderBandeja(); }
-  else if (d.bOp !== undefined) { bandejaOp = d.bOp; bandejaTodo = false; try { localStorage.setItem('bandejaOp', d.bOp); } catch(e) {} renderBandeja(); }
+  else if (d.bOp !== undefined) elegirOperacion(d.bOp);
   else if (d.bAbrir) abrir(d.bAbrir);
   else if (d.bHecha) marcarHecha(d.bHecha);
   else if (d.bNoetp) marcarHecha(d.bNoetp, true);
