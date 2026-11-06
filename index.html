@@ -3637,8 +3637,8 @@ document.addEventListener('click', e => {
  * Capa: pantalla (solo el equipo). Las reglas están en el dominio (dominio.js: esNacional, PASOS_CONFIRMAR.NACIONAL, paradas,
  * etapaOperacion) y la pestaña en Base.gs (SEGUIMIENTO.NACIONAL, Ref NAC-001). Se crea:
  *  - desde la acción de LogxIA de un pedido nacional (botón "＋ Crear viaje nacional", acciones.js ATAJOS): el formulario sale con lo
- *    que dice el correo (qué se lleva, dónde se recoge, la hora) y el texto de la acción a la vista; la fecha NO se adivina: la elige
- *    el equipo (el correo de Gabriela López del 5-nov decía "lunes 09/11" y "miércoles");
+ *    que dice el correo (qué se lleva, dónde se recoge, la hora y el día de la recogida) y el texto de la acción a la vista; la fecha
+ *    es el día de la semana que va con la hora ("el miércoles a las 10:00"), el primero después del correo (diaRecogidaDe);
  *  - o con el botón "🚚 Viaje nacional" de arriba: sale en blanco, pero si hay solicitudes nacionales pendientes las ofrece
  *    arriba y al elegir una se llena como desde su acción.
  * Guarda con doPost 'nuevo' {operacion:'NACIONAL'} (Base.gs crearViaje_); la acción queda ligada al viaje por su id en la observación. */
@@ -3652,7 +3652,18 @@ function datosNacionalDe(b){
   const origen = (t.match(/\ben\s+(ERCOL(?:\s+Cali)?)\b/i) || [])[1] || '';
   const hora = (t.match(/\b(\d{1,2}:\d{2})\s*(?:a\.?\s*m\.?|p\.?\s*m\.?)?/i) || [])[1] || '';
   const quien = String(b.remitente || '').replace(/\s*\(.*\)\s*$/, '');
-  return {carga, origen, horaRecogida: hora, solicitante: quien};
+  return {carga, origen, horaRecogida: hora, solicitante: quien, fechaRetiro: diaRecogidaDe(t, b.fechaCorreo)};
+}
+// la recogida es el día de la semana que va con la hora ("el miércoles a las 10:00"), el primero después del correo; la fecha que
+// se pide a ERCOL ("lunes 09/11") es otra cosa y no se usa (pedido del usuario, 5-nov). Sin día con hora, no se adivina.
+const DIAS_SEMANA = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+function diaRecogidaDe(t, fechaCorreo){
+  const m = minus(t).match(/\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+(?:a\s+las\s+)?\d{1,2}:\d{2}/);
+  const base = new Date(String(fechaCorreo || '').slice(0, 10) + 'T12:00:00');
+  if (!m || isNaN(base)) return '';
+  const dif = (DIAS_SEMANA.indexOf(m[1]) - base.getDay() + 7) % 7 || 7;
+  base.setDate(base.getDate() + dif);
+  return base.toISOString().slice(0, 10);
 }
 const CAMPOS_NACIONAL = [['solicitante', 'Solicitante'], ['empresa', 'Empresa', EMPRESAS], ['carga', 'Qué se lleva', null, 'Ej.: 120 estibas'],
   ['origen', 'Origen (dónde se recoge)', null, 'Ej.: ERCOL Cali'], ['destino', 'Ciudad de destino', null, 'Ej.: Cali'], ['bodega', 'Lugar de entrega', null, 'Ej.: Planta Reckitt'],
@@ -3671,7 +3682,7 @@ function nuevoNacional(b){
     ${pendientes.length ? `<div class="sub" style="margin:4px 0 10px;padding:8px;border-radius:8px;background:var(--surface-2)"><b>Solicitudes por crear (llenan el formulario con su correo):</b>
       ${pendientes.map(x => `<div style="margin-top:6px"><button type="button" class="btn" data-nac-accion="${esc(x.id)}">📧 ${esc(x.id)} · ${esc(String(x.remitente || '').replace(/\s*\(.*\)\s*$/, ''))} · ${esc(String(x.fechaCorreo || '').slice(0, 10))}</button> <span>${esc(x.resumen || x.accion || '')}</span></div>`).join('')}</div>` : ''}
     <div class="fgrid3">${CAMPOS_NACIONAL.map(campo).join('')}</div>
-    <div class="sub" style="margin-top:8px">La fecha de recogida la pone el equipo: si el correo no es claro, confírmela con quien pidió el servicio. Placa y conductor se asignan después en el viaje (solo del registro).</div>
+    <div class="sub" style="margin-top:8px">${d.fechaRetiro ? 'La fecha de recogida sale del día que dice el correo junto a la hora (el primero después del correo): revísela.' : 'La fecha de recogida la pone el equipo: si el correo no es claro, confírmela con quien pidió el servicio.'} Placa y conductor se asignan después en el viaje (solo del registro).</div>
     <div id="nacEstado" class="sub" style="margin-top:8px;font-weight:600"></div>
     <div class="mfoot"><button type="button" class="btn" data-nac="cerrar">Cancelar</button><button type="button" class="btn primary" data-nac="crear">Crear viaje</button></div></div></div>`);
   $('#ovNacional').onclick = e => { const sol = e.target.closest('[data-nac-accion]')?.dataset.nacAccion;
@@ -4494,7 +4505,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '373c97c1bf';
+const VERSION_TABLERO = '5d3dac1753';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
