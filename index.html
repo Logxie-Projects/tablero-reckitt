@@ -637,6 +637,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
       <div><label>Motivo</label><select id="subMotivo"></select></div>
       <div><label>Patio intermedio</label><input id="subPatio" list="dlPatio" placeholder="Patio donde se descarga"></div>
       <div><label>Fecha descargue en patio</label><input type="date" id="subFecha"></div>
+      <div id="subContBox"><label>Contenedor en bodega de paso</label><select id="subCont"><option value="Lleno">Lleno: se guarda completo y viaja en el urbano</option><option value="Vaciado">Vaciado: el urbano lleva solo el producto; el vacío vuelve desde allí</option></select></div>
       <div><label>Su nombre</label><input id="subUsuario" placeholder="Queda en el historial"></div>
     </div>
     <p class="sub" style="margin-top:10px">El subviaje queda ligado a este viaje con su propio vehículo y sus costos (descargue, cargue, urbano, parqueadero), que se suman al total del viaje.</p>
@@ -917,6 +918,9 @@ function etapaOperacion(v){
   if (situacion(v)==='Cancelado' || v.estadoHoja==='Cancelado') return 'Cancelado';
   const ya = k => !!cumplido(v, k);
   const sub = hijosDe(v)[0], urbanoHecho = !!(sub && cumplido(sub, 'fechaUrbano')), dePaso = sub && !urbanoHecho;
+  // IMPO con el contenedor vaciado en la bodega de paso: el vacío vuelve desde allí, sin esperar el urbano (lleva solo el producto)
+  const vacioDevuelto = !esLCL(v) && (ya('fechaDevolucion') || !!v.tirillaDevolucion);
+  if (v.operacion === 'IMPO' && dePaso && vaciadoSub(sub) && vacioDevuelto) return 'Vacío devuelto';
   // con el urbano pendiente la carga sigue en la bodega de paso, aunque el vacío ya figure devuelto (se revisa en Errores)
   // NACIONAL: recogida y entrega (el soporte de entrega la confirma, como la tirilla)
   if (esNacional(v)) return ya('fechaCargue') || v.soporteEntrega ? 'Entregado' : ya('fechaRetiro') ? 'Recogido' : tieneVehiculo(v) ? 'Asignado' : 'Sin asignar';
@@ -933,6 +937,9 @@ function etapasViajes(){ viajes.forEach(v => { v.novedad = v.estadoHoja === 'Nov
 // sin factura, los días que lleva esperando
 const fechaFinTransporte = v => cumplido(v, v.operacion==='EXPO' ? 'fechaEntregaPuerto' : esLCL(v) || esNacional(v) ? 'fechaCargue' : 'fechaDevolucion');
 const hijosDe = v => viajes.filter(x => x.padre === v.id && situacion(x) !== 'Cancelado');
+// subviaje IMPO (6-nov): el contenedor se VACIÓ en la bodega de paso (ej. Agecolda) y el urbano lleva solo el producto; el vacío
+// vuelve desde allí, aun antes del urbano. Sin marcar ("Lleno" o vacío) = guardado completo, temporal, y viaja en el urbano.
+const vaciadoSub = s => !!s && /^vaciad/i.test(String(s.contenedorSub || '').trim());
 // transporte finalizado: EXPO pasó la parada Puerto; IMPO cumplió todas las paradas (vacío devuelto, con el urbano si hay subviaje)
 // transporte finalizado = tiene la fecha de fin (EXPO entrega en puerto, IMPO devolución del vacío) y no queda un urbano pendiente.
 // Basta esa fecha aunque falten fechas anteriores (esas salen como pendientes de operaciones); el Estado escrito a mano no cuenta.
@@ -1064,7 +1071,7 @@ function validar(v){
   if (v.padre) {
     // subviaje (regla 4, igual que el reporte por correo): vehículo, destino final y fecha del urbano mientras esté abierto
     if (!['Cerrado','Cancelado'].includes(situacion(v))) {
-      const p = `El contenedor está en la bodega de paso${v.patioSub ? ' ' + v.patioSub : ''}: falta programar el urbano al destino final`;
+      const p = `${vaciadoSub(v) ? 'El producto (contenedor vaciado)' : 'El contenedor'} está en la bodega de paso${v.patioSub ? ' ' + v.patioSub : ''}: falta programar el urbano al destino final`;
       if (!v.placa) add('Media','Placa','Subviaje sin vehículo asignado', 'Error', p);
       if (!v.bodega || v.bodega === v.patioSub) add('Media','Bodega','Subviaje sin destino final', 'Error', p);
       if (!v.fechaUrbano) add('Media','Fecha urbano','Subviaje sin fecha del urbano', 'Error', p);
@@ -1167,8 +1174,9 @@ function validar(v){
   if (impo && !esLCL(v) && v.fechaDevolucion) {
     if (v.fechaDevolucion === v.fechaCargue && v.patio && mismo(v.patio, v.bodega)) add('Alta','Fecha de devolución',`Devolución del vacío dudosa: mismo día y mismo lugar de la entrega (${v.bodega}). ¿El contenedor quedó almacenado lleno? Confirmar o crear subviaje`, 'Error', 'Si el contenedor sigue lleno en la bodega, el vacío no se ha devuelto y el plazo sigue corriendo');
     else if (v.fechaDevolucion === v.fechaCargue) add('Media','Fecha de devolución',`Vacío devuelto el mismo día de la entrega en ${v.bodega||'bodega'}: confirmar que no quedó almacenado lleno`, 'Error', 'Si el contenedor sigue lleno en la bodega, el vacío no se ha devuelto y el plazo sigue corriendo');
-    const urbano = hijos.map(x=>x.fechaUrbano||'').filter(Boolean).sort().pop();
-    if (hijos.length && (!urbano || v.fechaDevolucion < urbano)) add('Alta','Fecha de devolución','Vacío marcado como devuelto antes del urbano del subviaje', 'Error', `El urbano del subviaje ${urbano ? 'es el ' + fd(urbano) : 'aún no tiene fecha'}: el vacío no puede devolverse antes`);
+    // solo los subviajes con el contenedor lleno: si se vació en la bodega de paso, el vacío puede volver antes del urbano
+    const llenos = hijos.filter(x => !vaciadoSub(x)), urbano = llenos.map(x=>x.fechaUrbano||'').filter(Boolean).sort().pop();
+    if (llenos.length && (!urbano || v.fechaDevolucion < urbano)) add('Alta','Fecha de devolución','Vacío marcado como devuelto antes del urbano del subviaje', 'Error', `El urbano del subviaje ${urbano ? 'es el ' + fd(urbano) : 'aún no tiene fecha'}: el vacío no puede devolverse antes`);
   }
   // en EXPO "en patio" es el retiro normal del vacío: allí solo cuentan paro, bloqueo o almacenamiento
   const intermedio = impo ? /almacenamient|\ben patio\b|\bpatio\b.*\bse (entrega|descarga)\b|\bparo\b|bloqueo|sin cita|problemas en bodega/ : /almacenamient|\bparo\b|bloqueo/;
@@ -2789,7 +2797,7 @@ function tarjetaHijo(s, padre){
   const clic = window.MODO_CLIENTE ? '' : ` onclick="event.stopPropagation();abrir('${s.id}')"`;
   return `<div class="hijo${clic ? ' clic' : ''}"${clic}>
     <span class="hijo-tg">↳ Subviaje</span>
-    <div class="hijo-ruta"><b>${esc(s.motivoSub || 'Sin motivo')}</b><span class="sub">${esc(s.patioSub || 'Patio por definir')} → ${esc(destino)}</span></div>
+    <div class="hijo-ruta"><b>${esc(s.motivoSub || 'Sin motivo')}</b>${vaciadoSub(s) ? ' <span class="sub" title="El urbano lleva solo el producto; el vacío vuelve desde la bodega de paso">· contenedor vaciado</span>' : ''}<span class="sub">${esc(s.patioSub || 'Patio por definir')} → ${esc(destino)}</span></div>
     <div class="hijo-f"><span class="sub">Descargue</span> ${fd(s.fechaDescargueSub)}</div>
     <div class="hijo-f"><span class="sub">Urbano</span> ${s.fechaUrbano ? fd(s.fechaUrbano) : '—'}${hecho ? ' ✓' : ''}</div>
     <div class="hijo-f"><span class="sub">${esc(s.conductor || 'Sin conductor')}</span> ${s.placa ? `<span class="placa">${esc(s.placa)}</span>` : '<span class="missing">Sin placa</span>'}</div>
@@ -3264,7 +3272,7 @@ function pintarForm(v){
   const calc = v.operacion==='IMPO' ? `<p class="sub" style="margin:8px 2px 0">Fecha límite de devolución <b>${fd(v.fechaLimite)}</b>${demora(v) ? ` · <b style="color:var(--bad)">${demora(v)} d de demora</b>` : ''} · se calculan solas con la ciudad y la entrega en bodega.</p>` : '';
   // primero las novedades (lo que más se escribe, con hora y autor: novedades.js); la Observación queda como nota fija del viaje
   $('#mForm').innerHTML = `<div id="mNovedades">${bloqueNovedades(v)}</div>` +
-    (v.padre ? CAMPOS_SUB.map(([t, cs]) => grupo(t, cs)).join('') : grupo('Viaje', esNacional(v) ? CAMPOS_VIAJE.filter(c => !['booking','do','contenedor','unidad','fwd'].includes(c[0])) : CAMPOS_VIAJE) + CAMPOS_ETAPA[v.operacion].map(([t, cs]) => grupo(t, cs)).join('') + calc) +
+    (v.padre ? CAMPOS_SUB.map(([t, cs]) => grupo(t, v.operacion === 'IMPO' ? cs : cs.filter(c => c[0] !== 'contenedorSub'))).join('') : grupo('Viaje', esNacional(v) ? CAMPOS_VIAJE.filter(c => !['booking','do','contenedor','unidad','fwd'].includes(c[0])) : CAMPOS_VIAJE) + CAMPOS_ETAPA[v.operacion].map(([t, cs]) => grupo(t, cs)).join('') + calc) +
     `<div class="full" style="margin-top:12px"><label>Observación (nota fija del viaje) <span class="sub">· lo que pasa día a día va en Novedades, arriba</span></label><textarea data-k="observacion" placeholder="Ej: Programación nov · cargue en DHL">${esc(v.observacion||'')}</textarea></div>`;
   const lista = (id, k) => { $('#'+id).innerHTML = [...new Set(viajes.map(x=>x[k]).filter(Boolean))].sort().map(x=>`<option value="${esc(x)}">`).join(''); };
   $('#dlExtra').innerHTML = [...new Set([...CONCEPTOS_EXTRA, ...viajes.flatMap(x=>itemsExtra(x).map(i=>i[0]))])].map(x=>`<option value="${esc(x)}">`).join('');
@@ -3275,8 +3283,11 @@ const CONCEPTOS_EXTRA = ['Cita','Standby','Retorno','Cargue','Descargue','Urbano
 // subviaje (viaje hijo): descargue en un patio intermedio y urbano al destino final; mismos costos de siempre
 const MOTIVOS_SUBVIAJE = ['Paro','Demora en cita','Cierre de vía','Instrucción del cliente','Otro'];
 const CONCEPTOS_SUB = ['Descargue','Cargue','Urbano','Parqueadero'];
+// IMPO: qué pasa con el contenedor en la bodega de paso (dominio vaciadoSub); vacío = Lleno
+const CONTENEDOR_SUB = ['Lleno', 'Vaciado'];
 const CAMPOS_SUB = [
-  ['Subviaje', [['motivoSub','Motivo','lista',MOTIVOS_SUBVIAJE],['patioSub','Patio intermedio','dl','dlPatio'],['bodega','Destino final'],['fechaDescargueSub','Fecha descargue en patio','fecha'],['fechaUrbano','Fecha urbano (entrega final)','fecha']]],
+  ['Subviaje', [['motivoSub','Motivo','lista',MOTIVOS_SUBVIAJE],['patioSub','Patio intermedio','dl','dlPatio'],['bodega','Destino final'],['fechaDescargueSub','Fecha descargue en patio','fecha'],['fechaUrbano','Fecha urbano (entrega final)','fecha'],
+    ['contenedorSub','Contenedor en bodega de paso (IMPO)','lista',CONTENEDOR_SUB]]],
   ['Vehículo del urbano', [['situacion','STATUS','sit'],['conductor','Conductor','dl','dlCond'],['placa','Placa','dl','dlPlaca']]],
   ['Costos y facturación', [['conceptoExtra','Costos del subviaje','extras'],['aprobacionExtra','Aprobación','lista',['Pendiente','Aprobado','Rechazado']],
     ['facturacion','Facturación','lista',FACTURACION],['numFactura','N° factura'],['fechaFactura','Fecha factura','fecha']]]];
@@ -3882,6 +3893,8 @@ function nuevoSubviaje(id){
   $('#subPadre').textContent = `${v.operacion} · ${v.booking || v.pedido || v.id} · ${v.placa || 'sin placa'}`;
   $('#subMotivo').innerHTML = MOTIVOS_SUBVIAJE.map(m=>`<option>${esc(m)}</option>`).join('');
   $('#subPatio').value = ''; $('#subFecha').value = HOY;
+  // IMPO: ¿el contenedor se guarda lleno (temporal) o se vacía en la bodega de paso? (dominio vaciadoSub)
+  $('#subCont').value = 'Lleno'; $('#subContBox').style.display = v.operacion === 'IMPO' ? '' : 'none';
   $('#subUsuario').value = usuarioGuardado() || '';
   $('#dlPatio').innerHTML = [...new Set(viajes.map(x=>x.patio).concat(viajes.map(x=>x.patioSub)).filter(Boolean))].sort().map(x=>`<option value="${esc(x)}">`).join('');
   $('#ovSub').classList.add('open');
@@ -3895,7 +3908,8 @@ $('#subCrear').onclick = async () => {
   guardarUsuario(usuario);
   $('#subCrear').disabled = true;
   try {
-    const j = await api('subviaje', {id:subPadreId, usuario, campos:{motivoSub:$('#subMotivo').value, patioSub:$('#subPatio').value.trim(), fechaDescargueSub:$('#subFecha').value}});
+    const j = await api('subviaje', {id:subPadreId, usuario, campos:{motivoSub:$('#subMotivo').value, patioSub:$('#subPatio').value.trim(), fechaDescargueSub:$('#subFecha').value,
+      ...(viajes.find(x=>x.id===subPadreId)?.operacion === 'IMPO' ? {contenedorSub:$('#subCont').value} : {})}});
     if (!j.ok) throw new Error(j.error || 'error');
     $('#ovSub').classList.remove('open');
     toast('Subviaje creado: complete el vehículo y los costos');
@@ -4560,7 +4574,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'eb3024d954';
+const VERSION_TABLERO = '240c521242';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
