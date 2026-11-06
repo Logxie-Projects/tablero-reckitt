@@ -783,12 +783,12 @@ function focoDe(v){
   if (situacion(v)==='Cancelado' || v.estado==='Cancelado') return '';
   const fact = cobro(v).fact;
   if (fact==='Sin servicio') return 'Sin servicio';
+  // primero la operación (6-nov: IMPO-002 / pedido 11673 salía "En facturación" porque Facturación ya lo marcó "Aprobado por
+  // Reckitt", pero faltaba devolver el vacío): mientras el transporte no termine, el foco es de Operaciones aunque la
+  // facturación vaya adelantada; la etapa de facturación (cobro) sigue siendo la que marcó Facturación
+  if (!terminoTransporte(v)) return v.estado==='En bodega de paso' ? 'En bodega de paso' : v.estado==='Sin asignar' ? 'Por asignar vehículo' : v.estado==='Asignado' ? 'Por iniciar' : 'En tránsito';
   if (['En aprobación Reckitt','Aprobado por Reckitt','Facturado'].includes(fact)) return 'En facturación';
-  if (v.estado==='En bodega de paso') return 'En bodega de paso';
-  if (terminoTransporte(v)) return pendientesDe(v).length ? 'Terminado · faltan datos' : 'Listo para facturar';
-  if (v.estado==='Sin asignar') return 'Por asignar vehículo';
-  if (v.estado==='Asignado') return 'Por iniciar';
-  return 'En tránsito';
+  return pendientesDe(v).length ? 'Terminado · faltan datos' : 'Listo para facturar';
 }
 // Abierto = viaje en proceso (ni entregado ni cancelado)
 // si la hoja trae la columna Abierto/Cerrado manda; si no, se deduce del estado
@@ -4607,7 +4607,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '48e90f8ddc';
+const VERSION_TABLERO = '8c94c4371c';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
