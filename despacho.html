@@ -117,11 +117,13 @@ const ls = { get: k => { try { return localStorage.getItem(k); } catch (e) { ret
 const qs = new URLSearchParams(location.search);
 let CLAVE = qs.get('clave') || ls.get('despacho_clave') || '';
 let USUARIO = ls.get('despacho_usuario') || '';
-let D = null, pestana = ls.get('despacho_tab') || 'curso', filtro = '';
+const CON_PRUEBA = new URLSearchParams(location.search).get('prueba') === '1';   // viajes de prueba (PRUEBA ETP): solo con ?prueba=1
+let D = null, pestana =ls.get('despacho_tab') || 'curso', filtro = '';
 const fotos = {};
 
 async function pedir(params) {
-  const r = await fetch(API + '?' + new URLSearchParams(Object.assign({ vista: 'despacho', formato: 'json', clave: CLAVE }, params)));
+  // los viajes de prueba (PRUEBA ETP) solo salen con despacho.html?prueba=1
+  const r = await fetch(API + '?' + new URLSearchParams(Object.assign({ vista: 'despacho', formato: 'json', clave: CLAVE }, CON_PRUEBA ? { prueba: '1' } : {}, params)));
   return r.json();
 }
 async function postear(body) {
@@ -167,7 +169,7 @@ async function cargarTurnos(forzar) {
     const j = await (await fetch(API + '?' + new URLSearchParams({ formato: 'json', clave: CLAVE }))).json();
     if (!j.ok) return;
     TURNOS = j.turnosConductores || []; turnosHora = Date.now();
-    VIAJES = j.viajes || []; REGISTRO = j.registro || null;   // también para 📧 Orden de cargue (destino, motonave, puerto, fechas)
+    VIAJES = (j.viajes || []).filter(v => CON_PRUEBA || String(v.empresa || '').trim().toUpperCase() !== 'PRUEBA ETP'); REGISTRO = j.registro || null;   // también para 📧 Orden de cargue (destino, motonave, puerto, fechas)
     VIAJES.forEach(v => { DESTINOS[v.id] = v.operacion === 'EXPO' ? v.pais : (v.bodega || v.destino); });
     if (D) { D.turnos = TURNOS; if (!$('#velo')) pintar(); }
   } catch (e) { /* sin turnos: Despacho sigue igual */ }

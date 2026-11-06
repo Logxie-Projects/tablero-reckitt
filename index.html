@@ -1784,7 +1784,9 @@ async function cargar(){
     const r = await fetch(CFG.SHEETS_API_URL + '?formato=json&clave=' + encodeURIComponent(clave));
     const j = await r.json();
     if (!j.ok) { pedirClave(true); return false; }
-    viajes = j.viajes.map(normalizar); etapasViajes();
+    // los viajes de prueba (empresa PRUEBA ETP) son para probar el sistema: el equipo no los ve; solo con ?prueba=1 (6-nov)
+    const conPrueba = new URLSearchParams(location.search).get('prueba') === '1';
+    viajes = j.viajes.map(normalizar).filter(v => conPrueba || !esPrueba(v)); etapasViajes();
     historial = j.historial || [];
     window.MODO_CLIENTE = !j.interno;
     window.BITACORA = j.bitacora || [];
@@ -4607,7 +4609,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '8c94c4371c';
+const VERSION_TABLERO = '771bec103b';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
