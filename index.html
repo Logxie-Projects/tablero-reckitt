@@ -4604,7 +4604,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '71e1a8a040';
+const VERSION_TABLERO = '45ec18cf05';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5020,6 +5020,16 @@ let bandejaFiltro = '';
 // areaProp (los de cobro son de Facturación), lo demás de Operaciones. Al entrar, la Bandeja muestra el área de quien ingresó
 // (Ingresar como: Eider y Jorge → Operaciones, Pedro → Facturación, Gerencia → Gerencia; Calidad ve todo).
 let bandejaArea = null;
+// cómo se lee un dato del correo en la Bandeja. El equipo no aprueba el dato: decide si lo que dice el correo se GUARDA en el
+// viaje. La aprobación de extracostos la da Reckitt (6-nov: el correo de Samir Bastidas "Autorización facturación" salía como
+// "Aprobar" en Facturación, como si Facturación aprobara los costos): se dice "Reckitt aprobó los extracostos"
+const fxDato = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
+const quienDato = p => esc(String(p.evidencia || '').split(' · ')[0].slice(0, 60));
+const lineaDato = p => p.campo === 'aprobacionExtra'
+  ? `<b>Reckitt ${p.valor === 'Aprobado' ? 'aprobó' : p.valor === 'Rechazado' ? 'rechazó' : 'marcó «' + esc(p.valor) + '» en'} los extracostos</b> <span class="sub">· lo dice ${quienDato(p)}; se anota en "Aprobación extracostos"</span>`
+  : `${esc(p.etiqueta)}: ${p.actual ? `<s class="sub">${esc(fxDato(p.actual))}</s> → ` : ''}<b>${esc(fxDato(p.valor))}</b> <span class="sub">${esc(String(p.evidencia || '').slice(0, 90))}</span>`;
+const botonesDato = (id, n, area) => btnT(`✔ Guardar en el viaje${n > 1 ? ' (' + n + ')' : ''}`, `data-b-aprobar="${id}"${area ? ` data-area="${area}"` : ''}`, 'Lo que dice el correo pasa al viaje, a su nombre')
+  + btnT('Descartar', `data-b-rechazar="${id}"${area ? ` data-area="${area}"` : ''}`, 'No se guarda y no vuelve a aparecer');
 const areaInicial = () => { const p = EQUIPO.find(x => x.nombre === usuarioGuardado()); return p && AREAS.includes(p.area) ? p.area : ''; };
 
 // arma las tarjetas: {v (o null), titulo, items:[{b: bloque, html, acc, roja}], orden}
@@ -5078,9 +5088,9 @@ function armarBandeja(){
       const deAcc = [...new Set([...P.map(p => (String(p.origen || '').match(/^Correo (LX-\d+)/) || [])[1]),
         ...(area === 'Operaciones' ? B.filter(b => /llenar datos desde correos/i.test(b.accion) && todos.some(x => x.id === viajeDeAccion(b)?.id)).map(b => b.id) : [])].filter(Boolean))];
       deAcc.forEach(id => usadas.add(id));
-      add(v, {b: 'datos', area, ks: deAcc.map(id => 'a' + id), html: P.map(p => `${esc(p.etiqueta)}: ${p.actual ? `<s class="sub">${esc(fx(p.actual))}</s> → ` : ''}<b>${esc(fx(p.valor))}</b> <span class="sub">${esc(String(p.evidencia || '').slice(0, 90))}</span>`).join('<br>')
-        + (deAcc.length ? `<br><span class="sub">Vienen de ${deAcc.map(esc).join(', ')}: al aprobar o rechazar, se cierran</span>` : ''),
-        acc: btnT(`✔ Aprobar ${P.length}`, `data-b-aprobar="${v.id}" data-area="${area}"`) + btnT('Rechazar', `data-b-rechazar="${v.id}" data-area="${area}"`) + btnT('Ver uno por uno', 'data-b-prop="1"')});
+      add(v, {b: 'datos', area, ks: deAcc.map(id => 'a' + id), html: P.map(lineaDato).join('<br>')
+        + (deAcc.length ? `<br><span class="sub">Vienen de ${deAcc.map(esc).join(', ')}: al guardar o descartar, se cierran</span>` : ''),
+        acc: botonesDato(v.id, P.length, area) + btnT('Ver uno por uno', 'data-b-prop="1"')});
     });
     // 7 · Falta (errores del viaje y de sus subviajes; sin los que ya salen arriba), solo si arranca en ≤ HORIZONTE_FALTA días o ya arrancó
     const pe = primerEvento(v), cerca = !pe || diffDias(pe) <= HORIZONTE_FALTA;
@@ -5096,8 +5106,8 @@ function armarBandeja(){
     const v = viajes.find(x => x.id === id), P = PROP.filter(p => p.viajeId === id && !propUsadas.has(p.clave));
     P.forEach(p => propUsadas.add(p.clave));
     const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
-    add(v || null, {b: 'datos', area: P.every(p => areaProp(p) === 'Facturación') ? 'Facturación' : 'Operaciones', html: `${v ? `<span class="tg">${esc(situacion(v))}</span> ` : ''}` + P.map(p => `${esc(p.etiqueta)}: ${p.actual ? `<s class="sub">${esc(fx(p.actual))}</s> → ` : ''}<b>${esc(fx(p.valor))}</b> <span class="sub">${esc(String(p.evidencia || '').slice(0, 90))}</span>`).join('<br>'),
-      acc: v ? btnT(`✔ Aprobar ${P.length}`, `data-b-aprobar="${v.id}"`) + btnT('Rechazar', `data-b-rechazar="${v.id}"`) : btnT('Ver en Llenar datos', 'data-b-prop="1"')}, v ? '' : 'Datos de viajes que no se encontraron');
+    add(v || null, {b: 'datos', area: P.every(p => areaProp(p) === 'Facturación') ? 'Facturación' : 'Operaciones', html: `${v ? `<span class="tg">${esc(situacion(v))}</span> ` : ''}` + P.map(lineaDato).join('<br>'),
+      acc: v ? botonesDato(v.id, P.length) : btnT('Ver en Llenar datos', 'data-b-prop="1"')}, v ? '' : 'Datos de viajes que no se encontraron');
   });
   // registro de vehículos y conductores (lo que falta para asignar): va en la tarjeta del viaje, bloque Falta
   filasRegistro(vivos).forEach(x => { const v = padreDe(x.v); const h = filaRegistroHtml(x);
@@ -5178,7 +5188,7 @@ async function decidirBandeja(id, aprobar, area){
   // solo los datos de esa línea: los del área (Operaciones o Facturación) si la línea es de un área
   const todos = [v, ...hijosDe(v)], P = PROP.filter(p => todos.some(x => x.id === p.viajeId) && (!area || areaProp(p) === area)); if (!P.length) return;
   const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
-  if (!await preguntarSiNo(`¿${aprobar ? 'Guardar en la base' : 'Rechazar'} estos datos del correo en ${id}?\n\n${P.map(p => `• ${p.etiqueta}: ${p.actual ? fx(p.actual) : 'vacío'} → ${fx(p.valor)}`).join('\n')}`, aprobar ? 'Sí, guardar' : 'Sí, rechazar')) return;
+  if (!await preguntarSiNo(`¿${aprobar ? 'Guardar en el viaje' : 'Descartar'} lo que dice el correo en ${id}?${aprobar ? '' : ' (no se guarda y no vuelve a aparecer)'}\n\n${P.map(p => p.campo === 'aprobacionExtra' ? `• Reckitt ${p.valor === 'Aprobado' ? 'aprobó' : p.valor === 'Rechazado' ? 'rechazó' : 'marcó ' + p.valor + ' en'} los extracostos (lo dice ${String(p.evidencia || '').split(' · ')[0]})` : `• ${p.etiqueta}: ${p.actual ? fx(p.actual) : 'vacío'} → ${fx(p.valor)}`).join('\n')}`, aprobar ? 'Sí, guardar' : 'Sí, descartar')) return;
   const usuario = pedirUsuario(); if (!usuario) return;
   const datos = P.map(({clave, viajeId, campo, valor, evidencia, origen}) => ({clave, viajeId, campo, valor, evidencia, origen}));
   try {
