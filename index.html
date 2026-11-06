@@ -485,7 +485,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
   <div class="bar">
     <div class="brand"><div class="logo">▲</div><div>Control de Transporte · Reckitt<small>Operación IMPO / EXPO</small></div></div>
     <nav id="nav">
-      <button data-v="bandeja" title="Prueba: todo lo que pide trabajo en una tarjeta por viaje (junta Mi turno, Acciones, Llenar datos y Errores)">Bandeja <small>prueba</small> <span class="badge" id="nBandeja"></span></button>
+      <button data-v="bandeja" title="Todo lo que pide trabajo en una tarjeta por viaje (junta Mi turno, Acciones, Llenar datos y Errores)">Bandeja de Pendientes <span class="badge" id="nBandeja"></span></button>
       <button data-v="turno">Mi turno <span class="badge" id="nTurno"></span></button>
       <button data-v="tablero" class="on">Tablero</button>
       <button data-v="viajes">Viajes</button>
@@ -515,7 +515,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
   <!-- TABLERO -->
   <section id="v-bandeja" class="hidden">
     <div class="card">
-      <h2 style="margin:0">Bandeja <span class="tg">prueba</span></h2>
+      <h2 style="margin:0">Bandeja de Pendientes</h2>
       <div class="sub">Todo lo que pide trabajo, una tarjeta por viaje: por crear, por tomar, sin vehículo, ¿pasó?, datos de correos, pedidos y lo que falta. Lo que haga aquí queda igual en Mi turno, Acciones, Llenar datos y Errores, que siguen como siempre.</div>
       <div id="bandeja" style="margin-top:10px"></div>
     </div>
@@ -4687,7 +4687,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '3cabdb455a';
+const VERSION_TABLERO = 'df93fbae74';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
