@@ -372,6 +372,12 @@ body.turno-bloqueado #nav button:not([data-v="turno"]):not([data-v="bandeja"]), 
 /* Bandeja (prueba, bandeja.js): una tarjeta por viaje con sus líneas por bloque */
 .bj-resumen{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
 .bj-ronda{margin-bottom:10px}
+.bj-ops{display:flex;border-bottom:2px solid var(--border);margin:0 0 12px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+.bj-op{background:none;border:0;border-bottom:3px solid transparent;margin-bottom:-2px;padding:9px 16px;font:inherit;font-weight:600;color:var(--muted);cursor:pointer;white-space:nowrap}
+.bj-op:hover{color:var(--text)}
+.bj-op.on{color:var(--accent);border-bottom-color:var(--accent)}
+.bj-opn{display:inline-block;min-width:20px;padding:0 6px;margin-left:4px;border-radius:10px;background:var(--border);font-size:.85em;text-align:center}
+.bj-op.on .bj-opn{background:var(--accent);color:#fff}
 .bj-card{border:1px solid var(--border);border-radius:10px;margin-top:10px;overflow:hidden}
 .bj-card.roja{border-left:3px solid var(--bad)}
 .bj-h{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;padding:8px 10px;background:var(--surface-2,transparent);border-bottom:1px solid var(--border)}
@@ -4609,7 +4615,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '771bec103b';
+const VERSION_TABLERO = 'f96d14d3b9';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5025,6 +5031,10 @@ let bandejaFiltro = '';
 // areaProp (los de cobro son de Facturación), lo demás de Operaciones. Al entrar, la Bandeja muestra el área de quien ingresó
 // (Ingresar como: Eider y Jorge → Operaciones, Pedro → Facturación, Gerencia → Gerencia; Calidad ve todo).
 let bandejaArea = null;
+// barra de operación (6-nov): IMPO, EXPO y Nacional por separado, para que cada uno vea menos trabajo a la vez. Se recuerda en este
+// navegador; "Todas" muestra todo. Lo que no es de ningún viaje ni operación sale en "Otros"
+const OPS_BANDEJA = [['IMPO', 'Importación'], ['EXPO', 'Exportación'], ['NACIONAL', 'Nacional'], ['General', 'Otros']];
+let bandejaOp = (() => { try { return localStorage.getItem('bandejaOp') || ''; } catch(e) { return ''; } })();
 // cómo se lee un dato del correo en la Bandeja. El equipo no aprueba el dato: decide si lo que dice el correo se GUARDA en el
 // viaje. La aprobación de extracostos la da Reckitt (6-nov: el correo de Samir Bastidas "Autorización facturación" salía como
 // "Aprobar" en Facturación, como si Facturación aprobara los costos): se dice "Reckitt aprobó los extracostos"
@@ -5048,7 +5058,8 @@ function armarBandeja(){
   const tarjetas = new Map(), usadas = new Set(), propUsadas = new Set(), hoyViajes = new Set();
   const tarjeta = (v, titulo) => { const k = v ? v.id : titulo; if (!tarjetas.has(k)) tarjetas.set(k, {v, titulo: titulo || nombreTurno(v), items: []}); return tarjetas.get(k); };
   const padreDe = v => v && v.padre ? viajes.find(x => x.id === v.padre) || v : v;
-  const add = (v, it, titulo) => { tarjeta(v, titulo).items.push(it); if (v) hoyViajes.add(v.id); };
+  // op: la operación del viaje (IMPO, EXPO, NACIONAL) para la barra de arriba; sin viaje, la que dice la acción (dominio operacionAccion)
+  const add = (v, it, titulo, b) => { it.op = v ? v.operacion : (b && operacionAccion(b)) || 'General'; tarjeta(v, titulo).items.push(it); if (v) hoyViajes.add(v.id); };
   const accHecha = b => btnT('Marcar hecha', `data-b-hecha="${b.id}"`) + btnT('No es para ETP', `data-b-noetp="${b.id}"`);
   const pista = b => { const p = pareceHecha(b); return p ? ` <span class="ok-txt">✔ Ya hecha según el viaje: ${esc(p)}</span>` : ''; };
 
@@ -5056,7 +5067,7 @@ function armarBandeja(){
   B.filter(b => (pideCrearViaje(b) && !yaCreado(b)) || ((atajoDe(b) || [])[0] === 'nacional')).forEach(b => {
     usadas.add(b.id);
     add(null, {b: 'crear', k: 'a' + b.id, area: areaDe(b), html: `${desdeCuando(b.fechaCorreo || b.registrado)}<b>${esc(b.accion)}</b><br><span class="sub">${esc(b.resumen || '')} · ${esc(b.remitente || '')}</span>`,
-      acc: botonAtajo(b) + accHecha(b), roja: pedidoRojo(b)}, 'Viajes por crear');
+      acc: botonAtajo(b) + accHecha(b), roja: pedidoRojo(b)}, 'Viajes por crear', b);
   });
   vivos.forEach(v => {
     const hijos = hijosDe(v), todos = [v, ...hijos];
@@ -5121,7 +5132,7 @@ function armarBandeja(){
   B.filter(b => !usadas.has(b.id)).forEach(b => { const v = padreDe(viajeDeAccion(b));
     add(v && vivos.includes(v) ? v : null, {b: 'pedido', k: 'a' + b.id, area: areaDe(b),
       html: `${desdeCuando(b.fechaCorreo || b.registrado)}${areaDe(b) !== 'Operaciones' ? `<span class="tg">${esc(areaDe(b))}</span> ` : ''}${esc(b.accion)}${pista(b)}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>`,
-      acc: botonAtajo(b) + accHecha(b)}, v && vivos.includes(v) ? '' : 'Pedidos sin viaje');
+      acc: botonAtajo(b) + accHecha(b)}, v && vivos.includes(v) ? '' : 'Pedidos sin viaje', b);
     usadas.add(b.id); });
   // roja = la misma línea roja de Mi turno (bloquea el tablero mientras no tenga excepción vigente); su excepción, la misma
   // una línea que junta varias cosas (datos + sus acciones; sin vehículo + "asignar vehículo") lleva todas sus claves (ks):
@@ -5156,9 +5167,17 @@ function renderBandeja(){
   const enArea = i => !bandejaArea || i.area === bandejaArea;
   const L0 = R.L, porArea = a => L0.filter(t => t.items.some(i => !a || i.area === a)).length;
   R.L = R.L.map(t => ({...t, items: t.items.filter(enArea)})).filter(t => t.items.length).map(t => ({...t, roja: t.items.some(i => i.roja)}));
+  // barra IMPO / EXPO / Nacional: cuenta tarjetas del área elegida; ⛔ si esa operación tiene líneas rojas (para no perderlas de vista)
+  const deOp = (t, o) => t.items.filter(i => !o || i.op === o);
+  const opN = o => R.L.filter(t => deOp(t, o).length).length, opRoja = o => R.L.some(t => deOp(t, o).some(i => i.roja));
+  if (bandejaOp && !opN(bandejaOp) && !OPS_BANDEJA.some(([o]) => o === bandejaOp)) bandejaOp = '';
+  const barraOp = `<div class="bj-ops">${[['', 'Todas'], ...OPS_BANDEJA].filter(([o]) => !o || o === bandejaOp || opN(o)).map(([o, t]) =>
+    `<button type="button" class="bj-op ${bandejaOp === o ? 'on' : ''}" data-b-op="${o}">${opRoja(o) ? '⛔ ' : ''}${t} <span class="bj-opn">${opN(o)}</span></button>`).join('')}</div>`;
+  const nTotal = opN('');
+  R.L = R.L.map(t => ({...t, items: deOp(t, bandejaOp)})).filter(t => t.items.length).map(t => ({...t, roja: t.items.some(i => i.roja)}));
   const cuenta = k => R.L.filter(t => t.items.some(i => i.b === k)).length;
   const nViajes = R.L.filter(t => t.v).length;
-  $('#nBandeja').textContent = R.L.length || '';
+  $('#nBandeja').textContent = nTotal || '';   // el número de la pestaña: todo el trabajo del área, no solo la operación a la vista
   const errLejos = R.vivos.filter(v => primerEvento(v) && diffDias(primerEvento(v)) > HORIZONTE_FALTA && validar(v).some(e => e.tipo !== 'Alerta')).length;
   const ver = R.L.filter(t => !bandejaFiltro || t.items.some(i => i.b === bandejaFiltro));
   const T = R.T, r = T.r, nRojas = T.rojas.reduce((a, b) => a + b, 0);
@@ -5177,7 +5196,7 @@ function renderBandeja(){
   const accExc = i => i.rojaSinExc ? btnT('⚠ No se puede: excepción', `data-t-exc="${esc(i.k)}"`, 'Pide a Gerencia que apruebe dejarlo así; queda registrado con su nombre') : '';
   // entrar o salir del modo Gerencia también desde aquí (antes solo en Mi turno): aprobar excepciones, no bloquearse
   const llave = esGerencia() ? ` · <span class="tr-ger">🔓 Modo Gerencia</span> ${btnT('Salir', 'data-t-gsalir="1"')}` : ` · ${btnT('🔑 Entrar como Gerencia', 'data-t-gerencia="1"', 'Con la clave de Gerencia: aprobar excepciones, editar novedades y no bloquearse en esta pestaña')}`;
-  cont.innerHTML = `<div class="bj-ronda sub">${ronda}${bloqueo}${llave}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}</div>` + bloqueGerencia(T)
+  cont.innerHTML = `<div class="bj-ronda sub">${ronda}${bloqueo}${llave}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}</div>` + bloqueGerencia(T) + barraOp
     + `<div class="bj-resumen"><b>${nViajes} viaje${nViajes === 1 ? '' : 's'} necesita${nViajes === 1 ? '' : 'n'} algo</b>${R.L.length > nViajes ? ` · ${R.L.length - nViajes} grupo${R.L.length - nViajes === 1 ? '' : 's'} sin viaje` : ''}
       <div class="chips"><span class="sub" style="margin-right:4px">Área:</span>${[['', 'Todas'], ...AREAS.map(a => [a, a])].map(([a, t]) => `<button type="button" class="chip ${bandejaArea === a ? 'on' : ''}" data-b-area="${a}">${t} · ${porArea(a)}</button>`).join('')}</div>
       <div class="chips">${`<button type="button" class="chip ${!bandejaFiltro ? 'on' : ''}" data-b-filtro="">Todo · ${R.L.length}</button>`}${BLOQUES.map(([k, t]) => cuenta(k) ? `<button type="button" class="chip ${bandejaFiltro === k ? 'on' : ''}" data-b-filtro="${k}" title="${esc(BLOQUES.find(x => x[0] === k)[3])}">${t} · ${cuenta(k)}</button>` : '').join('')}</div></div>`
@@ -5222,6 +5241,7 @@ $('#bandeja').onclick = e => {
   if (Object.keys(d).some(k => /^t[A-Z]/.test(k))) return $('#v-turno').onclick(e);
   if (d.bFiltro !== undefined) { bandejaFiltro = d.bFiltro; renderBandeja(); }
   else if (d.bArea !== undefined) { bandejaArea = d.bArea; renderBandeja(); }
+  else if (d.bOp !== undefined) { bandejaOp = d.bOp; try { localStorage.setItem('bandejaOp', d.bOp); } catch(e) {} renderBandeja(); }
   else if (d.bAbrir) abrir(d.bAbrir);
   else if (d.bHecha) marcarHecha(d.bHecha);
   else if (d.bNoetp) marcarHecha(d.bNoetp, true);
