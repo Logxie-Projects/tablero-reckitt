@@ -95,6 +95,8 @@ input[type=search]{border:1px solid var(--line);background:var(--surface);border
 .filtros .b.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
 .filtros .num{background:var(--surface-2);border-radius:99px;padding:0 6px;font-size:12px}
 .conds td{font-size:13px}
+.pdueno{margin-bottom:6px}
+.pdueno:last-child{margin-bottom:0}
 .conds tr.arch td{color:var(--muted);background:var(--surface-2)}
 .prs{max-width:300px}
 .pr{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:2px 6px;margin:0 4px 4px 0;background:var(--warn-soft);color:var(--warn)}
@@ -679,11 +681,22 @@ function pasaFiltroCond(c, k) {
   if (k === 'problemas') return c.problemas.length > 0;
   return c.problemas.some(p => p.tipo === k);
 }
+// cada placa del conductor con el propietario del vehículo (pestaña Vehículos): nombre y celular, o que falta; clic = editar el vehículo
+const vehiculoDePlaca = p => { const n = String(p || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), L = (VEHS || []).map((v, i) => Object.assign({ i }, v)).filter(v => String(v.placa).toUpperCase().replace(/[^A-Z0-9]/g, '') === n);
+  return L.find(v => !archivadoC(v)) || L[0] || null; };
+function placasConDueno(placas) {
+  const L = String(placas || '').split(/\s*,\s*/).filter(Boolean);
+  if (!L.length) return '—';
+  return L.map(p => { const v = vehiculoDePlaca(p);
+    const dueno = !v ? '<span class="tarde">no está en Vehículos</span>' : v.propietario ? `Dueño: ${esc(v.propietario)}${v.celularPropietario ? ' · ' + esc(v.celularPropietario) : ' · <span class="tarde">sin celular</span>'}`
+      : '<span class="tarde">sin propietario registrado</span>';
+    return `<div class="pdueno"><span class="placa">${esc(p)}</span>${v && !archivadoC(v) ? ` <button class="b b-mini" title="Editar el vehículo y su propietario" onclick="cerrarVentana();condVista='vehiculos';pintar();editarVeh(${v.i})">✏️</button>` : ''}<div class="sub">${dueno}</div></div>`; }).join('');
+}
 function vistaConductores(f) {
   if (condError && !CONDS) return `<div class="vacio">No se pudo cargar el registro: ${esc(condError)} <button class="b b-mini" onclick="cargarConductores(true)">Reintentar</button></div>`;
   if (!CONDS) return '<div class="vacio">Cargando el registro de conductores…</div>';
   if (condVista === 'vehiculos') return selectorRegistro() + vistaVehiculos(f);
-  const busca = c => !f || JSON.stringify([c.nombre, c.cedula, c.celular, c.placas, c.alias]).toLowerCase().includes(f);
+  const busca = c => !f || JSON.stringify([c.nombre, c.cedula, c.celular, c.placas, c.alias].concat(String(c.placas || '').split(/\s*,\s*/).map(p => { const v = vehiculoDePlaca(p); return v ? v.propietario + ' ' + v.celularPropietario : ''; }))).toLowerCase().includes(f);   // también por el dueño de sus placas
   const lista = CONDS.map((c, i) => Object.assign({ i }, c)).filter(c => pasaFiltroCond(c, condFiltro) && busca(c))
     .sort((a, b) => (b.problemas.length > 0) - (a.problemas.length > 0) || String(a.nombre).localeCompare(String(b.nombre)));
   const n = k => CONDS.filter(c => pasaFiltroCond(c, k)).length;
@@ -693,10 +706,10 @@ function vistaConductores(f) {
       <span class="sub" style="margin-left:auto">Registro leído ${esc(hace(new Date(condHora).toISOString()))}</span>
       <button class="b b-mini" onclick="cargarConductores(true)">🔄 Recargar</button></div>
     <p class="sub" style="margin:0 0 10px">Use la búsqueda de arriba (nombre, cédula, celular o placa). Cada cambio muestra primero qué se va a cambiar y solo se guarda al confirmar. Nada se borra: lo que se fusiona o se retira queda archivado.</p>
-    ${!lista.length ? '<div class="vacio">Ningún conductor con ese filtro.</div>' : `<div class="tabla"><table class="conds"><thead><tr><th>Conductor</th><th>Cédula</th><th>Celular</th><th>Placas</th><th>Viajes</th><th>Estado</th><th>Por revisar</th><th></th></tr></thead><tbody>
+    ${!lista.length ? '<div class="vacio">Ningún conductor con ese filtro.</div>' : `<div class="tabla"><table class="conds"><thead><tr><th>Conductor</th><th>Cédula</th><th>Celular</th><th>Placas y propietario</th><th>Viajes</th><th>Estado</th><th>Por revisar</th><th></th></tr></thead><tbody>
     ${lista.map(c => `<tr class="${archivadoC(c) ? 'arch' : ''}"><td><b>${esc(c.nombre)}</b>${c.alias ? `<div class="sub">también: ${esc(c.alias)}</div>` : ''}</td>
       <td>${esc(c.cedula || '—')}</td><td>${esc(c.celular || '—')}${verif(c)}</td>
-      <td>${String(c.placas || '').split(/\s*,\s*/).filter(Boolean).map(p => `<span class="placa">${esc(p)}</span>`).join(' ') || '—'}</td>
+      <td>${placasConDueno(c.placas)}</td>
       <td>${c.viajes || 0}${c.ultimoViaje ? `<div class="sub">último ${esc(diaTxt(c.ultimoViaje))}</div>` : ''}</td>
       <td><span class="sub">${esc(c.estado || '')}</span>${c.falta && !archivadoC(c) ? `<div class="sub tarde">falta: ${esc(c.falta)}</div>` : ''}</td>
       <td class="prs">${c.problemas.map(chip).join('') || (archivadoC(c) ? '' : '<span class="si">✓</span>')}</td>
@@ -709,7 +722,7 @@ function vistaConductores(f) {
 const problemasHtml = c => c.problemas.length ? `<div class="nov" style="margin-bottom:10px">${c.problemas.map(p => '⚠ ' + esc(p.tipo + ': ' + p.msg)).join('<br>')}</div>` : '';
 function editarCond(i) {
   const c = CONDS[i];
-  ventana(`<h2>✏️ Editar conductor</h2>${problemasHtml(c)}
+  ventana(`<h2>✏️ Editar conductor</h2>${problemasHtml(c)}${String(c.placas || '').trim() ? `<div class="sub" style="margin-bottom:10px"><b>Vehículos y propietarios</b> (se editan en el vehículo)${placasConDueno(c.placas)}</div>` : ''}
     <form class="form" id="fcond" onsubmit="event.preventDefault();previaEditar(${i})">
       <label class="full">Nombre completo (MAYÚSCULAS)<input name="nombre" value="${esc(c.nombre)}" required></label>
       <label>Cédula (solo números)<input name="cedula" value="${esc(c.cedula)}" inputmode="numeric"></label>
