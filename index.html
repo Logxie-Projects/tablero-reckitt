@@ -1234,7 +1234,10 @@ function validar(v){
   // reglas de detección (REGLAS-DETECCION.md): devolución del vacío dudosa y patio intermedio sin subviaje
   const hijos = hijosDe(v), mismo = (a, b) => sinTilde(String(a||'')).toLowerCase().trim() === sinTilde(String(b||'')).toLowerCase().trim();
   if (impo && !esLCL(v) && v.fechaDevolucion) {
-    if (v.fechaDevolucion === v.fechaCargue && v.patio && mismo(v.patio, v.bodega)) add('Alta','Fecha de devolución',`Devolución del vacío dudosa: mismo día y mismo lugar de la entrega (${v.bodega}). ¿El contenedor quedó almacenado lleno? Confirmar o crear subviaje`, 'Error', 'Si el contenedor sigue lleno en la bodega, el vacío no se ha devuelto y el plazo sigue corriendo');
+    // la duda del mismo día se resuelve con la tirilla de devolución o con la confirmación del equipo de esa fecha
+    const cDev = confirmacion(v, 'fechaDevolucion'), devConfirmada = cDev && cDev.fuente !== 'anterior';
+    if (devConfirmada) { /* ya confirmada: no se vuelve a preguntar */ }
+    else if (v.fechaDevolucion === v.fechaCargue && v.patio && mismo(v.patio, v.bodega)) add('Alta','Fecha de devolución',`Devolución del vacío dudosa: mismo día y mismo lugar de la entrega (${v.bodega}). ¿El contenedor quedó almacenado lleno? Confirmar o crear subviaje`, 'Error', 'Si el contenedor sigue lleno en la bodega, el vacío no se ha devuelto y el plazo sigue corriendo');
     else if (v.fechaDevolucion === v.fechaCargue) add('Media','Fecha de devolución',`Vacío devuelto el mismo día de la entrega en ${v.bodega||'bodega'}: confirmar que no quedó almacenado lleno`, 'Error', 'Si el contenedor sigue lleno en la bodega, el vacío no se ha devuelto y el plazo sigue corriendo');
     // solo los subviajes con el contenedor lleno: si se vació en la bodega de paso, el vacío puede volver antes del urbano
     const llenos = hijos.filter(x => !vaciadoSub(x)), urbano = llenos.map(x=>x.fechaUrbano||'').filter(Boolean).sort().pop();
@@ -4698,7 +4701,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'e2e45631b4';
+const VERSION_TABLERO = '5ae433b4ef';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
