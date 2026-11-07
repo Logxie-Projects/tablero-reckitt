@@ -2329,7 +2329,13 @@ function estadoTurno(){
 
 // con la placa sola a veces no se sabe qué viaje es: va también el número con que lo identifica el cliente (booking en EXPO,
 // pedido en IMPO; dominio.js clavesBusqueda) y el id del tablero
-const refTurno = v => [clavesBusqueda(v).filter(([k]) => k !== 'Placa').slice(0, 1).map(([k, x]) => `${k} ${x}`)[0], v.id].filter(Boolean).join(' · ');
+// la referencia del viaje como la usa el cliente (7-nov: "IMPO-004, EXPO-006… no es el estándar del cliente"): IMPO por pedido (o DO
+// y BL si no tiene pedido, dominio refCorta), EXPO por booking y contenedor (un booking lleva varios contenedores), NACIONAL por lo
+// que se lleva. El número interno (IMPO-004) solo si el viaje no tiene ninguna referencia del cliente
+const refTurno = v => { const r = v.operacion === 'EXPO' ? [v.booking && 'Booking ' + v.booking, pareceContenedor(v.contenedor) && v.contenedor].filter(Boolean).join(' · ') : refCorta(v);
+  return r || (v.operacion === 'EXPO' ? `sin booking aún (${v.id})` : v.id); };
+// un subviaje se nombra por su destino (la bodega o el destino), no por su número interno
+const nombreSub = x => 'Subviaje' + (x.bodega || x.destino ? ' a ' + (x.bodega || x.destino) : '');
 const nombreTurno = v => v ? `${v.placa || 'Sin vehículo'} · ${v.operacion} ${v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || '')}${v.padre ? ' · subviaje' : ''} · ${refTurno(v)}` : '';
 const btnT = (txt, data, title='') => `<button type="button" class="link" ${data} ${title ? `title="${esc(title)}"` : ''}>${txt}</button>`;
 const lnkT = (txt, url) => `<a class="link" href="${url}" target="_blank" rel="noopener">${txt}</a>`;
@@ -4692,7 +4698,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '6fcf4e370d';
+const VERSION_TABLERO = 'e2e45631b4';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5183,7 +5189,7 @@ function armarBandeja(){
     }
     // 4 · ¿Pasó? (por confirmar + sin actualizar de la misma fecha: una pregunta)
     todos.forEach(x => pasosPorConfirmar(x).forEach(p => add(v, {b: 'paso', k: 'conf|' + x.id,
-      html: `${x.padre ? `Subviaje ${esc(x.id)} · ` : ''}<b>${esc(p.txt)}</b> ${esc(fd(p.fecha))}${p.dias ? ` · hace ${p.dias} d` : ' · hoy'}`,
+      html: `${x.padre ? `${esc(nombreSub(x))} · ` : ''}<b>${esc(p.txt)}</b> ${esc(fd(p.fecha))}${p.dias ? ` · hace ${p.dias} d` : ' · hoy'}`,
       acc: botonConfirmar({v: x, ...p}, 'Sí, se hizo') + btnT('No: nueva fecha', `data-b-abrir="${x.id}"`, 'Abre el viaje para poner la fecha nueva con su causa')})));
     if (!pasosPorConfirmar(v).length) sinActualizar(v).forEach(s => add(v, {b: 'paso', k: kSeg(v), html: `${esc(s.msg)}<br><span class="sub">${esc(s.porque || '')}</span>`,
       acc: btnT('Actualizar el viaje', `data-b-abrir="${v.id}"`) + (v.placa ? lnkT(ICONO_WA + 'Preguntar dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas')) : '')}));
@@ -5211,7 +5217,7 @@ function armarBandeja(){
     if (cerca) {
       const E = todos.flatMap(x => validar(x).map(e => ({...e, x}))).filter(e => e.tipo !== 'Alerta' && e.campo !== 'Seguimiento'
         && !(sinCobertura(v) && e.x === v && /veh[ií]culo/i.test(e.msg)));
-      if (E.length) add(v, {b: 'falta', html: E.map(e => `${e.x.padre ? `Subviaje ${esc(e.x.id)} · ` : ''}${esc(e.msg)}`).join('<br>'),
+      if (E.length) add(v, {b: 'falta', html: E.map(e => `${e.x.padre ? `${esc(nombreSub(e.x))} · ` : ''}${esc(e.msg)}`).join('<br>'),
         acc: btnT('Completar en el viaje', `data-b-abrir="${v.id}"`) + clavesBusqueda(v).slice(0, 1).map(([k, c]) => lnkT(`🔎 ${esc(k)} ${esc(c)}`, urlBusqueda(c))).join('')});
     }
   });
