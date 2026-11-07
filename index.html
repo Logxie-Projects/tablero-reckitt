@@ -387,6 +387,7 @@ body.turno-bloqueado #nav button:not([data-v="turno"]):not([data-v="bandeja"]), 
 #gbar .g-ops{flex-basis:100%;margin:0 0 4px}
 #modosHdr{margin:0}
 body.en-turno #modosHdr{display:none}
+.bj-que{margin-top:4px;padding:5px 8px;border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:4px;font-size:12px}
 .bj-ops-chicas{display:flex;flex-direction:column;gap:2px;padding-bottom:4px}
 .bj-op.chica{background:none;border:0;padding:2px 8px;font-size:12px;font-weight:600;color:var(--muted);text-align:left}
 .bj-op.chica.on{color:var(--accent);text-decoration:underline}
@@ -2095,7 +2096,9 @@ let autocerrando = false;
 async function autocerrarHechas(){
   if (window.MODO_CLIENTE || !claveActual() || autocerrando) return;
   const L = (window.BITACORA || []).filter(b => b.estadoAccion !== 'Hecha' && !/^reabierta/i.test(b.resueltoPor || '')
-    && !DE_CRITERIO.test(minus(b.accion)) && pareceHecha(b));
+    // "revisar y aprobar los datos del correo" también se cierra sola si el viaje ya tiene todo lo que trajo el correo: no queda
+    // nada que aprobar (7-nov, LX-0266); las demás que dicen "aprob…" siguen siendo de criterio
+    && (!DE_CRITERIO.test(minus(b.accion)) || /llenar datos desde correos/.test(minus(b.accion))) && pareceHecha(b));
   if (!L.length) return;
   autocerrando = true;
   for (const b of L) { const usuario = POR_SISTEMA + pareceHecha(b);
@@ -4736,7 +4739,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '68b0b79877';
+const VERSION_TABLERO = 'bada695533';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5196,6 +5199,27 @@ function elegirOperacion(o){
 const fechaTarjeta = t => { if (!t.fecha) return ''; const d = diffDias(t.fecha);
   return `<span class="bj-fecha ${d < 0 ? 'atras' : d === 0 ? 'hoy' : ''}">📅 ${d < 0 ? `${t.v ? 'Atrasado' : 'Pedido'} desde ${fd(t.fecha)}` : d === 0 ? 'Hoy' : d === 1 ? 'Mañana' : fd(t.fecha)}</span>`; };
 
+// el correo de una acción, en el buzón de calidad@ (7-nov: "debe permitir abrir el correo"). Se busca por el asunto: el id que guarda
+// LogxIA es el de la copia reenviada (otra cuenta), que el equipo no puede abrir
+const urlCorreo = b => { const a = String(b.asunto || '').replace(/^\s*((re|rv|fw|fwd|enc)\s*:\s*)+/i, '').trim();
+  return a ? 'https://mail.google.com/mail/?authuser=calidad@stentrapetrol.com#search/' + encodeURIComponent(`subject:"${a.slice(0, 120)}"`) : ''; };
+const verCorreo = b => urlCorreo(b) ? lnkT('📧 Ver correo', urlCorreo(b)) : '';
+// "Revisar y aprobar los datos del correo": decirle a la persona qué trae el correo, qué tiene el viaje y qué hacer
+function queHacer(b){
+  const t = minus(b.accion), v = viajeDeAccion(b);
+  if (!/llenar datos desde correos/.test(t)) return b.resumen ? `<br><span class="sub">📧 ${esc(b.resumen)}</span>` : '';
+  const d = datosNuevosDe(b), ks = Object.keys(d).filter(k => d[k]);
+  const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(String(x)) ? fd(String(x)) : x;
+  const pend = v ? PROP.filter(p => p.viajeId === v.id).length : 0;
+  const L = v ? ks.map(k => `• ${esc(etiquetaCampo(v, k))}: el correo dice <b>${esc(fx(d[k]))}</b> · ${mismoDato(v[k], d[k]) ? '<span class="ok-txt">el viaje ya lo tiene</span>' : `el viaje dice <b>${esc(v[k] ? fx(v[k]) : 'vacío')}</b>`}`) : [];
+  const todo = v && ks.length && ks.every(k => mismoDato(v[k], d[k]));
+  const que = !v ? 'el viaje no se encontró: abra el correo y busque el viaje.'
+    : todo ? 'nada que guardar: el viaje ya tiene lo que dice el correo. Presione <b>Marcar hecha</b>.'
+    : pend ? 'arriba, en "Datos de correos" de este viaje, presione <b>Guardar</b> si el correo es correcto o <b>Descartar</b> si no.'
+    : 'abra el correo; si el dato es correcto, póngalo en el viaje y marque la acción hecha.';
+  return `${b.resumen ? `<br><span class="sub">📧 ${esc(b.resumen)}</span>` : ''}<div class="bj-que">👉 <b>Qué hacer:</b> ${que}${L.length ? '<br>' + L.join('<br>') : ''}</div>`;
+}
+
 // arma las tarjetas: {v (o null), titulo, items:[{b: bloque, html, acc, roja}], orden}
 function armarBandeja(){
   // rondas, líneas rojas y excepciones: las de Mi turno (turno.js estadoTurno), con las mismas claves ("cob|ID", "conf|ID",
@@ -5282,8 +5306,8 @@ function armarBandeja(){
   // 6 · Pedidos: el resto de las acciones (con viaje en su tarjeta; sin viaje, en "Pedidos sin viaje")
   B.filter(b => !usadas.has(b.id)).forEach(b => { const v = padreDe(viajeDeAccion(b));
     add(v && vivos.includes(v) ? v : null, {b: 'pedido', k: 'a' + b.id, area: areaDe(b),
-      html: `${desdeCuando(b.fechaCorreo || b.registrado)}${areaDe(b) !== 'Operaciones' ? `<span class="tg">${esc(areaDe(b))}</span> ` : ''}${esc(b.accion)}${pista(b)}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>`,
-      acc: botonAtajo(b) + accHecha(b)}, v && vivos.includes(v) ? '' : 'Pedidos sin viaje', b);
+      html: `${desdeCuando(b.fechaCorreo || b.registrado)}${areaDe(b) !== 'Operaciones' ? `<span class="tg">${esc(areaDe(b))}</span> ` : ''}${esc(b.accion)}${pista(b)}${queHacer(b)}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>`,
+      acc: verCorreo(b) + botonAtajo(b) + accHecha(b)}, v && vivos.includes(v) ? '' : 'Pedidos sin viaje', b);
     usadas.add(b.id); });
   // 8 · Cierre del día (7-nov, antes solo en Mi turno): en la última ronda, lo de mañana listo y la nota de entrega de turno.
   // Mismas claves que Mi turno ("man|ID", nota|…): lo marcado aquí cuenta allá. Sale en todas las operaciones y con fecha de hoy
