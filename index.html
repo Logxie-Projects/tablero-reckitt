@@ -883,16 +883,24 @@ const HITOS_PLAN = {
 // causa → responsable; "Corrección de dato" no cuenta como reprogramación (la fecha estaba mal escrita)
 const CAUSAS_REPROG = [['Cliente (Reckitt)','Reckitt'], ['Transportadora (Entrapetrol)','Entrapetrol'], ['Puerto o naviera','Terceros'],
   ['Externo (paro, vía, clima)','Terceros'], ['Corrección de dato','']];
-const responsable = causa => (CAUSAS_REPROG.find(c => c[0]===causa) || [, 'Sin causa'])[1];
+// los cambios de plan anteriores al registro de causas (30-oct-2026) no tienen historial: no se le pide causa a nadie
+const INICIO_CAUSAS = '2026-10-30', SIN_HISTORIAL = 'Sin historial';
+const responsable = causa => causa === SIN_HISTORIAL ? SIN_HISTORIAL : (CAUSAS_REPROG.find(c => c[0]===causa) || [, 'Sin causa'])[1];
 // registro guardado en la base: "fecha|campo|antes|después|causa|detalle|usuario" separados por ";;"
 // registro: "fecha|campo|antes|después|causa|detalle|usuario|costo|incidente" (costo e incidente desde el 31-oct)
 const reprogsDe = v => String(v.reprog||'').split(';;').map(x => x.trim()).filter(Boolean)
   .map(x => { const [fecha, campo, antes, despues, causa, detalle, usuario, costo, incidente] = x.split('|');
     return {fecha, campo, antes, despues, causa, detalle, usuario, costo: Number(costo)||0, incidente: incidente||''}; });
-// fechas ya programadas que un cambio mueve (las que estaban vacías no son reprogramación)
+// fechas que se apartan del plan y piden causa: (a) una fecha ya puesta que se mueve; (b) una fecha vacía que se llena distinta
+// de la fecha original (plan) del hito, si ese hito aún no tiene causa. Una fecha que se llena igual al plan no pregunta nada.
+// (b) desde el 7-nov: el retiro del pedido 11338 se llenó el 22-oct con plan 17-oct y quedó "sin causa" sin que nadie la pidiera.
 function fechasMovidas(v, ch){
-  return (HITOS_PLAN[v.operacion]||[]).flatMap(([hito, plan, campos]) => campos.filter(k => k in ch && v[k] && ch[k] && ch[k]!==v[k])
-    .map(k => ({hito, plan, campo:k, antes:v[k], despues:ch[k]})));
+  const R = reprogsDe(v);
+  return (HITOS_PLAN[v.operacion]||[]).flatMap(([hito, plan, campos]) => {
+    const conCausaYa = R.some(x => campos.includes(x.campo) && x.causa !== 'Corrección de dato');
+    return campos.filter(k => k in ch && ch[k] && ch[k]!==v[k] && (v[k] || (v[plan] && ch[k] !== v[plan] && !conCausaYa)))
+      .map(k => ({hito, plan, campo:k, antes:v[k] || v[plan], despues:ch[k]}));
+  });
 }
 // agrega al cambio el registro de la causa; con "Corrección de dato" el plan pasa a la fecha corregida
 // con costo extra: si lo causó el cliente se agrega como extracosto "Reprogramación" (por aprobar); si no, queda solo registrado
@@ -917,7 +925,9 @@ function desviosPlan(v){
     const actual = campos.map(k => v[k]).find(Boolean) || '', p = v[plan] || '';
     if (!p || !actual || p === actual) return null;
     const r = R.filter(x => campos.includes(x.campo) && x.causa !== 'Corrección de dato').pop();
-    return {hito, plan:p, actual, dias:dDias(p, actual), causa: r ? r.causa : 'Sin causa', detalle: r ? r.detalle : '',
+    const viejo = !r && actual < INICIO_CAUSAS;
+    return {hito, plan:p, actual, dias:dDias(p, actual), causa: r ? r.causa : viejo ? SIN_HISTORIAL : 'Sin causa',
+      detalle: r ? r.detalle : viejo ? 'Pasó antes del registro de causas (30-oct): no se sabe por qué' : '',
       costo: R.filter(x => campos.includes(x.campo)).reduce((t, x) => t + x.costo, 0), incidente: R.filter(x => campos.includes(x.campo) && x.incidente).map(x => x.incidente).join(' · ')};
   }).filter(Boolean);
 }
@@ -2806,7 +2816,7 @@ function reprogKpi(){
   const costo = L.reduce((t, v) => t + reprogsDe(v).reduce((a, r) => a + r.costo, 0), 0);
   const incid = L.reduce((t, v) => t + reprogsDe(v).filter(r => r.incidente).length, 0) + L.filter(v => v.novedad).length;
   return {l:'Cumplen la fecha original', v: L.length ? pct+'%' : '—', m: pct, bad: pct < 80 && L.length > 0,
-    h:`${D.length} reprogramaci${D.length===1?'ón':'ones'} en ${conDesvio} viaje${conDesvio===1?'':'s'}${dias ? ` · +${dias} d` : ''}<br>${['Reckitt','Entrapetrol','Terceros','Sin causa'].filter(r => por[r]).map(r => `${r} ${por[r]}`).join(' · ') || 'sin reprogramaciones'}${costo || incid ? `<br>${costo ? pesos(costo)+' de costo extra' : ''}${costo && incid ? ' · ' : ''}${incid ? incid+' incidente'+(incid===1?'':'s') : ''}` : ''}`};
+    h:`${D.length} reprogramaci${D.length===1?'ón':'ones'} en ${conDesvio} viaje${conDesvio===1?'':'s'}${dias ? ` · +${dias} d` : ''}<br>${['Reckitt','Entrapetrol','Terceros','Sin causa',SIN_HISTORIAL].filter(r => por[r]).map(r => `${r} ${por[r]}`).join(' · ') || 'sin reprogramaciones'}${costo || incid ? `<br>${costo ? pesos(costo)+' de costo extra' : ''}${costo && incid ? ' · ' : ''}${incid ? incid+' incidente'+(incid===1?'':'s') : ''}` : ''}`};
 }
 const desv = d => d===null ? '' : d>0 ? `<span class="tarde">+${d} d</span>` : d<0 ? `<span class="antes">${d} d</span>` : '<span class="antes">a tiempo</span>';
 function celdaLead(v){
@@ -4701,7 +4711,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '5ae433b4ef';
+const VERSION_TABLERO = 'b828e407c5';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
