@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Control Transporte Reckitt</title>
+<title>LogxView · Reckitt</title>
 <script>// Modo claro por defecto; el botón ◐ alterna y se recuerda en este navegador
 (function(){ let t = "light"; try { t = localStorage.getItem("rkt-tema") || t; } catch(e){} document.documentElement.dataset.theme = t; })();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -384,6 +384,9 @@ body.turno-bloqueado #nav button:not([data-v="turno"]):not([data-v="bandeja"]), 
 .bj-op.grande:hover{color:var(--text)}
 .bj-op.grande.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .bj-op.grande.on .bj-opn{background:#fff;color:var(--accent)}
+#gbar .g-ops{flex-basis:100%;margin:0 0 4px}
+#modosHdr{margin:0}
+body.en-turno #modosHdr{display:none}
 .bj-ops-chicas{display:flex;flex-direction:column;gap:2px;padding-bottom:4px}
 .bj-op.chica{background:none;border:0;padding:2px 8px;font-size:12px;font-weight:600;color:var(--muted);text-align:left}
 .bj-op.chica.on{color:var(--accent);text-decoration:underline}
@@ -488,7 +491,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
 <body>
 <header>
   <div class="bar">
-    <div class="brand"><div class="logo">▲</div><div>Control de Transporte · Reckitt<small>Operación IMPO / EXPO</small></div></div>
+    <div class="brand"><div class="logo">▲</div><div>LogxView · Reckitt<small>Operación nacional · IMPO · EXPO</small></div></div>
     <nav id="nav">
       <button data-v="bandeja" title="Todo lo que pide trabajo, una tarjeta por viaje: de arriba hacia abajo, lo rojo primero. Al final del día, el cierre y la nota de entrega de turno">Bandeja de Pendientes <span class="badge" id="nBandeja"></span></button>
       <!-- 7-nov: Mi turno y Acciones salen del menú; su trabajo está en la Bandeja de Pendientes (el código sigue: la Bandeja lo usa) -->
@@ -503,11 +506,12 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
     <div class="conn"><span class="dot" id="connDot"></span><span id="connTxt">Modo demo</span></div>
     <button class="btn solo-interno" id="btnQuien" title="Quién está usando el tablero: su nombre queda en lo que guarda. Clic para cambiar" onclick="elegirUsuario()">👤 Ingresar como…</button>
     <button class="btn" id="btnTheme" title="Cambiar tema">◐</button>
+    <div class="modos" id="modosHdr" role="group" aria-label="Vista del tablero"></div>
     <a class="btn solo-interno" id="lnkDespacho" style="text-decoration:none;color:inherit" href="despacho.html" target="_blank" rel="noopener" title="Asignaciones de conductores: cita, instrucciones, imágenes, enlace por WhatsApp y revisión de la aceptación (cédula y selfie)">🚛 Despacho</a>
     <button class="btn correo solo-interno hidden" id="btnCorreos" title="Datos que LogxIA encontró en los correos, para revisar y aprobar">✉ Llenar datos desde correos<span class="badge" id="nProp"></span></button>
-    <button class="btn solo-interno" id="btnTurnos" title="Conductores que se enturnaron en un viaje o avisaron que están disponibles en la app Viajes ETP, de cualquier fecha; asignar o escribirles">🙋 Turnos<span class="badge" id="nTurnos"></span></button>
+    <button class="btn solo-interno hidden" id="btnTurnos" title="Conductores que se enturnaron en un viaje o avisaron que están disponibles en la app Viajes ETP, de cualquier fecha; asignar o escribirles">🙋 Turnos<span class="badge" id="nTurnos"></span></button>
     <button class="btn solo-interno" id="btnResCli" title="Status de los viajes para Reckitt: elija qué viajes van, envíe una prueba a calidad@ y luego al cliente (ya no sale solo)">📨 Resumen al cliente</button>
-    <button class="btn solo-interno" id="btnNacional" title="Operación nacional: recoger estibas en ERCOL, traslados dentro de Colombia (pestaña Seguimiento NACIONAL)">🚚 Viaje nacional</button>
+    <button class="btn solo-interno hidden" id="btnNacional" title="Operación nacional: recoger estibas en ERCOL, traslados dentro de Colombia (pestaña Seguimiento NACIONAL)">🚚 Viaje nacional</button>
     <button class="btn solo-interno" id="btnInvitar" title="Invitar por WhatsApp al grupo de conductores a todos los viajes sin vehículo (a futuro, no solo 72 h)">🚛 Invitar conductores</button>
     <button class="btn solo-interno" id="btnComunicado" title="Comunicado a los conductores por WhatsApp (seguridad, vías, viajes disponibles, documentos): plantilla lista para el canal de avisos de la comunidad">📣 Comunicado</button>
     <button class="btn solo-interno" id="btnDocs" title="Confirmaciones de booking y cartas de retiro que llegan con la programación de Jhonier, archivadas en Drive por mes; marca lo que falta">📎 Documentos de contenedores</button>
@@ -1957,7 +1961,8 @@ const porOp = () => viajes.filter(v=>(!G.op || v.operacion===G.op) && enListas(v
 function chipsGlobales(){
   // cada opción muestra cuántos viajes se verían al elegirla, con los demás filtros como están (igual en todas las listas)
   const sel = (k, titulo, ops) => `<select class="gsel ${G[k]?'on':''}" data-gsel="${k}" aria-label="${titulo}">${ops.map(([val, txt, cnt])=>`<option value="${esc(val)}" ${G[k]===val?'selected':''}>${titulo}: ${esc(txt)} · ${cnt}</option>`).join('')}</select>`;
-  return sel('op', 'Operación', [['', 'todas', cuentaCon({op:''})], ...OPERACIONES_VIAJE.map(o => [o, o === 'NACIONAL' ? 'Nacional' : o, cuentaCon({op:o})])])
+  // la operación ya no va como lista: es la barra de pestañas (Nacional · IMPO · EXPO) de arriba, como en la Bandeja (7-nov)
+  return ''
     // reunión diaria con Reckitt (reunion.js): los viajes con algún paso hoy, mañana o pasado mañana, ordenados por fecha
     + sel('dia', '📆 Reunión', [['', 'todos los días', cuentaCon({dia:''})], ...REUNION_OPS.map(([k, t]) => [k, t, cuentaCon({dia:k})])])
     + sel('sit', 'STATUS', [...situacionesPresentes().map(s=>[s, PLURAL[s]||s, cuentaCon({sit:s})]), ['', 'Todos', cuentaCon({sit:''})]])
@@ -1984,7 +1989,12 @@ function verNuevos(){
 }
 function renderGbar(){
   document.documentElement.style.setProperty('--hh', document.querySelector('header').offsetHeight + 'px');
-  $('#gbar').innerHTML = `<div class="modos" role="group" aria-label="Vista del tablero">${[['tabla','Modo tabla'],['lean','Modo lean']].map(([k,t])=>`<button type="button" data-modo="${k}" class="${MODO===k?'on':''}">${t}</button>`).join('')}</div>
+  // 7-nov: Modo tabla / Modo lean pasa al encabezado, al lado del tema (la barra queda solo con filtros); arriba de los filtros,
+  // las pestañas de operación como en la Bandeja: Nacional · Importaciones · Exportaciones (+ Todas); la misma operación en las dos
+  const mh = $('#modosHdr'); if (mh) mh.innerHTML = [['tabla','Modo tabla'],['lean','Modo lean']].map(([k,t])=>`<button type="button" data-modo="${k}" class="${MODO===k?'on':''}">${t}</button>`).join('');
+  const OPS_T = [['NACIONAL','Operación nacional'],['IMPO','Importaciones'],['EXPO','Exportaciones']];
+  const tabOp = ([o, t], grande) => `<button type="button" class="bj-op ${grande ? 'grande' : 'chica'} ${G.op === o ? 'on' : ''}" data-gop="${o}">${t} <span class="bj-opn">${cuentaCon({op:o})}</span></button>`;
+  $('#gbar').innerHTML = `<div class="bj-ops g-ops">${OPS_T.map(x => tabOp(x, true)).join('')}<div class="bj-ops-chicas">${tabOp(['', 'Todas'])}${!window.MODO_CLIENTE && G.op === 'NACIONAL' ? `<button type="button" class="bj-op chica" onclick="nuevoNacional(null)" title="Recoger estibas en ERCOL, traslados dentro de Colombia">＋ Viaje nacional</button>` : ''}</div></div>
     <b>Filtros</b>${chipsGlobales()}${avisoNuevos()}<span class="sub" style="margin-left:auto">Mostrando <b>${visibles().length}</b> viaje${visibles().length===1?'':'s'}${
       Object.keys(FILTROS_INICIO).some(k => String(G[k]||'') !== String(FILTROS_INICIO[k])) ? ` · <button type="button" class="link" onclick="limpiarFiltros()">Limpiar filtros</button>` : ''} · aplican a Tablero, Viajes y Motonaves</span>`;
   $('#gViajes').innerHTML = chipsGlobales();
@@ -4726,7 +4736,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'e6815888fd';
+const VERSION_TABLERO = '7e7004fa97';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -4774,6 +4784,11 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('change', e => { const s=e.target.closest('[data-gsel]'); if(!s) return; const antes = {...G}; G[s.dataset.gsel] = s.value;
   ajustarStatus(antes);   // filtros.js
+  render(); });
+// pestañas de operación del Tablero (filtros.js renderGbar): la misma operación queda elegida en la Bandeja
+document.addEventListener('click', e => { const b = e.target.closest('[data-gop]'); if (!b) return; const antes = {...G}; G.op = b.dataset.gop;
+  ajustarStatus(antes);
+  if (typeof bandejaOp !== 'undefined') { bandejaOp = G.op; try { localStorage.setItem('bandejaOp', G.op); } catch(x) {} }
   render(); });
 window.addEventListener('resize', ()=> document.documentElement.style.setProperty('--hh', document.querySelector('header').offsetHeight + 'px'));
 $('#fEstados').onclick = e => { const b=e.target.closest('.chip'); if(!b) return; filtroEstado=b.dataset.e; renderChips(); renderTabla(); };
@@ -5173,6 +5188,7 @@ function barraOperaciones(opN, opRoja){
 }
 function elegirOperacion(o){
   bandejaOp = o; bandejaTodo = false; try { localStorage.setItem('bandejaOp', o); } catch(e) {}
+  G.op = OPERACIONES_VIAJE.includes(o) ? o : '';   // la misma operación en el Tablero (filtros.js)
   renderTurno(); renderBandeja();
 }
 
@@ -5429,7 +5445,7 @@ function render(){ pintarSugerencias(); pintarPreguntas(); renderGbar(); renderT
 // pantalla de acceso cuando la página trae los datos de la hoja con clave
 function pedirClave(errada){
   document.body.insertAdjacentHTML('beforeend', `<div class="ov open" style="background:var(--bg)"><form class="modal" style="width:min(380px,100%)" onsubmit="event.preventDefault(); location.search='?clave='+encodeURIComponent(this.clave.value.trim())">
-    <h3>Control de Transporte · Reckitt</h3><div class="sub" style="margin-bottom:14px">Ingrese la clave de acceso para ver el tablero.</div>
+    <h3>LogxView · Reckitt</h3><div class="sub" style="margin-bottom:14px">Ingrese la clave de acceso para ver el tablero.</div>
     <input name="clave" type="password" placeholder="Clave" required autofocus style="width:100%;border:1px solid var(--border);background:var(--surface);padding:10px 12px;border-radius:8px">
     ${errada ? '<div class="missing" style="margin-top:8px">Clave incorrecta, intente de nuevo.</div>' : ''}
     <div class="mfoot"><button class="btn primary" style="width:100%">Entrar</button></div></form></div>`);
@@ -5454,6 +5470,7 @@ cargar().then(ok => { if (ok === false) return; if (window.MODO_CLIENTE) documen
   // 7-nov: la Bandeja de Pendientes reemplaza a Mi turno y Acciones (siguen en el código, fuera del menú); los enlaces viejos
   // (?vista=acciones&area=Facturación del correo de Facturación, ?vista=turno) abren la Bandeja con esa área
   if (AREAS.includes(qp.get('area'))) bandejaArea = qp.get('area');
+  if (OPERACIONES_VIAJE.includes(bandejaOp)) G.op = bandejaOp;   // la operación elegida (Bandeja o Tablero) se recuerda
   const vista = ({turno: 'bandeja', acciones: 'bandeja'})[qp.get('vista')] || qp.get('vista') || 'bandeja';
   if (vista && !window.MODO_CLIENTE && !vid) document.querySelector('#nav [data-v="'+vista.replace(/[^a-z]/g,'')+'"]')?.click();
   if (!vid && !qp.get('vista')) restaurarEstado();
