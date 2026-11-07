@@ -1055,18 +1055,18 @@ function sinActualizar(v){
   const S = [];
   if (v.padre || ['Cerrado','Cancelado'].includes(situacion(v)) || v.estado === 'Cancelado') return S;
   if (v.operacion === 'EXPO' && !v.fechaEntregaPuerto && !v.tirillaEntrega) {
-    if (v.citaIngreso && v.citaIngreso < HOY) S.push({sev: 'Alta', msg: `la cita de ingreso a puerto era el ${fd(v.citaIngreso)} y no hay entrega registrada`,
+    if (v.citaIngreso && v.citaIngreso < HOY) S.push({sev: 'Alta', fecha: v.citaIngreso, msg: `la cita de ingreso a puerto era el ${fd(v.citaIngreso)} y no hay entrega registrada`,
       porque: `Si el contenedor entró, faltan la fecha de entrega y la tirilla; si no, hay que reprogramar la cita${v.cierreDoc ? ' antes del cierre documental del ' + fd(v.cierreDoc) : ''}`});
     else if (!(v.citaIngreso && v.citaIngreso >= HOY) && v.fechaCargue && v.fechaCargue <= HOY) {
       const t = TRANSITO_PUERTO[String(v.puerto||'').toUpperCase().slice(0, 3)] ?? 2, d = -diffDias(v.fechaCargue);
-      if (d > t) S.push({sev: 'Media', msg: `lleva ${d} días desde el llenado (${fd(v.fechaCargue)}) sin cita ni entrega en puerto`,
+      if (d > t) S.push({sev: 'Media', fecha: v.fechaCargue, msg: `lleva ${d} días desde el llenado (${fd(v.fechaCargue)}) sin cita ni entrega en puerto`,
         porque: `El tránsito normal a ${v.puerto || 'puerto'} es de ${t} día${t === 1 ? '' : 's'}: hay que confirmar dónde está el contenedor`});
     }
   }
   if (v.operacion === 'IMPO') {
-    if (v.citaRetiro && v.citaRetiro < HOY && !(v.fechaRetiro && v.fechaRetiro <= HOY)) S.push({sev: 'Alta', msg: `la cita de retiro en puerto era el ${fd(v.citaRetiro)} y no hay retiro registrado`,
+    if (v.citaRetiro && v.citaRetiro < HOY && !(v.fechaRetiro && v.fechaRetiro <= HOY)) S.push({sev: 'Alta', fecha: v.citaRetiro, msg: `la cita de retiro en puerto era el ${fd(v.citaRetiro)} y no hay retiro registrado`,
       porque: 'Si se retiró, falta la fecha de retiro; si no, hay que pedir una nueva cita'});
-    if (v.citaDevolucion && v.citaDevolucion < HOY && !v.fechaDevolucion && !v.tirillaDevolucion) S.push({sev: 'Alta', msg: `la cita de devolución del vacío era el ${fd(v.citaDevolucion)} y no hay devolución registrada`,
+    if (v.citaDevolucion && v.citaDevolucion < HOY && !v.fechaDevolucion && !v.tirillaDevolucion) S.push({sev: 'Alta', fecha: v.citaDevolucion, msg: `la cita de devolución del vacío era el ${fd(v.citaDevolucion)} y no hay devolución registrada`,
       porque: 'Si se devolvió, faltan la fecha y la tirilla; si no, el plazo de devolución sigue corriendo'});
   }
   // con una novedad de hoy el viaje sí tiene seguimiento: no sale como "sin actualizar" (la novedad explica dónde va).
@@ -4725,7 +4725,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'eca6965348';
+const VERSION_TABLERO = 'b06c225943';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5128,6 +5128,7 @@ const BLOQUES = [
   ['crear', 'Por crear', 'p-acc', 'El correo pide un viaje que no está en la base'],
   ['tomar', 'Por tomar', 'p-acc', 'Viaje nuevo: nadie del equipo lo ha tomado'],
   ['vehiculo', 'Sin vehículo', 'p-bad', `Arranca en ${HORAS_COBERTURA} h o menos y no tiene placa`],
+  ['sinact', '⚠ Sin actualizar', 'p-bad', 'La fecha del paso ya pasó y el viaje no registra que se hizo (la misma alerta del Tablero)'],
   ['paso', '¿Pasó?', 'p-warn', 'La fecha llegó y nadie confirmó si se hizo'],
   ['donde', '¿Dónde va?', 'p-acc', 'Vehículo en movimiento: confirmar en cada ronda dónde va (o "Sigue igual")'],
   ['datos', 'Datos de correos', 'p-warn', 'Valores nuevos de los correos para aprobar'],
@@ -5218,7 +5219,7 @@ function armarBandeja(){
     todos.forEach(x => pasosPorConfirmar(x).forEach(p => add(v, {b: 'paso', k: 'conf|' + x.id,
       html: `${x.padre ? `${esc(nombreSub(x))} · ` : ''}<b>${esc(p.txt)}</b> ${esc(fd(p.fecha))}${p.dias ? ` · hace ${p.dias} d` : ' · hoy'}`,
       acc: botonConfirmar({v: x, ...p}, 'Sí, se hizo') + btnT('No: nueva fecha', `data-b-abrir="${x.id}"`, 'Abre el viaje para poner la fecha nueva con su causa')})));
-    if (!pasosPorConfirmar(v).length) sinActualizar(v).forEach(s => add(v, {b: 'paso', k: kSeg(v), html: `${esc(s.msg)}<br><span class="sub">${esc(s.porque || '')}</span>`,
+    if (!pasosPorConfirmar(v).length) sinActualizar(v).forEach(s => add(v, {b: 'sinact', k: kSeg(v), html: `${esc(s.msg)}<br><span class="sub">${esc(s.porque || '')}</span>`,
       acc: btnT('Actualizar el viaje', `data-b-abrir="${v.id}"`) + (v.placa ? lnkT(ICONO_WA + 'Preguntar dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas')) : '')}));
     // ¿Dónde va? (seguimiento de la ronda): vehículos en movimiento sin nada atrasado; "Sigue igual" lo marca revisado en esta ronda
     else if (!sinActualizar(v).length && enSeguimiento([v]).length && !T.R.has(kSeg(v))) { const p = pulsoViaje(v);
@@ -5278,7 +5279,9 @@ function armarBandeja(){
   const rango = t => Math.min(...t.items.map(i => BLOQUES.findIndex(x => x[0] === i.b)));
   const fechaAccion = t => {
     if (!t.v) { const d = t.items.map(i => i.desde).filter(Boolean).sort()[0]; return d || ''; }
-    const F = [t.v, ...hijosDe(t.v)].flatMap(x => pasosDe(x).map(p => p[0]).filter(k => fechaPaso(x, k) && !cumplido(x, k)).map(k => fechaPaso(x, k))).sort();
+    // también la fecha de lo que quedó sin actualizar (cita de ingreso, retiro o devolución ya pasada): la tarjeta sale "Atrasado desde"
+    const F = [t.v, ...hijosDe(t.v)].flatMap(x => pasosDe(x).map(p => p[0]).filter(k => fechaPaso(x, k) && !cumplido(x, k)).map(k => fechaPaso(x, k)))
+      .concat(t.items.some(i => i.b === 'sinact') ? sinActualizar(t.v).map(s => String(s.fecha || '').slice(0, 10)).filter(Boolean) : []).sort();
     return F[0] || String(primerEvento(t.v) || '').slice(0, 10);
   };
   const L = [...tarjetas.values()].map(t => ({...t, rango: rango(t), roja: t.items.some(i => i.roja), fecha: fechaAccion(t)}))
