@@ -490,21 +490,21 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
   <div class="bar">
     <div class="brand"><div class="logo">▲</div><div>Control de Transporte · Reckitt<small>Operación IMPO / EXPO</small></div></div>
     <nav id="nav">
-      <button data-v="bandeja" title="Todo lo que pide trabajo en una tarjeta por viaje (junta Mi turno, Acciones, Llenar datos y Errores)">Bandeja de Pendientes <span class="badge" id="nBandeja"></span></button>
-      <button data-v="turno">Mi turno <span class="badge" id="nTurno"></span></button>
+      <button data-v="bandeja" title="Todo lo que pide trabajo, una tarjeta por viaje: de arriba hacia abajo, lo rojo primero. Al final del día, el cierre y la nota de entrega de turno">Bandeja de Pendientes <span class="badge" id="nBandeja"></span></button>
+      <!-- 7-nov: Mi turno y Acciones salen del menú; su trabajo está en la Bandeja de Pendientes (el código sigue: la Bandeja lo usa) -->
+      <button data-v="turno" class="hidden">Mi turno <span class="badge" id="nTurno"></span></button>
       <button data-v="tablero" class="on">Tablero</button>
       <button data-v="viajes">Viajes</button>
       <button data-v="motonaves">Motonaves</button>
       <button data-v="errores">Errores <span class="badge" id="nErr"></span></button>
-      <button data-v="acciones">Acciones <span class="badge" id="nAcc"></span></button>
+      <button data-v="acciones" class="hidden">Acciones <span class="badge" id="nAcc"></span></button>
     </nav>
     <div class="spacer"></div>
     <div class="conn"><span class="dot" id="connDot"></span><span id="connTxt">Modo demo</span></div>
     <button class="btn solo-interno" id="btnQuien" title="Quién está usando el tablero: su nombre queda en lo que guarda. Clic para cambiar" onclick="elegirUsuario()">👤 Ingresar como…</button>
     <button class="btn" id="btnTheme" title="Cambiar tema">◐</button>
     <a class="btn solo-interno" id="lnkDespacho" style="text-decoration:none;color:inherit" href="despacho.html" target="_blank" rel="noopener" title="Asignaciones de conductores: cita, instrucciones, imágenes, enlace por WhatsApp y revisión de la aceptación (cédula y selfie)">🚛 Despacho</a>
-    <button class="btn primary solo-interno" id="btnBarrido" title="Lee ya mismo el buzón de calidad@ (últimos 2 días) y muestra qué correos de Reckitt y sus agentes no están en la base">⟳ Buscar correos ahora</button>
-    <button class="btn correo solo-interno" id="btnCorreos" title="Datos que LogxIA encontró en los correos, para revisar y aprobar">✉ Llenar datos desde correos<span class="badge" id="nProp"></span></button>
+    <button class="btn correo solo-interno hidden" id="btnCorreos" title="Datos que LogxIA encontró en los correos, para revisar y aprobar">✉ Llenar datos desde correos<span class="badge" id="nProp"></span></button>
     <button class="btn solo-interno" id="btnTurnos" title="Conductores que se enturnaron en un viaje o avisaron que están disponibles en la app Viajes ETP, de cualquier fecha; asignar o escribirles">🙋 Turnos<span class="badge" id="nTurnos"></span></button>
     <button class="btn solo-interno" id="btnResCli" title="Status de los viajes para Reckitt: elija qué viajes van, envíe una prueba a calidad@ y luego al cliente (ya no sale solo)">📨 Resumen al cliente</button>
     <button class="btn solo-interno" id="btnNacional" title="Operación nacional: recoger estibas en ERCOL, traslados dentro de Colombia (pestaña Seguimiento NACIONAL)">🚚 Viaje nacional</button>
@@ -521,7 +521,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
   <section id="v-bandeja" class="hidden">
     <div class="card">
       <h2 style="margin:0">Bandeja de Pendientes</h2>
-      <div class="sub">Todo lo que pide trabajo, una tarjeta por viaje: por crear, por tomar, sin vehículo, ¿pasó?, datos de correos, pedidos y lo que falta. Lo que haga aquí queda igual en Mi turno, Acciones, Llenar datos y Errores, que siguen como siempre.</div>
+      <div class="sub">Todo lo que pide trabajo, una tarjeta por viaje: por crear, por tomar, sin vehículo, sin actualizar, ¿pasó?, datos de correos, pedidos y lo que falta. Trabaje de arriba hacia abajo, lo rojo primero; en la última ronda sale el cierre del día con la nota de entrega de turno.</div>
       <div id="bandeja" style="margin-top:10px"></div>
     </div>
   </section>
@@ -595,7 +595,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
     <div class="card">
       <div class="toolbar" style="justify-content:space-between">
         <div><h2 style="margin:0">Control de calidad de datos</h2><div class="sub" id="errResumen"></div></div>
-        <div class="chips"><button class="btn" id="btnCopiarRep">Copiar reporte para correo</button><button class="btn" id="btnVerRep">Ver texto del reporte</button></div>
+        <div class="chips"><button class="btn solo-interno" id="btnBarrido" title="Herramienta de Calidad y Gerencia: lee ya mismo el buzón de calidad@ (últimos 2 días), sin esperar la lectura de cada hora; sirve para algo urgente o si LogxIA se atrasó">⟳ Buscar correos ahora</button><button class="btn" id="btnCopiarRep">Copiar reporte para correo</button><button class="btn" id="btnVerRep">Ver texto del reporte</button></div>
       </div>
       <div class="chips" id="errFiltros" style="margin:8px 0 12px"></div>
       <textarea id="repTexto" class="hidden" readonly style="width:100%;min-height:220px;font:12px/1.5 ui-monospace,Consolas,monospace;border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--surface-2);margin-bottom:12px"></textarea>
@@ -2474,7 +2474,8 @@ function renderTurno(){
   document.body.classList.toggle('turno-bloqueado', T.bloqueado);
   const primeraRoja = M.findIndex((m, i) => T.rojas[i]);
   // la Bandeja (prueba, bandeja.js) también muestra las líneas rojas: con el bloqueo se puede trabajar desde ella
-  if (T.bloqueado && $('#v-turno').classList.contains('hidden') && $('#v-bandeja')?.classList.contains('hidden')) $('#nav [data-v="turno"]').click();
+  // desde el 7-nov la Bandeja de Pendientes reemplaza a Mi turno en el menú: con el bloqueo se lleva a la Bandeja
+  if (T.bloqueado && $('#v-turno').classList.contains('hidden') && $('#v-bandeja')?.classList.contains('hidden')) $('#nav [data-v="bandeja"]').click();
   // un paso se abre cuando los anteriores no tienen líneas rojas; los que TIENEN líneas rojas están siempre abiertos (son
   // igual de urgentes: ej. Cobertura con viajes sin vehículo a 72 h); Gerencia ve todos los pasos sin orden, y mientras Gerencia
   // quita el bloqueo (pausa) todos los pasos quedan abiertos para el equipo (5-nov: "desbloqueé y Eider no veía Cobertura")
@@ -4725,7 +4726,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'b06c225943';
+const VERSION_TABLERO = 'e6815888fd';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5134,6 +5135,7 @@ const BLOQUES = [
   ['datos', 'Datos de correos', 'p-warn', 'Valores nuevos de los correos para aprobar'],
   ['pedido', 'Pedido', 'p-warn', 'Lo que pide un correo y solo una persona puede hacer'],
   ['falta', 'Falta', 'p-ok', 'Datos que faltan para el próximo paso'],
+  ['cierre', 'Cierre del día', 'p-acc', 'Última ronda: lo de mañana listo y la nota de entrega de turno (antes en Mi turno)'],
 ];
 const HORIZONTE_FALTA = 5;   // días: los faltantes de viajes que arrancan después quedan en Errores (revisión, no del día)
 const RE_ASIGNAR = /asignar vehiculo|programar vehiculo|placa y conductor|conductor y vehiculo|vehiculo planchon|programar (el )?vehiculo/;
@@ -5213,7 +5215,8 @@ function armarBandeja(){
       add(v, {b: 'vehiculo', k: 'cob|' + v.id, ks: asignar.map(b => 'a' + b.id), html: `Arranca ${d < 0 ? 'desde el ' : d === 0 ? 'hoy, ' : d === 1 ? 'mañana, ' : ''}${fd(primerEvento(v))} y no tiene placa`
         + (asignar.length ? `<br><span class="sub">También lo pide ${asignar.map(b => esc(b.id)).join(', ')}: al guardar la placa, márquela hecha</span>` : ''),
         acc: btnT('Asignar en el viaje', `data-b-abrir="${v.id}"`) + sug.map(s => btnT(`🚚 ${esc(s.placa)} · ${esc(String(s.conductor).split(' ').slice(0, 2).join(' '))}`, `data-b-asignar="${v.id}" data-placa="${esc(s.placa)}" data-conductor="${esc(s.conductor)}" data-telefono="${esc(s.telefono || '')}"`, 'Ya hizo esta ruta: se revisa y se guarda')).join('')
-          + asignar.map(b => btnT(`${esc(b.id)} hecha`, `data-b-hecha="${b.id}"`)).join('')});
+          + asignar.map(b => btnT(`${esc(b.id)} hecha`, `data-b-hecha="${b.id}"`)).join('')
+          + btnT(ICONO_WA + 'Invitar al grupo de conductores', 'data-b-invitar="1"', 'WhatsApp al grupo de conductores con todos los viajes sin vehículo (el mismo mensaje del botón 🚛 Invitar conductores)')});
     }
     // 4 · ¿Pasó? (por confirmar + sin actualizar de la misma fecha: una pregunta)
     todos.forEach(x => pasosPorConfirmar(x).forEach(p => add(v, {b: 'paso', k: 'conf|' + x.id,
@@ -5266,6 +5269,19 @@ function armarBandeja(){
       html: `${desdeCuando(b.fechaCorreo || b.registrado)}${areaDe(b) !== 'Operaciones' ? `<span class="tg">${esc(areaDe(b))}</span> ` : ''}${esc(b.accion)}${pista(b)}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>`,
       acc: botonAtajo(b) + accHecha(b)}, v && vivos.includes(v) ? '' : 'Pedidos sin viaje', b);
     usadas.add(b.id); });
+  // 8 · Cierre del día (7-nov, antes solo en Mi turno): en la última ronda, lo de mañana listo y la nota de entrega de turno.
+  // Mismas claves que Mi turno ("man|ID", nota|…): lo marcado aquí cuenta allá. Sale en todas las operaciones y con fecha de hoy
+  const cie = T.M.find(m => m.id === 'cie');
+  if (cie) cie.filas.filter(x => !x.hecha).forEach(x => {
+    const v = x.v, it = x.tipo === 'man'
+      ? {b: 'cierre', k: x.k, html: `<b>${esc(nombreTurno(v))}</b> · mañana ${esc(x.h.map(h => h.que.toLowerCase() + (h.donde ? ' en ' + h.donde : '')).join(' · '))}<br><span class="sub">${v.placa ? '✓ ' + esc(v.placa) : '<b style="color:var(--bad)">⚠ sin vehículo</b>'} · ${v.conductor ? '✓ ' + esc(v.conductor) : '<b style="color:var(--bad)">⚠ sin conductor</b>'}</span>`,
+        acc: (v.placa ? lnkT(ICONO_WA + 'Avisar al conductor', waConductor(v, `te confirmo mañana ${x.h.map(h => h.que.toLowerCase()).join(' y ')}${x.h[0].donde ? ' en ' + x.h[0].donde : ''}. ¿Todo listo?`)) : '')
+          + btnT('Abrir viaje', `data-b-abrir="${v.id}"`) + btnT('✓ Listo para mañana', `data-t-rev="${esc(x.k)}"`, 'Lo marca listo para todo el equipo')}
+      : {b: 'cierre', k: x.k, html: `<b>Nota de entrega de turno</b><br><span class="sub">Qué queda pendiente, qué se habló con Reckitt o con los conductores, qué debe mirar el siguiente turno. Va en el resumen del día a Gerencia y Calidad.</span>`
+          + `<textarea id="bjNota" maxlength="180" rows="2" class="tr-nota" placeholder="Ej.: booking 088ICO0103300 sin confirmar cita; Jhonier espera la tirilla de JYY043"></textarea>`,
+        acc: btnT('Guardar nota', 'data-b-nota="1"')};
+    it.desde = HOY; add(null, it, 'Cierre del día');
+  });
   // roja = la misma línea roja de Mi turno (bloquea el tablero mientras no tenga excepción vigente); su excepción, la misma
   // una línea que junta varias cosas (datos + sus acciones; sin vehículo + "asignar vehículo") lleva todas sus claves (ks):
   // es roja si cualquiera lo es, y la excepción se pide sobre esa
@@ -5309,7 +5325,7 @@ function renderBandeja(){
   const L0 = R.L, porArea = a => L0.filter(t => t.items.some(i => !a || i.area === a)).length;
   R.L = R.L.map(t => ({...t, items: t.items.filter(enArea)})).filter(t => t.items.length).map(t => ({...t, roja: t.items.some(i => i.roja)}));
   // barra IMPO / EXPO / Nacional: cuenta tarjetas del área elegida; ⛔ si esa operación tiene líneas rojas (para no perderlas de vista)
-  const deOp = (t, o) => t.items.filter(i => !o || i.op === o);
+  const deOp = (t, o) => t.items.filter(i => !o || i.op === o || i.b === 'cierre');
   const opN = o => R.L.filter(t => deOp(t, o).length).length, opRoja = o => R.L.some(t => deOp(t, o).some(i => i.roja));
   if (bandejaOp && !opN(bandejaOp) && !OPS_BANDEJA.some(([o]) => o === bandejaOp)) bandejaOp = '';
   const barraOp = barraOperaciones(opN, opRoja);
@@ -5352,7 +5368,7 @@ function renderBandeja(){
       + '</div>').join('') || '<div class="tr-vacio">✓ Nada pendiente en este filtro</div>')
     + (!bandejaTodo && ver.length > ver.filter((t, ix) => ix < BANDEJA_PRIMERAS || t.roja).length
       ? `<button type="button" class="bj-mas" data-b-todo="1">Ver los otros ${ver.length - ver.filter((t, ix) => ix < BANDEJA_PRIMERAS || t.roja).length} viajes (menos urgentes)</button>` : '')
-    + `<div class="bj-pie"><div><b>${F.length ? `⚠ ${F.length} cosa${F.length === 1 ? '' : 's'} solo en otra pantalla` : '✓ Nada queda solo en otra pantalla'}</b> <span class="sub">(si queda en 0 varios días, la Bandeja ya cubre Mi turno, Acciones y Llenar datos)</span></div>
+    + `<div class="bj-pie"><div><b>${F.length ? `⚠ ${F.length} cosa${F.length === 1 ? '' : 's'} solo en otra pantalla` : '✓ Nada queda solo en otra pantalla'}</b> <span class="sub">(Mi turno, Acciones y Llenar datos ya no están en el menú: todo su trabajo sale aquí)</span> · ${btnT('📒 Bitácora de acciones', 'data-b-bitacora="1"', 'Historial: qué pidió quién y quién lo cerró (la antigua pestaña Acciones)')}</div>
       ${F.length ? `<details><summary class="sub">Ver cuáles</summary>${F.map(([p, t]) => `<div class="sub">• <b>${esc(p)}</b>: ${esc(t)}</div>`).join('')}</details>` : ''}
       ${errLejos ? `<div class="sub">${errLejos} viaje${errLejos === 1 ? '' : 's'} que arranca${errLejos === 1 ? '' : 'n'} en más de ${HORIZONTE_FALTA} días con datos por completar: quedan en Errores, no en la bandeja del día.</div>` : ''}</div>`;
 }
@@ -5399,6 +5415,9 @@ $('#bandeja').onclick = e => {
   else if (d.bAprobar) decidirBandeja(d.bAprobar, true, d.area);
   else if (d.bRechazar) decidirBandeja(d.bRechazar, false, d.area);
   else if (d.bProp) abrirPropuestas();
+  else if (d.bBitacora) document.querySelector('#nav [data-v="acciones"]')?.click();
+  else if (d.bInvitar) { if (!sinVehiculoGrupo().length) return toast('No hay viajes sin vehículo para invitar'); window.open(waLink('', mensajeGrupo()), '_blank', 'noopener'); }
+  else if (d.bNota) { const txt = ($('#bjNota')?.value || '').replace(/\s+/g, ' ').trim(); if (!txt) return toast('Escriba la nota antes de guardar'); marcarRevisado('nota|' + txt.slice(0, 180)); }
   else if (d.bAsignar) asignarSugerido(d.bAsignar, d.placa, d.conductor, d.telefono);
   else if (d.bReg) { const x = filasRegistro(viajes.filter(v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre)).find(y => y.k === d.bReg);
     if (x) abrirRegistro(x.clase === 'P' ? x.nombre : x.v.placa, x.v.conductor); }
@@ -5432,7 +5451,10 @@ cargar().then(ok => { if (ok === false) return; if (window.MODO_CLIENTE) documen
   if (!window.MODO_CLIENTE) { fijarUsuario(); if (!usuarioGuardado()) elegirUsuario(qp.get('usuario')); }
   if (AREAS.includes(qp.get('area'))) { accArea = qp.get('area'); renderAcciones();
     if (accArea === 'Facturación') try { sessionStorage.setItem('rkt-area', accArea); } catch(e){} renderTurno(); }
-  const vista = qp.get('vista') || 'turno';
+  // 7-nov: la Bandeja de Pendientes reemplaza a Mi turno y Acciones (siguen en el código, fuera del menú); los enlaces viejos
+  // (?vista=acciones&area=Facturación del correo de Facturación, ?vista=turno) abren la Bandeja con esa área
+  if (AREAS.includes(qp.get('area'))) bandejaArea = qp.get('area');
+  const vista = ({turno: 'bandeja', acciones: 'bandeja'})[qp.get('vista')] || qp.get('vista') || 'bandeja';
   if (vista && !window.MODO_CLIENTE && !vid) document.querySelector('#nav [data-v="'+vista.replace(/[^a-z]/g,'')+'"]')?.click();
   if (!vid && !qp.get('vista')) restaurarEstado();
 });
@@ -5443,7 +5465,7 @@ function restaurarEstado(){
   if (!e || Date.now() - (e.t || 0) > 30 * 60e3) return;
   if (e.G) Object.assign(G, e.G);
   if (e.modo) MODO = e.modo;   // tabla.js
-  if (e.vista) document.querySelector(`#nav [data-v="${String(e.vista).replace(/[^a-z]/g, '')}"]`)?.click();
+  if (e.vista) document.querySelector(`#nav [data-v="${({turno: 'bandeja', acciones: 'bandeja'})[e.vista] || String(e.vista).replace(/[^a-z]/g, '')}"]`)?.click();
   render();
   setTimeout(() => scrollTo(0, e.y || 0), 150);
 }
