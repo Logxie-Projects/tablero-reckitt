@@ -774,7 +774,12 @@ const esLCL = v => v.operacion === 'IMPO' && /\bLCL\b|carga suelta/i.test(v.unid
 const esNacional = v => v.operacion === 'NACIONAL';
 const OPERACIONES_VIAJE = ['EXPO', 'IMPO', 'NACIONAL'];
 // cómo se identifica el viaje en una línea: pedido (IMPO), lo que se lleva (NACIONAL) o booking (EXPO)
-const refCorta = v => v.operacion === 'IMPO' ? (v.pedido ? 'Pedido ' + v.pedido : '') : esNacional(v) ? (v.carga || (v.pedido ? 'Pedido ' + v.pedido : ''))
+// pedido de Reckitt: números (11553, 11662-11663). Las importaciones de Willington Rayo (DSV / Coral Vision) no traen pedido: el
+// cliente las nombra por DO y BL ("DO IG053626 BL LEH0089204"). Si en "Pedido" quedó otra cosa (7-nov, IMPO-006/007 tenían el DO y
+// el BL copiados, uno con "IGO" en vez de "IG0"), no se muestra como pedido: va el DO y el BL de sus campos
+const pedidoReal = p => /^\d[\d\s\-\/]*$/.test(String(p || '').trim());
+const refCorta = v => v.operacion === 'IMPO' ? (pedidoReal(v.pedido) ? 'Pedido ' + v.pedido
+    : [v.do && 'DO ' + v.do, v.booking && 'BL ' + v.booking].filter(Boolean).join(' · ') || (v.pedido ? 'Pedido ' + v.pedido : '')) : esNacional(v) ? (v.carga || (v.pedido ? 'Pedido ' + v.pedido : ''))
   : (v.booking ? 'Booking ' + v.booking : '');
 const terminoTransporte = v => v.operacion==='EXPO' ? ['Entregado en puerto','Zarpó'].includes(v.estado)
   : esNacional(v) ? v.estado==='Entregado' : esLCL(v) ? v.estado==='Entregado en bodega' : v.estado==='Vacío devuelto';
@@ -1086,7 +1091,7 @@ function interpretarNovedad(v, tipo, texto, fecha){
 // con qué se busca el viaje en los correos: EXPO por booking (y factura RBHY); IMPO por pedido, DO y contenedor; si no, la placa
 function clavesBusqueda(v){
   const L = esNacional(v) ? [['Pedido', v.pedido], ['Carga', v.carga]]
-    : v.operacion === 'IMPO' ? [['Pedido', v.pedido], ['DO', v.do], ['Contenedor', v.contenedor], ['BL', v.booking]]
+    : v.operacion === 'IMPO' ? [['Pedido', pedidoReal(v.pedido) || !(v.do || v.booking) ? v.pedido : ''], ['DO', v.do], ['Contenedor', v.contenedor], ['BL', v.booking]]
     : [['Booking', v.booking], ['RBHY', v.rbhy], ['Contenedor', v.contenedor]];
   const c = L.filter(([, x]) => String(x||'').trim() && !/^(sin info|pend|pte)/i.test(String(x)));
   return c.length ? c : (v.placa ? [['Placa', v.placa]] : []);
@@ -4687,7 +4692,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'df93fbae74';
+const VERSION_TABLERO = '6fcf4e370d';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
