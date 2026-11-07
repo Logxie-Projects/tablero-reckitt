@@ -390,8 +390,15 @@ body.en-turno #modosHdr{display:none}
 .bj-que{margin-top:4px;padding:5px 8px;border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:4px;font-size:12px}
 .cond-pick{display:flex;gap:6px}.cond-pick input{flex:1;min-width:0;cursor:pointer}
 .cond-lista{display:flex;flex-direction:column;gap:6px;max-height:55vh;overflow:auto}
-.cond-op{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;font:inherit;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);cursor:pointer;color:var(--text)}
-.cond-op:hover{border-color:var(--accent)}.cond-op.on{border-color:var(--accent);background:var(--accent-soft)}.cond-op:disabled{opacity:.5;cursor:not-allowed}
+.cond-op{display:flex;flex-direction:column;align-items:stretch;gap:4px;text-align:left;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text)}
+.cond-op.bloq{opacity:.55}
+.vc-main{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;font:inherit;background:none;border:0;padding:0;cursor:pointer;color:inherit}
+.vc-main:disabled{cursor:not-allowed}
+.vc-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.vc-chip{font:inherit;font-size:12px;font-weight:600;padding:3px 10px;border:1px solid var(--border);border-radius:99px;background:var(--surface-2);cursor:pointer;color:var(--text)}
+.vc-chip:hover,.vc-chip.on{border-color:var(--accent);background:var(--accent-soft)}.vc-chip:disabled{opacity:.5;cursor:not-allowed}
+.vc-info{min-height:14px;margin-top:2px}.vc-info svg{margin-right:0;vertical-align:-3px}
+.cond-op:hover{border-color:var(--accent)}.cond-op.on{border-color:var(--accent);background:var(--accent-soft)}
 .bj-ops-chicas{display:flex;flex-direction:column;gap:2px;padding-bottom:4px}
 .bj-op.chica{background:none;border:0;padding:2px 8px;font-size:12px;font-weight:600;color:var(--muted);text-align:left}
 .bj-op.chica.on{color:var(--accent);text-decoration:underline}
@@ -3429,8 +3436,8 @@ function pintarForm(v){
           return `<option ${s===val?'selected':''} ${bloq?'disabled':''}>${esc(s)}${bloq?' · lo cierra facturación (con N° y fecha de factura)':''}</option>`; }).join('')}</select>`
       : t==='lista' ? `<select data-k="${k}"><option value=""></option>${opc(x)}</select>`
       : t==='num' ? `<input data-k="${k}" data-num inputmode="numeric" value="${esc(val)}" placeholder="$">`
-      // conductor: se elige del registro (registro.js abrirElegirConductor), no se escribe a mano
-      : k==='conductor' && !window.MODO_CLIENTE ? `<div class="cond-pick"><input data-k="conductor" value="${esc(val)}" readonly placeholder="Elegir del registro" data-elegir-cond="1" title="Clic para elegir del registro de conductores"><button type="button" class="btn" data-elegir-cond="1">🧑‍✈️ Elegir</button></div>`
+      // placa y conductor: se eligen del registro en un solo panel y están conectados (registro.js abrirVC); debajo, celular y propietario
+      : ['conductor','placa'].includes(k) && !window.MODO_CLIENTE ? `<div class="cond-pick"><input data-k="${k}" value="${esc(val)}" readonly placeholder="Elegir del registro" data-elegir-vc="${k}" title="Clic para elegir del registro"><button type="button" class="btn" data-elegir-vc="${k}">${k==='conductor' ? '🧑‍✈️' : '🚚'} Elegir</button></div><div class="sub vc-info" id="${k==='conductor' ? 'infoCond' : 'infoPlaca'}"></div>`
       : `<input data-k="${k}" value="${esc(val)}"${t==='dl' ? ` list="${x}"` : ''}>`;
     if (t==='extras') return `<div style="grid-column:1/-1"><label>${l} <span class="sub">(concepto y valor; el total se suma solo)</span></label>
       <div id="mExtras">${(itemsExtra(v).length || !v.padre ? itemsExtra(v) : CONCEPTOS_SUB.map(k=>[k,0])).map(filaExtra).join('')}</div>
@@ -3488,6 +3495,7 @@ function cambiosForm(v){
 function marcarCambios(){
   const v = viajes.find(x=>x.id===editId); if (!v) return;
   const c = cambiosForm(v), n = Object.keys(c).length;
+  if (typeof pintarInfoVC === 'function') pintarInfoVC();   // celular del conductor y propietario del vehículo (registro.js)
   // si se mueve una fecha ya programada se pide la causa (cliente, transportadora, puerto, externo o corrección)
   const mov = fechasMovidas(v, c);
   $('#mCausa').classList.toggle('hidden', !mov.length);
@@ -3789,73 +3797,111 @@ function filaRegistroHtml(x){
     detalle: `Falta: <b>${esc(x.falta.join(', '))}</b> · ${esc(nombreTurno(x.v))}${d !== null ? ' · ' + (d < 0 ? 'en curso' : d === 0 ? 'hoy' : d === 1 ? 'mañana' : fd(primerEvento(x.v))) : ''}`,
     acc: [btnT('🪪 Completar', `data-t-reg="${esc(x.k)}"`, 'Abre los datos que faltan; se guardan en el registro de la base')]};
 }
-/* ---------- Elegir el conductor del registro (7-nov) ----------
- * Al asignar, el conductor ya no se escribe a mano: se elige de la pestaña Conductores (nombre, cédula, celular, placas) o se
- * crea uno nuevo. Así no nacen nombres repetidos ("WILLIAM CHANTRE", "WILIAN CHANTRE", "WILLIAM HERNAN CHANTRE" eran el mismo).
- * Lo que se guarda en el viaje es siempre el nombre del registro (nombreDelRegistro): un alias escrito a mano también se corrige. */
-let condInput = null;
-// el nombre como está en el registro (por nombre o alias); si no está, lo escrito en mayúsculas
+/* ---------- Vehículo y conductor desde el registro (7-nov) ----------
+ * Al asignar, placa y conductor ya no se escriben a mano: se eligen en un solo panel con las pestañas Conductores y Vehículos
+ * del registro, y están conectados: al elegir el conductor llega su placa (si maneja una sola, o la que se toque) y al elegir la
+ * placa llega quien la maneja; debajo de cada campo se ven el celular del conductor y el propietario del vehículo. Si no está en el
+ * registro se crea nuevo (avisando los parecidos) y al guardar "Completar datos" pide lo que falta. Así no nacen nombres repetidos
+ * ("WILLIAM CHANTRE", "WILIAN CHANTRE"… eran el mismo). El viaje guarda siempre el nombre del registro (nombreDelRegistro). */
+let vcPanel = null;   // {quien: 'conductor' | 'placa'} campo desde el que se abrió
 const nombreDelRegistro = n => { const c = textoReal(n) && conductorReg(n); return c ? c.nombre : String(n || '').trim().toUpperCase(); };
-function abrirElegirConductor(input){
-  condInput = input;
+const condsActivos = () => (REG() && REG().conductores || []).filter(c => !archivadoReg(c));
+const vehsActivos = () => (REG() && REG().vehiculos || []).filter(v => !archivadoReg(v));
+const placasDe = c => c ? aliasDe(c.placas).map(placaNorm).filter(Boolean) : [];
+// quién maneja una placa: los conductores del registro que la tienen, más los que el vehículo anota
+const conductoresDePlaca = p => { p = placaNorm(p); if (!p) return [];
+  const veh = vehiculoReg(p), porVeh = veh ? aliasDe(veh.conductores).map(n => conductorReg(n)).filter(Boolean) : [];
+  return [...new Set([...condsActivos().filter(c => placasDe(c).includes(p)), ...porVeh])].filter(c => !archivadoReg(c)); };
+const campoVC = k => $(`#mForm [data-k=${k}]`);
+function ponerVC(k, x){ const i = campoVC(k); if (!i || i.value === x) return; i.value = x; i.dispatchEvent(new Event('input', {bubbles: true})); }
+function abrirVC(quien){
+  vcPanel = {quien};
   let ov = $('#ovCond');
   if (!ov) { ov = document.createElement('div'); ov.className = 'ov'; ov.id = 'ovCond'; ov.style.zIndex = 60;
-    ov.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="width:min(720px,100%)"><h3>🧑‍✈️ Elegir conductor</h3>
-      <div class="sub">Del registro de conductores. Si no está, créelo abajo con sus datos: así no quedan nombres repetidos.</div>
+    ov.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="width:min(760px,100%)"><h3>🚚 Vehículo y conductor</h3>
+      <div class="sub">Del registro. Toque el conductor (llega su placa) o una placa (llega quien la maneja). Si no está, créelo abajo.</div>
       <input id="condBuscar" type="search" placeholder="🔍 Nombre, cédula, celular o placa" style="width:100%;margin:10px 0">
       <div id="condLista" class="cond-lista"></div>
-      <div class="m-actions" style="justify-content:space-between"><button type="button" class="btn" id="condNuevo">＋ Conductor nuevo (no está en la lista)</button><button type="button" class="btn" id="condCerrar">Cerrar</button></div></div>`;
+      <div class="m-actions" style="justify-content:space-between;flex-wrap:wrap;gap:6px"><span><button type="button" class="btn" id="condNuevo">＋ Conductor nuevo</button> <button type="button" class="btn" id="vehNuevo">＋ Vehículo nuevo</button></span><button type="button" class="btn" id="condCerrar">Cerrar</button></div></div>`;
     document.body.appendChild(ov);
     ov.onclick = e => { if (e.target === ov) ov.classList.remove('open'); };
     $('#condCerrar').onclick = () => ov.classList.remove('open');
-    $('#condBuscar').oninput = pintarElegirConductor;
-    $('#condLista').onclick = e => { const b = e.target.closest('[data-cond]'); if (b && !b.disabled) elegirConductor(b.dataset.cond); };
-    $('#condNuevo').onclick = conductorNuevo;
+    $('#condBuscar').oninput = pintarVC;
+    $('#condLista').onclick = e => { const b = e.target.closest('[data-vc]'); if (!b || b.disabled) return; e.stopPropagation();
+      const [cond, placa] = b.dataset.vc.split('|'); elegirVC(cond, placa); };
+    $('#condNuevo').onclick = conductorNuevo; $('#vehNuevo').onclick = vehiculoNuevo;
   }
   $('#condBuscar').value = '';
-  ov.classList.add('open'); pintarElegirConductor(); $('#condBuscar').focus();
+  ov.classList.add('open'); pintarVC(); $('#condBuscar').focus();
 }
-function pintarElegirConductor(){
-  const C = (REG() && REG().conductores || []).filter(c => !archivadoReg(c));
+function pintarVC(){
   const txt = $('#condBuscar').value, q = nombreClave(txt), qd = txt.replace(/\D/g, ''), qp = placaNorm(txt);
-  const placaViaje = placaNorm(($('#mForm [data-k=placa]') || {}).value || '');
-  const actual = condInput && condInput.value ? conductorReg(condInput.value) : null;
+  const pv = placaNorm((campoVC('placa') || {}).value || ''), actual = conductorReg((campoVC('conductor') || {}).value || '');
   const pasa = c => !q || [c.nombre, ...aliasDe(c.alias)].some(n => nombreClave(n).includes(q))
     || (qd.length >= 4 && (String(c.cedula || '').includes(qd) || String(c.celular || '').includes(qd)))
-    || (qp.length >= 3 && aliasDe(c.placas).some(p => placaNorm(p).includes(qp)));
-  // primero el que ya tiene el viaje, luego los que manejan la placa del viaje, luego por nombre
-  const usaPlaca = c => !!placaViaje && aliasDe(c.placas).some(p => placaNorm(p) === placaViaje);
-  const L = C.filter(pasa).sort((a, b) => (b === actual) - (a === actual) || usaPlaca(b) - usaPlaca(a) || a.nombre.localeCompare(b.nombre));
-  $('#condLista').innerHTML = L.length ? L.map(c => { const bloq = bloqueadoReg(c), falta = faltaConductorReg(c);
-    return `<button type="button" class="cond-op${c === actual ? ' on' : ''}" data-cond="${esc(c.nombre)}" ${bloq ? 'disabled title="Bloqueado en el registro: no se puede asignar"' : ''}>
-      <span><b>${esc(c.nombre)}</b> ${typeof estrellasDe === 'function' ? estrellasDe(c.nombre) : ''}${c === actual ? ' <span class="tg">en el viaje</span>' : ''}${usaPlaca(c) ? ` <span class="tg">maneja ${esc(placaViaje)}</span>` : ''}${bloq ? ' <span class="tg" style="color:var(--bad)">⛔ bloqueado</span>' : ''}</span>
-      <span class="sub">${[c.cedula ? 'CC ' + c.cedula : 'sin cédula', celularCO(c.celular) ? '📱 ' + celularCO(c.celular) : 'sin celular', c.placas ? '🚚 ' + c.placas : ''].filter(Boolean).map(esc).join(' · ')}</span>
-      ${c.alias ? `<span class="sub">también escrito: ${esc(c.alias)}</span>` : ''}${falta.length ? `<span class="sub" style="color:var(--warn)">faltan: ${esc(falta.join(', '))} (se piden al guardar)</span>` : ''}</button>`; }).join('')
-    : `<div class="sub" style="padding:12px">Nadie del registro coincide con "${esc(txt)}". Si es un conductor nuevo, use <b>＋ Conductor nuevo</b>.</div>`;
+    || (qp.length >= 3 && placasDe(c).some(p => p.includes(qp)));
+  const manejaPv = c => !!pv && placasDe(c).includes(pv);
+  const C = condsActivos().filter(pasa).sort((a, b) => (b === actual) - (a === actual) || manejaPv(b) - manejaPv(a) || a.nombre.localeCompare(b.nombre));
+  const chip = (c, p) => { const v = vehiculoReg(p), bloq = v && bloqueadoReg(v);
+    return `<button type="button" class="vc-chip${p === pv ? ' on' : ''}" data-vc="${esc(c ? c.nombre : '')}|${esc(p)}" ${bloq ? 'disabled title="Vehículo bloqueado"' : ''} title="${esc(v ? 'Propietario: ' + (v.propietario || '—') + (celularCO(v.celularPropietario) ? ' · ' + celularCO(v.celularPropietario) : '') : 'Vehículo sin datos en el registro')}">🚚 ${esc(p)}</button>`; };
+  const filaC = c => { const bloq = bloqueadoReg(c), falta = faltaConductorReg(c);
+    return `<div class="cond-op${c === actual ? ' on' : ''}${bloq ? ' bloq' : ''}"><button type="button" class="vc-main" data-vc="${esc(c.nombre)}|" ${bloq ? 'disabled title="Bloqueado en el registro: no se puede asignar"' : ''}>
+      <span><b>${esc(c.nombre)}</b> ${typeof estrellasDe === 'function' ? estrellasDe(c.nombre) : ''}${c === actual ? ' <span class="tg">en el viaje</span>' : ''}${bloq ? ' <span class="tg" style="color:var(--bad)">⛔ bloqueado</span>' : ''}</span>
+      <span class="sub">${[c.cedula ? 'CC ' + c.cedula : 'sin cédula', celularCO(c.celular) ? '📱 ' + celularCO(c.celular) : 'sin celular'].map(esc).join(' · ')}${c.alias ? ` · también escrito: ${esc(c.alias)}` : ''}</span>
+      ${falta.length ? `<span class="sub" style="color:var(--warn)">faltan: ${esc(falta.join(', '))} (se piden al guardar)</span>` : ''}</button>
+      ${bloq ? '' : `<div class="vc-chips">${placasDe(c).map(p => chip(c, p)).join('')}</div>`}</div>`; };
+  // vehículos del registro que coinciden con la placa buscada y que ningún conductor de la lista tiene
+  const V = qp.length >= 3 ? vehsActivos().filter(v => placaNorm(v.placa).includes(qp) && !C.some(c => placasDe(c).includes(placaNorm(v.placa)))) : [];
+  const filaV = v => `<div class="cond-op"><span><b>🚚 ${esc(placaNorm(v.placa))}</b> <span class="sub">${esc([v.empresa, v.propietario && 'propietario ' + v.propietario].filter(Boolean).join(' · '))}</span></span>
+    <div class="vc-chips">${chip(null, placaNorm(v.placa))}<span class="sub">ningún conductor del registro la tiene: elija también el conductor</span></div></div>`;
+  $('#condLista').innerHTML = (C.map(filaC).join('') + V.map(filaV).join(''))
+    || `<div class="sub" style="padding:12px">Nadie del registro coincide con "${esc(txt)}". Si es nuevo, use <b>＋ Conductor nuevo</b> o <b>＋ Vehículo nuevo</b>.</div>`;
 }
-function elegirConductor(nombre){
-  if (!condInput) return;
-  condInput.value = nombre; condInput.dispatchEvent(new Event('input', {bubbles: true}));
-  // si el viaje aún no tiene placa y el conductor maneja una sola, se propone (se revisa antes de guardar)
-  const c = conductorReg(nombre), pl = $('#mForm [data-k=placa]'), ps = c ? aliasDe(c.placas) : [];
-  if (pl && !pl.value.trim() && ps.length === 1) { pl.value = placaNorm(ps[0]); pl.dispatchEvent(new Event('input', {bubbles: true})); toast(`Placa ${placaNorm(ps[0])} puesta: es la que maneja ${nombre}. Revísela`); }
+// conductor y/o placa elegidos: llega el otro (si es uno solo) y el celular del conductor queda para el enlace de la asignación
+function elegirVC(cond, placa){
+  const pv = placaNorm((campoVC('placa') || {}).value || '');
+  if (placa) ponerVC('placa', placaNorm(placa));
+  if (cond) { ponerVC('conductor', cond);
+    if (!placa) { const ps = placasDe(conductorReg(cond));
+      if (ps.length === 1 && ps[0] !== pv) { ponerVC('placa', ps[0]); toast(`Placa ${ps[0]}: la que maneja ${cond}. Revísela`); }
+      else if (ps.length > 1 && !ps.includes(pv)) { toast(`${cond} maneja ${ps.join(', ')}: toque la placa de este viaje`); $('#condBuscar').value = cond; pintarVC(); return; } } }
+  else if (placa) { const cs = conductoresDePlaca(placa), ya = conductorReg((campoVC('conductor') || {}).value || '');
+    if (cs.length === 1 && cs[0] !== ya) { ponerVC('conductor', cs[0].nombre); toast(`${cs[0].nombre}: quien maneja ${placaNorm(placa)}. Revíselo`); }
+    else if (cs.length > 1 && !cs.includes(ya)) { toast(`La ${placaNorm(placa)} la manejan ${cs.length} conductores: toque el de este viaje`); $('#condBuscar').value = placaNorm(placa); pintarVC(); return; } }
+  const c = conductorReg((campoVC('conductor') || {}).value || '');
+  if (c && celularCO(c.celular) && typeof telefonosElegidos !== 'undefined' && editId) telefonosElegidos[editId] = '57' + celularCO(c.celular);
   $('#ovCond').classList.remove('open');
 }
-// conductor nuevo: antes de crearlo se muestran los parecidos (dos o más palabras del nombre en común) para no duplicar
+// nuevos: antes de crearlos se muestran los parecidos; al guardar el viaje "Completar datos" pide lo que falta y los crea
 async function conductorNuevo(){
   const n = String($('#condBuscar').value || '').trim().toUpperCase().replace(/\s+/g, ' ');
   if (!n || /\d/.test(n) || n.split(' ').length < 2) return toast('Escriba arriba el nombre completo del conductor nuevo (nombres y apellidos, como en la cédula)');
-  if (conductorReg(n)) return elegirConductor(conductorReg(n).nombre);
+  if (conductorReg(n)) return elegirVC(conductorReg(n).nombre, '');
   const toks = nombreClave(n).split(' ').filter(Boolean);
-  const parecidos = (REG() && REG().conductores || []).filter(c => !archivadoReg(c) && [c.nombre, ...aliasDe(c.alias)]
-    .some(x => { const t = nombreClave(x).split(' '); return toks.filter(w => t.includes(w)).length >= 2; }));
+  const parecidos = condsActivos().filter(c => [c.nombre, ...aliasDe(c.alias)].some(x => { const t = nombreClave(x).split(' '); return toks.filter(w => t.includes(w)).length >= 2; }));
   if (parecidos.length && !await preguntarSiNo(`Antes de crear "${n}": ¿no es alguno de estos?\n\n${parecidos.map(c => '• ' + c.nombre + (c.cedula ? ' (CC ' + c.cedula + ')' : '')).join('\n')}\n\nSi es uno de ellos, elíjalo de la lista. Si es otra persona, siga.`, 'Es otra persona: crearlo')) return;
-  // queda en el viaje y, al guardar, la ventana "Completar datos" pide cédula y celular y lo crea en el registro
-  elegirConductor(n);
+  ponerVC('conductor', n); $('#ovCond').classList.remove('open');
   toast('Conductor nuevo: al guardar el viaje se piden su cédula y celular para crearlo en el registro');
 }
-document.addEventListener('click', e => { const b = e.target.closest('[data-elegir-cond]'); if (!b) return;
-  abrirElegirConductor(b.closest('.cond-pick').querySelector('[data-k=conductor]')); });
+function vehiculoNuevo(){
+  const p = placaNorm($('#condBuscar').value);
+  if (!placaValida(p)) return toast('Escriba arriba la placa del vehículo nuevo (tres letras y tres números, ej. ABC123)');
+  if (vehiculoReg(p)) { $('#condBuscar').value = p; pintarVC(); return toast(`La ${p} ya está en el registro: tóquela en la lista`); }
+  ponerVC('placa', p); $('#ovCond').classList.remove('open');
+  toast('Vehículo nuevo: al guardar el viaje se piden el propietario y su celular para crearlo en el registro');
+}
+// debajo de los campos: el celular del conductor (con WhatsApp) y el propietario del vehículo
+function pintarInfoVC(){
+  const ic = $('#infoCond'), ip = $('#infoPlaca'); if (!ic && !ip) return;
+  const c = conductorReg((campoVC('conductor') || {}).value || ''), p = placaNorm((campoVC('placa') || {}).value || ''), v = vehiculoReg(p);
+  const cel = c && celularCO(c.celular);
+  if (ic) ic.innerHTML = !c ? ((campoVC('conductor') || {}).value ? '<span style="color:var(--warn)">nuevo: se crea en el registro al guardar</span>' : '')
+    : `${cel ? `📱 ${esc(cel)} <a href="${waLink('57' + cel, '')}" target="_blank" rel="noopener" title="WhatsApp">${ICONO_WA}</a>` : 'sin celular'}${c.cedula ? ' · CC ' + esc(c.cedula) : ''}${p && !placasDe(c).includes(p) ? ` · <span style="color:var(--warn)">no tiene ${esc(p)} en el registro</span>` : ''}`;
+  if (ip) ip.innerHTML = !p ? '' : !v ? '<span style="color:var(--warn)">nueva: se crea en el registro al guardar</span>'
+    : esc([v.empresa, v.propietario && 'propietario ' + v.propietario, celularCO(v.celularPropietario) && '📱 ' + celularCO(v.celularPropietario)].filter(Boolean).join(' · '));
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-elegir-vc]'); if (!b) return; abrirVC(b.dataset.elegirVc); });
+document.addEventListener('input', e => { if (e.target.matches && e.target.matches('#mForm [data-k=conductor], #mForm [data-k=placa]')) pintarInfoVC(); });
 
 $('#regGuardar').onclick = guardarRegistroUI;
 $('#regCerrar').onclick = () => { regContinuar = null; $('#ovReg').classList.remove('open'); };
@@ -4815,7 +4861,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '040f814876';
+const VERSION_TABLERO = '6797688327';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
