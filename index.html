@@ -292,6 +292,7 @@ table.prog td:last-child{min-width:260px}
 .ruta .ruedas{display:flex;justify-content:space-between;padding:0 10px;margin-top:-4px}
 .ruta .ruedas i{width:8px;height:8px;border-radius:50%;background:var(--text);display:block}
 .ruta .cond{display:flex;align-items:center;gap:8px;margin-top:10px;background:var(--surface-2);border-radius:8px;padding:6px 8px}
+.wa-tarjeta{display:inline-flex;margin-left:6px;vertical-align:middle;text-decoration:none}.wa-tarjeta svg{margin-right:0!important;width:16px;height:16px}.wa-tarjeta.sin{opacity:.45}.wa-tarjeta:hover{opacity:1;transform:scale(1.15)}
 .ruta .ini{width:26px;height:26px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex:none}
 .ruta .linea{position:relative;display:flex;gap:6px}
 .ruta .linea:before{content:'';position:absolute;top:6px;left:7%;right:7%;height:2px;background:var(--border)}
@@ -2906,6 +2907,15 @@ function renderMotonaves(){
  * paradas / avance / etapaAhora están en el dominio (dominio.js): la misma ruta la usa el resumen al cliente (Cliente.gs). */
 /* ---------- ventana del viaje (actualización) y modo lean: ruta del pedido ---------- */
 // paradas, avance, bodegaCargue y contenedorDeBooking están en el dominio (dominio.js): también los usa el correo al cliente
+// WhatsApp al conductor desde la tarjeta (al lado de la placa), con el celular del registro de conductores; solo el equipo.
+// Sin celular en el registro abre WhatsApp con el mensaje listo para elegir el contacto (como waConductor en turno.js)
+function waTarjeta(v){
+  if (window.MODO_CLIENTE || !textoReal(v.conductor)) return '';
+  const c = typeof conductorReg === 'function' ? conductorReg(v.conductor) : null, cel = celularCO(c && c.celular);
+  const texto = `Hola ${String(v.conductor).split(' ')[0]}, te escribe Operaciones de ENTRAPETROL · ${v.placa || ''} · ${refTurno(v)}`;
+  return `<a class="wa-tarjeta${cel ? '' : ' sin'}" href="${waLink(cel ? '57' + cel : '', texto)}" target="_blank" rel="noopener" onclick="event.stopPropagation()"
+    title="${cel ? 'WhatsApp a ' + esc(v.conductor) + ' (' + cel + ')' : 'Sin celular en el registro: WhatsApp con el mensaje listo, elija el contacto'}">${ICONO_WA}</a>`;
+}
 function miniAvance(v){ const {P,n} = avance(v); return `<span class="mini" title="${esc(n<P.length ? 'En: '+P[n][0] : 'Completo')}">${P.map((_,i)=>`<i class="${i<n?'ok':i===n?'ya':''}"></i>`).join('')}</span>`; }
 
 // dibujo sobre la parada en curso: cuál va lo decide el dominio (iconoEtapa, el mismo del correo al cliente); aquí solo las piezas
@@ -3031,7 +3041,7 @@ function rutaPedido(v){
     <div class="cuerpo"><div>
       <div style="display:flex;align-items:flex-end;gap:2px"><div class="cont"><b style="font-size:12px">${esc(esNacional(v) ? (v.carga||'—') : (v.contenedor||'—'))}</b><div class="sub">${esc(esNacional(v) ? 'Nacional' : (v.unidad||''))}</div></div><div class="cabina"></div></div>
       <div class="ruedas"><i></i><i></i><i></i><i></i></div>
-      <div class="cond"><div class="ini">${esc(ini(v.conductor))}</div><div style="min-width:0"><b style="font-size:12px;display:block">${esc(v.conductor||'Sin conductor')}</b><span class="sub">${esc(v.placa||'Sin placa')}</span></div></div>
+      <div class="cond"><div class="ini">${esc(ini(v.conductor))}</div><div style="min-width:0"><b style="font-size:12px;display:block">${esc(v.conductor||'Sin conductor')}</b><span class="sub">${esc(v.placa||'Sin placa')}</span>${waTarjeta(v)}</div></div>
       ${window.MODO_CLIENTE || esNacional(v) ? '' : `<button type="button" class="subv" onclick="event.stopPropagation();nuevoSubviaje('${v.id}')"><span>+</span> Subviaje</button>`}
     </div><div>
       <div class="linea"><div class="hecho" style="width:${P.length>1 ? Math.min(86, 86*Math.max(0,n-1)/(P.length-1)) : 0}%"></div>
@@ -4711,7 +4721,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'b828e407c5';
+const VERSION_TABLERO = '2cee9e49a5';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
