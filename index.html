@@ -5090,7 +5090,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'ebac83b14a';
+const VERSION_TABLERO = '89ffd6255d';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5122,7 +5122,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) revi
  * sin la aprobación del equipo (LogxIA propone; el equipo aprueba en "Llenar datos desde correos" y en la Bandeja).
  * El lector de correos y el archivista trabajan en la nube cada hora (rutina LogxIA, 7:05 a 18:05 de lunes a sábado).
  * Este módulo crea su botón del menú y su sección; corre solo con la vista abierta. Prefijo de clases CSS: lv-. */
-const LV = {token: 0, ciclo: 0, prox: 0, tick: null, corriendo: false, cuentas: {}, logueado: new Set(), ro: null};
+const LV = {token: 0, ciclo: 0, prox: 0, tick: null, corriendo: false, cuentas: {}, logueado: new Set(), vivos: [], ro: null};   // vivos: hallazgos de las pasadas (siguen en el registro al cerrar y abrir)
 const LV_ESPERA = 75e3;   // pausa entre una pasada completa y la siguiente
 // con "reducir movimiento" (Windows: Efectos de animación apagados) solo se apagan giros y pulsos (CSS); el paso de los agentes y los números se ven igual
 // fecha y hora en Bogotá 'AAAA-MM-DDTHH:MM': las fechas con zona (ISO de Apps Script) se pasan a -5; las que no traen zona ya son locales
@@ -5338,6 +5338,7 @@ function pintarLV(){
 const TAGS_LV = {cruzado: 'ok', archivado: 'ok', descartado: 'gris', aplicado: 'azul', alerta: 'naranja', revisar: 'naranja', nota: 'azul', cobro: 'naranja', dato: 'rosa', despacho: 'azul'};
 function filaLog(f, tag, html, v, arriba){
   const L = $('#lvLog'); if (!L) return;
+  L.querySelector('.lv-vacio')?.remove();
   const fila = `<div class="lv-ev${v ? ' clic' : ''}" ${v ? `data-viaje="${esc(v.id)}"` : ''}><span class="lv-ev-f">${esc(diaHora(f))}</span><span class="lv-tag ${TAGS_LV[tag] || 'gris'}">${tag}</span><span class="lv-ev-t">${html}</span></div>`;
   L.insertAdjacentHTML(arriba ? 'afterbegin' : 'beforeend', fila);
   while (L.children.length > 80) L.lastElementChild.remove();
@@ -5350,7 +5351,8 @@ function historicoLog(){
     E.push([enBog(b.registrado), c.acciones.length ? 'cruzado' : 'descartado', `${esc(nombreCorto(b.remitente))} · «${esc(lvCorto(b.asunto, 46))}» → ${c.acciones.length ? `${nombreAg('lector')} lo cruzó con ${esc(lvViaje(v) || 'un viaje')}: ${esc(lvCorto(c.acciones[0].accion, 50))}` : 'no pide nada, descartado'}`, v]); });
   D.H.forEach(h => E.push([enBog(h.fecha), 'aplicado', `${esc(h.usuario || 'Equipo')} · ${esc(lvCorto(h.observacion || `${h.estadoAnterior || ''} → ${h.estadoNuevo || ''}`, 80))}`, viajes.find(v => v.id === h.id)]));
   (D.docs || []).forEach(a => E.push([enBog(a.fecha), 'archivado', `${nombreAg('archivo')} guardó ${esc(a.tipo || 'documento')}${a.booking ? ' · booking ' + esc(a.booking) : ''}`, null]));
-  E.sort((a, b) => b[0].localeCompare(a[0])).slice(0, 60).forEach(e => filaLog(e[0], e[1], e[2], e[3]));
+  E.push(...LV.vivos);
+  E.sort((a, b) => b[0].localeCompare(a[0])).slice(0, 80).forEach(e => filaLog(e[0], e[1], e[2], e[3]));
   if (!E.length) L.innerHTML = '<div class="lv-vacio">Esta semana todavía no hay movimientos registrados.</div>';
 }
 function lineasLV(){
@@ -5409,7 +5411,9 @@ async function correrAgente(a, t, fila){
     hall++; n.textContent = hall; n.classList.add('on');
     const clave = a.id + '|' + (h.v ? h.v.id : '') + '|' + h.txt;
     if (!a.sinLog && !LV.logueado.has(clave)) { LV.logueado.add(clave);
-      filaLog(ahoraBog(), a.tag, `${h.v ? `${esc(lvViaje(h.v))} → ` : ''}${nombreAg(a.id)} ${esc(h.txt)}`, h.v, true); }
+      const e = [ahoraBog(), a.tag, `${h.v ? `${esc(lvViaje(h.v))} → ` : ''}${nombreAg(a.id)} ${esc(h.txt)}`, h.v];
+      LV.vivos.push(e); if (LV.vivos.length > 200) LV.vivos.shift();
+      filaLog(e[0], e[1], e[2], e[3], true); }
   }
   el.classList.remove('activo'); if (hilo) { hilo.classList.remove('vivo'); hilo.style.stroke = ''; }
   sub.textContent = I.length ? `revisó ${I.length} · ${hall ? hall + ' para atender' : 'todo en orden'}` : a.sub;
