@@ -631,6 +631,42 @@ body.lv-abierta{overflow:hidden}
 #btnLogxia{display:inline-flex;align-items:center;gap:7px}
 .lv-btn-logo{width:22px;height:22px;border-radius:6px;background:linear-gradient(160deg,#1f2937,#0b1220);display:inline-grid;place-items:center;flex:none}
 .lv-btn-logo svg{width:18px;height:18px}
+
+/* ---------- 📊 KPIs Reckitt (kpis-vivo.js): mismo diseño de LogxIA en vivo (clases lv-), con lo propio de los indicadores ---------- */
+#btnKpis{display:inline-flex;align-items:center;gap:7px}
+.kv-logo svg{width:38px;height:38px}
+.lv-kpi-v small{font-size:13px;font-weight:600;margin-left:2px;opacity:.7}
+.kv-estado{gap:10px}
+.kv-chips{display:inline-flex;background:#fff;border:1px solid var(--lv-borde);border-radius:999px;padding:2px}
+.kv-chips button{background:transparent;border:0;border-radius:999px;padding:5px 12px;font:inherit;font-family:var(--lv-mono);font-size:11.5px;color:var(--lv-gris);cursor:pointer}
+.kv-chips button.on{background:#111827;color:#fff}
+.kv-rango,.kv-hoja{font-family:var(--lv-mono);font-size:11px;color:var(--lv-suave)}
+.kv-etapa .kv-et-ic{background:color-mix(in srgb,var(--c) 18%,#fff);position:relative}
+.kv-etapa .kv-et-ic::after{content:"";position:absolute;inset:9px;border-radius:50%;background:var(--c)}
+.kv-anillo{position:relative;width:170px;height:170px}
+.kv-anillo svg{width:100%;height:100%}
+.kv-arco{transition:stroke-dasharray .9s cubic-bezier(.2,.8,.2,1)}
+.kv-anillo-t{position:absolute;inset:0;display:grid;place-content:center;text-align:center}
+.kv-anillo-t b{font-size:40px;line-height:1}.kv-anillo-t span{font-family:var(--lv-mono);font-size:11px;color:#16a34a;margin-top:4px}
+.kv-ind{cursor:pointer;animation:kvEntra .5s ease-out both;animation-delay:calc(var(--i) * 70ms)}
+.kv-ind:hover{border-color:var(--c)}
+.kv-ind:focus-visible{outline:2px solid var(--c);outline-offset:2px}
+.kv-ind .kv-ind-v{font-size:22px;font-weight:700;line-height:1.15;color:var(--lv-tinta)}
+.kv-ind .kv-ind-v small{font-size:12px;font-weight:600;color:var(--lv-gris);margin-left:2px}
+.kv-ind .lv-ag-sub{white-space:normal}
+.kv-ind.activo .lv-ag-sub::before{content:none}
+.kv-barra{display:flex;height:16px;border-radius:8px;overflow:hidden;gap:2px;margin:6px 0 10px}
+.kv-barra i{display:block;min-width:6px;transition:flex .6s}
+.kv-ley{display:flex;flex-wrap:wrap;gap:6px 16px;font-family:var(--lv-mono);font-size:11.5px;color:var(--lv-gris)}
+.kv-ley i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.kv-ley b{color:var(--lv-tinta)}
+.kv-semanas{display:flex;justify-content:space-between;font-family:var(--lv-mono);font-size:10px;color:var(--lv-suave);margin-top:4px}
+.kv-ev{grid-template-columns:minmax(130px,190px) 96px 1fr}
+.kv-ev-v{color:var(--lv-tinta);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kv-ev .lv-tag{color:var(--c);background:color-mix(in srgb,var(--c) 8%,#fff);border-color:color-mix(in srgb,var(--c) 35%,#fff)}
+.kv-ev .lv-tag.kv-rojo{color:#fff;background:var(--c);border-color:var(--c)}
+@keyframes kvEntra{from{opacity:0;transform:translateY(6px)}}
+@media (max-width:700px){.kv-anillo{width:130px;height:130px}.kv-anillo-t b{font-size:30px}.kv-ev{grid-template-columns:1fr auto}.kv-ev .lv-ev-t{grid-column:1/-1}.kv-rango,.kv-hoja{display:none}}
 </style>
 </head>
 <body>
@@ -5090,7 +5126,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '89ffd6255d';
+const VERSION_TABLERO = '5312e4a2c9';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5173,6 +5209,7 @@ function contarLV(el, n, fmt = String){
   const t0 = performance.now(), dur = 900;
   const paso = t => { const p = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - p, 3); el.textContent = fmt(Math.round(antes + (n - antes) * e)); if (p < 1) requestAnimationFrame(paso); };
   requestAnimationFrame(paso);
+  setTimeout(() => { if (LV.cuentas[k] === n) el.textContent = fmt(n); }, dur + 120);   // con la pestaña en segundo plano no corre la animación: igual queda el valor final
 }
 const miles = n => Number(n).toLocaleString('es-CO');
 
@@ -5427,6 +5464,231 @@ async function cicloLV(){
   pintarLV(); LV.corriendo = false; LV.prox = Date.now() + LV_ESPERA;
 }
 montarLV();
+/* ---------- kpis-vivo.js · 📊 KPIs Reckitt: indicadores de la operación en pantalla aparte (8-nov-2026) ----------
+ * Capa: pantalla (solo el equipo). Mismo diseño de "LogxIA en vivo" (logxia-vivo.js, estilo del video Grok Bot), pero con los
+ * indicadores de la operación Reckitt. Va aparte, con su botón junto a "LogxIA en vivo", para no recargar la Torre de Control.
+ *  - Encabezado: viajes terminados, % que cumplen la fecha original, lead time y puntaje, con su tendencia de 8 semanas.
+ *  - Operación ahora: viajes abiertos por etapa y anillo de % con vehículo.
+ *  - 8 indicadores (asignación, cumplimiento, puntualidad, lead time, puntaje, documentos, demoras, facturación). Al tocar uno,
+ *    abajo salen sus viajes para revisar (y al tocar un viaje se abre su ventana).
+ *  - Reprogramaciones por responsable, tendencia de 8 semanas (programados, terminados, facturados).
+ * Filtros propios: operación (todas, EXPO, IMPO, NACIONAL) y periodo (semana, mes, 90 días) para lo terminado o programado; lo
+ * abierto es siempre "ahora". Sin viajes de prueba, cancelados ni subviajes. Las reglas son las del dominio (puntajeViaje,
+ * desviosPlan, hitosPlan, leadTime, cobro, demora…): mismos números que el tablero. Usa ayudas de logxia-vivo.js (enBog, contarLV,
+ * miles). Prefijo de clases CSS: kv- (y reutiliza las lv- del diseño). */
+const KV = {op: '', per: 'mes', sel: '', tick: null};
+const KV_PER = {semana: ['Semana', 7], mes: ['Mes', 30], trim: ['90 días', 90]};
+const kvDesde = () => addDias(HOY, -(KV_PER[KV.per][1] - 1));
+const kvEnPer = d => !!d && String(d).slice(0, 10) >= kvDesde() && String(d).slice(0, 10) <= HOY;
+const kvBase = () => viajes.filter(v => !v.padre && !esPrueba(v) && situacion(v) !== 'Cancelado' && v.estado !== 'Cancelado' && (!KV.op || v.operacion === KV.op));
+const kvProm = a => a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length * 10) / 10 : null;
+const kvPct = (a, b) => b ? Math.round(a / b * 100) : null;
+const kvViaje = v => `${v.operacion || ''} ${v.booking || v.pedido || v.do || v.id}${v.placa ? ' · ' + v.placa : ''}`.trim();
+const EN_RUTA_KV = ['Vacío retirado', 'Retirado de puerto', 'Recogido', 'Llenado', 'En bodega de paso'];
+// 8 semanas (lunes a domingo) que terminan en la semana de HOY
+function semanasKV(){ const d = new Date(HOY + 'T12:00'), lun = addDias(HOY, -((d.getDay() + 6) % 7)); return [7, 6, 5, 4, 3, 2, 1, 0].map(i => addDias(lun, -7 * i)); }
+const semanaIdx = (S, f) => { f = String(f || '').slice(0, 10); if (!f) return -1; for (let i = S.length - 1; i >= 0; i--) if (f >= S[i]) return f <= addDias(S[i], 6) ? i : -1; return -1; };
+
+function calcKV(){
+  const B = kvBase(), A = B.filter(abierto), fin = v => fechaFinTransporte(v) || '';
+  const P = B.filter(v => kvEnPer(primerEvento(v))), T = B.filter(v => kvEnPer(fin(v)));
+  // operación ahora
+  const etapas = [['Sin asignar', A.filter(v => !tieneVehiculo(v)).length], ['Asignado', A.filter(v => tieneVehiculo(v) && v.estado === 'Asignado').length],
+    ['En ruta', A.filter(v => EN_RUTA_KV.includes(v.estado)).length], ['Entregado · por cerrar', A.filter(v => ETAPAS_FIN.includes(v.estado)).length]];
+  const asign = A.filter(tieneVehiculo).length, sin72 = A.filter(sinCobertura);
+  // cumplimiento de la fecha original (viajes programados en el periodo que tienen plan)
+  const L = P.filter(v => (HITOS_PLAN[v.operacion] || []).some(([, p]) => v[p])), conDesv = L.filter(v => desviosPlan(v).length);
+  const D = L.flatMap(v => desviosPlan(v).map(d => ({...d, v})));
+  const porResp = {}; D.forEach(d => { const r = responsable(d.causa); porResp[r] = (porResp[r] || 0) + 1; });
+  const culpa = conDesv.filter(v => desviosPlan(v).some(d => ['Entrapetrol', 'Sin causa'].includes(responsable(d.causa))));
+  // ejecución de lo terminado en el periodo
+  const H = T.flatMap(v => hitosPlan(v).filter(h => h[1] && h[2]).map(h => ({h, v}))), hOk = H.filter(x => x.h[2] <= x.h[1]).length;
+  const tarde = [...new Set(H.filter(x => x.h[2] > x.h[1]).map(x => x.v))];
+  const LT = T.map(v => ({v, l: leadTime(v)})).filter(x => x.l.real !== null), ltLargo = LT.filter(x => x.l.plan !== null && x.l.real > x.l.plan);
+  const PS = T.map(v => ({v, p: puntajeViaje(v)})).filter(x => x.p), bajos = PS.filter(x => x.p.bajo);
+  // documentos: cierres documentales de EXPO en 3 días sin entregar, y terminados sin tirilla
+  const cierres = A.filter(v => v.operacion === 'EXPO' && v.cierreDoc && !v.fechaEntregaPuerto && diffDias(v.cierreDoc) >= 0 && diffDias(v.cierreDoc) <= 3);
+  const sinTir = T.filter(v => (v.operacion === 'EXPO' && !v.tirillaEntrega) || (v.operacion === 'IMPO' && !esLCL(v) && !v.tirillaDevolucion));
+  // demoras del vacío (IMPO): los devueltos en el periodo con demora y los abiertos que ya vencieron
+  const dem = B.filter(v => v.operacion === 'IMPO' && demora(v) > 0 && (abierto(v) && !v.fechaDevolucion || kvEnPer(v.fechaDevolucion)));
+  const diasDem = dem.reduce((s, v) => s + demora(v), 0);
+  // facturación
+  const pendF = B.filter(v => ['Pendiente por facturar', 'En aprobación Reckitt', 'Aprobado por Reckitt'].includes(cobro(v).fact));
+  const sumaF = pendF.reduce((s, v) => s + cobro(v).total, 0);
+  const LF = B.map(v => ({v, f: leadFactura(v)})).filter(x => x.f), lfHechos = LF.filter(x => x.f.hecho && kvEnPer(x.v.fechaFactura)), lfLargo = LF.filter(x => !x.f.hecho && x.f.dias > 5);
+  const facturados = B.filter(v => kvEnPer(v.fechaFactura));
+  // tendencia de 8 semanas
+  const S = semanasKV(), porSem = (L2, f) => S.map((s, i) => L2.filter(v => semanaIdx(S, f(v)) === i));
+  const semT = porSem(B, fin), semP = porSem(B, primerEvento), semF = porSem(B, v => v.fechaFactura);
+  const serie = {
+    terminados: semT.map(l => l.length), programados: semP.map(l => l.length), facturados: semF.map(l => l.length),
+    cumple: semP.map(l => { const c = l.filter(v => (HITOS_PLAN[v.operacion] || []).some(([, p]) => v[p])); return kvPct(c.filter(v => !desviosPlan(v).length).length, c.length) ?? 0; }),
+    lead: semT.map(l => kvProm(l.map(v => leadTime(v).real).filter(x => x !== null)) ?? 0),
+    puntaje: semT.map(l => kvProm(l.map(puntajeViaje).filter(Boolean).map(p => p.total)) ?? 0),
+  };
+  const rev = (v, tag, txt, tono) => ({v, tag, txt, tono});
+  const ind = [
+    {id: 'asig', cod: 'ASIGNACIÓN', ic: '⛟', color: '#16a34a', v: kvPct(asign, A.length), suf: '%', sub: `${asign} de ${A.length} abiertos con vehículo`,
+      L: sin72.map(v => rev(v, 'sin vehículo', `arranca ${fd(primerEvento(v))} y no tiene vehículo`, 'bad'))},
+    {id: 'cumple', cod: 'CUMPLIMIENTO', ic: '◷', color: '#2563eb', v: kvPct(L.length - conDesv.length, L.length), suf: '%', sub: `cumplen la fecha original · ${D.length} reprogramaciones`,
+      L: conDesv.map(v => { const d = desviosPlan(v); return rev(v, 'reprogramado', d.map(x => `${x.hito.toLowerCase()} +${Math.max(0, x.dias || 0)} d (${responsable(x.causa)})`).join(' · '), culpa.includes(v) ? 'bad' : 'warn'); })},
+    {id: 'puntual', cod: 'PUNTUALIDAD', ic: '✓', color: '#0d9488', v: kvPct(hOk, H.length), suf: '%', sub: `${hOk} de ${H.length} hitos ejecutados a tiempo`,
+      L: tarde.map(v => rev(v, 'tarde', hitosPlan(v).filter(h => h[1] && h[2] && h[2] > h[1]).map(h => `${h[0].toLowerCase()} +${dDias(h[1], h[2])} d`).join(' · '), 'warn'))},
+    {id: 'lead', cod: 'LEAD TIME', ic: '⇥', color: '#7c3aed', v: kvProm(LT.map(x => x.l.real)), suf: ' d', sub: `plan ${kvNum(kvProm(LT.filter(x => x.l.plan !== null).map(x => x.l.plan)))} d · ${LT.length} viajes completos`,
+      L: ltLargo.map(x => rev(x.v, 'lento', `${kvNum(x.l.real)} d contra ${kvNum(x.l.plan)} d del plan (+${kvNum(x.l.real - x.l.plan)} d)`, 'warn'))},
+    {id: 'nota', cod: 'PUNTAJE', ic: '★', color: '#ea580c', v: kvProm(PS.map(x => x.p.total)), suf: '/100', sub: `${PS.length} viajes calificados · ${bajos.length} bajo ${PUNTAJE_BAJO}`,
+      L: bajos.map(x => { const peor = x.p.partes.slice().sort((a, b) => a[1] / a[2] - b[1] / b[2])[0]; return rev(x.v, `${x.p.total}/100`, `${peor[0].toLowerCase()}: ${peor[3]}`, 'bad'); })},
+    {id: 'docs', cod: 'DOCUMENTOS', ic: '▤', color: '#db2777', v: cierres.length, suf: '', sub: `cierres en 3 días · ${sinTir.length} terminados sin tirilla`,
+      L: [...cierres.map(v => rev(v, 'cierre doc', `cierre documental ${diffDias(v.cierreDoc) === 0 ? 'hoy' : 'en ' + diffDias(v.cierreDoc) + ' d'} y sin entregar en puerto`, diffDias(v.cierreDoc) <= 1 ? 'bad' : 'warn')),
+        ...sinTir.map(v => rev(v, 'sin tirilla', `terminó ${fd(fin(v))} y falta la tirilla de ${v.operacion === 'EXPO' ? 'entrega' : 'devolución'}`, 'warn'))]},
+    {id: 'demora', cod: 'DEMORAS', ic: '⌛', color: '#dc2626', v: diasDem, suf: ' d', sub: `${dem.length} contenedor${dem.length === 1 ? '' : 'es'} IMPO con demora del vacío`,
+      L: dem.map(v => rev(v, `${demora(v)} d`, v.fechaDevolucion ? `devuelto ${fd(v.fechaDevolucion)}, límite ${fd(v.fechaLimite)}` : `sin devolver · límite ${fd(v.fechaLimite)}`, 'bad'))},
+    {id: 'fact', cod: 'FACTURACIÓN', ic: '$', color: '#ca8a04', v: pendF.length, suf: '', sub: `${sumaF ? pesos(sumaF) + ' · ' : ''}factura en ${kvNum(kvProm(lfHechos.map(x => x.f.dias)))} d`,
+      L: lfLargo.sort((a, b) => b.f.dias - a.f.dias).map(x => rev(x.v, `${x.f.dias} d`, `${cobro(x.v).fact.toLowerCase()}${cobro(x.v).total ? ' · ' + pesos(cobro(x.v).total) : ''}`, x.f.dias > 10 ? 'bad' : 'warn'))},
+  ];
+  return {B, A, P, T, etapas, asign, L, conDesv, D, porResp, ind, S, serie, facturados,
+    costo: L.reduce((t, v) => t + reprogsDe(v).reduce((a, r) => a + r.costo, 0), 0), diasReprog: D.reduce((s, d) => s + Math.max(d.dias || 0, 0), 0)};
+}
+
+/* ---------- pantalla ---------- */
+const ICONO_KV = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="12" width="3.4" height="8" rx="1" fill="#4ade80"/><rect x="10.3" y="7" width="3.4" height="13" rx="1" fill="#7dd3fc"/><rect x="16.6" y="3.5" width="3.4" height="16.5" rx="1" fill="#eef2f7"/></svg>`;
+const KPIS_KV = [['terminados', 'viajes terminados', '#111827', ''], ['cumple', 'cumplen fecha original', '#2563eb', '%'], ['lead', 'lead time promedio', '#7c3aed', ' d'], ['puntaje', 'puntaje promedio', '#ea580c', '/100']];
+const RESP_KV = [['Reckitt', '#2563eb'], ['Entrapetrol', '#dc2626'], ['Terceros', '#ca8a04'], ['Sin causa', '#9ca3af'], [SIN_HISTORIAL, '#d1d5db']];
+function montarKV(){
+  const ref = $('#btnLogxia') || $('#btnEnVivo') || $('#btnResCli'); if (!ref || $('#v-kpis')) return;
+  ref.insertAdjacentHTML('beforebegin', `<button class="btn solo-interno" id="btnKpis" title="Indicadores de la operación Reckitt en una pantalla aparte: cumplimiento, puntualidad, lead time, puntaje, documentos, demoras y facturación"><span class="lv-btn-logo">${ICONO_KV}</span>KPIs Reckitt</button>`);
+  document.body.insertAdjacentHTML('beforeend', `<section id="v-kpis" class="lv-capa hidden" role="dialog" aria-modal="true" aria-label="KPIs Reckitt">
+  <div class="lv-volver"><button class="lv-volver-b" id="kvVolver" title="Volver al tablero (también con Esc o la flecha atrás del navegador)">← Volver al tablero</button></div><div class="lv" id="kv">
+  <div class="lv-card lv-top">
+    <div class="lv-marca"><div class="lv-logo kv-logo">${ICONO_KV}</div>
+      <div><div class="lv-nombre">KPIs Reckitt</div><div class="lv-modo">OPERACIÓN RECKITT · IMPO + EXPO + NACIONAL</div><div class="lv-verbos">asigna · cumple · entrega · documenta · factura</div></div></div>
+    <div class="lv-kpis">${KPIS_KV.map(([k, l, c]) => `<div class="lv-kpi"><div class="lv-kpi-l">${l}</div><div class="lv-kpi-v" style="color:${c}"><span id="kvk-${k}">0</span><small id="kvu-${k}"></small></div><div id="kvs-${k}"></div></div>`).join('')}</div>
+  </div>
+  <div class="lv-estado kv-estado">
+    <div class="kv-chips" id="kvOp" role="group" aria-label="Operación">${[['', 'Todas'], ['EXPO', 'EXPO'], ['IMPO', 'IMPO'], ['NACIONAL', 'Nacional']].map(([k, l]) => `<button data-op="${k}">${l}</button>`).join('')}</div>
+    <div class="kv-chips" id="kvPer" role="group" aria-label="Periodo">${Object.entries(KV_PER).map(([k, [l]]) => `<button data-per="${k}">${l}</button>`).join('')}</div>
+    <span class="kv-rango" id="kvRango"></span><span style="flex:1"></span><span class="kv-hoja" id="kvHoja"></span>
+  </div>
+  <div class="lv-card">
+    <div class="lv-titulo" id="kvTitulo"></div>
+    <div class="lv-mapa kv-mapa" id="kvMapa"><svg class="lv-hilos" id="kvHilos"></svg>
+      <div class="lv-col"><div class="lv-rot">OPERACIÓN AHORA</div><div id="kvEtapas"></div></div>
+      <div class="lv-router"><div class="lv-rot">VIAJES ABIERTOS</div><div class="lv-burbuja" id="kvBurbuja">con vehículo</div>
+        <div class="kv-anillo" id="kvAnillo"></div><div class="lv-router-t" id="kvOps"></div><div class="lv-router-p" id="kvAlerta"></div></div>
+      <div class="lv-col"><div class="lv-rot">INDICADORES · 8 <span>toca uno para ver sus viajes</span></div><div class="lv-ags" id="kvInd"></div></div>
+    </div>
+  </div>
+  <div class="lv-fila">
+    <div class="lv-card lv-desc"><div class="lv-rot">REPROGRAMACIONES</div><div class="lv-desc-n" id="kvRep">0</div><div class="lv-desc-s" id="kvRepS"></div><div class="lv-anillo" id="kvRepA"></div></div>
+    <div class="lv-card"><div class="lv-rot">RESPONSABLES <span id="kvCosto"></span></div><div class="kv-barra" id="kvBarra"></div><div class="kv-ley" id="kvLey"></div></div>
+  </div>
+  <div class="lv-card lv-flujo"><div class="lv-rot">TENDENCIA · 8 SEMANAS</div>
+    <div class="lv-flujo-f"><div class="lv-ley"><span style="color:#2563eb">programados</span><span style="color:#16a34a">terminados</span><span style="color:#ea580c">facturados</span></div>
+      <div><div class="lv-graf" id="kvGraf"></div><div class="kv-semanas" id="kvSem"></div></div>
+      <div class="lv-flujo-n"><b id="kvn-programados">0</b><b id="kvn-terminados">0</b><b id="kvn-facturados">0</b></div>
+      <div class="lv-flujo-s"><span style="color:#2563eb">esta semana</span><span style="color:#16a34a">esta semana</span><span class="lv-ok" id="kvnS">esta semana</span></div></div></div>
+  <div class="lv-card lv-log"><div class="lv-rot"><b id="kvListaT">PARA REVISAR</b> <span id="kvListaS"></span></div><div class="lv-log-l" id="kvLista"></div></div>
+  <div class="lv-pie">Mismas reglas del tablero (fecha original, hitos confirmados, lead time, puntaje de 0 a 100, cobro). Lo abierto es de ahora; lo programado y lo terminado, del periodo elegido. Sin viajes de prueba, cancelados ni subviajes.</div>
+  </div></section>`);
+  $('#btnKpis').onclick = abrirKV;
+  window.addEventListener('popstate', () => { if (location.hash !== '#kpis' && !$('#v-kpis').classList.contains('hidden')) cerrarKV(); });
+  if (location.hash === '#kpis') history.replaceState(null, '', location.pathname + location.search);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#v-kpis').classList.contains('hidden') && !document.fullscreenElement && !document.querySelector('.ov.open')) salirKV(); });
+  $('#kvVolver').onclick = salirKV;
+  $('#kv').addEventListener('click', e => {
+    const op = e.target.closest('[data-op]'), per = e.target.closest('[data-per]'), ind = e.target.closest('[data-ind]'), vj = e.target.closest('[data-viaje]');
+    if (op) { KV.op = op.dataset.op; pintarKV(); return; }
+    if (per) { KV.per = per.dataset.per; pintarKV(); return; }
+    if (ind) { KV.sel = KV.sel === ind.dataset.ind ? '' : ind.dataset.ind; pintarKV(true); return; }
+    if (vj && vj.dataset.viaje) abrir(vj.dataset.viaje);
+  });
+}
+function salirKV(){ if (location.hash === '#kpis') history.back(); else cerrarKV(); }
+function cerrarKV(){ $('#v-kpis')?.classList.add('hidden'); document.body.classList.remove('lv-abierta'); clearInterval(KV.tick); KV.tick = null; }
+function abrirKV(){
+  if (window.MODO_CLIENTE) return;
+  $('#v-kpis').classList.remove('hidden'); document.body.classList.add('lv-abierta');
+  if (location.hash !== '#kpis') history.pushState(null, '', '#kpis');
+  $('#kvInd').innerHTML = ''; pintarKV();
+  // el tablero trae datos nuevos de la hoja cada 5 min: la pantalla se repinta cada minuto mientras está abierta
+  if (!KV.tick) KV.tick = setInterval(() => { if (!document.hidden) pintarKV(true); }, 60e3);
+}
+function kvCurva(serie, color, w = 84, h = 22){
+  const max = Math.max(1, ...serie), p = serie.map((y, i) => `${(i / (serie.length - 1) * w).toFixed(1)},${(h - 2 - y / max * (h - 4)).toFixed(1)}`);
+  return `<svg class="lv-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${p.join(' ')}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round"/><circle cx="${p[p.length - 1].split(',')[0]}" cy="${p[p.length - 1].split(',')[1]}" r="2" fill="${color}"/></svg>`;
+}
+const kvNum = x => x === null || x === undefined ? '—' : String(x).replace('.', ',');
+function kvContar(el, n){ if (!el) return; if (n === null || n === undefined) { el.textContent = '—'; return; }
+  const dec = !Number.isInteger(n); contarLV(el, Math.round(n * (dec ? 10 : 1)), x => dec ? String(x / 10).replace('.', ',') : miles(x)); }
+function pintarKV(suave){
+  if (!$('#kv')) return;
+  const K = calcKV(), S = K.S, ult = S.length - 1;
+  $('#kvOp').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.op === KV.op));
+  $('#kvPer').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.per === KV.per));
+  $('#kvRango').textContent = `${fd(kvDesde())} → ${fd(HOY)}`;
+  $('#kvHoja').textContent = ($('#connTxt') && $('#connTxt').textContent) || '';
+  // encabezado
+  const tot = {terminados: K.T.length, cumple: K.ind[1].v, lead: K.ind[3].v, puntaje: K.ind[4].v};
+  const ser = {terminados: K.serie.terminados, cumple: K.serie.cumple, lead: K.serie.lead, puntaje: K.serie.puntaje};
+  KPIS_KV.forEach(([k, , c, u]) => { kvContar($('#kvk-' + k), tot[k]); $('#kvu-' + k).textContent = tot[k] === null ? '' : u; $('#kvs-' + k).innerHTML = kvCurva(ser[k], c); });
+  // operación ahora
+  const nOp = op => K.A.filter(v => v.operacion === op).length;
+  $('#kvTitulo').innerHTML = `<b>${K.A.length} viajes abiertos</b> · ${K.T.length} terminados y ${K.P.length} programados en ${KV_PER[KV.per][0].toLowerCase() === 'semana' ? 'los últimos 7 días' : KV_PER[KV.per][0] === 'Mes' ? 'los últimos 30 días' : 'los últimos 90 días'}${KV.op ? ' · solo ' + KV.op : ''}`;
+  $('#kvEtapas').innerHTML = K.etapas.map(([l, n], i) => `<div class="lv-src kv-etapa" style="--c:${['#9ca3af', '#2563eb', '#ea580c', '#16a34a'][i]}"><span class="lv-src-ic kv-et-ic"></span><div><b>${l}</b><small>${['esperan vehículo', 'listos para salir', 'retirados, llenos o en bodega de paso', 'falta cerrar o facturar'][i]}</small></div><span class="lv-src-n" id="kvet-${i}">0</span></div>`).join('');
+  K.etapas.forEach(([, n], i) => kvContar($('#kvet-' + i), n));
+  const pa = K.A.length ? Math.round(K.asign / K.A.length * 100) : 0, r = 62, C = 2 * Math.PI * r;
+  $('#kvAnillo').innerHTML = `<svg viewBox="0 0 150 150"><circle cx="75" cy="75" r="${r}" fill="none" stroke="#efede7" stroke-width="12"/><circle class="kv-arco" cx="75" cy="75" r="${r}" fill="none" stroke="#16a34a" stroke-width="12" stroke-linecap="round" stroke-dasharray="${(C * pa / 100).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 75 75)"/></svg><div class="kv-anillo-t"><b id="kvAb">0</b><span>${pa}% con vehículo</span></div>`;
+  kvContar($('#kvAb'), K.A.length);
+  $('#kvOps').textContent = ['EXPO', 'IMPO', 'NACIONAL'].map(o => [o, nOp(o)]).filter(x => x[1]).map(([o, n]) => `${n} ${o}`).join(' · ') || 'sin viajes abiertos';
+  const s72 = K.ind[0].L.length; $('#kvAlerta').textContent = s72 ? `${s72} sin vehículo en las próximas 72 h` : 'todo lo de las próximas 72 h tiene vehículo';
+  $('#kvAlerta').style.color = s72 ? '#dc2626' : '#16a34a';
+  // indicadores
+  const box = $('#kvInd'), nuevo = !box.children.length;
+  if (nuevo) box.innerHTML = K.ind.map((x, i) => `<div class="lv-ag kv-ind" data-ind="${x.id}" id="kvi-${x.id}" style="--c:${x.color};--i:${i}" role="button" tabindex="0">
+    <span class="lv-ag-ic">${x.ic}</span><div class="lv-ag-tx"><b>${x.cod}</b><span class="kv-ind-v"><span id="kviv-${x.id}">0</span><small id="kvis-${x.id}"></small></span><small class="lv-ag-sub" id="kvisub-${x.id}"></small></div><span class="lv-ag-n" id="kvin-${x.id}"></span></div>`).join('');
+  K.ind.forEach(x => {
+    kvContar($('#kviv-' + x.id), x.v); $('#kvis-' + x.id).textContent = x.v === null ? '' : x.suf; $('#kvisub-' + x.id).textContent = x.sub;
+    const n = $('#kvin-' + x.id); n.textContent = x.L.length || ''; n.classList.toggle('on', !!x.L.length);
+    $('#kvi-' + x.id).classList.toggle('activo', KV.sel === x.id);
+  });
+  // reprogramaciones y responsables
+  kvContar($('#kvRep'), K.D.length);
+  $('#kvRepS').textContent = `en ${K.conDesv.length} de ${K.L.length} viajes con plan${K.diasReprog ? ` · +${K.diasReprog} d corridos` : ''}`;
+  const pc = K.L.length ? Math.round((K.L.length - K.conDesv.length) / K.L.length * 100) : 0, r2 = 26, C2 = 2 * Math.PI * r2;
+  $('#kvRepA').innerHTML = `<svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="${r2}" fill="none" stroke="#e7e5df" stroke-width="7"/><circle class="kv-arco" cx="32" cy="32" r="${r2}" fill="none" stroke="#2563eb" stroke-width="7" stroke-linecap="round" stroke-dasharray="${(C2 * pc / 100).toFixed(1)} ${C2.toFixed(1)}" transform="rotate(-90 32 32)"/><text x="32" y="37" text-anchor="middle">${pc}%</text></svg>`;
+  const totR = Object.values(K.porResp).reduce((s, n) => s + n, 0);
+  $('#kvBarra').innerHTML = totR ? RESP_KV.filter(([k]) => K.porResp[k]).map(([k, c]) => `<i style="flex:${K.porResp[k]};background:${c}" title="${esc(k)}: ${K.porResp[k]}"></i>`).join('') : '<i style="flex:1;background:#e7e5df"></i>';
+  $('#kvLey').innerHTML = RESP_KV.map(([k, c]) => `<span><i style="background:${c}"></i>${esc(k)} <b>${K.porResp[k] || 0}</b></span>`).join('');
+  const incid = K.L.reduce((t, v) => t + reprogsDe(v).filter(x => x.incidente).length, 0);
+  $('#kvCosto').textContent = K.costo || incid ? `${K.costo ? pesos(K.costo) + ' de costo extra' : ''}${K.costo && incid ? ' · ' : ''}${incid ? incid + ' incidente' + (incid === 1 ? '' : 's') : ''}` : 'sin costo extra registrado';
+  // tendencia
+  const W = 520, Hh = 110, series = [['programados', '#2563eb'], ['terminados', '#16a34a'], ['facturados', '#ea580c']], max = Math.max(1, ...series.flatMap(([k]) => K.serie[k]));
+  const pts = A => A.map((y, i) => `${(i / 7 * W).toFixed(1)},${(Hh - 6 - y / max * (Hh - 16)).toFixed(1)}`);
+  $('#kvGraf').innerHTML = `<svg viewBox="0 0 ${W} ${Hh}" preserveAspectRatio="none">${[1, 2, 3, 4, 5, 6].map(i => `<line x1="${i / 7 * W}" x2="${i / 7 * W}" y1="0" y2="${Hh}" stroke="#f0eee8"/>`).join('')}
+    ${series.map(([k, c], j) => { const P = pts(K.serie[k]); return `${j === 1 ? `<polygon points="0,${Hh} ${P.join(' ')} ${W},${Hh}" fill="${c}" opacity=".08"/>` : ''}<polyline points="${P.join(' ')}" fill="none" stroke="${c}" stroke-width="2.2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`; }).join('')}</svg>`;
+  $('#kvSem').innerHTML = S.map(s => `<span>${fd(s).replace(/^\S+ /, '')}</span>`).join('');
+  series.forEach(([k]) => kvContar($('#kvn-' + k), K.serie[k][ult]));
+  $('#kvnS').textContent = `${K.facturados.length} facturados en el periodo`;
+  // para revisar: los viajes del indicador elegido (o de todos, lo rojo primero)
+  const sel = K.ind.find(x => x.id === KV.sel);
+  const filas = sel ? sel.L.map(x => ({...x, ind: sel})) : K.ind.flatMap(ind => ind.L.map(x => ({...x, ind}))).sort((a, b) => (a.tono === 'bad' ? 0 : 1) - (b.tono === 'bad' ? 0 : 1));
+  $('#kvListaT').textContent = sel ? `PARA REVISAR · ${sel.cod}` : 'PARA REVISAR';
+  $('#kvListaS').textContent = sel ? `${filas.length} viaje${filas.length === 1 ? '' : 's'} · toca el indicador otra vez para ver todo` : `${filas.length} pendiente${filas.length === 1 ? '' : 's'} en los 8 indicadores · lo rojo primero`;
+  $('#kvLista').innerHTML = filas.slice(0, 120).map(x => `<div class="lv-ev clic kv-ev" data-viaje="${esc(x.v.id)}"><span class="kv-ev-v">${esc(kvViaje(x.v))}</span><span class="lv-tag ${x.tono === 'bad' ? 'naranja kv-rojo' : 'naranja'}" style="--c:${x.ind.color}">${esc(x.tag)}</span><span class="lv-ev-t"><b style="color:${x.ind.color}">${x.ind.cod}</b> ${esc(x.txt)}</span></div>`).join('')
+    || `<div class="lv-vacio">${sel ? 'Nada que revisar en este indicador.' : 'Nada que revisar con estos filtros.'}</div>`;
+  if (!suave || nuevo) requestAnimationFrame(lineasKV);
+}
+function lineasKV(){
+  const M = $('#kvMapa'), Sv = $('#kvHilos'); if (!M || !Sv || !M.offsetWidth || getComputedStyle(Sv).display === 'none') return;
+  const R = M.getBoundingClientRect(), c = $('#kvAnillo').getBoundingClientRect(), p = el => el.getBoundingClientRect();
+  const cx = c.left - R.left, cy = c.top - R.top + c.height / 2, cr = c.right - R.left;
+  const src = [...M.querySelectorAll('.kv-etapa')].map(e => { const b = p(e), x = b.right - R.left, y = b.top - R.top + b.height / 2; return `<path d="M${x},${y} C${(x + cx) / 2},${y} ${(x + cx) / 2},${cy} ${cx},${cy}"/>`; });
+  const ind = [...M.querySelectorAll('.kv-ind')].filter((e, i) => i % 2 === 0).map(e => { const b = p(e), y = b.top - R.top + b.height / 2, x = b.left - R.left;
+    return `<path d="M${cr},${cy} C${(cr + x) / 2},${cy} ${(cr + x) / 2},${y} ${x},${y}"/><circle cx="${x}" cy="${y}" r="2.5"/>`; });
+  Sv.setAttribute('viewBox', `0 0 ${R.width} ${R.height}`); Sv.innerHTML = src.join('') + ind.join('');
+}
+window.addEventListener('resize', () => { if ($('#v-kpis') && !$('#v-kpis').classList.contains('hidden')) lineasKV(); });
+montarKV();
 /* ---------- navegación y eventos ---------- */
 $('#nav').onclick = e => { const b=e.target.closest('button'); if(!b) return;
   document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on', x===b));
