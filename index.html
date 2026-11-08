@@ -667,6 +667,10 @@ body.lv-abierta{overflow:hidden}
 .kv-ev .lv-tag.kv-rojo{color:#fff;background:var(--c);border-color:var(--c)}
 @keyframes kvEntra{from{opacity:0;transform:translateY(6px)}}
 @media (max-width:700px){.kv-anillo{width:130px;height:130px}.kv-anillo-t b{font-size:30px}.kv-ev{grid-template-columns:1fr auto}.kv-ev .lv-ev-t{grid-column:1/-1}.kv-rango,.kv-hoja{display:none}}
+.kv-gest{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.kv-ev-v small{display:block;font-weight:400;font-size:10.5px;color:var(--lv-suave)}
+@media (max-width:1050px){.kv-gest{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:480px){.kv-gest{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -5126,7 +5130,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'a248087d07';
+const VERSION_TABLERO = '677bf9236a';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5549,7 +5553,49 @@ function calcKV(){
     {id: 'fact', cod: 'FACTURACIÓN', ic: '$', color: '#ca8a04', v: pendF.length, suf: '', sub: `${sumaF ? pesos(sumaF) + ' · ' : ''}factura en ${kvNum(kvProm(lfHechos.map(x => x.f.dias)))} d`,
       L: lfLargo.sort((a, b) => b.f.dias - a.f.dias).map(x => rev(x.v, `${x.f.dias} d`, `${cobro(x.v).fact.toLowerCase()}${cobro(x.v).total ? ' · ' + pesos(cobro(x.v).total) : ''}`, x.f.dias > 10 ? 'bad' : 'warn'))},
   ];
-  return {B, A, P, T, etapas, asign, L, conDesv, D, porResp, ind, S, serie, facturados,
+  // gestión del periodo (8-nov, pedido del usuario): correos leídos, solicitudes y su tiempo de respuesta, reprogramaciones
+  // registradas, cambios en la hoja, errores (hoy), datos que LogxIA espera aprobar y novedades. Con la operación elegida: lo que
+  // no se pudo cruzar con un viaje solo cuenta en "Todas". El Historial que trae la API son los últimos 200 cambios.
+  const opOk = v => !KV.op || (!!v && v.operacion === KV.op);
+  const Bit = (window.BITACORA || []).filter(b => kvEnPer(diaDe(b.registrado)) && opOk(viajeDeAccion(b)));
+  const grupos = new Map(); Bit.forEach(b => { const k = b.mensajeId || b.id; (grupos.get(k) || grupos.set(k, []).get(k)).push(b); });
+  const correos = [...grupos.values()], conAcc = correos.filter(g => g.some(b => b.accion));
+  const sol = Bit.filter(b => b.accion), solHechas = sol.filter(b => b.estadoAccion === 'Hecha'), solPend = sol.filter(b => b.estadoAccion !== 'Hecha');
+  const horas = solHechas.map(b => (new Date(b.resueltoEn) - new Date(b.registrado)) / 36e5).filter(h => isFinite(h) && h >= 0);
+  const viejas = solPend.map(b => ({b, h: (Date.now() - new Date(b.registrado)) / 36e5})).filter(x => isFinite(x.h) && x.h > 24).sort((a, b) => b.h - a.h);
+  const hitoDe = (v, campo) => ((HITOS_PLAN[v.operacion] || []).find(h => h[2].includes(campo)) || [campo])[0];
+  const RP = B.flatMap(v => reprogsDe(v).filter(r => kvEnPer(r.fecha) && r.causa !== 'Corrección de dato').map(r => ({r, v})));
+  const porCausa = c => RP.filter(x => responsable(x.r.causa) === c).length;
+  const Hs = (typeof historial !== 'undefined' ? historial : []).filter(h => kvEnPer(diaDe(h.fecha)) && opOk(viajes.find(v => v.id === h.id)));
+  const quienes = new Set(Hs.map(h => h.usuario).filter(Boolean));
+  const E = B.filter(v => situacion(v) !== 'Cerrado' || window.SEG_INICIO).map(v => ({v, e: validar(v).filter(x => x.tipo !== 'Alerta')})).filter(x => x.e.length);
+  const nE = E.reduce((t, x) => t + x.e.length, 0), alta = x => x.e.some(e => e.sev === 'Alta'), altas = E.filter(alta);
+  const PR = (typeof PROP !== 'undefined' ? PROP : []).filter(p => opOk(viajes.find(v => v.id === p.viajeId)));
+  const NV = (window.NOVEDADES || []).filter(n => !n.borrada && n.origen !== 'Sistema' && kvEnPer(diaDe(n.fecha)) && opOk(viajes.find(v => v.id === n.viaje)));
+  const durac = h => `${Math.floor(h / 24) ? Math.floor(h / 24) + ' d ' : ''}${Math.round(h % 24)} h`;
+  const recientes = (L2, f) => L2.slice().sort((a, b) => String(enBog(f(b))).localeCompare(enBog(f(a))));
+  const fila = (v, tag, txt, tono, et) => ({v, tag, txt, tono, et});
+  const gest = [
+    {id: 'correos', cod: 'CORREOS', ic: '✉', color: '#0d9488', v: correos.length, suf: '', sub: `leídos por LogxIA · ${conAcc.length} con solicitud, ${correos.length - conAcc.length} sin acción`, n: 0,
+      L: recientes(correos, g => g[0].registrado).map(g => { const a = g.find(b => b.accion);
+        return fila(a && viajeDeAccion(a), a ? 'con solicitud' : 'sin acción', `«${lvCorto(g[0].asunto, 60)}»${a ? ' → ' + lvCorto(a.accion, 60) : ''}`, 'info', `${diaHora(enBog(g[0].registrado))} · ${nombreCorto(g[0].remitente)}`); })},
+    {id: 'solic', cod: 'SOLICITUDES', ic: '☰', color: '#2563eb', v: sol.length, suf: '', sub: `${solHechas.length} atendidas · ${solPend.length} pendientes`, n: solPend.length, enTodo: true,
+      L: [...solPend.map(b => fila(viajeDeAccion(b), b.prioridad === 'Alta' ? 'pendiente alta' : 'pendiente', lvCorto(b.accion, 90), b.prioridad === 'Alta' ? 'bad' : 'warn', diaHora(enBog(b.registrado)))),
+        ...recientes(solHechas, b => b.registrado).map(b => fila(viajeDeAccion(b), 'atendida', lvCorto(b.accion, 90), 'info', diaHora(enBog(b.registrado))))]},
+    {id: 'resp', cod: 'RESPUESTA', ic: '⏱', color: '#7c3aed', v: kvProm(horas), suf: ' h', sub: `promedio para atender una solicitud · ${viejas.length} llevan más de 24 h`, n: viejas.length,
+      L: viejas.map(x => fila(viajeDeAccion(x.b), durac(x.h), lvCorto(x.b.accion, 90), x.h > 48 ? 'bad' : 'warn', diaHora(enBog(x.b.registrado))))},
+    {id: 'reprog', cod: 'REPROGRAMACIONES', ic: '↻', color: '#ea580c', v: RP.length, suf: '', sub: `cambios de fecha · Reckitt ${porCausa('Reckitt')}, Entrapetrol ${porCausa('Entrapetrol')}, terceros ${porCausa('Terceros')}`, n: porCausa('Entrapetrol') + porCausa('Sin causa'),
+      L: RP.sort((a, b) => String(b.r.fecha).localeCompare(a.r.fecha)).map(x => fila(x.v, responsable(x.r.causa), `${hitoDe(x.v, x.r.campo).toLowerCase()}: ${fd(x.r.antes)} → ${fd(x.r.despues)}${x.r.detalle ? ' · ' + lvCorto(x.r.detalle, 40) : ''}`, ['Entrapetrol', 'Sin causa'].includes(responsable(x.r.causa)) ? 'bad' : 'warn', fd(x.r.fecha)))},
+    {id: 'cambios', cod: 'CAMBIOS', ic: '✎', color: '#db2777', v: Hs.length, suf: '', sub: `en la hoja · ${new Set(Hs.map(h => h.id)).size} viajes, ${quienes.size} persona${quienes.size === 1 ? '' : 's'}`, n: 0,
+      L: recientes(Hs, h => h.fecha).map(h => fila(viajes.find(v => v.id === h.id), lvCorto(h.usuario || 'equipo', 16), lvCorto(h.observacion || `${h.estadoAnterior || ''} → ${h.estadoNuevo || ''}`, 90), 'info', diaHora(enBog(h.fecha))))},
+    {id: 'errores', cod: 'ERRORES', ic: '!', color: '#dc2626', v: nE, suf: '', sub: `en la hoja hoy · ${E.length} viajes, ${altas.length} de prioridad alta`, n: altas.length, enTodo: true,
+      L: E.sort((a, b) => alta(b) - alta(a)).map(x => fila(x.v, `${x.e.length} error${x.e.length === 1 ? '' : 'es'}`, lvCorto(x.e.map(e => e.msg).join(' · '), 110), alta(x) ? 'bad' : 'warn'))},
+    {id: 'datos', cod: 'DATOS LOGXIA', ic: '✦', color: '#ca8a04', v: PR.length, suf: '', sub: 'sacados de los correos · esperan tu aprobación', n: PR.length,
+      L: PR.map(p => { const v = viajes.find(x => x.id === p.viajeId); return fila(v, p.campo, `${lvCorto(v && v[p.campo] || '—', 18)} → ${lvCorto(p.valor, 40)}`, 'info'); })},
+    {id: 'noved', cod: 'NOVEDADES', ic: '✱', color: '#4f46e5', v: NV.length, suf: '', sub: `${NV.filter(n => n.origen === 'Conductor').length} del conductor · ${NV.filter(n => n.origen !== 'Conductor').length} del equipo`, n: 0,
+      L: recientes(NV, n => n.fecha).map(n => fila(viajes.find(v => v.id === n.viaje), n.origen === 'Conductor' ? 'conductor' : String(n.tipo || 'novedad').toLowerCase(), lvCorto(n.texto, 100), 'info', diaHora(enBog(n.fecha))))},
+  ];
+  return {B, A, P, T, etapas, asign, L, conDesv, D, porResp, ind, gest, S, serie, facturados,
     costo: L.reduce((t, v) => t + reprogsDe(v).reduce((a, r) => a + r.costo, 0), 0), diasReprog: D.reduce((s, d) => s + Math.max(d.dias || 0, 0), 0)};
 }
 
@@ -5581,6 +5627,7 @@ function montarKV(){
       <div class="lv-col"><div class="lv-rot">INDICADORES · 8 <span>toca uno para ver sus viajes</span></div><div class="lv-ags" id="kvInd"></div></div>
     </div>
   </div>
+  <div class="lv-card"><div class="lv-titulo"><b>Gestión · 8</b> · correos, solicitudes, cambios y errores del periodo · toca uno para ver el detalle</div><div class="kv-gest" id="kvGest"></div></div>
   <div class="lv-fila">
     <div class="lv-card lv-desc"><div class="lv-rot">REPROGRAMACIONES</div><div class="lv-desc-n" id="kvRep">0</div><div class="lv-desc-s" id="kvRepS"></div><div class="lv-anillo" id="kvRepA"></div></div>
     <div class="lv-card"><div class="lv-rot">RESPONSABLES <span id="kvCosto"></span></div><div class="kv-barra" id="kvBarra"></div><div class="kv-ley" id="kvLey"></div></div>
@@ -5591,7 +5638,7 @@ function montarKV(){
       <div class="lv-flujo-n"><b id="kvn-programados">0</b><b id="kvn-terminados">0</b><b id="kvn-facturados">0</b></div>
       <div class="lv-flujo-s"><span style="color:#2563eb">esta semana</span><span style="color:#16a34a">esta semana</span><span class="lv-ok" id="kvnS">esta semana</span></div></div></div>
   <div class="lv-card lv-log"><div class="lv-rot"><b id="kvListaT">PARA REVISAR</b> <span id="kvListaS"></span></div><div class="lv-log-l" id="kvLista"></div></div>
-  <div class="lv-pie">Mismas reglas del tablero (fecha original, hitos confirmados, lead time, puntaje de 0 a 100, cobro). Lo abierto es de ahora; lo programado y lo terminado, del periodo elegido. Sin viajes de prueba, cancelados ni subviajes.</div>
+  <div class="lv-pie">Mismas reglas del tablero (fecha original, hitos confirmados, lead time, puntaje de 0 a 100, cobro). Lo abierto es de ahora; lo programado y lo terminado, del periodo elegido. Sin viajes de prueba, cancelados ni subviajes. Gestión: los correos y solicitudes que leyó LogxIA; los cambios salen de los últimos 200 registros del Historial.</div>
   </div></section>`);
   $('#btnKpis').onclick = abrirKV;
   window.addEventListener('popstate', () => { if (location.hash !== '#kpis' && !$('#v-kpis').classList.contains('hidden')) cerrarKV(); });
@@ -5612,7 +5659,7 @@ function abrirKV(){
   if (window.MODO_CLIENTE) return;
   $('#v-kpis').classList.remove('hidden'); document.body.classList.add('lv-abierta'); $('#kvVolver').textContent = textoVolver();
   if (location.hash !== '#kpis') history.pushState(null, '', '#kpis');
-  $('#kvInd').innerHTML = ''; pintarKV();
+  $('#kvInd').innerHTML = ''; $('#kvGest').innerHTML = ''; pintarKV();
   // el tablero trae datos nuevos de la hoja cada 5 min: la pantalla se repinta cada minuto mientras está abierta
   if (!KV.tick) KV.tick = setInterval(() => { if (!document.hidden) pintarKV(true); }, 60e3);
 }
@@ -5645,15 +5692,9 @@ function pintarKV(suave){
   $('#kvOps').textContent = ['EXPO', 'IMPO', 'NACIONAL'].map(o => [o, nOp(o)]).filter(x => x[1]).map(([o, n]) => `${n} ${o}`).join(' · ') || 'sin viajes abiertos';
   const s72 = K.ind[0].L.length; $('#kvAlerta').textContent = s72 ? `${s72} sin vehículo en las próximas 72 h` : 'todo lo de las próximas 72 h tiene vehículo';
   $('#kvAlerta').style.color = s72 ? '#dc2626' : '#16a34a';
-  // indicadores
-  const box = $('#kvInd'), nuevo = !box.children.length;
-  if (nuevo) box.innerHTML = K.ind.map((x, i) => `<div class="lv-ag kv-ind" data-ind="${x.id}" id="kvi-${x.id}" style="--c:${x.color};--i:${i}" role="button" tabindex="0">
-    <span class="lv-ag-ic">${x.ic}</span><div class="lv-ag-tx"><b>${x.cod}</b><span class="kv-ind-v"><span id="kviv-${x.id}">0</span><small id="kvis-${x.id}"></small></span><small class="lv-ag-sub" id="kvisub-${x.id}"></small></div><span class="lv-ag-n" id="kvin-${x.id}"></span></div>`).join('');
-  K.ind.forEach(x => {
-    kvContar($('#kviv-' + x.id), x.v); $('#kvis-' + x.id).textContent = x.v === null ? '' : x.suf; $('#kvisub-' + x.id).textContent = x.sub;
-    const n = $('#kvin-' + x.id); n.textContent = x.L.length || ''; n.classList.toggle('on', !!x.L.length);
-    $('#kvi-' + x.id).classList.toggle('activo', KV.sel === x.id);
-  });
+  // indicadores (8 de la operación) y gestión (8)
+  const nuevo = !$('#kvInd').children.length;
+  tarjetasKV($('#kvInd'), K.ind, 0); tarjetasKV($('#kvGest'), K.gest, 8);
   // reprogramaciones y responsables
   kvContar($('#kvRep'), K.D.length);
   $('#kvRepS').textContent = `en ${K.conDesv.length} de ${K.L.length} viajes con plan${K.diasReprog ? ` · +${K.diasReprog} d corridos` : ''}`;
@@ -5672,14 +5713,24 @@ function pintarKV(suave){
   $('#kvSem').innerHTML = S.map(s => `<span>${fd(s).replace(/^\S+ /, '')}</span>`).join('');
   series.forEach(([k]) => kvContar($('#kvn-' + k), K.serie[k][ult]));
   $('#kvnS').textContent = `${K.facturados.length} facturados en el periodo`;
-  // para revisar: los viajes del indicador elegido (o de todos, lo rojo primero)
-  const sel = K.ind.find(x => x.id === KV.sel);
-  const filas = sel ? sel.L.map(x => ({...x, ind: sel})) : K.ind.flatMap(ind => ind.L.map(x => ({...x, ind}))).sort((a, b) => (a.tono === 'bad' ? 0 : 1) - (b.tono === 'bad' ? 0 : 1));
-  $('#kvListaT').textContent = sel ? `PARA REVISAR · ${sel.cod}` : 'PARA REVISAR';
-  $('#kvListaS').textContent = sel ? `${filas.length} viaje${filas.length === 1 ? '' : 's'} · toca el indicador otra vez para ver todo` : `${filas.length} pendiente${filas.length === 1 ? '' : 's'} en los 8 indicadores · lo rojo primero`;
-  $('#kvLista').innerHTML = filas.slice(0, 120).map(x => `<div class="lv-ev clic kv-ev" data-viaje="${esc(x.v.id)}"><span class="kv-ev-v">${esc(kvViaje(x.v))}</span><span class="lv-tag ${x.tono === 'bad' ? 'naranja kv-rojo' : 'naranja'}" style="--c:${x.ind.color}">${esc(x.tag)}</span><span class="lv-ev-t"><b style="color:${x.ind.color}">${x.ind.cod}</b> ${esc(x.txt)}</span></div>`).join('')
-    || `<div class="lv-vacio">${sel ? 'Nada que revisar en este indicador.' : 'Nada que revisar con estos filtros.'}</div>`;
+  // para revisar: lo de la tarjeta elegida; sin elegir, lo pendiente de los indicadores, las solicitudes y los errores (lo rojo primero)
+  const todos = [...K.ind, ...K.gest], sel = todos.find(x => x.id === KV.sel), esGest = sel && K.gest.includes(sel);
+  const filas = sel ? sel.L.map(x => ({...x, ind: sel})) : todos.filter(ind => K.ind.includes(ind) || ind.enTodo).flatMap(ind => ind.L.filter(x => x.tono !== 'info').map(x => ({...x, ind}))).sort((a, b) => (a.tono === 'bad' ? 0 : 1) - (b.tono === 'bad' ? 0 : 1));
+  $('#kvListaT').textContent = sel ? `${esGest ? 'DETALLE' : 'PARA REVISAR'} · ${sel.cod}` : 'PARA REVISAR';
+  $('#kvListaS').textContent = sel ? `${filas.length} registro${filas.length === 1 ? '' : 's'} · toca la tarjeta otra vez para ver todo` : `${filas.length} pendiente${filas.length === 1 ? '' : 's'} en indicadores, solicitudes y errores · lo rojo primero`;
+  $('#kvLista').innerHTML = filas.slice(0, 150).map(x => `<div class="lv-ev kv-ev${x.v ? ' clic' : ''}" ${x.v ? `data-viaje="${esc(x.v.id)}"` : ''}><span class="kv-ev-v">${esc(x.v ? kvViaje(x.v) : (x.et || '—'))}${x.v && x.et ? `<small>${esc(x.et)}</small>` : ''}</span><span class="lv-tag ${x.tono === 'bad' ? 'kv-rojo' : ''}" style="--c:${x.ind.color}">${esc(x.tag)}</span><span class="lv-ev-t"><b style="color:${x.ind.color}">${x.ind.cod}</b> ${esc(x.txt)}</span></div>`).join('')
+    || `<div class="lv-vacio">${sel ? 'Nada que mostrar en esta tarjeta.' : 'Nada que revisar con estos filtros.'}</div>`;
   if (!suave || nuevo) requestAnimationFrame(lineasKV);
+}
+// tarjeta de indicador o de gestión: valor que cuenta, unidad, texto y número de pendientes (n, o los viajes de su lista)
+function tarjetasKV(box, L, base){
+  if (!box.children.length) box.innerHTML = L.map((x, i) => `<div class="lv-ag kv-ind" data-ind="${x.id}" id="kvi-${x.id}" style="--c:${x.color};--i:${base + i}" role="button" tabindex="0">
+    <span class="lv-ag-ic">${x.ic}</span><div class="lv-ag-tx"><b>${x.cod}</b><span class="kv-ind-v"><span id="kviv-${x.id}">0</span><small id="kvis-${x.id}"></small></span><small class="lv-ag-sub" id="kvisub-${x.id}"></small></div><span class="lv-ag-n" id="kvin-${x.id}"></span></div>`).join('');
+  L.forEach(x => {
+    kvContar($('#kviv-' + x.id), x.v); $('#kvis-' + x.id).textContent = x.v === null ? '' : x.suf; $('#kvisub-' + x.id).textContent = x.sub;
+    const n = $('#kvin-' + x.id), nb = x.n ?? x.L.length; n.textContent = nb || ''; n.classList.toggle('on', !!nb);
+    $('#kvi-' + x.id).classList.toggle('activo', KV.sel === x.id);
+  });
 }
 function lineasKV(){
   const M = $('#kvMapa'), Sv = $('#kvHilos'); if (!M || !Sv || !M.offsetWidth || getComputedStyle(Sv).display === 'none') return;
