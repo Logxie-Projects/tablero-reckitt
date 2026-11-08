@@ -275,7 +275,7 @@ function tarjetas(lista) {
         ? `<div class="estado"><span>📋 <b>${esc(tb.ahora || tb.etapa || '')}</b> <span class="sub">· según el tablero</span></span><span>${tb.avance}/${tb.paradas}</span></div>
           ${tb.sigue ? `<div class="sub">Sigue: ${esc(tb.sigue)}</div>` : ''}<div class="ident sub">📱 El conductor aún no usa la app: el avance sale del tablero</div>`
         : `<div class="estado"><span>${n ? `<b>${esc(a.pasos[n - 1].corto)}</b> · <span class="${quieto ? 'tarde' : ''}">${hace(ult.fecha)}</span>` : (sinAbrir ? '<span class="sub">El conductor aún no usa la app</span>' : '')}</span><span>${n}/${t}</span></div>
-          ${tb ? `<div class="sub">📋 Tablero: <b>${esc(tb.ahora || tb.etapa || '')}</b></div>` : ''}
+          ${tb ? `<div class="sub">📋 Torre de Control: <b>${esc(tb.ahora || tb.etapa || '')}</b></div>` : ''}
           ${sig && activa(a) ? `<div class="sub">Sigue: ${sig.icono} ${esc(sig.texto)}</div>` : ''}
           ${identidadHtml(a)}`}
       ${ultNov ? `<div class="nov">⚠️ ${esc(ultNov.pasoTexto)}${ultNov.texto ? ': ' + esc(ultNov.texto) : ''} · ${hace(ultNov.fecha)}</div>` : ''}
