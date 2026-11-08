@@ -497,6 +497,14 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
 .rc-buscar input{flex:1;min-width:0}
 .rc-fila.hidden{display:none}
 .ruta .hijo .hijo-pie{grid-column:1/-1;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;border-top:1px dashed var(--border);padding-top:6px;margin-top:2px}   /* lean.js pieHijo */
+
+/* puntaje del viaje (ventana del viaje) */
+.puntaje{margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius)}
+.puntaje .hbar{grid-template-columns:140px 1fr 44px;margin:4px 0 0}
+.puntaje .hbar .track{height:10px}
+.puntaje-cab{display:flex;align-items:baseline;gap:6px;margin-bottom:6px}
+.puntaje-n{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+.puntaje-det{margin:-2px 0 6px;font-size:11px}
 </style>
 </head>
 <body>
@@ -1460,6 +1468,41 @@ function leadTime(v){
   const ini = H[0][2] || (H.find(x => x[2]) || [])[2] || '';
   const fin = H[u][2];
   return {plan, real: ini && fin ? dDias(ini, fin) : null, enCurso: ini && !fin && v.estado!=='Cancelado' ? dDias(ini, HOY) : null};
+}
+/* ---------- puntaje del viaje (8-nov): nota de 0 a 100 de cómo se ejecutó un viaje con el transporte finalizado ----------
+ * Idea tomada del "calificador" que pone nota a cada borrador y devuelve los débiles: aquí cada viaje terminado recibe una nota
+ * y los de menos de PUNTAJE_BAJO salen marcados para revisar. Solo el equipo (el cliente no lo ve). Cinco partes:
+ *  Puntualidad 40 · hitos ejecutados en la fecha original o antes (proporción; sin hitos con plan no descuenta)
+ *  Reprogramaciones 20 · −10 por cada hito movido por la transportadora o sin causa (Reckitt, terceros y "sin historial" no descuentan)
+ *  Novedades y demoras 15 · −8 si tiene novedad, −4 por incidente registrado, −3 por día de demora del vacío (IMPO)
+ *  Cierre 15 · 8 por la tirilla (entrega EXPO / devolución IMPO; sin tirilla exigible, completo) y 7 por los pasos confirmados (−3 por cada uno sin confirmar)
+ *  Facturación 10 · días del fin del transporte a la factura (o hasta hoy si falta): ≤5 d 10, ≤10 d 5, más 0
+ * Un viaje en curso, cancelado o un subviaje no tiene puntaje (null). */
+const PUNTAJE_BAJO = 60;
+function puntajeViaje(v){
+  if (!v || v.padre || situacion(v) === 'Cancelado' || !transporteFinalizado(v)) return null;
+  const tope = (x, max) => Math.max(0, Math.min(max, Math.round(x)));
+  const H = hitosPlan(v).filter(h => h[1] && h[2]), ok = H.filter(h => h[2] <= h[1]).length;
+  const tarde = H.filter(h => h[2] > h[1]).map(h => h[0]);
+  const D = desviosPlan(v), culpa = D.filter(d => ['Entrapetrol', 'Sin causa'].includes(responsable(d.causa)));
+  const incid = reprogsDe(v).filter(r => r.incidente).length, dem = v.operacion === 'IMPO' ? (demora(v) || 0) : 0;
+  const exigeTirilla = v.operacion === 'EXPO' || (v.operacion === 'IMPO' && !esLCL(v));
+  const tirilla = v.operacion === 'EXPO' ? v.tirillaEntrega : v.tirillaDevolucion;
+  const sinConf = pasosPorConfirmar(v).filter(p => !p.naviera).length;
+  const fin = fechaFinTransporte(v), dFact = fin ? dDias(fin, v.fechaFactura || HOY) : null;
+  const partes = [
+    ['Puntualidad', H.length ? tope(40 * ok / H.length, 40) : 40, 40,
+      H.length ? `${ok} de ${H.length} hitos a tiempo${tarde.length ? ' · tarde: ' + tarde.join(', ') : ''}` : 'sin hitos con plan'],
+    ['Reprogramaciones', tope(20 - 10 * culpa.length, 20), 20,
+      D.length ? `${D.length} reprogramaci${D.length === 1 ? 'ón' : 'ones'}${culpa.length ? ` · ${culpa.length} de la transportadora o sin causa` : ' · ninguna de la transportadora'}` : 'sin reprogramaciones'],
+    ['Novedades y demoras', tope(15 - (v.novedad ? 8 : 0) - 4 * incid - 3 * dem, 15), 15,
+      [v.novedad && 'con novedad', incid && `${incid} incidente${incid === 1 ? '' : 's'}`, dem && `${dem} d de demora`].filter(Boolean).join(' · ') || 'sin novedades'],
+    ['Cierre', tope((!exigeTirilla || tirilla ? 8 : 0) + 7 - 3 * sinConf, 15), 15,
+      [exigeTirilla && (tirilla ? 'con tirilla' : 'sin tirilla'), sinConf ? `${sinConf} paso${sinConf === 1 ? '' : 's'} sin confirmar` : 'pasos confirmados'].filter(Boolean).join(' · ')],
+    ['Facturación', dFact === null ? 10 : dFact <= 5 ? 10 : dFact <= 10 ? 5 : 0, 10,
+      dFact === null ? 'sin fecha de fin' : v.fechaFactura ? `facturado en ${dFact} d` : `${dFact} d sin facturar`],
+  ];
+  return {total: partes.reduce((s, p) => s + p[1], 0), partes, bajo: partes.reduce((s, p) => s + p[1], 0) < PUNTAJE_BAJO};
 }
 function distancia(a, b){
   const d = Array.from({length: a.length + 1}, (_, i) => [i]);
@@ -2489,7 +2532,7 @@ function renderKpis(){ const act = activos();
     {l:'Sin vehículo (próx. 72 h)', v:pendVentana, h:pendVentana? 'requieren asignación urgente':'todo cubierto', bad:pendVentana>0},
     {l:'En ruta ahora', v:enRuta, h:`${entregados} entregados · ${novedades} novedades`},
     {l:'Cierres doc. próx. 7 días', v:cierres, h:'viajes con cierre documental próximo'},
-    leadKpi(), ...(window.MODO_CLIENTE ? [] : [reprogKpi(), cobroKpi()]),   // costos y reprogramaciones: solo el equipo
+    leadKpi(), ...(window.MODO_CLIENTE ? [] : [puntajeKpi(), reprogKpi(), cobroKpi()]),   // costos y reprogramaciones: solo el equipo
   ];
   $('#kpis').innerHTML = k.map(x=>`<div class="card kpi ${x.hl?'hl':''}"><div class="lbl">${x.l}</div><div class="val" style="${x.bad?'color:var(--bad)':''}">${x.v}</div><div class="hint">${x.h}</div>${x.m!==undefined?`<div class="meter"><i style="width:${x.m}%"></i></div>`:''}</div>`).join('');
 }
@@ -2661,7 +2704,7 @@ const textoPasos = v => { const nombres = ['Hoy', 'Mañana', 'Pasado mañana'], 
   return Object.keys(por).map(f => `${nombres[dias.indexOf(f)] || fd(f)}: ${por[f].join(', ')}`).join(' · '); };
 /* ---------- tabla de viajes ---------- */
 const COLS = [
-  ['situacion','Viaje'],['avance','Avance'],['lead','Lead time'],['cobro','Precio · facturación'],['estado','Estado'],['fechaRetiro','Retiro patio'],['fechaCargue','Llenado / Cargue'],['operacion','Op.'],['empresa','Empresa'],['solicitante','Solicitante'],['placa','Placa'],['conductor','Conductor'],['pais','Destino'],
+  ['situacion','Viaje'],['avance','Avance'],['lead','Lead time'],['puntaje','Puntaje'],['cobro','Precio · facturación'],['estado','Estado'],['fechaRetiro','Retiro patio'],['fechaCargue','Llenado / Cargue'],['operacion','Op.'],['empresa','Empresa'],['solicitante','Solicitante'],['placa','Placa'],['conductor','Conductor'],['pais','Destino'],
   ['unidad','Unidad'],['bodega','Bodega'],['mn','Motonave (MN)'],['cierreDoc','Cierre doc'],['etd','ETD'],['eta','ETA'],
   ['booking','Booking'],['contenedor','Contenedor'],['cierreOp','Cita puerto / Devolución'],['fwd','FWD'],['puerto','Puerto'],['patio','Patio'],['observacion','Observación']
 ];
@@ -2731,11 +2774,11 @@ let MODO = 'tabla';
 try { MODO = localStorage.getItem('rkt-modo') === 'lean' ? 'lean' : 'tabla'; } catch(e){}
 function renderTabla(){
   // el cliente no ve la columna de precio y facturación
-  const C = COLS.filter(([k]) => !(window.MODO_CLIENTE && k === 'cobro'));
+  const C = COLS.filter(([k]) => !(window.MODO_CLIENTE && (k === 'cobro' || k === 'puntaje')));
   const q = $('#q').value.toLowerCase();
   let rows = visibles().filter(v=> (!filtroEstado || v.estado===filtroEstado) && (!q || Object.values(v).join(' ').toLowerCase().includes(q)));
   // sin columna elegida: por lo que hay que hacer primero; al tocar un encabezado, por esa columna
-  rows.sort((a,b)=> orden.k ? String(a[orden.k]||'~').localeCompare(String(b[orden.k]||'~')) * (orden.asc?1:-1) : G.dia ? ordenReunion(a, b) : ordenUrgencia(a, b));
+  rows.sort((a,b)=> orden.k==='puntaje' ? (((puntajeViaje(a)||{}).total ?? 999) - ((puntajeViaje(b)||{}).total ?? 999)) * (orden.asc?1:-1) : orden.k ? String(a[orden.k]||'~').localeCompare(String(b[orden.k]||'~')) * (orden.asc?1:-1) : G.dia ? ordenReunion(a, b) : ordenUrgencia(a, b));
   const fechas = ['fechaRetiro','fechaCargue','cierreDoc','etd','eta'];
   // con 📆 Reunión (y sin columna elegida): una fila de título por día y, bajo Actualizar, lo que pasa en el viaje esos días
   const porDia = G.dia && !orden.k;
@@ -2751,11 +2794,36 @@ function renderTabla(){
     if (k==='avance') return `<td>${miniAvance(v)}</td>`;
     if (k==='lead') return `<td style="white-space:nowrap">${celdaLead(v)}</td>`;
     if (k==='cobro') return `<td style="white-space:nowrap">${celdaCobro(v)}</td>`;
+    if (k==='puntaje') return `<td style="white-space:nowrap">${celdaPuntaje(v)}</td>`;
     if (k==='cierreOp') return `<td>${celdaCierre(v)}</td>`;
     if (k==='pais') return `<td>${esc(v.pais||v.destino||'—')}</td>`;
     if (fechas.includes(k)) return `<td>${fd(val)}</td>`;
     return `<td>${esc(val||'—')}</td>`; }).join('')}</tr>`).join('')}</tbody>`;
   if (!rows.length) $('#tbl').innerHTML += `<tr><td colspan="${C.length+2}" class="sub" style="text-align:center;padding:24px">Sin resultados</td></tr>`;
+}
+
+/* ---------- puntaje del viaje (dominio: puntajeViaje): solo el equipo ---------- */
+const colorPuntaje = n => n < PUNTAJE_BAJO ? 'var(--bad)' : n < 80 ? 'var(--warn)' : 'var(--ok)';
+function celdaPuntaje(v){
+  const P = puntajeViaje(v);
+  if (!P) return '<span class="sub">en curso</span>';
+  return `<b style="color:${colorPuntaje(P.total)}" title="${esc(P.partes.map(p => `${p[0]} ${p[1]}/${p[2]}: ${p[3]}`).join(' · '))}">${P.total}</b><span class="sub">/100</span>`;
+}
+function bloquePuntaje(v){
+  const P = puntajeViaje(v);
+  if (window.MODO_CLIENTE || !P) return '';
+  return `<div class="puntaje"><div class="puntaje-cab"><b>Puntaje del viaje</b> <span class="puntaje-n" style="color:${colorPuntaje(P.total)}">${P.total}</span><span class="sub">/100${P.bajo ? ' · para revisar' : ''}</span></div>
+    ${P.partes.map(([l, n, max, det]) => `<div class="hbar" title="${esc(det)}"><span>${l}</span><div class="track"><div class="fill" style="width:${n/max*100}%;background:${colorPuntaje(n/max*100)}"></div></div><b>${n}/${max}</b></div><div class="sub puntaje-det">${esc(det)}</div>`).join('')}</div>`;
+}
+// indicador: promedio de los viajes terminados (con los filtros) y cuántos quedan por debajo de PUNTAJE_BAJO
+function puntajeKpi(){
+  const P = visibles().map(v => [v, puntajeViaje(v)]).filter(x => x[1]);
+  const prom = P.length ? Math.round(P.reduce((s, x) => s + x[1].total, 0) / P.length) : null;
+  const bajos = P.filter(x => x[1].bajo).length;
+  const parte = i => P.length ? Math.round(P.reduce((s, x) => s + x[1].partes[i][1] / x[1].partes[i][2], 0) / P.length * 100) : 0;
+  const peor = P.length ? [0,1,2,3,4].sort((a, b) => parte(a) - parte(b))[0] : null;
+  return {l:'Puntaje de viajes', v: prom===null ? '—' : prom+'/100', m: prom===null ? undefined : prom, bad: prom!==null && prom < PUNTAJE_BAJO,
+    h: P.length ? `${P.length} viajes terminados · ${bajos ? `<b style="color:var(--bad)">${bajos} bajo ${PUNTAJE_BAJO}</b>` : `ninguno bajo ${PUNTAJE_BAJO}`}<br>más flojo: ${P[0][1].partes[peor][0].toLowerCase()} (${parte(peor)}%)` : 'sin viajes terminados'};
 }
 
 /* ---------- motonaves ---------- */
@@ -3210,7 +3278,7 @@ function abrir(id){
        ['Entrega en puerto',fx(v.fechaEntregaPuerto)],['Tirilla de entrega',v.tirillaEntrega]];
   $('#mDet').innerHTML = det.map(([l,x])=>`<div><span>${l}</span>${esc(x||'—')}</div>`).join('');
   $('#mDet').classList.add('hidden');
-  $('#mPlan').innerHTML = v.padre ? resumenCobro(v) : tablaPlan(v) + resumenCobro(v);
+  $('#mPlan').innerHTML = v.padre ? resumenCobro(v) : tablaPlan(v) + bloquePuntaje(v) + resumenCobro(v);
   $('#mNuevo').classList.toggle('hidden', !esNuevo(v));
   if (v.mesProg && !v.padre) $('#mSub').textContent += ' · 📋 ' + textoProgramacion(v, '', v.mesProg);
   if (v.padre) $('#mSub').textContent = `Subviaje de ${v.padre} · ${[v.motivoSub, v.patioSub && 'patio '+v.patioSub].filter(Boolean).join(' · ') || 'sin motivo'}`;
@@ -4799,7 +4867,7 @@ montarEnVivo();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '1ecd3ebf0e';
+const VERSION_TABLERO = '9c771b8c99';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
