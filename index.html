@@ -607,11 +607,12 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
   <section id="v-acciones" class="hidden">
     <div class="card">
       <div class="toolbar" style="justify-content:space-between">
-        <div><h2 style="margin:0">Acciones a tomar (LogxIA)</h2><div class="sub" id="accResumen"></div></div>
+        <div><h2 style="margin:0">📒 Bitácora de acciones (LogxIA)</h2><div class="sub" id="accResumen"></div></div>
+        <button class="btn" onclick="document.querySelector('#nav [data-v=&quot;bandeja&quot;]').click()">← Volver a la Bandeja</button>
       </div>
       <div class="chips" id="accFiltros" style="margin:8px 0 12px"></div>
       <div class="tbl-wrap" style="border:0"><table id="tblAcc"></table></div>
-      <p class="sub" style="margin-top:8px">LogxIA lee los correos de Reckitt, Agecoldex, Universal Cargo y DSV y registra aquí lo que debe hacer el equipo. Cuando hagan una acción, márquenla como hecha.</p>
+      <p class="sub" style="margin-top:8px">Historial de lo que LogxIA registró de los correos de Reckitt, Agecoldex, Universal Cargo y DSV: qué pidió quién, cuándo y quién lo cerró. Lo pendiente se trabaja en la Bandeja de Pendientes.</p>
     </div>
   </section>
 </main>
@@ -2036,7 +2037,7 @@ $('#btnCopiarRep').onclick = async () => {
   catch(e){ t.classList.remove('hidden'); t.select(); toast('Selecciona el texto y cópialo (Ctrl+C)'); }
 };
 
-/* ---------- acciones LogxIA: bitácora, área de Entrapetrol, "No es para ETP", "hacer aquí" y la pestaña Acciones ---------- */
+/* ---------- acciones LogxIA: área de Entrapetrol, "No es para ETP", "hacer aquí", cierre automático y la Bitácora (consulta) ---------- */
 const PRI = {Alta:'var(--bad)', Media:'var(--warn)', Baja:'var(--s-sin)'};
 // mismo criterio que el backend (coincide, en el dominio): id del viaje, dato fuerte y, solo si la acción no trae ninguno, la placa
 const accionesDe = v => situacion(v)==='Cerrado' ? [] : (window.BITACORA||[]).filter(b => coincide(v, b))
@@ -2131,41 +2132,47 @@ function cerrarAccionEnCurso(tipo, nota){
   accionEnCurso = null;
   marcarHecha(a.id, false, nota);
 }
-// pestaña Acciones
-let accFiltro = 'pend', accArea = '';
+// el correo de una acción, en el buzón de calidad@ (7-nov: "debe permitir abrir el correo"). Se busca por el asunto: el id que guarda
+// LogxIA es el de la copia reenviada (otra cuenta), que el equipo no puede abrir
+const urlCorreo = b => { const a = String(b.asunto || '').replace(/^\s*((re|rv|fw|fwd|enc)\s*:\s*)+/i, '').trim();
+  return a ? 'https://mail.google.com/mail/?authuser=calidad@stentrapetrol.com#search/' + encodeURIComponent(`subject:"${a.slice(0, 120)}"`) : ''; };
+const verCorreo = b => urlCorreo(b) ? lnkT('📧 Ver correo', urlCorreo(b)) : '';
+// BITÁCORA (7-nov, antes pestaña Acciones): historial de solo consulta de lo que LogxIA registró de los correos: qué pidió quién,
+// cuándo y quién la cerró. Lo pendiente se trabaja en la Bandeja de Pendientes; aquí solo se busca, se abre el viaje o el correo y,
+// si algo se cerró por error, se reabre. Se abre desde el pie de la Bandeja (📒 Bitácora de acciones).
+let accFiltro = 'todas', accArea = '', accBusca = '';
 function renderAcciones(){
-  const B = window.BITACORA || [], ord = ['Alta','Media','Baja'];
-  const pend = B.filter(b=>b.estadoAccion!=='Hecha'), altas = pend.filter(b=>b.prioridad==='Alta').length;
+  const B = window.BITACORA || [], pend = B.filter(b => b.estadoAccion !== 'Hecha');
   $('#nAcc').textContent = pend.length || '';
-  $('#accResumen').textContent = `${pend.length} pendientes (${altas} prioridad alta) · ${B.length-pend.length} hechas`;
-  $('#accFiltros').innerHTML = [['pend','Pendientes',pend.length],['Alta','Alta',altas],['hecha','Hechas',B.length-pend.length],['todas','Todas',B.length]]
-    .map(([k,l,c])=>`<button class="chip ${accFiltro===k?'on':''}" data-acc="${k}">${l} · ${c}</button>`).join('')
-    // área de Entrapetrol que la hace (conteo de pendientes)
+  const cuenta = f => B.filter(f).length, esHecha = b => b.estadoAccion === 'Hecha' && !noEsEtp(b);
+  $('#accResumen').textContent = `${B.length} acciones registradas · ${pend.length} pendientes (se trabajan en la Bandeja) · ${cuenta(esHecha)} hechas · ${cuenta(noEsEtp)} no eran para ETP`;
+  $('#accFiltros').innerHTML = [['todas', 'Todas', B.length], ['pend', 'Pendientes', pend.length], ['hecha', 'Hechas', cuenta(esHecha)], ['noetp', 'No es para ETP', cuenta(noEsEtp)]]
+    .map(([k, l, c]) => `<button class="chip ${accFiltro === k ? 'on' : ''}" data-acc="${k}">${l} · ${c}</button>`).join('')
     + '<span class="sub" style="margin:0 4px 0 10px">Área:</span>' + [['', 'Todas'], ...AREAS.map(a => [a, a])]
-      .map(([k, l]) => `<button class="chip ${accArea===k?'on':''}" data-area="${k}">${l}${k ? ' · ' + pend.filter(b => areaDe(b)===k).length : ''}</button>`).join('')
-    // las que el viaje ya muestra hechas (pareceHecha, dominio): se cierran juntas, tras confirmar la lista
-    + (pend.some(b => pareceHecha(b)) ? ` <button class="chip" style="border-color:var(--ok);color:var(--ok)" data-hechas="1" title="El viaje ya muestra que se hicieron: se cierran con esa nota">✔ Cerrar las que ya parecen hechas · ${pend.filter(b => pareceHecha(b)).length}</button>` : '');
-  const vis = B.filter(b=> !accArea || areaDe(b)===accArea).filter(b=> accFiltro==='todas' || (accFiltro==='hecha' ? b.estadoAccion==='Hecha' : b.estadoAccion!=='Hecha' && (accFiltro!=='Alta' || b.prioridad==='Alta')))
-    .sort((a,b)=> (a.estadoAccion==='Hecha') - (b.estadoAccion==='Hecha') || ord.indexOf(a.prioridad)-ord.indexOf(b.prioridad) || String(b.fechaCorreo).localeCompare(String(a.fechaCorreo)));
-  const horas = b => b.registrado ? Math.max(0, Math.round((Date.now() - new Date(b.registrado)) / 36e5)) : 0;
-  $('#tblAcc').innerHTML = vis.length ? `<tr><th class="num">#</th><th>Prioridad</th><th>Viaje</th><th>Acción</th><th>Correo</th><th></th></tr>` +
-    vis.map((b,i)=>{ const v = viajeDeAccion(b);
-      return `<tr><td class="num">${i+1}</td><td><span class="sev sev-${b.prioridad==='Alta'?'Alta':'Media'}">${esc(String(b.prioridad||'Media').toUpperCase())}</span><br>${tagArea(b)}</td>
-      <td>${v?.placa||b.placa?`<span class="placa">${esc(v?.placa||b.placa)}</span>`:`<span class="sub">${esc(operacionDe(b))}</span>`}${b.booking?`<br><span class="sub">BK ${esc(b.booking)}</span>`:''}</td>
-      <td class="obs" style="color:var(--text);min-width:260px"><b>${esc(b.accion)}</b>${avisoHecha(b)}${b.estadoAccion==='Hecha'?`<br><span class="sub">${estadoCerrada(b)}${b.resueltoPor && !noEsEtp(b)?' por '+esc(b.resueltoPor):''}</span>`:`<br><span class="sub" style="${horas(b)>=24?'color:var(--bad);font-weight:600':''}">pendiente hace ${horas(b)} h</span>`}</td>
-      <td class="obs" style="min-width:220px"><span class="sub">${esc(b.resumen)}<br>${esc(b.remitente)}</span></td>
-      <td style="white-space:nowrap">${b.estadoAccion==='Hecha'?'':`${botonAtajo(b) ? botonAtajo(b) + '<br>' : ''}<button class="link" onclick="marcarHecha('${b.id}')">Marcar hecha</button><br><button class="link" onclick="marcarHecha('${b.id}', true)" title="La gestiona Reckitt, el agente de carga u otro: no le toca a Entrapetrol">No es para ETP</button>`}${v?`<br><button class="link" onclick="abrir('${v.id}')">Abrir viaje</button>`:''}</td></tr>`; }).join('')
-    : '<tr><td class="sub" style="padding:20px">Sin acciones en este filtro 🎉</td></tr>';
+      .map(([k, l]) => `<button class="chip ${accArea === k ? 'on' : ''}" data-area="${k}">${l}</button>`).join('')
+    + `<input type="search" id="accBusca" class="gsel" placeholder="🔍 LX-…, placa, booking, pedido, remitente o texto" value="${esc(accBusca)}" style="min-width:240px;margin-left:8px">`;
+  const q = minus(accBusca.trim());
+  const pasa = b => (accFiltro === 'todas' || (accFiltro === 'pend' ? b.estadoAccion !== 'Hecha' : accFiltro === 'noetp' ? noEsEtp(b) : esHecha(b)))
+    && (!accArea || areaDe(b) === accArea) && (!q || minus([b.id, b.placa, b.booking, b.viajeId, b.accion, b.resumen, b.remitente, b.asunto, b.resueltoPor].join(' ')).includes(q));
+  const vis = B.filter(pasa).sort((a, b) => String(b.fechaCorreo || b.registrado).localeCompare(String(a.fechaCorreo || a.registrado)));
+  $('#tblAcc').innerHTML = vis.length ? `<tr><th>Correo</th><th>Acción</th><th>Viaje</th><th>Estado</th><th></th></tr>` +
+    vis.slice(0, 300).map(b => { const v = viajeDeAccion(b), f = fechaLocal(b.fechaCorreo || b.registrado);
+      const estado = b.estadoAccion === 'Hecha'
+        ? `<span class="${noEsEtp(b) ? 'sub' : 'ok-txt'}">${estadoCerrada(b)}</span><br><span class="sub">${esc(String(b.resueltoPor || '').replace(/^No es para ETP\s*·?\s*/, ''))}${b.resueltoEn ? ' · ' + esc(fd(String(fechaLocal(b.resueltoEn)).slice(0, 10))) : ''}</span>`
+        : `<b style="color:var(--warn)">Pendiente</b><br><span class="sub">está en la Bandeja</span>`;
+      return `<tr><td style="white-space:nowrap"><b>${esc(b.id)}</b><br><span class="sub">${f ? esc(fd(f.slice(0, 10)) + (f.length > 10 ? ' ' + f.slice(11, 16) : '')) : ''}</span></td>
+      <td class="obs" style="color:var(--text);min-width:260px">${tagArea(b)} ${esc(b.accion)}<br><span class="sub">📧 ${esc(b.resumen || '')} · ${esc(b.remitente || '')}</span></td>
+      <td>${v ? esc(nombreTurno(v)) : `<span class="sub">${esc([b.placa, b.booking && 'BK ' + b.booking].filter(Boolean).join(' · ') || operacionDe(b))}</span>`}</td>
+      <td style="min-width:150px">${estado}</td>
+      <td style="white-space:nowrap">${verCorreo(b)}${v ? `<br><button class="link" onclick="abrir('${v.id}')">Abrir viaje</button>` : ''}${b.estadoAccion === 'Hecha' ? `<br><button class="link" onclick="deshacerCierre('${b.id}')" title="Vuelve a pendientes (sale en la Bandeja)">Reabrir</button>` : ''}</td></tr>`; }).join('')
+    + (vis.length > 300 ? `<tr><td colspan="5" class="sub">Se muestran las 300 más recientes de ${vis.length}: busque para encontrar una anterior</td></tr>` : '')
+    : '<tr><td class="sub" style="padding:20px">Nada con estos filtros</td></tr>';
 }
-async function cerrarParecenHechas(){
-  const L = (window.BITACORA || []).filter(b => b.estadoAccion !== 'Hecha' && pareceHecha(b)); if (!L.length) return;
-  if (!confirm(`¿Cerrar estas ${L.length} acciones? El viaje ya muestra que se hicieron:\n\n` + L.map(b => `• ${b.id}: ${pareceHecha(b)}`).join('\n'))) return;
-  for (const b of L) await marcarHecha(b.id);   // cada una queda con la nota "el viaje ya muestra que…"
-  renderAcciones();
-}
-$('#accFiltros').onclick = e => { if (e.target.closest('[data-hechas]')) return cerrarParecenHechas();
-  const a=e.target.closest('[data-area]'); if (a) { accArea=a.dataset.area; return renderAcciones(); }
-  const b=e.target.closest('[data-acc]'); if(!b) return; accFiltro=b.dataset.acc; renderAcciones(); };
+$('#accFiltros').onclick = e => {
+  const a = e.target.closest('[data-area]'); if (a) { accArea = a.dataset.area; return renderAcciones(); }
+  const b = e.target.closest('[data-acc]'); if (!b) return; accFiltro = b.dataset.acc; renderAcciones(); };
+$('#accFiltros').oninput = e => { if (e.target.id !== 'accBusca') return; accBusca = e.target.value;
+  const pos = e.target.selectionStart; renderAcciones(); const i = $('#accBusca'); i.focus(); i.setSelectionRange(pos, pos); };
 
 /* ---------- turno.js · rondas, líneas rojas y excepciones (las usa la Bandeja de Pendientes) ----------
  * Capa: lógica de pantalla. Antes era la pantalla "Mi turno"; desde el 7-nov su trabajo sale en la Bandeja (bandeja.js) y aquí
@@ -4567,7 +4574,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '6625361175';
+const VERSION_TABLERO = '2364fd2317';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5030,11 +5037,6 @@ function elegirOperacion(o){
 const fechaTarjeta = t => { if (!t.fecha) return ''; const d = diffDias(t.fecha);
   return `<span class="bj-fecha ${d < 0 ? 'atras' : d === 0 ? 'hoy' : ''}">📅 ${d < 0 ? `${t.v ? 'Atrasado' : 'Pedido'} desde ${fd(t.fecha)}` : d === 0 ? 'Hoy' : d === 1 ? 'Mañana' : fd(t.fecha)}</span>`; };
 
-// el correo de una acción, en el buzón de calidad@ (7-nov: "debe permitir abrir el correo"). Se busca por el asunto: el id que guarda
-// LogxIA es el de la copia reenviada (otra cuenta), que el equipo no puede abrir
-const urlCorreo = b => { const a = String(b.asunto || '').replace(/^\s*((re|rv|fw|fwd|enc)\s*:\s*)+/i, '').trim();
-  return a ? 'https://mail.google.com/mail/?authuser=calidad@stentrapetrol.com#search/' + encodeURIComponent(`subject:"${a.slice(0, 120)}"`) : ''; };
-const verCorreo = b => urlCorreo(b) ? lnkT('📧 Ver correo', urlCorreo(b)) : '';
 // "Revisar y aprobar los datos del correo": decirle a la persona qué trae el correo, qué tiene el viaje y qué hacer
 function queHacer(b){
   const t = minus(b.accion), v = viajeDeAccion(b);
@@ -5324,7 +5326,6 @@ cargar().then(ok => { if (ok === false) return; if (window.MODO_CLIENTE) documen
   // el ?usuario= del enlace solo sugiere el nombre en "Ingresar como": ya no queda guardado en el navegador (base.js elegirUsuario)
   const qp = new URLSearchParams(location.search);
   if (!window.MODO_CLIENTE) { fijarUsuario(); if (!usuarioGuardado()) elegirUsuario(qp.get('usuario')); }
-  if (AREAS.includes(qp.get('area'))) { accArea = qp.get('area'); renderAcciones(); }
   // 7-nov: la Bandeja de Pendientes reemplaza a Mi turno y Acciones (siguen en el código, fuera del menú); los enlaces viejos
   // (?vista=acciones&area=Facturación del correo de Facturación, ?vista=turno) abren la Bandeja con esa área
   if (AREAS.includes(qp.get('area'))) bandejaArea = qp.get('area');
