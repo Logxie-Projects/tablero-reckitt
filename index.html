@@ -2934,22 +2934,40 @@ document.addEventListener('click', e => { const b = e.target.closest('[data-modo
  * Lo usan viaje.js (lineaNovedad en la tarjeta, bloqueNovedades en la ventana), tabla.js (columna Observación) y turno.js. */
 const TIPOS_NOVEDAD = [['Status', '📍'], ['Acuerdo con Reckitt', '🤝'], ['Incidente', '⚠'], ['Pendiente', '⏳'], ['Interna', '🔒']];
 // "Cambio" la escribe el sistema (fase 2: Base.gs novedadDeCambios_) con cada dato guardado; no es un botón
-const iconoNovedad = t => t === 'Cambio' ? '⚙' : (TIPOS_NOVEDAD.find(x => x[0] === t) || [, '•'])[1];
+const iconoNovedad = t => t === 'Cambio' ? '⚙' : t === 'Hecho' ? '✅' : (TIPOS_NOVEDAD.find(x => x[0] === t) || [, '•'])[1];
 const delSistema = n => n.origen === 'Sistema';
 // las del viaje y sus subviajes, la más nueva primero
 const novedadesDe = v => { const ids = [v.id, ...viajes.filter(x => x.padre === v.id).map(x => x.id)];
   return (window.NOVEDADES || []).filter(n => ids.includes(String(n.viaje))).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))); };
-// la de la tarjeta: la última que escribió el equipo o el conductor; si no hay, el último cambio del sistema que dice algo de la
-// operación (una fecha, una cita, el vehículo, el estado). Un cambio de datos de oficina (observación, BL, FWD, motonave…) no:
-// entonces la tarjeta muestra la observación del viaje, que es lo que el cliente quiere saber de su operación
-// De un cambio solo cuentan los datos de la operación (por la etiqueta: fechas, citas, vehículo, conductor, estado, patio, bodega);
-// contenedor, BL, observación… son de oficina. Una corrección hecha por LogxIA no es una noticia de la operación (pasó en EXPO-009)
+// LA LÍNEA DE LA TARJETA (7-nov, "que sea realmente de utilidad para la operación; los otros son registros internos"): lo que
+// cuenta qué pasa con la carga. Vale la última nota del equipo o lo que reportó el conductor en su app, o el último paso
+// confirmado del viaje (ultimoHecho: "Vacío devuelto el vie 6 nov") si es más nuevo. Los cambios que escribe el sistema al guardar
+// (un conductor escrito con su nombre completo, un BL, una fecha corregida…) son registro interno: van en la línea de tiempo del
+// viaje, no aquí. De un cambio, en la línea de tiempo solo se resume lo de la operación (CAMBIO_OPERATIVO).
 const CAMBIO_OPERATIVO = /fecha|cita|retir|entrega|cargue|llenado|devoluci|descargue|placa|conductor|estado|status|bodega|patio/i;
 const soloOperacion = t => sinObservacion(t).split(/ · (?=[A-ZÁÉÍÓÚÑ][^:·]{1,40}: )/).filter(s => CAMBIO_OPERATIVO.test(s.split(':')[0])).join(' · ');
-const cambioOperativo = n => !/logxia/i.test(n.usuario || '') && !!soloOperacion(n.texto);
 // una nota Interna (solo para el equipo) o una prueba del sistema tampoco: no son el status del viaje
 const notaDelViaje = n => n.tipo !== 'Interna' && !/prueba/i.test(n.usuario || '');
-const ultimaNovedad = v => { const L = novedadesDe(v).filter(notaDelViaje); return L.find(n => !delSistema(n)) || L.find(cambioOperativo); };
+const ultimaNovedadEscrita = v => novedadesDe(v).filter(notaDelViaje).find(n => !delSistema(n));
+// 7-nov ("ya llegó y como cerraron el viaje no iban a hacer doble trabajo cambiando el último comentario"): si el último paso
+// confirmado del viaje (Vacío devuelto, Entregado en puerto…) es más nuevo que la última nota, la tarjeta muestra ese paso.
+// Cuándo pasó = cuando se guardó su fecha o su tirilla (el cambio del sistema con esa etiqueta); si no se encuentra, ese día al cierre.
+// [campo, cómo se dice hecho, etiqueta del dato en los cambios del sistema (Base.gs)]
+const HECHOS = {
+  IMPO: [['fechaLevante', 'Documentos entregados', /Fecha entrega documentos/], ['fechaRetiro', 'Retirado de puerto', /Fecha de retiro/],
+    ['fechaCargue', 'Entregado en bodega', /Fecha entrega en bodega/], ['fechaDevolucion', 'Vacío devuelto', /Fecha de devoluci|Tirilla de devoluci|Devolución del vac/]],
+  EXPO: [['fechaRetiro', 'Vacío retirado', /Fecha de retiro/], ['fechaCargue', 'Llenado en planta', /Fecha de llenado/],
+    ['fechaEntregaPuerto', 'Entregado en puerto', /Fecha de entrega en puerto|Tirilla de entrega|Entrega en puerto/], ['etd', 'Zarpó', /\bETD\b/]],
+  NACIONAL: [['fechaRetiro', 'Recogido', /Fecha de retiro|Recogida/], ['fechaCargue', 'Entregado en el destino', /Fecha entrega|Entrega en el destino/]],
+};
+function ultimoHecho(v){
+  const H = (HECHOS[v.operacion] || []).map(([k, txt, re], i) => ({k, txt, re, i, f: fechaPaso(v, k)})).filter(h => h.f && cumplido(v, h.k));
+  const h = H.sort((a, b) => a.f.localeCompare(b.f) || a.i - b.i).pop(); if (!h) return null;
+  const guardado = (window.NOVEDADES || []).filter(n => String(n.viaje) === v.id && h.re.test(n.texto || '')).map(n => fechaLocal(n.fecha)).sort().pop();
+  return {fecha: guardado || h.f + 'T23:59', usuario: 'Sistema', origen: 'Sistema', tipo: 'Hecho', texto: `${h.txt} el ${fd(h.f)}`};
+}
+const ultimaNovedad = v => { const n = ultimaNovedadEscrita(v), h = ultimoHecho(v);
+  return h && (!n || h.fecha > fechaLocal(n.fecha)) ? h : n; };
 // cualquier fecha (ISO con zona del Historial o local de las novedades) como "AAAA-MM-DDTHH:mm" de Bogotá, para ordenar y mostrar
 function fechaLocal(f){
   const s = String(f || ''); if (!s) return '';
@@ -4572,7 +4590,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'c0e9da3699';
+const VERSION_TABLERO = 'b111f94ddc';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
