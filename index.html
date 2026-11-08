@@ -628,6 +628,9 @@ body.lv-abierta{overflow:hidden}
 .lv-volver-b{display:inline-flex;align-items:center;gap:6px;background:#111827;color:#fff;border:0;border-radius:999px;padding:9px 16px;font:inherit;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 6px 18px rgba(17,24,39,.25)}
 .lv-volver-b:hover{background:#000}
 @media (max-width:700px){.lv-volver{margin:0;padding:8px 10px;background:#efede7}}
+#btnLogxia{display:inline-flex;align-items:center;gap:7px}
+.lv-btn-logo{width:22px;height:22px;border-radius:6px;background:linear-gradient(160deg,#1f2937,#0b1220);display:inline-grid;place-items:center;flex:none}
+.lv-btn-logo svg{width:18px;height:18px}
 </style>
 </head>
 <body>
@@ -5087,7 +5090,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '1e7d41aca5';
+const VERSION_TABLERO = 'ebac83b14a';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5238,7 +5241,7 @@ function montarLV(){
   // 8-nov (pedido del usuario): va aparte, no en el menú del tablero, para no recargarlo: un botón junto a "En vivo" abre una
   // capa a pantalla completa (sirve también en el televisor) y "✕ Cerrar" vuelve al tablero
   const ref = $('#btnEnVivo') || $('#btnResCli'); if (!ref || $('#v-logxia')) return;
-  ref.insertAdjacentHTML('afterend', `<button class="btn solo-interno" id="btnLogxia" title="LogxIA trabajando en vivo, en una pantalla aparte: los agentes revisando cada viaje y lo que van encontrando">🤖 LogxIA en vivo</button>`);
+  ref.insertAdjacentHTML('afterend', `<button class="btn solo-interno" id="btnLogxia" title="LogxIA trabajando en vivo, en una pantalla aparte: los agentes revisando cada viaje y lo que van encontrando"><span class="lv-btn-logo">${AVATAR_LV}</span>LogxIA en vivo</button>`);
   document.body.insertAdjacentHTML('beforeend', `<section id="v-logxia" class="lv-capa hidden" role="dialog" aria-modal="true" aria-label="LogxIA en vivo"><div class="lv-volver"><button class="lv-volver-b" id="lvVolver" title="Volver al tablero (también con Esc o la flecha atrás del navegador)">← Volver al tablero</button></div><div class="lv" id="lv">
   <div class="lv-card lv-top">
     <div class="lv-marca"><div class="lv-logo">${AVATAR_LV}</div>
