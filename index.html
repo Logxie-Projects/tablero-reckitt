@@ -966,6 +966,28 @@ function confirmacion(v, campo){
 }
 // fecha del paso si ya se hizo (fecha de hoy o pasada y confirmada); '' si no
 const cumplido = (v, campo) => { const f = fechaPaso(v, campo); return f && f <= HOY && confirmacion(v, campo) ? f : ''; };
+/* ---------- el último hecho del viaje y el comentario que se muestra (7-nov) ----------
+ * "Ya llegó y como cerraron el viaje no iban a hacer doble trabajo cambiando el último comentario": si el último paso CONFIRMADO
+ * (Vacío devuelto, Entregado en puerto…) es más nuevo que la última nota del equipo o del conductor, ese paso es el comentario.
+ * Cuándo pasó = cuando se guardó su fecha o su tirilla (el cambio del sistema con esa etiqueta, Base.gs); si no se halla, ese día
+ * al cierre. Los demás cambios que escribe el sistema (conductor, BL, fechas corregidas) son registro interno: no son comentario.
+ * novedades: [{fecha 'AAAA-MM-DDTHH:mm' (Bogotá), viaje, usuario, tipo, texto, origen}] (tablero: window.NOVEDADES; Cliente.gs). */
+const HECHOS = {
+  IMPO: [['fechaLevante', 'Documentos entregados', /Fecha entrega documentos/], ['fechaRetiro', 'Retirado de puerto', /Fecha de retiro/],
+    ['fechaCargue', 'Entregado en bodega', /Fecha entrega en bodega/], ['fechaDevolucion', 'Vacío devuelto', /Fecha de devoluci|Tirilla de devoluci|Devolución del vac/]],
+  EXPO: [['fechaRetiro', 'Vacío retirado', /Fecha de retiro/], ['fechaCargue', 'Llenado en planta', /Fecha de llenado/],
+    ['fechaEntregaPuerto', 'Entregado en puerto', /Fecha de entrega en puerto|Tirilla de entrega|Entrega en puerto/], ['etd', 'Zarpó', /\bETD\b/]],
+  NACIONAL: [['fechaRetiro', 'Recogido', /Fecha de retiro|Recogida/], ['fechaCargue', 'Entregado en el destino', /Fecha entrega|Entrega en el destino/]],
+};
+const horaNovedad = n => String(n && n.fecha || '').replace(' ', 'T').slice(0, 16);
+function ultimoHecho(v, novedades){
+  const H = (HECHOS[v.operacion] || []).map(([k, txt, re], i) => ({k, txt, re, i, f: fechaPaso(v, k)})).filter(h => h.f && cumplido(v, h.k));
+  const h = H.sort((a, b) => a.f.localeCompare(b.f) || a.i - b.i).pop(); if (!h) return null;
+  const guardado = (novedades || []).filter(n => String(n.viaje) === String(v.id) && h.re.test(n.texto || '')).map(horaNovedad).sort().pop();
+  return {fecha: guardado || h.f + 'T23:59', viaje: v.id, usuario: 'Sistema', origen: 'Sistema', tipo: 'Hecho', texto: `${h.txt} el ${fd(h.f)}`};
+}
+// el comentario del viaje: la nota más nueva entre la del equipo o el conductor (nota) y el último hecho; nota puede ser null
+const comentarioViaje = (v, nota, novedades) => { const h = ultimoHecho(v, novedades); return h && (!nota || h.fecha > horaNovedad(nota)) ? h : (nota || null); };
 // paso con fecha de hoy o pasada que nadie ha confirmado
 const porConfirmar = (v, campo) => { const f = fechaPaso(v, campo); return !!f && f <= HOY && !confirmacion(v, campo); };
 // los pasos por confirmar de un viaje (o subviaje): {campo, txt, fecha, dias vencido, naviera}. No en cancelados ni en prueba
@@ -2949,25 +2971,8 @@ const soloOperacion = t => sinObservacion(t).split(/ · (?=[A-ZÁÉÍÓÚÑ][^:�
 // una nota Interna (solo para el equipo) o una prueba del sistema tampoco: no son el status del viaje
 const notaDelViaje = n => n.tipo !== 'Interna' && !/prueba/i.test(n.usuario || '');
 const ultimaNovedadEscrita = v => novedadesDe(v).filter(notaDelViaje).find(n => !delSistema(n));
-// 7-nov ("ya llegó y como cerraron el viaje no iban a hacer doble trabajo cambiando el último comentario"): si el último paso
-// confirmado del viaje (Vacío devuelto, Entregado en puerto…) es más nuevo que la última nota, la tarjeta muestra ese paso.
-// Cuándo pasó = cuando se guardó su fecha o su tirilla (el cambio del sistema con esa etiqueta); si no se encuentra, ese día al cierre.
-// [campo, cómo se dice hecho, etiqueta del dato en los cambios del sistema (Base.gs)]
-const HECHOS = {
-  IMPO: [['fechaLevante', 'Documentos entregados', /Fecha entrega documentos/], ['fechaRetiro', 'Retirado de puerto', /Fecha de retiro/],
-    ['fechaCargue', 'Entregado en bodega', /Fecha entrega en bodega/], ['fechaDevolucion', 'Vacío devuelto', /Fecha de devoluci|Tirilla de devoluci|Devolución del vac/]],
-  EXPO: [['fechaRetiro', 'Vacío retirado', /Fecha de retiro/], ['fechaCargue', 'Llenado en planta', /Fecha de llenado/],
-    ['fechaEntregaPuerto', 'Entregado en puerto', /Fecha de entrega en puerto|Tirilla de entrega|Entrega en puerto/], ['etd', 'Zarpó', /\bETD\b/]],
-  NACIONAL: [['fechaRetiro', 'Recogido', /Fecha de retiro|Recogida/], ['fechaCargue', 'Entregado en el destino', /Fecha entrega|Entrega en el destino/]],
-};
-function ultimoHecho(v){
-  const H = (HECHOS[v.operacion] || []).map(([k, txt, re], i) => ({k, txt, re, i, f: fechaPaso(v, k)})).filter(h => h.f && cumplido(v, h.k));
-  const h = H.sort((a, b) => a.f.localeCompare(b.f) || a.i - b.i).pop(); if (!h) return null;
-  const guardado = (window.NOVEDADES || []).filter(n => String(n.viaje) === v.id && h.re.test(n.texto || '')).map(n => fechaLocal(n.fecha)).sort().pop();
-  return {fecha: guardado || h.f + 'T23:59', usuario: 'Sistema', origen: 'Sistema', tipo: 'Hecho', texto: `${h.txt} el ${fd(h.f)}`};
-}
-const ultimaNovedad = v => { const n = ultimaNovedadEscrita(v), h = ultimoHecho(v);
-  return h && (!n || h.fecha > fechaLocal(n.fecha)) ? h : n; };
+// la nota o el último paso confirmado si es más nuevo (dominio comentarioViaje; la misma regla del correo al cliente)
+const ultimaNovedad = v => comentarioViaje(v, ultimaNovedadEscrita(v), window.NOVEDADES);
 // cualquier fecha (ISO con zona del Historial o local de las novedades) como "AAAA-MM-DDTHH:mm" de Bogotá, para ordenar y mostrar
 function fechaLocal(f){
   const s = String(f || ''); if (!s) return '';
@@ -4590,7 +4595,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'b111f94ddc';
+const VERSION_TABLERO = 'e876b1de10';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
