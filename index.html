@@ -3833,11 +3833,12 @@ const etiquetaPorConfirmar = p => window.MODO_CLIENTE || !p ? '' :
 // debajo de un campo de fecha en la ventana del viaje: por confirmar, confirmado (por quién) o plan
 function estadoPaso(v, k){
   if (!pasosDe(v).some(p => p[0] === k)) return '';
-  const f = fechaPaso(v, k); if (!f) return '';
-  if (f > HOY) return `<div data-paso="${k}" class="sub paso-est">Plan (aún no pasa)</div>`;
+  const f = fechaPaso(v, k), dev = typeof botonDevolucion === 'function' ? botonDevolucion(v, k) : '';   // 📎 tirilla y aviso (devolucion.js)
+  if (!f) return dev;
+  if (f > HOY) return `<div data-paso="${k}" class="sub paso-est">Plan (aún no pasa)</div>` + dev;
   if (porConfirmar(v, k)) { const txt = (pasosDe(v).find(p => p[0] === k) || [])[1] || k;
-    return `<div data-paso="${k}" class="sub paso-est conf">⚠ Sin confirmar · ${botonConfirmar({v, campo: k, fecha: f, txt})}</div>`; }
-  return `<div data-paso="${k}" class="sub paso-est ok">✓ ${esc(textoConfirmacion(confirmacion(v, k)))}</div>`;
+    return `<div data-paso="${k}" class="sub paso-est conf">⚠ Sin confirmar · ${botonConfirmar({v, campo: k, fecha: f, txt})}</div>` + dev; }
+  return `<div data-paso="${k}" class="sub paso-est ok">✓ ${esc(textoConfirmacion(confirmacion(v, k)))}</div>` + dev;
 }
 
 // Mi turno → Seguimiento: un viaje (o subviaje) con pasos por confirmar. Roja si alguno, que no sea del buque, lleva más de 1 día
@@ -4858,6 +4859,102 @@ async function imagenEnVivo(){
   finally { b.disabled = false; b.textContent = antes; }
 }
 montarEnVivo();
+/* ---------- devolucion.js · 📎 Tirilla y aviso de devolución del vacío (8-nov-2026) ----------
+ * Capa: pantalla (solo el equipo). Antes, Mogollón respondía el correo del pedido con la tirilla y el sistema lo leía; ahora es al
+ * revés: en el viaje (debajo de "Fecha de devolución", confirmar.js estadoPaso) se sube la tirilla (foto o PDF) con la fecha y el
+ * sistema la guarda en la carpeta del pedido, confirma la devolución a su nombre y, si se deja marcado, responde el hilo del pedido
+ * con la tirilla adjunta (el equipo en copia). Antes de enviar se ve a quién va y el texto (se puede cambiar).
+ * Datos: GET ?que=avisoDevolucion&id= (Cliente.gs vistaAvisoDevolucion_) y POST 'devolucion' (Código.gs registrarDevolucion_). */
+let DEV_ID = null, DEV_ARCHIVO = null;
+// el botón: solo IMPO en contenedor (no carga suelta), sin tirilla todavía, y nunca para el cliente
+function botonDevolucion(v, k){
+  if (k !== 'fechaDevolucion' || window.MODO_CLIENTE || v.operacion !== 'IMPO' || v.padre || esLCL(v) || v.tirillaDevolucion) return '';
+  return `<div style="margin-top:4px"><button type="button" class="btn" data-dev="${esc(v.id)}" title="Sube la tirilla, confirma la devolución y avisa en el correo del pedido">📎 Tirilla y aviso de devolución</button></div>`;
+}
+function montarDevolucion(){
+  if ($('#ovDev')) return;
+  document.body.insertAdjacentHTML('beforeend', `<div class="ov" id="ovDev"><div class="modal" role="dialog" aria-modal="true" style="width:min(640px,100%)">
+    <h3>📎 Vacío devuelto · tirilla y aviso</h3>
+    <div class="sub" id="devViaje"></div>
+    <div class="fgrid3" style="margin-top:10px"><div><label>Fecha de devolución</label><input type="date" id="devFecha"></div>
+      <div style="grid-column:span 2"><label>Tirilla (foto o PDF)</label><input type="file" id="devArchivo" accept="image/*,application/pdf"></div></div>
+    <div class="sub" id="devArchivoTxt"></div>
+    <label style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="devEnviar" checked> <b>Enviar el aviso con la tirilla</b></label>
+    <div id="devCorreo" style="margin-top:6px"><label style="margin:0">Responder en el correo del proceso</label>
+      <select id="devHilo" style="width:100%;margin-top:4px"><option>Buscando los correos del pedido…</option></select>
+      <div class="sub" id="devPara" style="margin-top:4px"></div>
+      <textarea id="devTexto" style="width:100%;min-height:110px;margin-top:6px;box-sizing:border-box;font:13px/1.45 inherit"></textarea>
+      <div class="sub">Al final va su nombre y "Entrapetrol · Operaciones de transporte". El equipo va en copia.</div></div>
+    <div class="mfoot"><button class="btn" id="devCerrar">Cancelar</button><button class="btn primary" id="devGuardar" disabled>Guardar y enviar</button></div>
+  </div></div>`);
+  $('#devCerrar').onclick = () => $('#ovDev').classList.remove('open');
+  $('#ovDev').onclick = e => { if (e.target.id === 'ovDev') $('#ovDev').classList.remove('open'); };
+  $('#devEnviar').onchange = () => { $('#devCorreo').style.display = $('#devEnviar').checked ? '' : 'none'; $('#devGuardar').textContent = $('#devEnviar').checked ? 'Guardar y enviar' : 'Solo guardar'; };
+  $('#devArchivo').onchange = async () => { const f = $('#devArchivo').files[0]; DEV_ARCHIVO = null; $('#devGuardar').disabled = true;
+    if (!f) return;
+    try { DEV_ARCHIVO = await leerTirilla(f); $('#devArchivoTxt').textContent = `✓ ${DEV_ARCHIVO.nombre} · ${Math.round(DEV_ARCHIVO.base64.length * 0.75 / 1024)} KB`; $('#devGuardar').disabled = false; }
+    catch (e) { $('#devArchivoTxt').textContent = 'No se pudo leer el archivo'; } };
+  $('#devGuardar').onclick = guardarDevolucion;
+  $('#devHilo').onchange = pintarParaDevolucion;
+  document.addEventListener('click', e => { const b = e.target.closest('[data-dev]'); if (b) abrirDevolucion(b.dataset.dev); });
+}
+// las fotos grandes se reducen (como en Despacho); el PDF va tal cual
+function leerTirilla(file){
+  return new Promise((ok, mal) => {
+    if (/^image\//.test(file.type) && file.size > 600e3) {
+      const img = new Image();
+      img.onload = () => { const k = Math.min(1, 1800 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+        c.width = img.width * k; c.height = img.height * k; c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        ok({nombre: file.name.replace(/\.\w+$/, '') + '.jpg', tipo: 'image/jpeg', base64: c.toDataURL('image/jpeg', 0.82)}); };
+      img.onerror = mal; img.src = URL.createObjectURL(file); return;
+    }
+    if (!/^image\/|application\/pdf/.test(file.type)) return mal(new Error('tipo'));
+    const r = new FileReader(); r.onload = () => ok({nombre: file.name, tipo: file.type, base64: r.result}); r.onerror = mal; r.readAsDataURL(file);
+  });
+}
+async function abrirDevolucion(id){
+  const v = viajes.find(x => x.id === id); if (!v) return;
+  if (!pedirUsuario()) return;
+  DEV_ID = id; DEV_ARCHIVO = null;
+  $('#devViaje').textContent = `${refCorta(v) || v.id} · contenedor ${v.contenedor || '—'} · ${v.patio || 'patio sin dato'}`;
+  $('#devFecha').value = v.fechaDevolucion && v.fechaDevolucion <= HOY ? v.fechaDevolucion : HOY; $('#devFecha').max = HOY;
+  $('#devArchivo').value = ''; $('#devArchivoTxt').textContent = ''; $('#devGuardar').disabled = true;
+  $('#devEnviar').checked = true; $('#devEnviar').onchange();
+  $('#devHilo').innerHTML = '<option>Buscando los correos del pedido…</option>'; $('#devHilo').disabled = true; $('#devPara').textContent = ''; $('#devTexto').value = '';
+  $('#ovDev').classList.add('open');
+  try {
+    const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=avisoDevolucion&id=' + encodeURIComponent(id) + '&clave=' + encodeURIComponent(claveActual()))).json();
+    if (!j.ok) throw new Error(j.error || 'error');
+    // 8-nov (pedido del usuario: "que el correo se envíe sobre la secuencia o título del correo de ese proceso"): se responde en el
+    // hilo del proceso (instrucción, orden de retiro, revalidación…) que el equipo elija; el más probable va primero. Al final, correo nuevo
+    DEV_DEST = [...j.hilos.map(h => ({...h, etiqueta: `↩ ${h.hilo}${h.fecha ? ' · ' + h.fecha.slice(5, 16) : ''}`})),
+      {...j.nuevo, id: '', etiqueta: `✉ Correo nuevo: “${j.asuntoNuevo}”`}];
+    $('#devHilo').innerHTML = DEV_DEST.map((d, i) => `<option value="${i}">${esc(d.etiqueta)}</option>`).join(''); $('#devHilo').disabled = false;
+    pintarParaDevolucion();
+    $('#devTexto').value = j.texto;
+  } catch (e) { $('#devHilo').innerHTML = '<option>No se pudo buscar el correo</option>'; $('#devPara').textContent = 'No se pudo armar el aviso: ' + e.message + '. Puede guardar sin enviar.'; $('#devEnviar').checked = false; $('#devEnviar').onchange(); }
+}
+let DEV_DEST = [];
+function pintarParaDevolucion(){
+  const d = DEV_DEST[+$('#devHilo').value]; if (!d) return;
+  $('#devPara').innerHTML = `${d.id ? 'Responde en ese mismo hilo (mismo asunto)' : DEV_DEST.length > 1 ? 'Correo aparte, fuera de la conversación del pedido' : '<b>No se encontró el correo del pedido</b>: sale un correo nuevo'}<br>Para: ${esc(d.para.join(', '))}<br>Copia: ${esc(d.copia.join(', ') || '—')}`;
+}
+async function guardarDevolucion(){
+  const usuario = pedirUsuario(); if (!usuario || !DEV_ARCHIVO) return;
+  const enviar = $('#devEnviar').checked, b = $('#devGuardar');
+  if (enviar && !$('#devTexto').value.trim()) return toast('Escriba el texto del aviso');
+  b.disabled = true; b.textContent = enviar ? 'Guardando y enviando…' : 'Guardando…';
+  try {
+    const d = DEV_DEST[+$('#devHilo').value] || {id: ''};
+    const j = await api('devolucion', {id: DEV_ID, fecha: $('#devFecha').value, archivo: DEV_ARCHIVO, texto: $('#devTexto').value, enviar, hiloId: d.id || '', usuario});
+    if (!j.ok) throw new Error(j.error || 'error');
+    $('#ovDev').classList.remove('open');
+    toast(j.envio ? (j.envio.ok ? '✓ Vacío devuelto y aviso enviado' + (j.envio.hilo ? ' en el correo del pedido' : '') : '✓ Guardado, pero el aviso no salió: ' + j.envio.error) : '✓ Vacío devuelto con su tirilla', 6000);
+    await cargar(); render(); if (editId === DEV_ID) abrir(DEV_ID);
+  } catch (e) { toast('No se pudo guardar: ' + e.message, 6000); }
+  b.disabled = false; $('#devEnviar').onchange();
+}
+montarDevolucion();
 /* ---------- version.js · el tablero se actualiza solo cuando se publica una versión nueva ---------- */
 // Capa: pantalla. generar_publico.py pone en VERSION_TABLERO la huella de esta publicación y escribe publico/version.json con la
 // misma huella. Cada REVISAR_VERSION_MIN minutos (y al volver a la pestaña) el tablero lee version.json sin caché. Si cambió:
@@ -4867,7 +4964,7 @@ montarEnVivo();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '9c771b8c99';
+const VERSION_TABLERO = '3aa6e8b215';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
