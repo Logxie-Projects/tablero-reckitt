@@ -351,17 +351,7 @@ table.prog td:last-child{min-width:260px}
 #leanTablero .ruta.clic:hover{border-color:var(--accent)}
 .gbar .modos{margin:0}
 /* Mi turno: bandeja del coordinador */
-.tr-menus{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-.tr-menu{display:flex;gap:8px;align-items:center;padding:8px 14px;border:1px solid var(--border);border-radius:10px;background:var(--card);color:var(--text);cursor:pointer;font:inherit}
-.tr-menu.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
-.tr-menu:disabled{opacity:.5;cursor:not-allowed}
-.tr-reloj{margin:8px 0 0;display:flex;gap:6px 12px;flex-wrap:wrap;align-items:center}
 .tr-urge{color:var(--warn);font-weight:600}
-.tr-menu.roja{border-color:var(--bad);color:var(--bad)}
-.tr-menu.roja .tr-n{background:var(--bad)}
-.tr-menu.ok .tr-n{background:var(--ok)}
-.tr-fila.tr-roja{border-left:3px solid var(--bad)}
-.tr-meta{margin-top:12px}
 .tr-ger{color:var(--ok);font-weight:600}
 .tr-nota{display:block;width:100%;margin-top:6px;font:inherit;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text)}
 .tr-motivo{display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap}
@@ -372,8 +362,6 @@ table.prog td:last-child{min-width:260px}
 .tr-gerencia{margin-top:12px;padding:8px 10px;border:1px solid var(--warn);border-radius:10px;background:color-mix(in srgb, var(--warn) 8%, transparent)}
 .tr-vencida{color:var(--bad);font-weight:700}
 /* ronda vencida: solo queda Mi turno (y la ventana del viaje para actualizar) */
-body.turno-bloqueado #nav button:not([data-v="turno"]):not([data-v="bandeja"]), body.turno-bloqueado #gbar{pointer-events:none;opacity:.35}
-.tr-n{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:99px;background:var(--accent);color:#fff;font-size:12px;flex:none}
 /* Bandeja (prueba, bandeja.js): una tarjeta por viaje con sus líneas por bloque */
 .bj-resumen{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
 .bj-ronda{margin-bottom:10px}
@@ -449,11 +437,9 @@ body.en-turno #modosHdr{display:none}
 .bj-auto-l{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;padding:8px 0 2px;border-top:1px solid var(--border);margin-top:8px}
 .bj-mas{display:block;width:100%;margin-top:10px;padding:10px;border:1px dashed var(--border);border-radius:10px;background:none;font:inherit;color:var(--accent);font-weight:600;cursor:pointer}
 .tr-fila{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;padding:9px 10px;border-top:1px solid var(--border)}
-.tr-fila.rev{opacity:.55}
 .tr-txt{min-width:0}
 .tr-acc{display:flex;flex-wrap:wrap;gap:4px 12px;justify-content:flex-end;max-width:52%}
 .tr-vacio{padding:6px 10px}
-.tr-rev summary{cursor:pointer;padding:4px 10px}
 @media (max-width:700px){.tr-fila{flex-direction:column}.tr-acc{max-width:none;justify-content:flex-start}}
 body.en-turno #gbar{display:none}
 /* preguntas al agente LogxIA: lista en el chat y aviso de respuestas nuevas en el botón */
@@ -519,8 +505,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
     <div class="brand"><div class="logo">▲</div><div>LogxView · Reckitt<small>Operación nacional · IMPO · EXPO</small></div></div>
     <nav id="nav">
       <button data-v="bandeja" title="Todo lo que pide trabajo, una tarjeta por viaje: de arriba hacia abajo, lo rojo primero. Al final del día, el cierre y la nota de entrega de turno">Bandeja de Pendientes <span class="badge" id="nBandeja"></span></button>
-      <!-- 7-nov: Mi turno y Acciones salen del menú; su trabajo está en la Bandeja de Pendientes (el código sigue: la Bandeja lo usa) -->
-      <button data-v="turno" class="hidden">Mi turno <span class="badge" id="nTurno"></span></button>
+      <!-- 7-nov: Acciones sale del menú (su trabajo está en la Bandeja); se abre como bitácora desde el pie de la Bandeja -->
       <button data-v="tablero" class="on">Tablero</button>
       <button data-v="viajes">Viajes</button>
       <button data-v="motonaves">Motonaves</button>
@@ -533,10 +518,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
     <button class="btn" id="btnTheme" title="Cambiar tema">◐</button>
     <div class="modos" id="modosHdr" role="group" aria-label="Vista del tablero"></div>
     <a class="btn solo-interno" id="lnkDespacho" style="text-decoration:none;color:inherit" href="despacho.html" target="_blank" rel="noopener" title="Asignaciones de conductores: cita, instrucciones, imágenes, enlace por WhatsApp y revisión de la aceptación (cédula y selfie)">🚛 Despacho</a>
-    <button class="btn correo solo-interno hidden" id="btnCorreos" title="Datos que LogxIA encontró en los correos, para revisar y aprobar">✉ Llenar datos desde correos<span class="badge" id="nProp"></span></button>
-    <button class="btn solo-interno hidden" id="btnTurnos" title="Conductores que se enturnaron en un viaje o avisaron que están disponibles en la app Viajes ETP, de cualquier fecha; asignar o escribirles">🙋 Turnos<span class="badge" id="nTurnos"></span></button>
     <button class="btn solo-interno" id="btnResCli" title="Status de los viajes para Reckitt: elija qué viajes van, envíe una prueba a calidad@ y luego al cliente (ya no sale solo)">📨 Resumen al cliente</button>
-    <button class="btn solo-interno hidden" id="btnNacional" title="Operación nacional: recoger estibas en ERCOL, traslados dentro de Colombia (pestaña Seguimiento NACIONAL)">🚚 Viaje nacional</button>
     <button class="btn solo-interno" id="btnInvitar" title="Invitar por WhatsApp al grupo de conductores a todos los viajes sin vehículo (a futuro, no solo 72 h)">🚛 Invitar conductores</button>
     <button class="btn solo-interno" id="btnComunicado" title="Comunicado a los conductores por WhatsApp (seguridad, vías, viajes disponibles, documentos): plantilla lista para el canal de avisos de la comunidad">📣 Comunicado</button>
     <button class="btn solo-interno" id="btnDocs" title="Confirmaciones de booking y cartas de retiro que llegan con la programación de Jhonier, archivadas en Drive por mes; marca lo que falta">📎 Documentos de contenedores</button>
@@ -552,17 +534,6 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
       <h2 style="margin:0">Bandeja de Pendientes</h2>
       <div class="sub">Todo lo que pide trabajo, una tarjeta por viaje: por crear, por tomar, sin vehículo, sin actualizar, ¿pasó?, datos de correos, pedidos y lo que falta. Trabaje de arriba hacia abajo, lo rojo primero; en la última ronda sale el cierre del día con la nota de entrega de turno.</div>
       <div id="bandeja" style="margin-top:10px"></div>
-    </div>
-  </section>
-  <section id="v-turno" class="hidden">
-    <div class="card">
-      <div class="toolbar" style="justify-content:space-between;align-items:flex-start">
-        <div><h2 style="margin:0">Mi turno</h2><div class="sub">En cada ronda (8, 12 y 16 h): 1 Seguimiento → 2 Cobertura → 3 Cliente → 4 Datos. Lo marcado en rojo bloquea el tablero hasta resolverlo o que Gerencia apruebe una excepción.</div></div>
-        <div id="turnoLlave"></div>
-      </div>
-      <div class="tr-menus" id="turnoMenus"></div>
-      <div class="sub tr-reloj" id="turnoReloj"></div>
-      <div id="turno"></div>
     </div>
   </section>
   <section id="v-tablero">
@@ -655,16 +626,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
     <div id="docsLista" style="margin-top:10px"></div>
     <div class="mfoot"><button class="btn" id="docsCerrar">Cerrar</button></div>
   </div>
-</div>
-<div class="ov" id="ovTurnos">
-  <div class="modal" role="dialog" aria-modal="true" style="width:min(980px,100%)">
-    <h3>Turnos de conductores</h3>
-    <div class="sub">Lo que los conductores marcaron en la app Viajes ETP. Asignar abre el viaje con el vehículo y el conductor puestos: revise y guarde.</div>
-    <div id="turnosLista" style="margin-top:10px"></div>
-    <div class="mfoot"><button class="btn" id="turnosCerrar">Cerrar</button></div>
-  </div>
-</div>
-<div class="ov" id="ovReg">
+</div><div class="ov" id="ovReg">
   <div class="modal" role="dialog" aria-modal="true" style="width:min(760px,100%)">
     <h3>🪪 Completar datos del registro</h3>
     <div class="sub">Para asignar un vehículo y un conductor a un viaje deben estar completos en el registro: así se les puede llamar en viajes futuros. Se guardan en las pestañas Vehículos y Conductores de la base.</div>
@@ -744,7 +706,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
     <div class="causa-box hidden" id="mCausa"><b>Cambio de fecha programada</b> <span class="sub" id="mCausaLista"></span>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><span id="mCausaSel"></span><input id="mCausaDet" placeholder="Detalle (ej: planta sin producto, vehículo varado)" style="flex:1;min-width:200px">
         <input id="mCausaCosto" inputmode="numeric" placeholder="Costo extra $ (si hubo)" style="width:170px"><input id="mCausaInc" placeholder="Incidente (si hubo)" style="width:200px"></div></div>
-    <datalist id="dlExtra"></datalist><datalist id="dlPatio"></datalist><datalist id="dlCond"></datalist><datalist id="dlPlaca"></datalist><datalist id="dlFwd"></datalist>
+    <datalist id="dlExtra"></datalist><datalist id="dlPatio"></datalist><datalist id="dlFwd"></datalist>
     <div class="calif" id="mCalif"></div>
     <div class="hist" id="mHist"></div>
     <div class="mfoot"><span class="sub" id="mNCambios" style="margin-right:auto"></span><input id="mUsuario" placeholder="Su nombre (queda en el historial)" style="width:230px"><button class="btn" id="mCancel">Cancelar</button><button class="btn primary" id="mSave">Guardar en la base</button></div>
@@ -1842,9 +1804,7 @@ function elegirUsuario(sugerido){
   $('#ovQuien').onclick = e => {
     const b = e.target.closest('[data-quien]'); if (!b) return;
     const p = EQUIPO.find(x => x.nombre === b.dataset.quien);
-    try { sessionStorage.setItem('rkt-quien', p.nombre); localStorage.setItem('rkt-usuario', p.nombre);
-      // Facturación no se bloquea por las líneas rojas de los coordinadores (turno.js esFacturacion)
-      if (p.area === 'Facturación') sessionStorage.setItem('rkt-area', 'Facturación'); else sessionStorage.removeItem('rkt-area'); } catch(e){}
+    try { sessionStorage.setItem('rkt-quien', p.nombre); localStorage.setItem('rkt-usuario', p.nombre); } catch(e){}
     $('#ovQuien').remove(); fijarUsuario(); if (typeof render === 'function') render();
     toast('Ingresó como ' + p.nombre);
   };
@@ -2207,25 +2167,17 @@ $('#accFiltros').onclick = e => { if (e.target.closest('[data-hechas]')) return 
   const a=e.target.closest('[data-area]'); if (a) { accArea=a.dataset.area; return renderAcciones(); }
   const b=e.target.closest('[data-acc]'); if(!b) return; accFiltro=b.dataset.acc; renderAcciones(); };
 
-/* ---------- Mi turno: el flujo del coordinador, un paso a la vez ---------- */
-// En cada ronda (RONDAS, 2 horas cada una) el coordinador recorre los pasos en orden (el último, Cierre del día, al final):
-//   1 Seguimiento: dónde va cada vehículo en movimiento.     2 Cobertura: viajes sin vehículo a 72 h o menos.
-//   3 Cliente: pedidos de Reckitt (acciones) y datos de los correos.     4 Datos: errores y lo que viene.
-//   5 Cierre del día (desde la última ronda): lo de mañana listo (vehículo, conductor avisado) y la nota de entrega de turno.
-// LÍNEAS ROJAS (bloquean todo el tablero hasta resolverlas): ronda de seguimiento vencida, viaje sin actualizar,
-// viaje sin vehículo a 72 h o menos, pedido del cliente de prioridad alta con más de 4 h sin atender.
-// Un paso se abre cuando el anterior no tiene líneas rojas. Toda EXCEPCIÓN (no se puede cumplir una línea roja) pide un
-// motivo y queda esperando a Gerencia: mientras espera no bloquea; si Gerencia la rechaza, vuelve a bloquear. La aprobación
-// vale 4 horas (HORAS_EXCEPCION): Gerencia queda enterada, pero si sigue sin resolverse vuelven la alerta y el bloqueo.
-// MODO GERENCIA: con la clave de Gerencia (la verifica el Apps Script) el tablero no se bloquea en ese navegador mientras
-// la pestaña esté abierta, y solo así se aprueban o rechazan excepciones. Los coordinadores sí se bloquean.
-// Las marcas ("Sigue igual", "Revisado", excepciones y su aprobación) son del día y las ve todo el equipo: se guardan en
-// la base (pestaña Turno revisado) con quién y a qué hora; no cambian el viaje.
+/* ---------- turno.js · rondas, líneas rojas y excepciones (las usa la Bandeja de Pendientes) ----------
+ * Capa: lógica de pantalla. Antes era la pantalla "Mi turno"; desde el 7-nov su trabajo sale en la Bandeja (bandeja.js) y aquí
+ * queda lo que la Bandeja usa: las rondas de seguimiento (RONDAS, 2 horas cada una), las filas de cada paso (menusTurno), las
+ * líneas rojas (urgentes: ronda vencida, viaje sin actualizar, sin vehículo a 72 h o menos, pedido de prioridad alta con más de
+ * 4 h), las excepciones a Gerencia, las marcas del día ("Sigue igual", "Listo para mañana", la nota de entrega de turno) y el
+ * modo Gerencia. Las marcas son del día y las ve todo el equipo: se guardan en la base (pestaña Turno revisado) con quién y a qué
+ * hora; no cambian el viaje. Desde el 7-nov el tablero NO se bloquea: las líneas rojas solo se señalan y van primero.
+ * Toda EXCEPCIÓN (no se puede cumplir una línea roja) pide un motivo y espera a Gerencia; la aprobación vale HORAS_EXCEPCION. */
 const RONDAS = [8, 12, 16], HORAS_RONDA = 2;
-let turnoMenu = 'seg', excAbierta = '';   // paso en pantalla · fila con el selector de motivo abierto
+let excAbierta = '';   // fila con el selector de motivo de la excepción abierto
 const esGerencia = () => { try { return sessionStorage.getItem('rkt-gerencia') === '1'; } catch(e){ return false; } };
-// quien entra desde el correo de Facturación no se bloquea: las líneas rojas de Mi turno son de los coordinadores
-const esFacturacion = () => { try { return sessionStorage.getItem('rkt-area') === 'Facturación'; } catch(e){ return false; } };
 const revisados = () => new Map((window.TURNO || []).map(x => [x.clave, x]));
 async function marcarRevisado(k){
   const usuario = pedirUsuario('¿Quién eres? Queda como "Revisado por …" para todo el equipo'); if (!usuario) return;
@@ -2239,8 +2191,8 @@ async function marcarRevisado(k){
     window.TURNO = j.turno || window.TURNO; repintarTurno();
   } catch(e) { window.TURNO = antes; repintarTurno(); toast('No se guardó la marca: ' + e.message); }
 }
-// Mi turno y la Bandeja (prueba, bandeja.js) usan las mismas marcas, rondas y excepciones: se repintan juntas
-const repintarTurno = () => { renderTurno(); if (typeof renderBandeja === 'function') renderBandeja(); };
+// una marca, excepción o ronda cambió: se repinta la Bandeja, que es donde se ven
+const repintarTurno = () => renderBandeja();
 // hitosDe (lo que pasa en el viaje en cada fecha) está en el dominio (dominio.js)
 // WhatsApp con el mensaje armado; el coordinador elige el contacto (la base aún no guarda el teléfono del conductor)
 const waConductor = (v, pregunta) => waLink('', 
@@ -2268,26 +2220,6 @@ function rondaActual(){
   return {n, ahora, inicio, vence: inicio + HORAS_RONDA * 60};
 }
 const hhmm = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-// PAUSA DEL BLOQUEO (Gerencia): la marca "pausa|HH:MM" en Turno revisado deja trabajar a todo el equipo sin bloqueo hasta esa
-// hora de hoy (Gerencia elige la hora; sugerida: dentro de HORAS_PAUSA); las líneas rojas siguen a la vista y vuelven a bloquear
-// al terminar la pausa. Gerencia también puede terminarla antes.
-const HORAS_PAUSA = 3;
-let horaPausa = '';   // hora que Gerencia escribió (se conserva cuando Mi turno se repinta cada minuto)
-const pausaHasta = () => [...revisados().keys()].filter(k => k.startsWith('pausa|')).map(k => k.slice(6)).sort().pop() || '';
-const enPausa = () => pausaHasta() > hhmm(ahoraBogota().min);
-const pausaSugerida = () => hhmm(Math.min(ahoraBogota().min + HORAS_PAUSA * 60, 23 * 60 + 59));
-function pausarBloqueo(){
-  const hasta = horaPausa || pausaSugerida();
-  if (!/^\d{2}:\d{2}$/.test(hasta) || hasta <= hhmm(ahoraBogota().min)) return toast('Elija una hora de hoy más tarde que ahora');
-  if (confirm(`¿Quitar el bloqueo a todo el equipo hasta las ${hasta}?\n\nLas líneas rojas siguen a la vista; a esa hora, si siguen sin resolver, el tablero se vuelve a bloquear.`))
-    { horaPausa = ''; marcarRevisado('pausa|' + hasta); }
-}
-// terminar la pausa antes de tiempo: se quitan las marcas de pausa que siguen vigentes
-async function terminarPausa(){
-  if (!confirm('¿Volver a bloquear el tablero ya? Las líneas rojas pendientes bloquean a todo el equipo.')) return;
-  const ahora = hhmm(ahoraBogota().min);
-  for (const k of [...revisados().keys()].filter(k => k.startsWith('pausa|') && k.slice(6) > ahora)) await marcarRevisado(k);
-}
 // vehículos en movimiento: con placa, el transporte sin terminar y que ya arrancó o arranca mañana
 // dónde está el vehículo según la etapa del viaje (sale de las fechas): dónde quedó, hacia dónde va y desde cuándo
 // no cambia de estado ni de lugar; además, qué se esperaba y lo último que reportó el conductor en su app
@@ -2332,42 +2264,27 @@ function excepcionDe(k, R){
     vence: ok ? hhmm(minutosDe(ok.hora) + HORAS_EXCEPCION * 60) : ''};
 }
 
+// las filas de cada paso del turno (seguimiento, cobertura, cliente, datos y, en la última ronda, el cierre del día): las usan
+// estadoTurno (líneas rojas) y la Bandeja (bandeja.js: claves de las marcas, cierre del día, "solo en otra pantalla")
 function menusTurno(r){
   const V = viajes.filter(v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre);   // los de prueba no cuentan
   const SEV = e => e.sev === 'Alta' ? 0 : 1;
-  const nProp = Number($('#nProp')?.textContent) || 0;
-  const sinVehiculo = V.filter(v => !tieneVehiculo(v) && primerEvento(v)).sort((a, b) => primerEvento(a).localeCompare(primerEvento(b)));
-  const cob = sinVehiculo.filter(sinCobertura), despues = sinVehiculo.filter(v => !cob.includes(v));
+  const cob = V.filter(v => !tieneVehiculo(v) && primerEvento(v) && sinCobertura(v));
   return [
-    {id: 'seg', titulo: 'Seguimiento', meta: 'Todos los vehículos con seguimiento en esta ronda', vacio: 'Ningún vehículo en movimiento',
-     ayuda: r ? `Ronda ${r.n} de ${RONDAS.length}: ¿dónde está cada vehículo? Los que no avanzan (en rojo) van primero: confirme con el conductor y registre si llegó o la novedad.` : `Primera ronda a las ${RONDAS[0]}:00`,
-     // primero los datos del registro que faltan (registro.js: vehículo y conductor completos), luego dónde va cada vehículo
-     // y los pasos con fecha pasada que nadie ha confirmado (confirmar.js): un paso no se da por hecho solo por su fecha
-     filas: [...filasRegistro(V), ...filasConfirmar(V), ...V.filter(v => enSeguimiento([v]).length || sinActualizar(v).length).map(v => ({k: `seg${r ? r.n : 0}|${v.id}`, tipo: 'seg', v, p: pulsoViaje(v), roja: !!sinActualizar(v).length}))
+    // primero los datos del registro que faltan (registro.js), los pasos con fecha pasada sin confirmar (confirmar.js) y dónde va
+    // cada vehículo; el primero de la lista es el seguimiento de la ronda
+    {id: 'seg', filas: [...filasRegistro(V), ...filasConfirmar(V), ...V.filter(v => enSeguimiento([v]).length || sinActualizar(v).length).map(v => ({k: `seg${r ? r.n : 0}|${v.id}`, tipo: 'seg', v, p: pulsoViaje(v), roja: !!sinActualizar(v).length}))
        .sort((a, b) => b.roja - a.roja || b.p.hace - a.p.hace)]},
-    {id: 'cob', titulo: 'Cobertura', meta: `Ningún viaje sin vehículo a ${HORAS_COBERTURA} h o menos`, vacio: `Todos los viajes de las próximas ${HORAS_COBERTURA} h tienen vehículo`,
-     ayuda: `Asigne vehículo a los viajes que arrancan en ${HORAS_COBERTURA} h o menos. Al guardar placa y conductor, el viaje sale de la lista.`,
-     filas: cob.map(v => ({k: 'cob|' + v.id, tipo: 'cob', v, roja: true})),
-     despues: despues.length ? `${despues.length} viaje${despues.length === 1 ? '' : 's'} más sin vehículo, del ${fd(primerEvento(despues[0]))} al ${fd(primerEvento(despues[despues.length - 1]))}: se asignan cuando entren a las ${HORAS_COBERTURA} h` : ''},
-    {id: 'cli', titulo: 'Cliente', meta: 'Pedidos de Reckitt atendidos', vacio: 'Sin pedidos del cliente por atender',
-     ayuda: `Lo que Reckitt pidió por correo y los datos por aprobar. Lo de prioridad alta con más de ${HORAS_CLIENTE} h sin atender bloquea el tablero.`,
-     filas: [...(nProp ? [{k: 'prop', tipo: 'prop', n: nProp}] : []),
-       ...(window.BITACORA || []).filter(b => b.estadoAccion !== 'Hecha' && areaDe(b) === 'Operaciones')
-         .map(b => ({k: 'a' + b.id, tipo: 'accion', b, v: viajeDeAccion(b), roja: pedidoRojo(b)}))
-         .sort((a, b) => b.roja - a.roja)]},
-    {id: 'dat', titulo: 'Datos', meta: 'Datos de los viajes completos', vacio: 'Sin datos por corregir',
-     ayuda: 'Errores de datos y lo que hay que preparar para los próximos días, con la búsqueda en el correo.',
-     filas: [...V.map(v => ({k: 'd' + v.id, tipo: 'dato', v, e: validar(v).filter(e => e.tipo !== 'Alerta' && e.campo !== 'Seguimiento').sort((a, b) => SEV(a) - SEV(b))}))
-         .filter(x => x.e.length).sort((a, b) => SEV(a.e[0]) - SEV(b.e[0])),
-       ...V.filter(v => !cob.includes(v)).map(v => ({k: 'p' + v.id, tipo: 'viene', v, e: validar(v).filter(e => e.tipo === 'Alerta')})).filter(x => x.e.length)
-         .sort((a, b) => String(primerEvento(a.v) || '').localeCompare(String(primerEvento(b.v) || '')))]},
-    ...(r && r.n === RONDAS.length ? [{id: 'cie', titulo: 'Cierre del día', meta: 'Lo de mañana listo y la entrega de turno escrita', vacio: 'Nada programado para mañana',
-     ayuda: 'Confirme con cada conductor lo de mañana y deje la nota de entrega de turno: va en el resumen del día a Gerencia y Calidad.',
-     filas: [...V.map(v => ({k: 'man|' + v.id, tipo: 'man', v, h: hitosDe(v).filter(h => diffDias(h.f) === 1 && h.que !== 'Cierre documental')})).filter(x => x.h.length),
+    {id: 'cob', filas: cob.map(v => ({k: 'cob|' + v.id, tipo: 'cob', v, roja: true}))},
+    {id: 'cli', filas: (window.BITACORA || []).filter(b => b.estadoAccion !== 'Hecha' && areaDe(b) === 'Operaciones')
+       .map(b => ({k: 'a' + b.id, tipo: 'accion', b, v: viajeDeAccion(b), roja: pedidoRojo(b)}))},
+    {id: 'dat', filas: V.map(v => ({k: 'd' + v.id, tipo: 'dato', v, e: validar(v).filter(e => e.tipo !== 'Alerta' && e.campo !== 'Seguimiento').sort((a, b) => SEV(a) - SEV(b))}))
+       .filter(x => x.e.length)},
+    ...(r && r.n === RONDAS.length ? [{id: 'cie', filas: [...V.map(v => ({k: 'man|' + v.id, tipo: 'man', v, h: hitosDe(v).filter(h => diffDias(h.f) === 1 && h.que !== 'Cierre documental')})).filter(x => x.h.length),
        {k: 'nota', tipo: 'nota'}]}] : []),
   ];
 }
-// estado del turno: por cada paso, sus filas pendientes y sus líneas rojas (sin excepción vigente); la ronda y el bloqueo
+// estado del turno: por cada paso, sus filas pendientes y sus líneas rojas (sin excepción vigente) y la ronda
 function estadoTurno(){
   const r = rondaActual(), R = revisados(), M = menusTurno(r), n = r ? r.n : 0;
   const viva = x => !!x && ['pendiente', 'aprobada'].includes(x.estado);   // rechazada o vencida: vuelve a bloquear
@@ -2379,9 +2296,7 @@ function estadoTurno(){
   const rondaHecha = !r || rondaSaltada || !segPend, rondaVencida = !!r && !rondaHecha && resta <= 0;
   const rojas = M.map((m, i) => m.filas.filter(x => x.bloquea).length + (i === 0 && rondaVencida ? 1 : 0));
   const excepciones = [...R.values()].filter(x => x.clave.startsWith('exc|')).map(x => { const k = x.clave.slice(4).split('|').slice(0, -1).join('|'); return {k, ...excepcionDe(k, R)}; });
-  // 7-nov: sin bloqueo. Las líneas rojas siguen saliendo (en rojo y primero en la Bandeja), pero el equipo siempre puede ver y usar
-  // el tablero; ya no hace falta que Gerencia lo desbloquee ni pausar el bloqueo
-  return {r, n, R, M, resta, rondaHecha, rondaVencida, rondaExc, rojas, excepciones, bloqueado: false};
+  return {r, n, R, M, resta, rondaHecha, rondaVencida, rondaExc, rojas, excepciones};
 }
 
 // con la placa sola a veces no se sabe qué viaje es: va también el número con que lo identifica el cliente (booking en EXPO,
@@ -2402,70 +2317,8 @@ function desdeCuando(f){
   const dias = -diffDias(s.slice(0, 10)), viejo = dias >= 2;
   return `<span class="${viejo ? 'tr-urge' : ''}" title="${esc(fd(s.slice(0, 10)) + (s.length > 10 ? ' ' + s.slice(11, 16) : ''))}">🕑 ${esc(viejo ? `hace ${dias} días (${fd(s.slice(0, 10))})` : haceCuanto(s))}</span> · `;
 }
-function filaTurno(x, rev){
-  const v = x.v, abrirV = v ? btnT('Abrir viaje', `data-t-abrir="${v.id}"`) : '', buscar = v ? clavesBusqueda(v).slice(0, 2).map(([k, c]) => lnkT(`🔎 ${esc(k)} ${esc(c)}`, urlBusqueda(c))).join(' ') : '';
-  let titulo = '', detalle = '', acc = [], marca = rev ? '↺ Volver a la lista' : '✓ Revisado';
-  if (x.tipo === 'reg') { ({titulo, detalle, acc} = filaRegistroHtml(x)); marca = ''; }   // registro.js
-  else if (x.tipo === 'conf') { ({titulo, detalle, acc} = filaConfirmarHtml(x)); marca = ''; }   // confirmar.js
-  else if (x.tipo === 'seg') {
-    const p = x.p;
-    titulo = `${esc(v.placa)} · ${esc(v.operacion)} ${esc(v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || ''))} <span class="sub">· ${esc([v.conductor, refCliente(v), v.id].filter(Boolean).join(' · '))}</span>`;
-    detalle = `📍 <b>${esc(p.donde)}</b>${p.quieto ? ` · <span style="${x.roja ? 'color:var(--bad);font-weight:600' : ''}">${esc(p.quieto)}</span>` : ''}`
-      + (p.espera ? `<br>${x.roja ? '<span style="color:var(--bad);font-weight:600">⚠ ' + esc(p.espera) + '</span> · ' + esc(p.porque) : esc(p.espera)}` : '')
-      + (p.app ? `<br>${esc(p.app)}` : '')
-      + (ultimoComentario(v) ? `<br><span class="sub">${ultimoComentario(v)}</span>` : '');   // novedades.js: lo último que escribió el equipo
-    acc = [btnT('✏️ Actualizar', `data-t-actualizar="${v.id}"`, 'Abre el viaje para registrar el paso que cumplió o lo nuevo; revise y guarde'),
-      btnT('⚠ Novedad / retraso', `data-t-novedad="${v.id}"`, 'Abre el viaje marcado con Novedad: escriba qué pasó y la nueva fecha'),
-      lnkT(ICONO_WA + 'Preguntar dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas'))];
-    marca = rev ? '↺ Deshacer' : '📍 Sigue igual';   // sin actualizar (roja): no se ofrece; hay que registrar dónde está
-  } else if (x.tipo === 'cob') {
-    const d = diffDias(primerEvento(v)), sug = sugeridos(v);
-    titulo = `${esc(nombreTurno(v))} · ${d < 0 ? 'debió arrancar el ' : d === 0 ? 'hoy, ' : d === 1 ? 'mañana, ' : ''}${fd(primerEvento(v))}`;
-    detalle = [v.booking && 'Booking ' + v.booking, v.pedido && 'Pedido ' + v.pedido, v.patio, esNuevo(v) && 'NUEVO: nadie lo ha tomado'].filter(Boolean).map(esc).join(' · ')
-      + (sug.length ? '<br>Ya hicieron esta ruta: elija uno, revise y guarde' : '<br>Nadie ha hecho esta ruta: elija placa y conductor en el viaje');
-    const ent = enturnadosDe(v), disp = disponiblesPara(v).filter(d => !ent.some(e => e.placa === d.placa));
-    if (ent.length || disp.length) detalle += `<br>${ent.length ? `🙋 ${ent.length} enturnado${ent.length === 1 ? '' : 's'} en la app` : ''}${ent.length && disp.length ? ' · ' : ''}${disp.length ? `🟢 ${disp.length} disponible${disp.length === 1 ? '' : 's'}` : ''}`;
-    const boton = (s, icono, t) => btnT(`${icono} ${esc(s.placa)} · ${esc(String(s.conductor).split(' ').slice(0, 2).join(' '))}`, `data-t-asignar="${v.id}" data-placa="${esc(s.placa)}" data-conductor="${esc(s.conductor)}" data-telefono="${esc(s.telefono || '')}"`, t);
-    acc = [...ent.map(s => boton(s, '🙋', `Se enturnó en la app ${s.creado ? haceTxt(s.creado) : ''} · cel ${s.telefono}`)), ...disp.slice(0, 3).map(s => boton(s, '🟢', `Disponible${s.desde ? ' desde ' + fd(s.desde) : ''}${s.ciudad ? ' en ' + s.ciudad : ''} · cel ${s.telefono}`)),
-      ...sug.filter(s => !ent.concat(disp).some(e => e.placa === s.placa)).map(s => boton(s, '🚚', 'Ya hizo esta ruta: ponerlo en el viaje (se revisa y se guarda)')), btnT('Asignar en el viaje', `data-t-abrir="${v.id}"`)];
-    marca = '';
-  } else if (x.tipo === 'man') {
-    titulo = `Mañana · ${esc(x.h.map(h => h.que + (h.donde ? ' · ' + h.donde : '')).join(' · '))}`;
-    detalle = `${esc(nombreTurno(v))} · ${v.placa ? '✓ vehículo ' + esc(v.placa) : '<b style="color:var(--bad)">⚠ sin vehículo</b>'} · ${v.conductor ? '✓ ' + esc(v.conductor) : '<b style="color:var(--bad)">⚠ sin conductor</b>'}`;
-    acc = [v.placa ? lnkT(ICONO_WA + 'Avisar al conductor', waConductor(v, `te confirmo mañana ${x.h.map(h => h.que.toLowerCase()).join(' y ')}${x.h[0].donde ? ' en ' + x.h[0].donde : ''}. ¿Todo listo?`)) : '', abrirV];
-    marca = rev ? '↺ Deshacer' : '✓ Listo para mañana';
-  } else if (x.tipo === 'nota') {
-    const notas = [...revisados().values()].filter(y => y.clave.startsWith('nota|'));
-    titulo = 'Nota de entrega de turno';
-    detalle = (notas.map(y => `«${esc(y.clave.slice(5))}» · ${esc(y.usuario)} ${esc(y.hora)}`).join('<br>') || 'Qué queda pendiente, qué se habló con Reckitt o con los conductores, qué debe mirar el siguiente turno.')
-      + `<textarea id="turnoNota" maxlength="180" rows="2" class="tr-nota" placeholder="Ej.: EXPO-006 sin confirmar cita; Jhonier espera la tirilla de JYY043"></textarea>`;
-    acc = [btnT('Guardar nota', 'data-t-nota="1"')];
-    marca = '';
-  } else if (x.tipo === 'prop') {
-    titulo = `${x.n} dato${x.n === 1 ? '' : 's'} de los correos por aprobar`; detalle = 'Lo que LogxIA encontró en los correos: al aprobarlo pasa a la base';
-    acc = [btnT('✔ Revisar datos', 'data-t-prop="1"')];
-  } else if (x.tipo === 'accion') {
-    // desde cuándo está la acción (5-nov: "ya no sale desde hace cuánto está"): la hora del correo, si no la del registro
-    titulo = esc(x.b.accion); detalle = `${desdeCuando(x.b.fechaCorreo || x.b.registrado)}${esc(nombreTurno(v) || operacionDe(x.b))} · ${esc(x.b.remitente || '')}${avisoHecha(x.b)}`;
-    acc = [botonAtajo(x.b), btnT('Marcar hecha', `data-t-hecha="${x.b.id}"`), btnT('No es para ETP', `data-t-noetp="${x.b.id}"`), abrirV];
-  } else if (x.tipo === 'viene') {
-    titulo = `${esc(nombreTurno(v))} · ${primerEvento(v) ? fd(primerEvento(v)) : ''}`;
-    detalle = 'Falta: ' + esc(x.e.map(e => e.campo.toLowerCase()).join(', ')) + ` · ${esc(x.e[0].porque)}`;
-    const sug = !v.placa ? sugeridos(v) : [];
-    acc = [abrirV, ...sug.map(s => btnT(`🚚 ${esc(s.placa)} · ${esc(s.conductor.split(' ').slice(0, 2).join(' '))}`, `data-t-asignar="${v.id}" data-placa="${esc(s.placa)}" data-conductor="${esc(s.conductor)}"`, 'Ya hizo esta ruta: ponerlo en el viaje (se revisa y se guarda)')), buscar];
-  } else {
-    titulo = `${esc(nombreTurno(v))} · ${esc(x.e[0].msg)}${x.e.length > 1 ? ` <span class="sub">(+${x.e.length - 1})</span>` : ''}`;
-    detalle = esc(x.e[0].porque);
-    acc = [btnT('Corregir', `data-t-abrir="${v.id}"`), buscar];
-  }
-  if (x.tipo !== 'prop' && marca && !x.roja) acc.push(btnT(marca, `data-t-rev="${x.k}"`, rev ? '' : 'Lo saca de la lista de hoy para todo el equipo'));
-  if (x.roja && !x.exc) acc.push(btnT('⚠ No se puede: excepción', `data-t-exc="${x.k}"`, 'Pide a Gerencia que apruebe dejarlo así; queda registrado con su nombre'));
-  const quien = rev ? `<div class="sub">✓ ${esc(rev.usuario)}${rev.hora ? ' · ' + esc(rev.hora) : ''}</div>` : '';
-  const exc = x.exc ? `<div class="sub tr-exc tr-exc-${x.exc.estado}">${{pendiente: '⏳ Excepción esperando a Gerencia', aprobada: '✓ Excepción aprobada por ' + esc(x.exc.aprobo?.usuario || 'Gerencia') + ' · vale hasta las ' + x.exc.vence, vencida: '✖ La aprobación venció a las ' + x.exc.vence + ': hay que resolverlo', rechazada: '✖ Excepción rechazada por ' + esc(x.exc.aprobo?.usuario || 'Gerencia') + ': hay que resolverlo'}[x.exc.estado]} · ${esc(x.exc.motivo)} (${esc(x.exc.usuario)} ${esc(x.exc.hora)})</div>` : '';
-  return `<div class="tr-fila${rev ? ' rev' : ''}${x.bloquea ? ' tr-roja' : ''}"><div class="tr-txt"><b>${titulo}</b><div class="sub">${detalle}</div>${quien}${exc}${excAbierta === x.k ? selectorMotivo(x.k) : ''}</div><div class="tr-acc">${acc.filter(Boolean).join('')}</div></div>`;
-}
-
-// app de turnos: conductores que se enturnaron en un viaje o que reportaron estar disponibles para su fecha
+// app de turnos (turnos.html): conductores que se enturnaron en un viaje o que reportaron estar disponibles para su fecha; la Bandeja
+// los ofrece primero en "Sin vehículo" (antes lo hacía Mi turno)
 const enturnadosDe = v => (window.TURNOS_C || []).filter(t => t.tipo === 'Turno' && t.viajeId === v.id);
 const disponiblesPara = v => (window.TURNOS_C || []).filter(t => t.tipo === 'Disponible' && (!t.desde || !primerEvento(v) || t.desde <= primerEvento(v)));
 const APP_TURNOS = 'https://logxie-projects.github.io/tablero-reckitt/turnos.html';
@@ -2506,61 +2359,6 @@ function bloqueGerencia(T){
     <div class="sub">${esc(x.k.replace(/^seg\d\|/, 'Seguimiento · ').replace(/^cob\|/, 'Sin vehículo · ').replace(/^conf\|/, 'Paso por confirmar · ').replace(/^a(LX-)/, 'Pedido del cliente $1').replace(/^ronda/, 'Saltar la ronda '))} · pedida por ${esc(x.usuario)} ${esc(x.hora)}</div></div>
     <div class="tr-acc">${esGerencia() ? btnT('✓ Aprobar', `data-t-aprobar="${esc(x.k)}"`) + btnT('✖ Rechazar', `data-t-rechazar="${esc(x.k)}"`) : '<span class="sub">Solo Gerencia aprueba (con su clave)</span>'}</div></div>`).join('')}</div>`;
 }
-function renderTurno(){
-  const cont = $('#turno'); if (!cont) return;
-  const T = estadoTurno(), {r, R, M} = T;
-  // líneas rojas: se bloquea todo el tablero y se lleva al primer paso que las tiene
-  document.body.classList.toggle('turno-bloqueado', T.bloqueado);
-  const primeraRoja = M.findIndex((m, i) => T.rojas[i]);
-  // la Bandeja (prueba, bandeja.js) también muestra las líneas rojas: con el bloqueo se puede trabajar desde ella
-  // desde el 7-nov la Bandeja de Pendientes reemplaza a Mi turno en el menú: con el bloqueo se lleva a la Bandeja
-  if (T.bloqueado && $('#v-turno').classList.contains('hidden') && $('#v-bandeja')?.classList.contains('hidden')) $('#nav [data-v="bandeja"]').click();
-  // un paso se abre cuando los anteriores no tienen líneas rojas; los que TIENEN líneas rojas están siempre abiertos (son
-  // igual de urgentes: ej. Cobertura con viajes sin vehículo a 72 h); Gerencia ve todos los pasos sin orden, y mientras Gerencia
-  // quita el bloqueo (pausa) todos los pasos quedan abiertos para el equipo (5-nov: "desbloqueé y Eider no veía Cobertura")
-  const abierto = i => esGerencia() || enPausa() || primeraRoja < 0 || i <= primeraRoja || T.rojas[i] > 0;
-  if (!abierto(M.findIndex(m => m.id === turnoMenu))) turnoMenu = M[primeraRoja].id;
-  // los 3 separadores de la Bandeja (bandeja.js barraOperaciones, la misma operación elegida en las dos pantallas, 6-nov): cada
-  // paso muestra solo las líneas de esa operación. Las líneas sin viaje ni operación (Llenar datos, la nota del cierre) salen en
-  // todas. Las líneas rojas y el bloqueo no cambian: se cuentan en todas las operaciones (el ⛔ del separador avisa dónde están)
-  const opF = x => x.v ? x.v.operacion : x.b ? operacionAccion(x.b) || 'General' : '';
-  const enOp = x => !bandejaOp || !opF(x) || opF(x) === bandejaOp;
-  const todasF = M.flatMap(m => m.filas).filter(x => !x.hecha);
-  const barraOp = window.MODO_CLIENTE ? '' : barraOperaciones(o => todasF.filter(x => opF(x) && (!o || opF(x) === o)).length, o => todasF.some(x => x.roja && !x.exc && opF(x) && (!o || opF(x) === o)));
-  M.forEach(m => { m.filasOp = m.filas.filter(enOp); });
-  const cuenta = m => { const h = m.filasOp.filter(x => x.hecha || (x.exc && ['pendiente', 'aprobada'].includes(x.exc.estado))).length; return {h, t: m.filasOp.length}; };
-  $('#nTurno').textContent = T.rojas.reduce((a, b) => a + b, 0) || '';
-  $('#turnoMenus').innerHTML = M.map((m, i) => { const c = cuenta(m), roja = T.rojas[i];
-    return `<button class="tr-menu ${turnoMenu === m.id ? 'on' : ''} ${roja ? 'roja' : c.h === c.t ? 'ok' : ''}" data-t-menu="${m.id}" ${abierto(i) ? '' : 'disabled title="Primero resuelva las líneas rojas del paso anterior"'}>
-      <span class="tr-n">${roja ? '!' : c.h === c.t ? '✓' : i + 1}</span> ${m.titulo} <b>${c.h}/${c.t}</b>${abierto(i) ? '' : ' 🔒'}</button>`; }).join('');
-  // encabezado: la ronda y, si hay, por qué está bloqueado
-  const ronda = !r ? `Sin ronda en curso · rondas a las ${RONDAS.map(h => h + ':00').join(', ')}`
-    : T.rondaHecha ? `✓ Ronda ${r.n} de ${RONDAS.length} ${T.rondaExc ? 'con excepción (' + ({pendiente: 'esperando a Gerencia', aprobada: 'aprobada hasta las ' + T.rondaExc.vence}[T.rondaExc.estado] || '') + ')' : 'hecha'}${r.n < RONDAS.length ? ` · la siguiente a las ${RONDAS[r.n]}:00` : ''}`
-    : T.rondaVencida ? `<span class="tr-vencida">⛔ Ronda ${r.n} vencida a las ${hhmm(r.vence)}: falta el seguimiento</span>${btnT('No se puede: excepción', `data-t-exc="ronda${r.n}"`)}`
-    : `<span class="${T.resta <= 30 ? 'tr-urge' : ''}">⏱ Ronda ${r.n} de ${RONDAS.length} · faltan ${hhmm(T.resta)} (vence ${hhmm(r.vence)})</span>`;
-  const rojas = T.rojas.map((n, i) => n ? `<button type="button" class="link" data-t-menu="${M[i].id}">${n} en ${M[i].titulo}</button>` : '').filter(Boolean);
-  // arriba a la derecha: entrar o salir del modo Gerencia
-  $('#turnoLlave').innerHTML = window.MODO_CLIENTE ? '' : esGerencia() ? `<span class="tr-ger">🔓 Modo Gerencia</span>
-      <span class="sub" title="Nadie del equipo se bloquea hasta esa hora de hoy">⏸ Quitar bloqueo hasta</span> <input type="time" id="tPausaHora" value="${horaPausa || pausaSugerida()}" style="width:auto">
-      <button type="button" class="btn" data-t-pausa="1">Aplicar</button>${enPausa() ? ` <button type="button" class="btn" data-t-pausafin="1" title="Termina la pausa de las ${pausaHasta()}">▶ Bloquear de nuevo</button>` : ''}
-      <button type="button" class="btn" data-t-gsalir="1">Salir</button>`
-    : '<button type="button" class="btn" data-t-gerencia="1" title="Con la clave de Gerencia el tablero no se bloquea y se pueden aprobar excepciones">🔑 Entrar como Gerencia</button>';
-  $('#turnoReloj').innerHTML = `${ronda}${rojas.length ? ` · <span class="tr-urge">Urgente (en rojo): ${rojas.join(', ')}</span>` : ''}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}`;
-  let m = M.find(x => x.id === turnoMenu);
-  if (!m) { m = M[0]; turnoMenu = m.id; }   // el paso elegido ya no existe (ej. "Cierre del día" pasada la medianoche)
-  const pend = m.filasOp.filter(x => !x.hecha), hechos = m.filasOp.filter(x => x.hecha);
-  // invitar por WhatsApp a los conductores a TODOS los viajes sin vehículo (no solo los de 72 h de Cobertura): siempre a la vista,
-  // sin depender del paso ni del bloqueo (también está en la barra de arriba: #btnInvitar)
-  const nInv = sinVehiculoGrupo().length;
-  const invitar = nInv ? `<div class="tr-vacio" style="margin:0 0 8px"><a class="btn" href="${waLink('', mensajeGrupo())}" target="_blank" rel="noopener">${ICONO_WA}Invitar conductores por WhatsApp · ${nInv} viaje${nInv === 1 ? '' : 's'} sin vehículo</a> <span class="sub">Todos los viajes a futuro: abre WhatsApp con el mensaje listo; elija el grupo y envíe. Responden en la app de turnos.</span></div>` : '';
-  // los separadores van encima de los pasos (Seguimiento, Cobertura…): sus contadores también son de la operación elegida
-  let ops = $('#turnoOps'); if (!ops) { ops = document.createElement('div'); ops.id = 'turnoOps'; $('#turnoMenus').before(ops); }
-  ops.innerHTML = barraOp;
-  cont.innerHTML = invitar + bloqueGerencia(T) + bloqueCalifGerencia() + `<div class="tr-meta"><b>Meta:</b> ${esc(m.meta)}</div><div class="sub" style="margin:2px 0 6px">${esc(m.ayuda)}</div>
-    ${pend.map(x => filaTurno(x, false)).join('') || `<div class="tr-vacio">✓ ${esc(m.vacio)}${M[M.indexOf(m) + 1] ? ` · ${btnT('Siguiente: ' + M[M.indexOf(m) + 1].titulo + ' →', `data-t-menu="${M[M.indexOf(m) + 1].id}"`)}` : ''}</div>`}
-    ${m.despues ? `<div class="sub tr-vacio">ℹ ${esc(m.despues)}</div>` : ''}
-    ${hechos.length ? `<details class="tr-rev"><summary class="sub">Hechos hoy (${hechos.length})</summary>${hechos.map(x => filaTurno(x, R.get(x.k))).join('')}</details>` : ''}`;
-}
 // la clave se escribe aquí y la comprueba el Apps Script; el tablero solo guarda "es Gerencia" mientras la pestaña esté abierta.
 // La clave misma queda solo en memoria (claveGerenciaSesion, nunca en el navegador) para las acciones que el servidor vuelve a
 // comprobar (editar novedades: novedades.js); al recargar la página se vuelve a pedir.
@@ -2572,22 +2370,19 @@ async function entrarGerencia(){
     if (!j.ok) return toast(j.error || 'Clave de Gerencia incorrecta');
     claveGerenciaSesion = codigo;
     try { sessionStorage.setItem('rkt-gerencia', '1'); } catch(e){}
-    toast('Modo Gerencia: el tablero no se bloquea en esta pestaña'); repintarTurno();
+    toast('Modo Gerencia: puede aprobar excepciones y editar novedades en esta pestaña'); repintarTurno();
   } catch(e) { toast('No se pudo verificar la clave'); }
 }
-setInterval(() => { if (window.BITACORA) repintarTurno(); }, 60e3);   // el reloj de la ronda y el bloqueo avanzan solos
-$('#v-turno').onclick = e => {   // incluye el reloj de la ronda (#turnoReloj)
+setInterval(() => { if (window.BITACORA) repintarTurno(); }, 60e3);   // el reloj de la ronda avanza solo
+// los botones data-t-* (marcas, excepciones, Gerencia, registro…) de la Bandeja: bandeja.js los manda aquí
+function manejarTurno(e){
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   const d = b.dataset;
-  if (d.tMenu) { turnoMenu = d.tMenu; renderTurno(); }
-  else if (d.bOp !== undefined) elegirOperacion(d.bOp);   // los 3 separadores (bandeja.js)
-  else if (d.tExc) { excAbierta = d.tExc; repintarTurno(); }
+  if (d.tExc) { excAbierta = d.tExc; repintarTurno(); }
   else if (d.tExccancel) { excAbierta = ''; repintarTurno(); }
-  // excepción: el motivo del selector que está junto al botón (en Mi turno o en la Bandeja)
+  // excepción: el motivo del selector que está junto al botón
   else if (d.tExcok) { const motivo = (b.closest('.tr-motivo') || document).querySelector(`[data-t-motivo="${CSS.escape(d.tExcok)}"]`).value; excAbierta = ''; marcarRevisado(`exc|${d.tExcok}|${motivo}`); }
   else if (d.tGerencia) entrarGerencia();
-  else if (d.tPausa && esGerencia()) pausarBloqueo();
-  else if (d.tPausafin && esGerencia()) terminarPausa();
   else if (d.tGsalir) { try { sessionStorage.removeItem('rkt-gerencia'); } catch(e){} repintarTurno(); }
   else if ((d.tAprobar || d.tRechazar) && esGerencia()) { const k = d.tAprobar || d.tRechazar;
     if (confirm(`¿${d.tAprobar ? 'Aprobar' : 'Rechazar'} esta excepción como Gerencia?\n\nQueda registrado con su nombre y la hora.`)) marcarRevisado((d.tAprobar ? 'ok|' : 'no|') + k); }
@@ -2602,9 +2397,7 @@ $('#v-turno').onclick = e => {   // incluye el reloj de la ronda (#turnoReloj)
   else if (d.tNoetp) marcarHecha(d.tNoetp, true);
   else if (d.tAsignar) asignarSugerido(d.tAsignar, d.placa, d.conductor, d.telefono);
   else if (d.tProp) abrirPropuestas();
-  else if (d.tNota) { const txt = $('#turnoNota').value.replace(/\s+/g, ' ').trim(); if (txt) marcarRevisado('nota|' + txt.slice(0, 180)); }
-};
-$('#v-turno').addEventListener('input', e => { if (e.target.id === 'tPausaHora') horaPausa = e.target.value; });   // hora de la pausa (Gerencia)
+}
 /* ---------- avisos de hitos (F2): al guardar un hito, el coordinador ve el aviso y decide si sale ---------- */
 // A Entrapetrol sale al momento; al solicitante del viaje (CORREOS_SOLICITANTE) no: queda en cola y le llega en el resumen de
 // las 10 a. m. y las 3 p. m. (AVISO_CLIENTE en Código.gs), para no saturar al cliente con un correo por hito.
@@ -3184,7 +2977,7 @@ function lineaNovedad(v){
   return v.observacion ? `<div class="sub" ${estilo}>💬 ${esc(v.observacion)}</div>` : '';
 }
 const fechaNovedad = n => { const f = fechaLocal(n.fecha); return f ? `${fd(f)}${f.length > 10 ? ' ' + f.slice(11, 16) : ''}` : 'sin hora'; };
-// el último comentario del viaje (Mi turno): lo más nuevo entre la última novedad de la operación y la última vez que alguien editó
+// el último comentario del viaje (Bandeja, ¿Dónde va? y Sin actualizar): lo más nuevo entre la última novedad de la operación y la última vez que alguien editó
 // la Observación (Historial). La observación es acumulada ("…- DESCARGA 4 NOV- VEHICULOS EN SOLISTICA"): se muestra el final, que
 // es lo más reciente. En un subviaje, los comentarios son los del viaje padre.
 function ultimoComentario(v){
@@ -3415,7 +3208,7 @@ function pintarEstados(){
 // Campos que se editan en la ventana del viaje: los mismos de las pestañas Seguimiento EXPO / IMPO (ver SEGUIMIENTO en apps-script/Base.gs)
 const EMPRESAS = ['Reckitt Benckiser','Reckitt Health','Reckitt Hygiene','Mead Johnson'];
 const CAMPOS_VIAJE = [['situacion','STATUS','sit'],['empresa','Empresa','lista',EMPRESAS],['solicitante','Solicitante'],['booking','Booking / BL'],['pedido','Pedido'],['do','DO'],
-  ['contenedor','Contenedor'],['unidad','Unidad','lista',['1X20','1X40']],['conductor','Conductor','dl','dlCond'],['placa','Placa','dl','dlPlaca'],['fwd','FWD','dl','dlFwd']];
+  ['contenedor','Contenedor'],['unidad','Unidad','lista',['1X20','1X40']],['conductor','Conductor'],['placa','Placa'],['fwd','FWD','dl','dlFwd']];
 const CAMPOS_ETAPA = {
   EXPO: [['Retiro del vacío', [['patio','Patio de retiro','dl','dlPatio'],['fechaRetiro','Fecha de retiro','fecha']]],
     ['Llenado en planta', [['fechaCargue','Fecha de llenado','fecha'],['sello','Sello'],['vgm','VGM'],['peso','Peso bruto (kg)']]],
@@ -3469,7 +3262,7 @@ function pintarForm(v){
     `<div class="full" style="margin-top:12px"><label>Observación (nota fija del viaje) <span class="sub">· lo que pasa día a día va en Novedades, arriba</span></label><textarea data-k="observacion" placeholder="Ej: Programación nov · cargue en DHL">${esc(v.observacion||'')}</textarea></div>`;
   const lista = (id, k) => { $('#'+id).innerHTML = [...new Set(viajes.map(x=>x[k]).filter(Boolean))].sort().map(x=>`<option value="${esc(x)}">`).join(''); };
   $('#dlExtra').innerHTML = [...new Set([...CONCEPTOS_EXTRA, ...viajes.flatMap(x=>itemsExtra(x).map(i=>i[0]))])].map(x=>`<option value="${esc(x)}">`).join('');
-  lista('dlPatio','patio'); lista('dlCond','conductor'); lista('dlPlaca','placa'); lista('dlFwd','fwd');
+  lista('dlPatio','patio'); lista('dlFwd','fwd');
   marcarCambios();
 }
 const CONCEPTOS_EXTRA = ['Cita','Standby','Retorno','Cargue','Descargue','Urbano','Parqueadero','Pernocta','Escolta','Almacenaje','Movimiento de contenedor'];
@@ -3481,7 +3274,7 @@ const CONTENEDOR_SUB = ['Lleno', 'Vaciado'];
 const CAMPOS_SUB = [
   ['Subviaje', [['motivoSub','Motivo','lista',MOTIVOS_SUBVIAJE],['patioSub','Patio intermedio','dl','dlPatio'],['bodega','Destino final'],['fechaDescargueSub','Fecha descargue en patio','fecha'],['fechaUrbano','Fecha urbano (entrega final)','fecha'],
     ['contenedorSub','Contenedor en bodega de paso (IMPO)','lista',CONTENEDOR_SUB]]],
-  ['Vehículo del urbano', [['situacion','STATUS','sit'],['conductor','Conductor','dl','dlCond'],['placa','Placa','dl','dlPlaca']]],
+  ['Vehículo del urbano', [['situacion','STATUS','sit'],['conductor','Conductor'],['placa','Placa']]],
   ['Costos y facturación', [['conceptoExtra','Costos del subviaje','extras'],['aprobacionExtra','Aprobación','lista',['Pendiente','Aprobado','Rechazado']],
     ['facturacion','Facturación','lista',FACTURACION],['numFactura','N° factura'],['fechaFactura','Fecha factura','fecha']]]];
 const filaExtra = ([k, x] = ['', 0]) => `<div class="exrow"><input class="exc" list="dlExtra" placeholder="Concepto" value="${esc(k)}"><input class="exv" inputmode="numeric" placeholder="$" value="${x||''}"><button type="button" class="link" data-del title="Quitar">✕</button></div>`;
@@ -3652,7 +3445,7 @@ async function revisarCalif(viajeId, decision){
     if (!j.ok) throw new Error(j.error || 'error');
     window.CALIF = j.calificaciones;
     const v = viajes.find(x => x.id === editId); if (v) pintarCalif(v);
-    if (typeof renderTurno === 'function') renderTurno();
+    if (typeof renderBandeja === 'function') renderBandeja();   // la lista de Gerencia está en la Bandeja
     toast(decision === 'Aprobada' ? 'Descuento aprobado: ya cuenta' : 'Descuento rechazado: no cuenta');
   } catch(e) { toast('No se guardó: ' + e.message); }
 }
@@ -3711,7 +3504,7 @@ async function marcarVerificado(nombre, resultado){
   try {
     const j = await api('registro', {tipo: 'verificar', datos: {nombre, resultado}, usuario});
     if (!j.ok) throw new Error(j.error || 'error');
-    window.REGISTRO = j.registro; renderTurno();
+    window.REGISTRO = j.registro; renderBandeja();
     toast(resultado === 'Sí' ? `Celular de ${nombre} confirmado` : `Celular quitado: pida el número correcto de ${nombre}`);
   } catch(e) { toast('No se guardó: ' + e.message); }
 }
@@ -3774,7 +3567,7 @@ async function guardarRegistroUI(){
       window.REGISTRO = j.registro;
     }
     $('#ovReg').classList.remove('open'); toast('Datos guardados en el registro');
-    if (typeof renderTurno === 'function') renderTurno();
+    if (typeof renderBandeja === 'function') renderBandeja();
     const seguir = regContinuar; regContinuar = null; if (seguir) seguir();
   } catch(e) { toast('No se guardó: ' + e.message); }
   finally { b.disabled = false; b.textContent = 'Guardar datos'; }
@@ -3949,17 +3742,6 @@ function filasConfirmar(V){
     .map(({x, P}) => ({k: 'conf|' + x.id, tipo: 'conf', v: x, P, roja: P.some(p => !p.naviera && p.dias > 1)}))
     .sort((a, b) => b.roja - a.roja || Math.max(...b.P.map(p => p.dias)) - Math.max(...a.P.map(p => p.dias)));
 }
-function filaConfirmarHtml(x){
-  const v = x.v, padre = v.padre ? ` <span class="sub">(subviaje de ${esc(v.padre)})</span>` : '';
-  const titulo = `Sin confirmar · ${esc(nombreTurno(v))}${padre}`;
-  const detalle = x.P.map(p => `${esc(p.txt)} ${esc(fd(p.fecha))}${p.dias ? ` · <span style="${!p.naviera && p.dias > 1 ? 'color:var(--bad);font-weight:600' : ''}">hace ${p.dias} d sin confirmar</span>` : ' · hoy'}`).join('<br>')
-    + '<br><span class="sub">Confírmelo con el conductor, la tirilla o el correo. Si no se hizo, abra el viaje y cambie la fecha (reprogramación).</span>';
-  const pq = ' ' + x.P.map(p => p.txt.toLowerCase() + ' del ' + fd(p.fecha)).join(' y ');
-  const acc = [...x.P.map(p => botonConfirmar({v, ...p}, `Confirmar: ${esc(p.txt.toLowerCase())}`)),
-    btnT('No se hizo: reprogramar', `data-t-abrir="${v.id}"`, 'Abre el viaje para poner la fecha nueva con su causa'),
-    v.placa ? lnkT(ICONO_WA + 'Preguntar al conductor', waConductor(v, `¿se hizo${pq}? Confírmame por favor`)) : ''];
-  return {titulo, detalle, acc};
-}
 
 // anota en el tablero una confirmación que la base guarda en la misma llamada (aprobar datos de correos, escribir la fecha), para
 // verla sin recargar; la próxima carga trae la columna real. Misma regla que Base.gs confirmarPasos_: solo pasos, fecha no futura, sin repetir
@@ -4076,7 +3858,6 @@ async function crearNacional(b){
     setTimeout(() => { $('#ovNacional')?.remove(); if (j.id) abrir(j.id); }, 800);
   } catch(e) { est('✖ No se creó: ' + e.message, 'var(--bad)'); }
 }
-$('#btnNacional') && ($('#btnNacional').onclick = () => nuevoNacional(null));
 /* ---------- llenar datos desde correos (con revisión y aprobación) ---------- */
 let PROP = [];
 // cada área revisa lo suyo: los datos de cobro (relación de Pedro y aprobación de Reckitt) son de Facturación; el resto, de Operaciones
@@ -4089,7 +3870,7 @@ async function cargarPropuestas(intentos = 3){
   for (let i = 0; i < intentos; i++) {
     try {
       const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=propuestas&clave=' + encodeURIComponent(claveActual()))).json();
-      if (j.ok) { PROP = j.propuestas || []; $('#nProp').textContent = PROP.length || ''; if (typeof renderBandeja === 'function') renderBandeja(); return true; }   // la Bandeja (prueba) los muestra por viaje
+      if (j.ok) { PROP = j.propuestas || []; if (typeof renderBandeja === 'function') renderBandeja(); return true; }   // la Bandeja los muestra por viaje
     } catch(e) {}
     await new Promise(r => setTimeout(r, 3000 * (i + 1)));
   }
@@ -4106,7 +3887,6 @@ async function abrirPropuestas(){
   pintarPropuestas();
 }
 function pintarPropuestas(){
-  $('#nProp').textContent = PROP.length || '';
   if (!PROP.length) { $('#propLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">No hay datos nuevos de los correos por revisar. ✔</div>'; return; }
   const n = a => PROP.filter(p => areaProp(p) === a).length;
   if (!propArea || !n(propArea)) propArea = n('Operaciones') ? 'Operaciones' : 'Facturación';
@@ -4146,7 +3926,6 @@ async function decidirPropuestas(aprobar){
   } catch(e) { toast('No se pudo guardar: ' + e.message); }
   $('#propAprobar').disabled = $('#propRechazar').disabled = false;
 }
-$('#btnCorreos').onclick = abrirPropuestas;
 $('#propCerrar').onclick = () => $('#ovProp').classList.remove('open');
 $('#ovProp').onclick = e => { if (e.target.id === 'ovProp') $('#ovProp').classList.remove('open'); };
 $('#propLista').addEventListener('click', e => { const b = e.target.closest('[data-parea]'); if (!b) return; propArea = b.dataset.parea; $('#propTodos').checked = false; pintarPropuestas(); });
@@ -4167,8 +3946,7 @@ async function aplicarAccion(b){
     const usados = new Set(P.map(p => p.clave));
     PROP = PROP.filter(p => !usados.has(p.clave));
     P.forEach(p => { const v = viajes.find(x => x.id === p.viajeId); if (v) { v[p.campo] = p.valor; anotarConfirmacion(v, p.campo, p.valor, usuario, fuenteDeOrigen(p.origen)); } }); etapasViajes();
-    $('#nProp').textContent = PROP.length || '';
-    accionEnCurso = null;
+      accionEnCurso = null;
     await marcarHecha(b.id, false, `aplicó ${j.aprobadas} dato${j.aprobadas === 1 ? '' : 's'} del correo`);
   } catch(e) { toast('No se pudo guardar: ' + e.message); }
 }
@@ -4632,93 +4410,6 @@ $('#btnDocs').onclick = abrirDocumentos;
 $('#docsCerrar').onclick = () => $('#ovDocs').classList.remove('open');
 ['docsMes', 'docsFalta'].forEach(id => $('#' + id).onchange = pintarDocumentos);
 $('#docsBuscar').oninput = pintarDocumentos;
-// enturnados.js · "🙋 Turnos": todos los conductores que se enturnaron en un viaje o reportaron estar disponibles en la app
-// Viajes ETP (turnos.html), de cualquier fecha (Mi turno → Cobertura solo muestra los viajes de las próximas 72 h).
-// Datos: window.TURNOS_C (datos.js; Conductores.gs resumenTurnos_ = últimos 10 días, sin los retirados). Solo equipo.
-// Asignar abre la ventana del viaje con placa y conductor puestos (asignarSugerido, turno.js): el coordinador revisa y guarda.
-
-function abrirEnturnados(){
-  $('#ovTurnos').classList.add('open');
-  pintarEnturnados();
-}
-
-function pintarEnturnados(){
-  const T = window.TURNOS_C || [];
-  const turnos = T.filter(t => t.tipo === 'Turno'), disponibles = T.filter(t => t.tipo === 'Disponible');
-  const viajeDe = id => viajes.find(v => v.id === id);
-  const cel = t => t.telefono ? String(t.telefono).replace(/^57(?=\d{10}$)/, '') : '';
-  const wa = (t, texto) => t.telefono ? `<a class="btn" href="${waLink(t.telefono, texto)}" target="_blank" rel="noopener">${ICONO_WA}Escribir</a>` : '';
-  const nombre1 = t => String(t.conductor || '').split(' ')[0];
-  const btnAsignar = (v, t) => `<button class="btn primary" data-e-asignar="${esc(v.id)}" data-placa="${esc(t.placa)}" data-conductor="${esc(t.conductor)}" data-telefono="${esc(t.telefono || '')}" title="Abre el viaje con este vehículo y conductor puestos: revise y guarde">Asignar</button>`;
-
-  // 1) viajes con enturnados, del que arranca primero al último
-  const porViaje = {};
-  turnos.forEach(t => (porViaje[t.viajeId] = porViaje[t.viajeId] || []).push(t));
-  const bloques = Object.keys(porViaje).map(id => ({v: viajeDe(id), id, L: porViaje[id].sort((a, b) => String(a.creado).localeCompare(String(b.creado)))}))
-    .sort((a, b) => String(a.v ? primerEvento(a.v) || '9' : '9').localeCompare(String(b.v ? primerEvento(b.v) || '9' : '9')));
-  const filaTurno = (v, t, i) => {
-    const asignado = v && tieneVehiculo(v);
-    const esEste = asignado && placaIgual(v.placa, t.placa);
-    const estado = !v ? '<span class="sub">viaje no encontrado</span>'
-      : esEste ? '<b style="color:var(--ok)">✓ Asignado a él</b>'
-      : asignado ? `<span class="sub">El viaje ya tiene ${esc(v.placa)}</span>` : btnAsignar(v, t);
-    const msg = v ? `Hola ${nombre1(t)}, sobre el viaje ${nombreTurno(v)} del ${fd(primerEvento(v))} al que se enturnó: ` : `Hola ${nombre1(t)}, `;
-    return `<tr><td class="sub">${i + 1}.º</td><td><span class="placa">${esc(t.placa)}</span> ${esc(t.conductor)} ${estrellasDe(t.conductor)}<br><span class="sub">${esc(cel(t))}</span></td>
-      <td class="sub">${t.creado ? 'se enturnó ' + esc(haceTxt(t.creado)) : ''}</td><td style="white-space:nowrap">${estado} ${wa(t, msg)}</td></tr>`;
-  };
-  const htmlViajes = bloques.length ? bloques.map(({v, id, L}) => {
-    const d = v && primerEvento(v) ? diffDias(primerEvento(v)) : null;
-    const cuando = !v ? '' : !primerEvento(v) ? 'sin fecha' : `${d === 0 ? 'hoy, ' : d === 1 ? 'mañana, ' : d < 0 ? 'debió arrancar el ' : ''}${fd(primerEvento(v))}`;
-    const cab = v ? `<button class="link" data-e-abrir="${esc(v.id)}"><b>${esc(v.id)}</b></button> · ${esc(v.operacion)} ${esc(v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || ''))}
-      ${v.booking ? '· booking ' + esc(v.booking) : v.pedido ? '· pedido ' + esc(v.pedido) : ''} · <b>${esc(cuando)}</b>
-      · ${tieneVehiculo(v) ? `vehículo <span class="placa">${esc(v.placa)}</span>` : '<b style="color:var(--bad)">sin vehículo</b>'}` : esc(id);
-    return `<div class="card" style="margin:8px 0;padding:10px 12px"><div>${cab}</div>
-      <div class="tbl-wrap" style="border:0;margin-top:6px"><table class="prop">${L.map((t, i) => filaTurno(v, t, i)).join('')}</table></div></div>`;
-  }).join('') : '<p class="sub">Ningún conductor se ha enturnado en los últimos 10 días.</p>';
-
-  // 2) disponibles: se pueden poner en cualquier viaje sin vehículo que arranque desde su fecha
-  const sinVehiculo = viajes.filter(v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre && !tieneVehiculo(v) && primerEvento(v) && diffDias(primerEvento(v)) >= -1)
-    .sort((a, b) => primerEvento(a).localeCompare(primerEvento(b)));
-  const opciones = t => sinVehiculo.filter(v => !t.desde || primerEvento(v) >= t.desde)
-    .map(v => `<option value="${esc(v.id)}">${esc(fd(primerEvento(v)))} · ${esc(v.id)} · ${esc(nombreTurno(v).replace(/^Sin vehículo · /, ''))}</option>`).join('');
-  const htmlDisp = disponibles.length ? `<div class="tbl-wrap"><table class="prop"><tr><th>Vehículo y conductor</th><th>Disponible</th><th>Asignar a un viaje sin vehículo</th><th></th></tr>
-    ${disponibles.sort((a, b) => String(a.desde || '').localeCompare(String(b.desde || ''))).map(t => {
-      const ops = opciones(t);
-      return `<tr><td><span class="placa">${esc(t.placa)}</span> ${esc(t.conductor)} ${estrellasDe(t.conductor)}<br><span class="sub">${esc(cel(t))}</span></td>
-        <td>${t.desde ? 'desde ' + esc(fd(t.desde)) : 'ya'}${t.ciudad ? ' · ' + esc(t.ciudad) : ''}<br><span class="sub">${t.creado ? 'avisó ' + esc(haceTxt(t.creado)) : ''}</span></td>
-        <td>${ops ? `<select data-e-elegir="${esc(t.placa)}" data-conductor="${esc(t.conductor)}" data-telefono="${esc(t.telefono || '')}" style="width:100%;max-width:300px"><option value="">Elegir viaje…</option>${ops}</select>`
-          : '<span class="sub">No hay viajes sin vehículo desde esa fecha</span>'}</td>
-        <td>${wa(t, `Hola ${nombre1(t)}, vimos que está disponible${t.desde ? ' desde el ' + fd(t.desde) : ''}: `)}</td></tr>`;
-    }).join('')}</table></div>` : '<p class="sub">Nadie ha reportado estar disponible en los últimos 10 días.</p>';
-
-  const nSin = bloques.filter(b => b.v && !tieneVehiculo(b.v)).length;
-  $('#turnosLista').innerHTML = `<p class="sub">${turnos.length} enturnado${turnos.length === 1 ? '' : 's'} en ${bloques.length} viaje${bloques.length === 1 ? '' : 's'}
-      (${nSin} sin vehículo) · ${disponibles.length} disponible${disponibles.length === 1 ? '' : 's'} · últimos 10 días, sin los que se retiraron</p>
-    <h3 style="margin:12px 0 4px">🙋 Enturnados por viaje <span class="sub">· en el orden en que se enturnaron</span></h3>${htmlViajes}
-    <h3 style="margin:16px 0 4px">🟢 Disponibles</h3>${htmlDisp}`;
-}
-
-// la placa se compara sin espacios ni guiones ni mayúsculas
-const placaIgual = (a, b) => placaNorm(a) === placaNorm(b);   // dominio.js
-
-function contarEnturnados(){
-  const n = (window.TURNOS_C || []).filter(t => t.tipo === 'Turno' && (() => { const v = viajes.find(x => x.id === t.viajeId); return v && !tieneVehiculo(v); })()).length;
-  const b = $('#nTurnos'); if (b) b.textContent = n || '';
-}
-
-$('#btnTurnos').onclick = abrirEnturnados;
-$('#turnosCerrar').onclick = () => $('#ovTurnos').classList.remove('open');
-$('#turnosLista').addEventListener('click', e => {
-  const b = e.target.closest('[data-e-asignar],[data-e-abrir]'); if (!b) return;
-  $('#ovTurnos').classList.remove('open');
-  if (b.dataset.eAsignar) asignarSugerido(b.dataset.eAsignar, b.dataset.placa, b.dataset.conductor, b.dataset.telefono);
-  else abrir(b.dataset.eAbrir);
-});
-$('#turnosLista').addEventListener('change', e => {
-  const s = e.target.closest('[data-e-elegir]'); if (!s || !s.value) return;
-  $('#ovTurnos').classList.remove('open');
-  asignarSugerido(s.value, s.dataset.eElegir, s.dataset.conductor, s.dataset.telefono);
-});
 /* ---------- Comunicados a los conductores (WhatsApp) ---------- */
 // Botón "📣 Comunicado" (solo el equipo): plantillas de seguridad, vías, viajes disponibles, documentos y general; el texto se
 // edita y "Abrir WhatsApp" lo deja listo (wa.me sin número: WhatsApp pide el chat). Se envía al canal de avisos de la Comunidad
@@ -4876,7 +4567,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '5803474931';
+const VERSION_TABLERO = '6625361175';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -4902,8 +4593,8 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) revi
 /* ---------- navegación y eventos ---------- */
 $('#nav').onclick = e => { const b=e.target.closest('button'); if(!b) return;
   document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on', x===b));
-  document.body.classList.toggle('en-turno', ['turno','bandeja'].includes(b.dataset.v));   // Mi turno y la Bandeja no usan la barra de filtros global
-  ['bandeja','turno','tablero','viajes','motonaves','errores','acciones'].forEach(v=>$('#v-'+v).classList.toggle('hidden', v!==b.dataset.v)); };
+  document.body.classList.toggle('en-turno', b.dataset.v === 'bandeja');   // la Bandeja no usa la barra de filtros global
+  ['bandeja','tablero','viajes','motonaves','errores','acciones'].forEach(v=>$('#v-'+v).classList.toggle('hidden', v!==b.dataset.v)); };
 $('#proximos').onclick = e => { const b = e.target.closest('[data-ag]'); if (!b) return;
   if (b.dataset.ag==='act') agAct = b.dataset.val; else agDia = b.dataset.val;
   renderProximos(); };
@@ -5332,7 +5023,7 @@ function barraOperaciones(opN, opRoja){
 function elegirOperacion(o){
   bandejaOp = o; bandejaTodo = false; try { localStorage.setItem('bandejaOp', o); } catch(e) {}
   G.op = OPERACIONES_VIAJE.includes(o) ? o : '';   // la misma operación en el Tablero (filtros.js)
-  renderTurno(); renderBandeja();
+  render();   // la misma operación en el Tablero (G.op) y en la Bandeja
 }
 
 // la fecha de la próxima acción de la tarjeta (el orden de la Bandeja): atrasada, hoy, mañana o el día
@@ -5362,7 +5053,7 @@ function queHacer(b){
 
 // arma las tarjetas: {v (o null), titulo, items:[{b: bloque, html, acc, roja}], orden}
 function armarBandeja(){
-  // rondas, líneas rojas y excepciones: las de Mi turno (turno.js estadoTurno), con las mismas claves ("cob|ID", "conf|ID",
+  // rondas, líneas rojas y excepciones (turno.js estadoTurno), con las mismas claves ("cob|ID", "conf|ID",
   // "seg2|ID", "aLX-…", registro), así que una excepción o un "Sigue igual" vale en las dos pantallas
   const T = estadoTurno(), r = T.r, FILAS = new Map(T.M.flatMap(m => m.filas).map(x => [x.k, x]));
   const kSeg = v => `seg${r ? r.n : 0}|${v.id}`;
@@ -5391,10 +5082,15 @@ function armarBandeja(){
     if (sinCobertura(v)) {
       const asignar = B.filter(b => !usadas.has(b.id) && viajeDeAccion(b)?.id === v.id && RE_ASIGNAR.test(minus(b.accion)));
       asignar.forEach(b => usadas.add(b.id));
-      const d = diffDias(primerEvento(v)), sug = sugeridos(v).slice(0, 3);
+      const d = diffDias(primerEvento(v)), ent = enturnadosDe(v), disp = disponiblesPara(v).filter(x => !ent.some(e => e.placa === x.placa)).slice(0, 3);
+      const sug = sugeridos(v).filter(s => !ent.concat(disp).some(e => e.placa === s.placa)).slice(0, 3);
+      const ofrecer = (s, icono, t) => btnT(`${icono} ${esc(s.placa)} · ${esc(String(s.conductor).split(' ').slice(0, 2).join(' '))}`, `data-b-asignar="${v.id}" data-placa="${esc(s.placa)}" data-conductor="${esc(s.conductor)}" data-telefono="${esc(s.telefono || '')}"`, t);
       add(v, {b: 'vehiculo', k: 'cob|' + v.id, ks: asignar.map(b => 'a' + b.id), html: `Arranca ${d < 0 ? 'desde el ' : d === 0 ? 'hoy, ' : d === 1 ? 'mañana, ' : ''}${fd(primerEvento(v))} y no tiene placa`
         + (asignar.length ? `<br><span class="sub">También lo pide ${asignar.map(b => esc(b.id)).join(', ')}: al guardar la placa, márquela hecha</span>` : ''),
-        acc: btnT('Asignar en el viaje', `data-b-abrir="${v.id}"`) + sug.map(s => btnT(`🚚 ${esc(s.placa)} · ${esc(String(s.conductor).split(' ').slice(0, 2).join(' '))}`, `data-b-asignar="${v.id}" data-placa="${esc(s.placa)}" data-conductor="${esc(s.conductor)}" data-telefono="${esc(s.telefono || '')}"`, 'Ya hizo esta ruta: se revisa y se guarda')).join('')
+        acc: btnT('Asignar en el viaje', `data-b-abrir="${v.id}"`)
+          + ent.map(s => ofrecer(s, '🙋', `Se enturnó en la app ${s.creado ? haceTxt(s.creado) : ''}: se revisa y se guarda`)).join('')
+          + disp.map(s => ofrecer(s, '🟢', `Disponible${s.desde ? ' desde ' + fd(s.desde) : ''}${s.ciudad ? ' en ' + s.ciudad : ''}: se revisa y se guarda`)).join('')
+          + sug.map(s => ofrecer(s, '🚚', 'Ya hizo esta ruta: se revisa y se guarda')).join('')
           + asignar.map(b => btnT(`${esc(b.id)} hecha`, `data-b-hecha="${b.id}"`)).join('')
           + btnT(ICONO_WA + 'Invitar al grupo de conductores', 'data-b-invitar="1"', 'WhatsApp al grupo de conductores con todos los viajes sin vehículo (el mismo mensaje del botón 🚛 Invitar conductores)')});
     }
@@ -5406,7 +5102,7 @@ function armarBandeja(){
       acc: btnT('Actualizar el viaje', `data-b-abrir="${v.id}"`) + (v.placa ? lnkT(ICONO_WA + 'Preguntar dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas')) : '')}));
     // ¿Dónde va? (seguimiento de la ronda): vehículos en movimiento sin nada atrasado; "Sigue igual" lo marca revisado en esta ronda
     else if (!sinActualizar(v).length && enSeguimiento([v]).length && !T.R.has(kSeg(v))) { const p = pulsoViaje(v);
-      add(v, {b: 'donde', k: kSeg(v), html: `📍 <b>${esc(p.donde)}</b>${p.quieto ? ' · ' + esc(p.quieto) : ''}${p.espera ? '<br>' + esc(p.espera) : ''}${p.app ? '<br>' + esc(p.app) : ''}`,
+      add(v, {b: 'donde', k: kSeg(v), html: `📍 <b>${esc(p.donde)}</b>${p.quieto ? ' · ' + esc(p.quieto) : ''}${p.espera ? '<br>' + esc(p.espera) : ''}${p.app ? '<br>' + esc(p.app) : ''}${ultimoComentario(v) ? '<br><span class="sub">' + ultimoComentario(v) + '</span>' : ''}`,
         acc: btnT('✏️ Actualizar', `data-b-abrir="${v.id}"`) + (v.placa ? lnkT(ICONO_WA + 'Preguntar dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas')) : '')
           + btnT('📍 Sigue igual', `data-t-rev="${kSeg(v)}"`, 'Lo marca revisado en esta ronda para todo el equipo')}); }
     // 5 · Datos de correos (Llenar datos + los datos de cada acción): se aprueban o rechazan aquí; la acción que los trajo se cierra
@@ -5538,7 +5234,7 @@ function renderBandeja(){
   const C = cerradasPorSistema();
   const avisoAuto = !C.length ? '' : `<details class="bj-auto"><summary>✔ El sistema cerró ${C.length} acci${C.length === 1 ? 'ón' : 'ones'} que el viaje ya muestra hecha${C.length === 1 ? '' : 's'} <span class="sub">· ver</span></summary>`
     + C.map(b => `<div class="bj-auto-l"><div><b>${esc(b.id)}</b> ${esc(String(b.accion || '').slice(0, 120))}<br><span class="sub">✔ ${esc(String(b.resueltoPor).slice(POR_SISTEMA.length))}</span></div>${btnT('Deshacer', `data-b-deshacer="${b.id}"`, 'Vuelve a pendientes y no se cierra sola otra vez')}</div>`).join('') + '</details>';
-  cont.innerHTML = `<div class="bj-ronda sub">${ronda}${bloqueo}${llave}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}</div>` + bloqueGerencia(T) + avisoAuto + barraOp
+  cont.innerHTML = `<div class="bj-ronda sub">${ronda}${bloqueo}${llave}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}</div>` + bloqueGerencia(T) + bloqueCalifGerencia() + avisoAuto + barraOp
     + `<div class="bj-resumen"><div><b>${nViajes} viaje${nViajes === 1 ? '' : 's'} necesita${nViajes === 1 ? '' : 'n'} algo</b>${R.L.length > nViajes ? ` · ${R.L.length - nViajes} grupo${R.L.length - nViajes === 1 ? '' : 's'} sin viaje` : ''}
       · <label class="sub">Área <select class="bj-area" data-b-areasel="1">${[['', 'Todas'], ...AREAS.map(a => [a, a])].map(([a, t]) => `<option value="${a}" ${bandejaArea === a ? 'selected' : ''}>${t} (${porArea(a)})</option>`).join('')}</select></label></div>
       <div class="chips">${`<button type="button" class="chip ${!bandejaFiltro ? 'on' : ''}" data-b-filtro="">Todo · ${R.L.length}</button>`}${BLOQUES.map(([k, t]) => cuenta(k) ? `<button type="button" class="chip ${bandejaFiltro === k ? 'on' : ''}" data-b-filtro="${k}" title="${esc(BLOQUES.find(x => x[0] === k)[3])}">${t} · ${cuenta(k)}</button>` : '').join('')}</div></div>`
@@ -5547,7 +5243,7 @@ function renderBandeja(){
       + '</div>').join('') || '<div class="tr-vacio">✓ Nada pendiente en este filtro</div>')
     + (!bandejaTodo && ver.length > ver.filter((t, ix) => ix < BANDEJA_PRIMERAS || t.roja).length
       ? `<button type="button" class="bj-mas" data-b-todo="1">Ver los otros ${ver.length - ver.filter((t, ix) => ix < BANDEJA_PRIMERAS || t.roja).length} viajes (menos urgentes)</button>` : '')
-    + `<div class="bj-pie"><div><b>${F.length ? `⚠ ${F.length} cosa${F.length === 1 ? '' : 's'} solo en otra pantalla` : '✓ Nada queda solo en otra pantalla'}</b> <span class="sub">(Mi turno, Acciones y Llenar datos ya no están en el menú: todo su trabajo sale aquí)</span> · ${btnT('📒 Bitácora de acciones', 'data-b-bitacora="1"', 'Historial: qué pidió quién y quién lo cerró (la antigua pestaña Acciones)')}</div>
+    + `<div class="bj-pie"><div><b>${F.length ? `⚠ ${F.length} cosa${F.length === 1 ? '' : 's'} solo en otra pantalla` : '✓ Nada queda solo en otra pantalla'}</b> <span class="sub">(control: lo que piden las reglas de turno y no sale en la Bandeja; debe quedar en 0)</span> · ${btnT('📒 Bitácora de acciones', 'data-b-bitacora="1"', 'Historial: qué pidió quién y quién lo cerró (la antigua pestaña Acciones)')}</div>
       ${F.length ? `<details><summary class="sub">Ver cuáles</summary>${F.map(([p, t]) => `<div class="sub">• <b>${esc(p)}</b>: ${esc(t)}</div>`).join('')}</details>` : ''}
       ${errLejos ? `<div class="sub">${errLejos} viaje${errLejos === 1 ? '' : 's'} que arranca${errLejos === 1 ? '' : 'n'} en más de ${HORIZONTE_FALTA} días con datos por completar: quedan en Errores, no en la bandeja del día.</div>` : ''}</div>`;
 }
@@ -5564,7 +5260,7 @@ async function decidirBandeja(id, aprobar, area){
   try {
     const j = await api('decidir', {usuario, aprobar: aprobar ? datos : [], rechazar: aprobar ? [] : datos});
     if (!j.ok) throw new Error(j.error || 'error');
-    const usados = new Set(P.map(p => p.clave)); PROP = PROP.filter(p => !usados.has(p.clave)); $('#nProp').textContent = PROP.length || '';
+    const usados = new Set(P.map(p => p.clave)); PROP = PROP.filter(p => !usados.has(p.clave)); 
     if (aprobar) { P.forEach(p => { const x = viajes.find(y => y.id === p.viajeId); if (x) { x[p.campo] = p.valor; anotarConfirmacion(x, p.campo, p.valor, usuario, fuenteDeOrigen(p.origen)); } }); etapasViajes(); }
     // la acción de LogxIA que trajo esos datos se cierra si ya no le quedan datos por decidir (R1 de la propuesta)
     const ids = [...new Set([...P.map(p => (String(p.origen || '').match(/^Correo (LX-\d+)/) || [])[1]),
@@ -5583,7 +5279,7 @@ $('#bandeja').onclick = e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   const d = b.dataset;
   // marcas de Mi turno (Sigue igual, excepción, aprobar como Gerencia…): las atiende el mismo código de Mi turno (turno.js)
-  if (Object.keys(d).some(k => /^t[A-Z]/.test(k))) return $('#v-turno').onclick(e);
+  if (Object.keys(d).some(k => /^t[A-Z]/.test(k))) return manejarTurno(e);
   if (d.bFiltro !== undefined) { bandejaFiltro = d.bFiltro; bandejaTodo = false; renderBandeja(); }
   else if (d.bDeshacer) deshacerCierre(d.bDeshacer);
   else if (d.bTodo) { bandejaTodo = true; renderBandeja(); }
@@ -5604,7 +5300,7 @@ $('#bandeja').onclick = e => {
 /* ---------- inicio.js · arranque del tablero ---------- */
 // Capa: pantalla. render() repinta todas las vistas; carga los datos (datos.js), pide "Ingresar como" al equipo (base.js) y atiende
 // los enlaces de los correos (?viaje=, ?vista=, ?area=, ?usuario=). Se carga de último.
-function render(){ pintarSugerencias(); pintarPreguntas(); renderGbar(); renderTurno(); renderBandeja(); renderLean(); renderErrores(); renderAcciones(); renderKpis(); renderChartDias(); renderChartEstados(); renderChartPais(); renderChartMix(); renderAlertas(); renderProximos(); renderFeed(); renderChips(); renderTabla(); renderMotonaves(); contarEnturnados(); }
+function render(){ pintarSugerencias(); pintarPreguntas(); renderGbar(); renderBandeja(); renderLean(); renderErrores(); renderAcciones(); renderKpis(); renderChartDias(); renderChartEstados(); renderChartPais(); renderChartMix(); renderAlertas(); renderProximos(); renderFeed(); renderChips(); renderTabla(); renderMotonaves(); }
 // pantalla de acceso cuando la página trae los datos de la hoja con clave
 function pedirClave(errada){
   document.body.insertAdjacentHTML('beforeend', `<div class="ov open" style="background:var(--bg)"><form class="modal" style="width:min(380px,100%)" onsubmit="event.preventDefault(); location.search='?clave='+encodeURIComponent(this.clave.value.trim())">
@@ -5628,8 +5324,7 @@ cargar().then(ok => { if (ok === false) return; if (window.MODO_CLIENTE) documen
   // el ?usuario= del enlace solo sugiere el nombre en "Ingresar como": ya no queda guardado en el navegador (base.js elegirUsuario)
   const qp = new URLSearchParams(location.search);
   if (!window.MODO_CLIENTE) { fijarUsuario(); if (!usuarioGuardado()) elegirUsuario(qp.get('usuario')); }
-  if (AREAS.includes(qp.get('area'))) { accArea = qp.get('area'); renderAcciones();
-    if (accArea === 'Facturación') try { sessionStorage.setItem('rkt-area', accArea); } catch(e){} renderTurno(); }
+  if (AREAS.includes(qp.get('area'))) { accArea = qp.get('area'); renderAcciones(); }
   // 7-nov: la Bandeja de Pendientes reemplaza a Mi turno y Acciones (siguen en el código, fuera del menú); los enlaces viejos
   // (?vista=acciones&area=Facturación del correo de Facturación, ?vista=turno) abren la Bandeja con esa área
   if (AREAS.includes(qp.get('area'))) bandejaArea = qp.get('area');
