@@ -1,6 +1,7 @@
 // App de turnos de conductores: guarda la página para abrirla sin señal (los viajes los guarda la página en el celular)
 // v4 (7-nov): estilo nuevo con fuentes incluidas; se guardan con la página para que la app se vea igual sin señal
-const CACHE = 'turnos-v4', ARCHIVOS = ['turnos.html', 'turnos.webmanifest', 'turnos-icono.svg', 'conductores.css',
+// v5 (8-nov): también Mi viaje (conductor.html), que abre sin señal con lo último que guardó del viaje
+const CACHE = 'turnos-v5', ARCHIVOS = ['turnos.html', 'conductor.html', 'turnos.webmanifest', 'turnos-icono.svg', 'conductores.css',
   'fuentes/plus-jakarta-sans-latin-400-normal.woff2', 'fuentes/plus-jakarta-sans-latin-600-normal.woff2', 'fuentes/plus-jakarta-sans-latin-700-normal.woff2',
   'fuentes/plus-jakarta-sans-latin-800-normal.woff2', 'fuentes/jetbrains-mono-latin-500-normal.woff2'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(ARCHIVOS))); self.skipWaiting(); });

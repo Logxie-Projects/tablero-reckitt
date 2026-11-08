@@ -9,6 +9,7 @@
 <meta property="og:description" content="Toca aquí para ver tu cita y marcar cada paso del viaje.">
 <link rel="preload" href="fuentes/plus-jakarta-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fuentes/jetbrains-mono-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="manifest" href="turnos.webmanifest">
 <link rel="stylesheet" href="conductores.css">
 <style>
 /* lo propio de "Mi viaje" (lo común está en conductores.css: guía DISENO-APP-CONDUCTORES.md, 7-nov) */
@@ -489,6 +490,8 @@ function toast(msg, mal) {
   clearTimeout(tt); tt = setTimeout(() => t.classList.remove('ver'), mal ? 5000 : 2500);
 }
 
+// la misma copia sin señal de la app Viajes ETP (turnos-sw.js): Mi viaje abre aunque no haya internet
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('turnos-sw.js').catch(() => {});
 cargar();
 setInterval(() => { if (!cola.length && !document.hidden) cargar(); }, 5 * 60000);   // trae citas o documentos nuevos
 </script>
