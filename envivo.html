@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#06101F">
+<meta name="robots" content="noindex,nofollow">
+<title>Operaciones en vivo · ENTRAPETROL</title>
+<link rel="preload" href="fuentes/plus-jakarta-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+/* envivo.html · 📺 En vivo para el cliente (modo aparte, 8-nov). Lo abre el cliente con el QR (celular) o en un televisor: SOLO los
+   pedidos que el equipo marcó en el tablero (📺 En vivo), sin clave ni filtros, solo lectura. Datos: GET ?envivo=CÓDIGO (EnVivo.gs).
+   Para quitar este modo: ver el encabezado de apps-script/EnVivo.gs. */
+@font-face{font-family:'Plus Jakarta Sans';font-weight:400;font-display:swap;src:url(fuentes/plus-jakarta-sans-latin-400-normal.woff2) format('woff2')}
+@font-face{font-family:'Plus Jakarta Sans';font-weight:600;font-display:swap;src:url(fuentes/plus-jakarta-sans-latin-600-normal.woff2) format('woff2')}
+@font-face{font-family:'Plus Jakarta Sans';font-weight:700;font-display:swap;src:url(fuentes/plus-jakarta-sans-latin-700-normal.woff2) format('woff2')}
+@font-face{font-family:'Plus Jakarta Sans';font-weight:800;font-display:swap;src:url(fuentes/plus-jakarta-sans-latin-800-normal.woff2) format('woff2')}
+@font-face{font-family:'JetBrains Mono';font-weight:500;font-display:swap;src:url(fuentes/jetbrains-mono-latin-500-normal.woff2) format('woff2')}
+:root{--bg:#06101F;--card:#0C1D36;--card2:#11284A;--line:#22426B;--ink:#EEF5FF;--muted:#9FB3CF;--cyan:#22C3E6;--green:#2BD08A;--amber:#F5B83D;--red:#FF8A9C;
+  --expo:#38BDF8;--impo:#F59E0B;--nac:#34D399;--font:'Plus Jakarta Sans',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace}
+*{box-sizing:border-box}
+html{color-scheme:dark}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);font:400 16px/1.45 var(--font);-webkit-font-smoothing:antialiased}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+header{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;padding-top:max(12px,env(safe-area-inset-top));background:rgba(6,16,31,.96);border-bottom:1px solid var(--line)}
+.marca{font:800 17px var(--font);letter-spacing:.04em}
+.marca small{display:block;font:500 12px var(--mono);letter-spacing:.12em;color:var(--cyan);text-transform:uppercase}
+.vivo{display:inline-flex;align-items:center;gap:6px;font:600 14px var(--font);color:var(--green)}
+.vivo i{width:9px;height:9px;border-radius:50%;background:var(--green)}
+.vivo.viejo{color:var(--amber)} .vivo.viejo i{background:var(--amber)}
+.der{margin-left:auto;display:flex;align-items:center;gap:10px}
+.reloj{font:500 18px var(--mono)}
+.b{min-height:40px;padding:0 12px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;font:600 14px var(--font);cursor:pointer}
+main{padding:14px 16px 28px;max-width:1800px;margin:0 auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.cab{display:flex;align-items:flex-start;gap:10px}
+.op{flex:none;font:700 12px var(--mono);letter-spacing:.06em;padding:4px 8px;border-radius:6px;color:#06101F}
+.op.EXPO{background:var(--expo)} .op.IMPO{background:var(--impo)} .op.NACIONAL{background:var(--nac)}
+.ref{font:700 18px/1.25 var(--font)}
+.dest{color:var(--muted);font-size:14px}
+.prueba{font:700 11px var(--mono);color:var(--amber);border:1px solid var(--amber);border-radius:4px;padding:1px 5px;margin-left:6px}
+.ahora{display:flex;align-items:center;gap:10px;font:700 17px/1.3 var(--font);padding:10px 12px;border-radius:10px;background:var(--card2)}
+.ahora .ic{font-size:26px;flex:none}
+.ahora.cerrado{color:var(--green)} .ahora.gris{color:var(--muted)}
+.ruta{display:flex;gap:4px}
+.ruta div{flex:1;min-width:0}
+.ruta i{display:block;height:8px;border-radius:4px;background:var(--line)}
+.ruta .ok i{background:var(--cyan)} .ruta .ya i{background:linear-gradient(90deg,var(--cyan) 50%,var(--line) 50%)}
+.ruta span{display:block;margin-top:4px;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ruta .ok span,.ruta .ya span{color:var(--ink)}
+.prox{font-size:15px}
+.prox b{color:var(--cyan);font-weight:600}
+.com{font-size:15px;color:var(--ink);border-left:3px solid var(--cyan);padding:2px 0 2px 10px}
+.com small{display:block;color:var(--muted);font-size:13px}
+.com.hecho{border-color:var(--green)}
+.vacio,.error{text-align:center;color:var(--muted);padding:60px 20px;font-size:18px}
+.error b{display:block;color:var(--ink);font-size:22px;margin-bottom:6px}
+.pie{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:13px;margin-top:16px}
+.pag{font:500 14px var(--mono);color:var(--muted)}
+.senal{display:none;background:#2A1F05;color:var(--amber);padding:8px 16px;font:600 14px var(--font)}
+/* modo televisor: letra grande, sin barra de desplazamiento, rota por páginas */
+body.tv{overflow:hidden;font-size:20px}
+body.tv header{padding:16px 28px}
+body.tv .marca{font-size:24px} body.tv .reloj{font-size:28px}
+body.tv main{padding:20px 28px}
+body.tv .grid{grid-template-columns:repeat(var(--cols,3),1fr);gap:20px}
+body.tv .card{padding:18px 22px;gap:12px}
+body.tv .ref{font-size:24px} body.tv .dest{font-size:18px}
+body.tv .ahora{font-size:22px} body.tv .ahora .ic{font-size:34px}
+body.tv .prox,body.tv .com{font-size:19px} body.tv .com small{font-size:16px}
+body.tv .ruta i{height:11px} body.tv .ruta span{font-size:15px}
+body.tv .solo-cel{display:none}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <div class="marca">ENTRAPETROL<small>Operaciones en vivo</small></div>
+  <span class="vivo" id="vivo"><i></i><span id="vivoTxt">Conectando…</span></span>
+  <div class="der"><span class="pag" id="pag"></span><span class="reloj num" id="reloj"></span>
+    <button class="b solo-cel" id="bTv" title="Pantalla grande para televisor: rota los pedidos solo">📺 Modo TV</button>
+    <button class="b" id="bFull" hidden title="Pantalla completa">⛶</button></div>
+</header>
+<div class="senal" id="senal">Sin conexión: se muestra lo último que se cargó. Se actualiza solo al volver la señal.</div>
+<main id="main"><div class="vacio">Cargando…</div></main>
+
+<script>
+const API = 'https://script.google.com/macros/s/AKfycbz_st7NWwfY57QfMyTBLGxnufoIMgvlh3wKIwgi2PuzcrT409dFKI7iPsz3hOhUFKQ0/exec';
+const qs = new URLSearchParams(location.search), CODIGO = (qs.get('c') || '').trim();
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const DIAS = ['dom','lun','mar','mié','jue','vie','sáb'], MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const fd = iso => { const d = new Date(String(iso).slice(0, 10) + 'T12:00'); return isNaN(d) ? String(iso || '') : `${DIAS[d.getDay()]} ${d.getDate()} ${MES[d.getMonth()]}`; };
+const hace = iso => { const m = Math.round((Date.now() - new Date(String(iso).length <= 16 ? iso + ':00-05:00' : iso)) / 6e4);
+  return isNaN(m) ? '' : m < 1 ? 'ahora' : m < 60 ? `hace ${m} min` : m < 1440 ? `hace ${Math.floor(m / 60)} h` : `hace ${Math.floor(m / 1440)} d`; };
+const ICONO = {camion: '🚛', grua: '🏗️', barco: '🚢'};
+const guardado = () => { try { return JSON.parse(localStorage.getItem('envivo_' + CODIGO) || 'null'); } catch (e) { return null; } };
+let D = guardado(), cargado = D ? D._t : 0, tv = qs.get('tv') === '1', pagina = 0;
+
+async function cargar(){
+  if (!CODIGO) return error('Este enlace está incompleto', 'Escanea de nuevo el código QR que te compartió ENTRAPETROL.');
+  try {
+    const j = await (await fetch(API + '?envivo=' + encodeURIComponent(CODIGO))).json();
+    if (!j.ok) { try { localStorage.removeItem('envivo_' + CODIGO); } catch (e) {} D = null; return error('Este enlace ya no está activo', j.error || 'Pide uno nuevo a ENTRAPETROL.'); }
+    D = j; cargado = D._t = Date.now(); try { localStorage.setItem('envivo_' + CODIGO, JSON.stringify(D)); } catch (e) {}
+    $('#senal').style.display = 'none';
+  } catch (e) { $('#senal').style.display = 'block'; }
+  pintar();
+}
+function error(t, d){ $('#main').innerHTML = `<div class="error"><b>${esc(t)}</b>${esc(d)}</div>`; $('#vivoTxt').textContent = 'Sin datos'; }
+
+function tarjeta(v){
+  const P = v.paradas || [];
+  return `<article class="card">
+    <div class="cab"><span class="op ${esc(v.operacion)}">${esc(v.operacion === 'NACIONAL' ? 'NAC' : v.operacion)}</span>
+      <div><div class="ref">${esc(v.ref)}${v.prueba ? '<span class="prueba">PRUEBA</span>' : ''}</div>
+      <div class="dest">${esc([v.destino, v.contenedor].filter(Boolean).join(' · '))}</div></div></div>
+    <div class="ahora ${esc(v.tono)}"><span class="ic">${v.situacion === 'Cerrado' ? '✅' : ICONO[v.icono] || '📦'}</span><span>${esc(v.ahora)}</span></div>
+    ${P.length ? `<div class="ruta">${P.map((p, i) => `<div class="${p.hecho ? 'ok' : i === v.n ? 'ya' : ''}" title="${esc(p.lugar)}"><i></i><span>${esc(p.etapa)}</span></div>`).join('')}</div>` : ''}
+    ${v.proximo && v.situacion !== 'Cerrado' && !String(v.ahora).toLowerCase().includes(String(v.proximo.que).toLowerCase()) ? `<div class="prox">Próximo: <b>${esc(v.proximo.que)}</b> · ${esc(fd(v.proximo.fecha))}${v.proximo.donde ? ' · ' + esc(v.proximo.donde) : ''}</div>` : ''}
+    ${v.comentario ? `<div class="com${v.comentario.hecho ? ' hecho' : ''}">${v.comentario.hecho ? '✅ ' : ''}${esc(v.comentario.texto)}<small>${esc(hace(v.comentario.fecha))}</small></div>` : ''}
+  </article>`;
+}
+function pintar(){
+  if (!D) return;
+  const L = D.viajes || [];
+  const min = Math.round((Date.now() - cargado) / 6e4), viejo = min >= 10;
+  $('#vivo').classList.toggle('viejo', viejo);
+  $('#vivoTxt').textContent = viejo ? `Actualizado hace ${min} min` : 'En vivo';
+  if (!L.length) { $('#main').innerHTML = '<div class="vacio">Por ahora no hay pedidos en seguimiento.<br>ENTRAPETROL los agrega desde la reunión.</div>'; $('#pag').textContent = ''; return; }
+  let lista = L, pie = '';
+  if (tv) {   // en el televisor: páginas que caben en la pantalla, rotan cada 15 s
+    const cols = innerWidth >= 1700 ? 4 : innerWidth >= 1200 ? 3 : innerWidth >= 800 ? 2 : 1;
+    document.body.style.setProperty('--cols', cols);
+    // cuántas filas caben: se mide la tarjeta más alta de una fila de prueba (el texto cambia de alto según el pedido)
+    $('#main').innerHTML = `<div class="grid">${L.slice(0, cols * 2).map(tarjeta).join('')}</div>`;
+    const alto = Math.max(...[...document.querySelectorAll('.card')].map(c => c.offsetHeight)), libre = innerHeight - $('header').offsetHeight - 40;
+    const filas = Math.max(1, Math.floor((libre + 20) / (alto + 20))), porPag = cols * filas;
+    const pags = Math.ceil(L.length / porPag); pagina = pagina % pags;
+    lista = L.slice(pagina * porPag, (pagina + 1) * porPag);
+    $('#pag').textContent = pags > 1 ? `${pagina + 1}/${pags}` : '';
+  } else { $('#pag').textContent = ''; pie = `<div class="pie"><span>${L.length} pedido${L.length === 1 ? '' : 's'} en seguimiento · datos de ${esc(D.hora || '')}</span><span>Se actualiza solo cada 2 minutos</span></div>`; }
+  $('#main').innerHTML = `<div class="grid">${lista.map(tarjeta).join('')}</div>${pie}`;
+}
+function modoTv(on){ tv = on; document.body.classList.toggle('tv', tv); $('#bFull').hidden = !tv || !document.documentElement.requestFullscreen; pagina = 0; pintar(); }
+$('#bTv').onclick = () => modoTv(true);
+$('#bFull').onclick = () => document.documentElement.requestFullscreen && document.documentElement.requestFullscreen().catch(() => {});
+const reloj = () => { $('#reloj').textContent = new Date().toLocaleTimeString('es-CO', {hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota'}); };
+setInterval(reloj, 15000); reloj();
+setInterval(() => { if (!document.hidden) cargar(); }, 120000);       // datos nuevos cada 2 minutos
+setInterval(() => { if (tv) { pagina++; pintar(); } }, 15000);        // el televisor pasa de página
+setInterval(() => { if (!tv) pintar(); }, 60000);                      // "hace X min" al día
+addEventListener('online', cargar); addEventListener('resize', () => { if (tv) pintar(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) cargar(); });
+if (tv) modoTv(true); else pintar();
+cargar();
+</script>
+</body>
+</html>

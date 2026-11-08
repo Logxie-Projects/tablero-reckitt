@@ -4592,6 +4592,88 @@ $('#rcLista').addEventListener('click', e => { if (e.target.id !== 'rcMarcar') r
 $('#rcPara').addEventListener('change', contarResCli);
 $('#rcPrueba').onclick = () => enviarResCli(true);
 $('#rcEnviar').onclick = () => enviarResCli(false);
+/* ---------- envivo.js · 📺 En vivo para el cliente (modo aparte, 8-nov-2026) ----------
+ * Capa: pantalla (solo el equipo). En la reunión se marcan los pedidos que Reckitt quiere seguir; el cliente los ve en vivo, sin
+ * clave ni filtros, escaneando un QR con el celular o en un televisor (envivo.html?c=CÓDIGO). Aquí: la lista de viajes abiertos con
+ * casillas, el QR, copiar o abrir el enlace, "Cambiar enlace" (el QR viejo deja de servir) y "Apagar".
+ * Datos: GET ?que=envivo y POST 'envivo' {op: marcar|nuevoCodigo|apagar|limpiar} (EnVivo.gs). El QR se dibuja en el navegador con
+ * qrcode-generator (cdnjs, se carga solo al abrir el panel); si no carga, queda el enlace para copiar.
+ * Este módulo crea su propio botón y su panel: para quitar el modo, ver el encabezado de apps-script/EnVivo.gs. */
+let EN_VIVO = null;
+const enlaceEnVivo = c => c ? new URL('envivo.html?c=' + c, location.href).href : '';
+function cargarLibQR(){
+  if (window.qrcode) return Promise.resolve(true);
+  return new Promise(ok => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
+    s.onload = () => ok(!!window.qrcode); s.onerror = () => ok(false); document.head.appendChild(s); });
+}
+function montarEnVivo(){
+  const b = $('#btnResCli'); if (!b || $('#btnEnVivo')) return;
+  b.insertAdjacentHTML('afterend', `<button class="btn solo-interno" id="btnEnVivo" title="Pedidos que Reckitt ve en vivo con un QR (celular o televisor), sin clave ni filtros">📺 En vivo</button>`);
+  document.body.insertAdjacentHTML('beforeend', `<div class="ov" id="ovEnVivo"><div class="modal" role="dialog" aria-modal="true" style="width:min(820px,100%)">
+    <h3>📺 En vivo para el cliente</h3>
+    <div class="sub">Marque los pedidos que Reckitt quiere seguir. Los ven al instante con el QR (celular con sus datos móviles, o en un televisor), sin clave, sin costos ni datos del conductor.</div>
+    <div id="evEnlace" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:10px"></div>
+    <input id="evBuscar" placeholder="Buscar pedido, booking, destino…" style="width:100%;margin-top:10px">
+    <div id="evLista" style="margin-top:8px;max-height:46vh;overflow:auto"></div>
+    <div class="mfoot"><span class="sub" id="evN" style="margin-right:auto"></span><button class="btn" id="evLimpiar">Quitar todos</button><button class="btn primary" id="evCerrar">Listo</button></div>
+  </div></div>`);
+  $('#btnEnVivo').onclick = abrirEnVivo;
+  $('#evCerrar').onclick = () => $('#ovEnVivo').classList.remove('open');
+  $('#ovEnVivo').onclick = e => { if (e.target.id === 'ovEnVivo') $('#ovEnVivo').classList.remove('open'); };
+  $('#evBuscar').oninput = filtrarEnVivo;
+  $('#evLista').onchange = e => { const c = e.target.closest('[data-ev]'); if (c) marcarEnVivo(c.dataset.ev, c.checked, c); };
+  $('#evLimpiar').onclick = async () => { if (!EN_VIVO || !EN_VIVO.ids.length || !confirm('¿Quitar todos los pedidos de la vista en vivo?')) return; await opEnVivo({op: 'limpiar'}); };
+  $('#evEnlace').onclick = async e => { const b = e.target.closest('[data-evop]'); if (!b) return; const op = b.dataset.evop;
+    if (op === 'copiar') { try { await navigator.clipboard.writeText(enlaceEnVivo(EN_VIVO.codigo)); toast('Enlace copiado'); } catch (x) { prompt('Copie el enlace:', enlaceEnVivo(EN_VIVO.codigo)); } }
+    else if (op === 'nuevoCodigo' && confirm('¿Cambiar el enlace? El QR que ya tiene el cliente deja de funcionar y hay que compartir el nuevo.')) opEnVivo({op});
+    else if (op === 'apagar' && confirm('¿Apagar la vista en vivo? El QR deja de funcionar hasta que marque un pedido o cree un enlace nuevo.')) opEnVivo({op});
+    else if (op === 'crear') opEnVivo({op: 'nuevoCodigo'}); };
+}
+async function abrirEnVivo(){
+  $('#ovEnVivo').classList.add('open'); $('#evLista').innerHTML = '<p class="sub">Cargando…</p>'; $('#evEnlace').innerHTML = '';
+  try {
+    const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=envivo&clave=' + encodeURIComponent(claveActual()))).json();
+    if (!j.ok) throw new Error(j.error || 'error');
+    EN_VIVO = j; pintarEnVivo();
+  } catch (e) { $('#evLista').innerHTML = `<p class="missing">No se pudo cargar: ${esc(e.message)}</p>`; }
+}
+async function opEnVivo(datos){
+  try { const j = await api('envivo', {...datos, usuario: usuarioActual()}); if (!j.ok) throw new Error(j.error || 'error'); EN_VIVO = j; pintarEnVivo(); return true; }
+  catch (e) { toast('No se pudo guardar: ' + e.message, 5000); return false; }
+}
+async function marcarEnVivo(id, en, casilla){
+  casilla.disabled = true;
+  const ok = await opEnVivo({op: 'marcar', id, en});
+  if (!ok) { casilla.checked = !en; casilla.disabled = false; }
+}
+async function pintarEnlaceEnVivo(){
+  const c = EN_VIVO.codigo, url = enlaceEnVivo(c);
+  if (!c) { $('#evEnlace').innerHTML = `<span class="sub">Todavía no hay enlace: se crea al marcar el primer pedido.</span>${EN_VIVO.ids.length ? '<button class="btn" data-evop="crear">Crear enlace</button>' : ''}`; return; }
+  $('#evEnlace').innerHTML = `<div id="evQR" style="width:150px;height:150px;background:#fff;border-radius:8px;display:grid;place-items:center;flex:none" title="Escanear con la cámara del celular"><span class="sub">QR…</span></div>
+    <div style="flex:1;min-width:220px"><div class="sub">Enlace del cliente (cualquiera que lo tenga ve estos pedidos):</div>
+      <div style="word-break:break-all;font-size:12px;margin:4px 0 8px"><a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn" data-evop="copiar">📋 Copiar</button><a class="btn" style="text-decoration:none;color:inherit" href="${esc(url)}&tv=1" target="_blank" rel="noopener">📺 Abrir en modo TV</a>
+        <button class="btn" data-evop="nuevoCodigo">🔄 Cambiar enlace</button><button class="btn" data-evop="apagar">⏻ Apagar</button></div>
+      <div class="sub" style="margin-top:6px">Para el televisor: ábralo en el navegador del TV o transmita la pantalla del celular (Chromecast / "Transmitir pantalla").</div></div>`;
+  if (await cargarLibQR()) { const q = qrcode(0, 'M'); q.addData(url); q.make(); const el = $('#evQR'); if (el) el.innerHTML = q.createSvgTag({cellSize: 3, margin: 2, scalable: true}); }
+  else { const el = $('#evQR'); if (el) el.innerHTML = '<span class="sub" style="padding:8px;text-align:center">No se pudo dibujar el QR: comparta el enlace</span>'; }
+}
+function pintarEnVivo(){
+  const marcados = new Set(EN_VIVO.ids);
+  // los abiertos (sin subviajes ni prueba) más los ya marcados aunque se hayan cerrado; los marcados primero
+  const L = viajes.filter(v => !v.padre && (marcados.has(v.id) || (situacion(v) === 'Abierto' && v.estado !== 'Cancelado' && !esPrueba(v))))
+    .sort((a, b) => (marcados.has(b.id) - marcados.has(a.id)) || String(primerEvento(a) || '9').localeCompare(String(primerEvento(b) || '9')));
+  $('#evLista').innerHTML = L.length ? L.map(v => { const {P, n} = avance(v), dest = v.operacion === 'EXPO' ? v.pais : (v.bodega || v.destino);
+    const texto = minus([v.id, v.operacion, refCorta(v), dest, v.solicitante, v.pedido, v.booking].join(' '));
+    return `<label class="rc-fila" data-buscar="${esc(texto)}"><input type="checkbox" data-ev="${esc(v.id)}" ${marcados.has(v.id) ? 'checked' : ''}>
+      <span><b>${esc(v.operacion)} · ${esc([refCorta(v), dest].filter(Boolean).join(' · ') || v.id)}</b>${esPrueba(v) ? ' <span class="sub">(prueba)</span>' : ''}
+      <br><span class="sub">${esc(v.id)} · ${esc(etapaAhora(v, P, n, true).ahora)}${situacion(v) !== 'Abierto' ? ' · ' + esc(situacion(v)) : ''}</span></span></label>`; }).join('')
+    : '<p class="sub">No hay viajes abiertos.</p>';
+  $('#evN').textContent = `${EN_VIVO.ids.length} pedido${EN_VIVO.ids.length === 1 ? '' : 's'} en vivo${EN_VIVO.por ? ' · último cambio: ' + EN_VIVO.por : ''}`;
+  filtrarEnVivo(); pintarEnlaceEnVivo();
+}
+function filtrarEnVivo(){ const q = minus($('#evBuscar').value); document.querySelectorAll('#evLista [data-buscar]').forEach(x => { x.style.display = !q || x.dataset.buscar.includes(q) ? '' : 'none'; }); }
+montarEnVivo();
 /* ---------- version.js · el tablero se actualiza solo cuando se publica una versión nueva ---------- */
 // Capa: pantalla. generar_publico.py pone en VERSION_TABLERO la huella de esta publicación y escribe publico/version.json con la
 // misma huella. Cada REVISAR_VERSION_MIN minutos (y al volver a la pestaña) el tablero lee version.json sin caché. Si cambió:
@@ -4601,7 +4683,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '5d82144cb3';
+const VERSION_TABLERO = '65b401a357';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
