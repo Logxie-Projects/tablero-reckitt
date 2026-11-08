@@ -350,8 +350,9 @@ function formulario(token, viajeId, pre) {
       <input type="hidden" name="viajeId" value="${esc(o.viajeId || '')}">
       <label>Operación<select name="operacion"><option ${o.operacion !== 'IMPO' ? 'selected' : ''}>EXPO</option><option ${o.operacion === 'IMPO' ? 'selected' : ''}>IMPO</option></select></label>
       <label>Booking<input name="booking" required value="${esc(o.booking || '')}"></label>
-      <label>Placa<input name="placa" value="${esc(o.placa || '')}" onchange="autoTel()"></label>
-      <label>Conductor<input name="conductor" value="${esc(o.conductor || '')}" onchange="autoTel()"></label>
+      <label>Placa<input name="placa" list="dlRegPlacas" value="${esc(o.placa || '')}" onchange="autoTel()" placeholder="Del registro"></label>
+      <label>Conductor<input name="conductor" list="dlRegConds" value="${esc(o.conductor || '')}" onchange="autoTel()" placeholder="Del registro"></label>
+      ${listasRegistro()}
       <label>WhatsApp del conductor<input name="telefono" inputmode="tel" placeholder="300 123 4567" value="${esc(o.telefono || '')}"></label>
       <label>Contenedor<input name="contenedor" placeholder="MSKU1234567" value="${esc(o.contenedor || '')}"></label>
       <label>Cita (fecha y hora)<input type="datetime-local" name="cita" value="${esc(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(o.cita || '') ? o.cita.slice(0, 16) : '')}"></label>
@@ -364,8 +365,16 @@ function formulario(token, viajeId, pre) {
         <button class="b b-pri" id="bguardar">${a ? 'Guardar cambios' : 'Crear y preparar WhatsApp'}</button></div>
     </form>`);
 }
+// placa y conductor del registro (7-nov): se sugieren al escribir y el servidor solo acepta los del registro con datos completos
+// (Conductores.gs postConductores_). Si se elige el conductor y no hay placa, llega la suya (si maneja una sola), y al revés.
+const listasRegistro = () => !REGISTRO ? '' : `<datalist id="dlRegConds">${(REGISTRO.conductores || []).filter(c => !/^archivad|^bloquead/i.test(c.estado || '')).map(c => `<option value="${esc(c.nombre)}">`).join('')}</datalist>`
+  + `<datalist id="dlRegPlacas">${(REGISTRO.vehiculos || []).filter(v => !/^archivad|^bloquead/i.test(v.estado || '')).map(v => `<option value="${esc(v.placa)}">`).join('')}</datalist>`;
 function autoTel() {
-  const f = $('#fa');
+  const f = $('#fa'), R = REGISTRO || {}, lista = t => String(t || '').split(/\s*[,/;]\s*/).map(x => x.replace(/[\s-]/g, '').toUpperCase()).filter(Boolean);
+  const c = (R.conductores || []).find(x => nomC(x.nombre) === nomC(f.conductor.value));
+  if (c && !f.placa.value && lista(c.placas).length === 1) f.placa.value = lista(c.placas)[0];
+  if (!f.conductor.value && f.placa.value) { const P = f.placa.value.replace(/[\s-]/g, '').toUpperCase(), L = (R.conductores || []).filter(x => lista(x.placas).includes(P));
+    if (L.length === 1) f.conductor.value = L[0].nombre; }
   if (!f.telefono.value) f.telefono.value = telDe(f.conductor.value, f.placa.value);
 }
 function leerArchivo(file) {
