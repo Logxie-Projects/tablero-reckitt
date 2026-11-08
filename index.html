@@ -515,6 +515,7 @@ h3.dia-reunion{background:var(--accent-soft);color:var(--text);font-size:15px;pa
     <div class="spacer"></div>
     <div class="conn"><span class="dot" id="connDot"></span><span id="connTxt">Modo demo</span></div>
     <button class="btn solo-interno" id="btnQuien" title="Quién está usando el tablero: su nombre queda en lo que guarda. Clic para cambiar" onclick="elegirUsuario()">👤 Ingresar como…</button>
+    <button class="btn solo-interno" id="btnSalir" title="Salir en este equipo: borra la clave guardada (la próxima vez se pide de nuevo)" onclick="salirTablero()">⏻ Salir</button>
     <button class="btn" id="btnTheme" title="Cambiar tema">◐</button>
     <div class="modos" id="modosHdr" role="group" aria-label="Vista del tablero"></div>
     <a class="btn solo-interno" id="lnkDespacho" style="text-decoration:none;color:inherit" href="despacho.html" target="_blank" rel="noopener" title="Asignaciones de conductores: cita, instrucciones, imágenes, enlace por WhatsApp y revisión de la aceptación (cédula y selfie)">🚛 Despacho</a>
@@ -1763,7 +1764,13 @@ window.addEventListener('unhandledrejection', e => { try { toast('⚠ No se comp
 /* ---------- servidor, usuario, hora de Colombia y WhatsApp: un solo lugar para todo el tablero ---------- */
 // la clave: la de los datos ya cargados o, mientras cargan (los primeros segundos muestran datos de demostración), la del enlace.
 // Antes solo se tomaba al terminar de cargar y un botón presionado en esos segundos fallaba con "clave" (5-nov)
-const claveActual = () => window.CLAVE || new URLSearchParams(location.search).get('clave') || '';
+// 8-nov (pedido del usuario: el equipo entra desde el celular sin escribir la clave cada vez): la clave que funcionó queda guardada en
+// este navegador (localStorage 'rkt-clave') y se quita de la dirección; "⏻ Salir" la borra. Si la clave cambia, se vuelve a pedir
+const claveGuardada = () => { try { return localStorage.getItem('rkt-clave') || ''; } catch(e) { return ''; } };
+const claveActual = () => window.CLAVE || new URLSearchParams(location.search).get('clave') || claveGuardada();
+function salirTablero(){ if (!confirm('¿Salir del tablero en este equipo? La próxima vez le pedirá la clave.')) return;
+  try { localStorage.removeItem('rkt-clave'); sessionStorage.removeItem('rkt-quien'); } catch(e) {}
+  const u = new URL(location.href); u.searchParams.delete('clave'); location.replace(u); }
 // POST al Apps Script con la clave del equipo; devuelve la respuesta (JSON)
 async function api(action, datos = {}){
   const r = await fetch(CFG.SHEETS_API_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'},
@@ -1843,13 +1850,13 @@ function ahoraBogota(){
 const waLink = (tel, texto) => `https://wa.me/${String(tel || '').replace(/\D/g, '')}?text=${encodeURIComponent(texto || '')}`;
 /* ---------- datos: la base en Google Sheets, por la API de Apps Script ---------- */
 async function cargar(){
-  // la clave llega en el enlace (?clave=...) o se pide en pantalla
-  const clave = new URLSearchParams(location.search).get('clave');
+  // la clave llega en el enlace (?clave=...), está guardada en este celular (base.js claveGuardada) o se pide en pantalla
+  const clave = new URLSearchParams(location.search).get('clave') || claveGuardada();
   if (!clave) { pedirClave(false); return false; }
   try{
     const r = await fetch(CFG.SHEETS_API_URL + '?formato=json&clave=' + encodeURIComponent(clave));
     const j = await r.json();
-    if (!j.ok) { pedirClave(true); return false; }
+    if (!j.ok) { try { localStorage.removeItem('rkt-clave'); } catch(e) {} pedirClave(true); return false; }   // la clave cambió: se pide de nuevo
     // los viajes de prueba (empresa PRUEBA ETP) son para probar el sistema: el equipo no los ve; solo con ?prueba=1 (6-nov)
     const conPrueba = new URLSearchParams(location.search).get('prueba') === '1';
     viajes = j.viajes.map(normalizar).filter(v => conPrueba || !esPrueba(v)); etapasViajes();
@@ -1865,6 +1872,8 @@ async function cargar(){
     window.REGISTRO = j.registro || null;   // vehículos y conductores con sus datos, solo el equipo (registro.js)   // calificación de conductores, solo el equipo (calificacion.js)
     window.SEG_INICIO = j.seguimiento || '';
     window.CLAVE = clave;
+    try { localStorage.setItem('rkt-clave', clave); } catch(e) {}
+    if (new URLSearchParams(location.search).has('clave')) { const u = new URL(location.href); u.searchParams.delete('clave'); history.replaceState(null, '', u); }
     if (j.interno) $('#lnkDespacho').href = 'despacho.html?clave=' + encodeURIComponent(clave);   // Despacho entra con la misma clave del equipo
     if (j.interno) setTimeout(autocerrarHechas, 0);   // acciones que el viaje ya muestra hechas: se cierran solas (acciones.js)
     $('#connDot').classList.add('live'); $('#connTxt').textContent = `Hoja de Drive · ${j.hora || 'en línea'}`;
@@ -4784,7 +4793,7 @@ montarEnVivo();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '7990036d6e';
+const VERSION_TABLERO = 'e88ed6d23c';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5538,7 +5547,7 @@ $('#bandeja').onclick = e => {
 function render(){ pintarSugerencias(); pintarPreguntas(); renderGbar(); renderBandeja(); renderLean(); renderErrores(); renderAcciones(); renderKpis(); renderChartDias(); renderChartEstados(); renderChartPais(); renderChartMix(); renderAlertas(); renderProximos(); renderFeed(); renderChips(); renderTabla(); renderMotonaves(); }
 // pantalla de acceso cuando la página trae los datos de la hoja con clave
 function pedirClave(errada){
-  document.body.insertAdjacentHTML('beforeend', `<div class="ov open" style="background:var(--bg)"><form class="modal" style="width:min(380px,100%)" onsubmit="event.preventDefault(); location.search='?clave='+encodeURIComponent(this.clave.value.trim())">
+  document.body.insertAdjacentHTML('beforeend', `<div class="ov open" style="background:var(--bg)"><form class="modal" style="width:min(380px,100%)" onsubmit="event.preventDefault(); const u = new window.URL(location.href); u.searchParams.set('clave', this.clave.value.trim()); location.replace(u)">
     <h3>LogxView · Reckitt</h3><div class="sub" style="margin-bottom:14px">Ingrese la clave de acceso para ver el tablero.</div>
     <input name="clave" type="password" placeholder="Clave" required autofocus style="width:100%;border:1px solid var(--border);background:var(--surface);padding:10px 12px;border-radius:8px">
     ${errada ? '<div class="missing" style="margin-top:8px">Clave incorrecta, intente de nuevo.</div>' : ''}
