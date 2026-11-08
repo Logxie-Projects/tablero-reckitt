@@ -60,6 +60,13 @@ main{padding:14px 16px 28px;max-width:1800px;margin:0 auto}
 .pag{font:500 14px var(--mono);color:var(--muted)}
 .senal{display:none;background:#2A1F05;color:var(--amber);padding:8px 16px;font:600 14px var(--font)}
 /* modo televisor: letra grande, sin barra de desplazamiento, rota por páginas */
+/* estilo del cliente (?tema=cliente): blanco con el fucsia de Reckitt, los colores del tablero (estilos.css --accent). Por defecto: NETFLEET */
+body.cliente{--bg:#f5f6f8;--card:#ffffff;--card2:#ffe9f3;--line:#e3e6eb;--ink:#1b1f27;--muted:#667085;--cyan:#ff007f;--green:#16a34a;--amber:#b45309}
+html:has(body.cliente){color-scheme:light}
+body.cliente header{background:rgba(255,255,255,.97)}
+body.cliente .card{box-shadow:0 1px 3px rgba(16,24,40,.08)}
+body.cliente .op{color:#fff} body.cliente .op.EXPO{background:#0ea5e9} body.cliente .op.IMPO{background:#f59e0b} body.cliente .op.NACIONAL{background:#10b981}
+body.cliente .senal{background:#fff7ed}
 body.tv{overflow:hidden;font-size:20px}
 body.tv header{padding:16px 28px}
 body.tv .marca{font-size:24px} body.tv .reloj{font-size:28px}
@@ -97,6 +104,7 @@ const hace = iso => { const m = Math.round((Date.now() - new Date(String(iso).le
 const ICONO = {camion: '🚛', grua: '🏗️', barco: '🚢'};
 const guardado = () => { try { return JSON.parse(localStorage.getItem('envivo_' + CODIGO) || 'null'); } catch (e) { return null; } };
 let D = guardado(), cargado = D ? D._t : 0, tv = qs.get('tv') === '1', pagina = 0;
+if (qs.get('tema') === 'cliente') { document.body.classList.add('cliente'); document.querySelector('meta[name=theme-color]').content = '#ffffff'; }
 
 async function cargar(){
   if (!CODIGO) return error('Este enlace está incompleto', 'Escanea de nuevo el código QR que te compartió ENTRAPETROL.');

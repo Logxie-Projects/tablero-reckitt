@@ -4596,11 +4596,15 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
  * Capa: pantalla (solo el equipo). En la reunión se marcan los pedidos que Reckitt quiere seguir; el cliente los ve en vivo, sin
  * clave ni filtros, escaneando un QR con el celular o en un televisor (envivo.html?c=CÓDIGO). Aquí: la lista de viajes abiertos con
  * casillas, el QR, copiar o abrir el enlace, "Cambiar enlace" (el QR viejo deja de servir) y "Apagar".
- * Datos: GET ?que=envivo y POST 'envivo' {op: marcar|nuevoCodigo|apagar|limpiar} (EnVivo.gs). El QR se dibuja en el navegador con
- * qrcode-generator (cdnjs, se carga solo al abrir el panel); si no carga, queda el enlace para copiar.
+ * Dos estilos (8-nov, pedido del usuario): NETFLEET (oscuro con cian) o Reckitt (blanco con el fucsia del tablero). El estilo elegido
+ * va en el enlace y el QR (&tema=cliente), en la 🖼️ Imagen (PNG para WhatsApp, dibujada aquí con los mismos datos que ve el cliente)
+ * y en el ✉️ correo automático (a las horas y destinatarios que se elijan; arranca apagado; "Enviar prueba" va solo a calidad@).
+ * Datos: GET ?que=envivo y POST 'envivo' {op: marcar|nuevoCodigo|apagar|limpiar|correo|probarCorreo} (EnVivo.gs); la imagen usa
+ * GET ?envivo=CÓDIGO (lo mismo que ve el cliente). El QR se dibuja con qrcode-generator (cdnjs, se carga solo al abrir el panel).
  * Este módulo crea su propio botón y su panel: para quitar el modo, ver el encabezado de apps-script/EnVivo.gs. */
 let EN_VIVO = null;
-const enlaceEnVivo = c => c ? new URL('envivo.html?c=' + c, location.href).href : '';
+const temaEnVivo = () => { try { return localStorage.getItem('envivo-tema') === 'cliente' ? 'cliente' : 'netfleet'; } catch (e) { return 'netfleet'; } };
+const enlaceEnVivo = c => c ? new URL('envivo.html?c=' + c + (temaEnVivo() === 'cliente' ? '&tema=cliente' : ''), location.href).href : '';
 function cargarLibQR(){
   if (window.qrcode) return Promise.resolve(true);
   return new Promise(ok => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
@@ -4608,13 +4612,18 @@ function cargarLibQR(){
 }
 function montarEnVivo(){
   const b = $('#btnResCli'); if (!b || $('#btnEnVivo')) return;
-  b.insertAdjacentHTML('afterend', `<button class="btn solo-interno" id="btnEnVivo" title="Pedidos que Reckitt ve en vivo con un QR (celular o televisor), sin clave ni filtros">📺 En vivo</button>`);
-  document.body.insertAdjacentHTML('beforeend', `<div class="ov" id="ovEnVivo"><div class="modal" role="dialog" aria-modal="true" style="width:min(820px,100%)">
+  b.insertAdjacentHTML('afterend', `<button class="btn solo-interno" id="btnEnVivo" title="Pedidos que Reckitt ve en vivo con un QR (celular o televisor), en imagen o por correo">📺 En vivo</button>`);
+  document.body.insertAdjacentHTML('beforeend', `<div class="ov" id="ovEnVivo"><div class="modal" role="dialog" aria-modal="true" style="width:min(860px,100%)">
     <h3>📺 En vivo para el cliente</h3>
-    <div class="sub">Marque los pedidos que Reckitt quiere seguir. Los ven al instante con el QR (celular con sus datos móviles, o en un televisor), sin clave, sin costos ni datos del conductor.</div>
+    <div class="sub">Marque los pedidos que Reckitt quiere seguir. Los ven al instante con el QR (celular con sus datos móviles, o en un televisor), en una imagen o por correo. Sin clave, sin costos ni datos del conductor.</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px"><b>Estilo:</b>
+      <label style="display:flex;gap:4px;align-items:center"><input type="radio" name="evTema" value="netfleet"> NETFLEET <span class="sub">(oscuro, cian)</span></label>
+      <label style="display:flex;gap:4px;align-items:center"><input type="radio" name="evTema" value="cliente"> Reckitt <span class="sub">(blanco, fucsia)</span></label>
+      <button class="btn" id="evImagen" style="margin-left:auto" title="Imagen PNG con los pedidos marcados, para WhatsApp o correo">🖼️ Imagen</button></div>
     <div id="evEnlace" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:10px"></div>
+    <details id="evCorreoBox" style="margin-top:10px"><summary style="cursor:pointer"><b>✉️ Correo automático</b> <span class="sub" id="evCorreoEstado"></span></summary><div id="evCorreo" style="margin-top:6px"></div></details>
     <input id="evBuscar" placeholder="Buscar pedido, booking, destino…" style="width:100%;margin-top:10px">
-    <div id="evLista" style="margin-top:8px;max-height:46vh;overflow:auto"></div>
+    <div id="evLista" style="margin-top:8px;max-height:40vh;overflow:auto"></div>
     <div class="mfoot"><span class="sub" id="evN" style="margin-right:auto"></span><button class="btn" id="evLimpiar">Quitar todos</button><button class="btn primary" id="evCerrar">Listo</button></div>
   </div></div>`);
   $('#btnEnVivo').onclick = abrirEnVivo;
@@ -4622,15 +4631,22 @@ function montarEnVivo(){
   $('#ovEnVivo').onclick = e => { if (e.target.id === 'ovEnVivo') $('#ovEnVivo').classList.remove('open'); };
   $('#evBuscar').oninput = filtrarEnVivo;
   $('#evLista').onchange = e => { const c = e.target.closest('[data-ev]'); if (c) marcarEnVivo(c.dataset.ev, c.checked, c); };
+  document.querySelectorAll('[name=evTema]').forEach(r => { r.onchange = () => { try { localStorage.setItem('envivo-tema', r.value); } catch (x) {} if (EN_VIVO) pintarEnlaceEnVivo(); }; });
+  $('#evImagen').onclick = imagenEnVivo;
   $('#evLimpiar').onclick = async () => { if (!EN_VIVO || !EN_VIVO.ids.length || !confirm('¿Quitar todos los pedidos de la vista en vivo?')) return; await opEnVivo({op: 'limpiar'}); };
   $('#evEnlace').onclick = async e => { const b = e.target.closest('[data-evop]'); if (!b) return; const op = b.dataset.evop;
     if (op === 'copiar') { try { await navigator.clipboard.writeText(enlaceEnVivo(EN_VIVO.codigo)); toast('Enlace copiado'); } catch (x) { prompt('Copie el enlace:', enlaceEnVivo(EN_VIVO.codigo)); } }
     else if (op === 'nuevoCodigo' && confirm('¿Cambiar el enlace? El QR que ya tiene el cliente deja de funcionar y hay que compartir el nuevo.')) opEnVivo({op});
     else if (op === 'apagar' && confirm('¿Apagar la vista en vivo? El QR deja de funcionar hasta que marque un pedido o cree un enlace nuevo.')) opEnVivo({op});
     else if (op === 'crear') opEnVivo({op: 'nuevoCodigo'}); };
+  $('#evCorreo').onclick = async e => { const b = e.target.closest('[data-evc]'); if (!b) return;
+    if (b.dataset.evc === 'guardar') guardarCorreoEnVivo(b);
+    else { b.disabled = true; const j = await api('envivo', {op: 'probarCorreo', tema: temaEnVivo()}).catch(x => ({ok: false, error: x.message}));
+      b.disabled = false; toast(j.ok ? `Prueba enviada a calidad+prueba@ (${j.n} pedido${j.n === 1 ? '' : 's'}, estilo ${temaEnVivo() === 'cliente' ? 'Reckitt' : 'NETFLEET'})` : 'No se pudo: ' + j.error, 6000); } };
 }
 async function abrirEnVivo(){
   $('#ovEnVivo').classList.add('open'); $('#evLista').innerHTML = '<p class="sub">Cargando…</p>'; $('#evEnlace').innerHTML = '';
+  document.querySelectorAll('[name=evTema]').forEach(r => { r.checked = r.value === temaEnVivo(); });
   try {
     const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=envivo&clave=' + encodeURIComponent(claveActual()))).json();
     if (!j.ok) throw new Error(j.error || 'error');
@@ -4650,13 +4666,29 @@ async function pintarEnlaceEnVivo(){
   const c = EN_VIVO.codigo, url = enlaceEnVivo(c);
   if (!c) { $('#evEnlace').innerHTML = `<span class="sub">Todavía no hay enlace: se crea al marcar el primer pedido.</span>${EN_VIVO.ids.length ? '<button class="btn" data-evop="crear">Crear enlace</button>' : ''}`; return; }
   $('#evEnlace').innerHTML = `<div id="evQR" style="width:150px;height:150px;background:#fff;border-radius:8px;display:grid;place-items:center;flex:none" title="Escanear con la cámara del celular"><span class="sub">QR…</span></div>
-    <div style="flex:1;min-width:220px"><div class="sub">Enlace del cliente (cualquiera que lo tenga ve estos pedidos):</div>
+    <div style="flex:1;min-width:220px"><div class="sub">Enlace del cliente (cualquiera que lo tenga ve estos pedidos), estilo ${temaEnVivo() === 'cliente' ? 'Reckitt' : 'NETFLEET'}:</div>
       <div style="word-break:break-all;font-size:12px;margin:4px 0 8px"><a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn" data-evop="copiar">📋 Copiar</button><a class="btn" style="text-decoration:none;color:inherit" href="${esc(url)}&tv=1" target="_blank" rel="noopener">📺 Abrir en modo TV</a>
         <button class="btn" data-evop="nuevoCodigo">🔄 Cambiar enlace</button><button class="btn" data-evop="apagar">⏻ Apagar</button></div>
       <div class="sub" style="margin-top:6px">Para el televisor: ábralo en el navegador del TV o transmita la pantalla del celular (Chromecast / "Transmitir pantalla").</div></div>`;
   if (await cargarLibQR()) { const q = qrcode(0, 'M'); q.addData(url); q.make(); const el = $('#evQR'); if (el) el.innerHTML = q.createSvgTag({cellSize: 3, margin: 2, scalable: true}); }
   else { const el = $('#evQR'); if (el) el.innerHTML = '<span class="sub" style="padding:8px;text-align:center">No se pudo dibujar el QR: comparta el enlace</span>'; }
+}
+function pintarCorreoEnVivo(){
+  const k = EN_VIVO.correo || {activo: false, para: [], horas: [], tema: 'cliente'}, D = EN_VIVO.destinatarios || [];
+  $('#evCorreoEstado').textContent = k.activo ? `· prendido · ${k.horas.join(', ')} h · estilo ${k.tema === 'cliente' ? 'Reckitt' : 'NETFLEET'}` : '· apagado';
+  $('#evCorreo').innerHTML = `<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="evcActivo" ${k.activo ? 'checked' : ''}> Enviar el correo con los pedidos marcados (solo si hay alguno marcado)</label>
+    <div style="margin-top:6px"><span class="sub">Horas:</span> ${[6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(h => `<label style="display:inline-flex;gap:3px;margin-right:8px"><input type="checkbox" data-evh="${h}" ${k.horas.includes(h) ? 'checked' : ''}>${h}</label>`).join('')}</div>
+    <div style="margin-top:6px"><span class="sub">Para:</span> ${D.map(d => `<label style="display:inline-flex;gap:3px;margin-right:10px"><input type="checkbox" data-evp="${esc(d.k)}" ${k.para.includes(d.k) ? 'checked' : ''}>${esc(d.nombre)}</label>`).join('')}</div>
+    <div class="sub" style="margin-top:6px">El correo sale con el estilo elegido arriba al guardar. Sin enlaces (Reckitt no abre páginas desde el computador).</div>
+    <div style="display:flex;gap:6px;margin-top:6px"><button class="btn" data-evc="probar">Enviar prueba (a calidad@)</button><button class="btn primary" data-evc="guardar">Guardar correo</button></div>`;
+}
+async function guardarCorreoEnVivo(b){
+  b.disabled = true;
+  const datos = {op: 'correo', activo: $('#evcActivo').checked, tema: temaEnVivo(),
+    horas: [...document.querySelectorAll('[data-evh]:checked')].map(x => +x.dataset.evh), para: [...document.querySelectorAll('[data-evp]:checked')].map(x => x.dataset.evp)};
+  if (await opEnVivo(datos)) toast(datos.activo ? `Correo prendido: ${datos.horas.join(', ')} h` : 'Correo guardado (apagado)');
+  b.disabled = false;
 }
 function pintarEnVivo(){
   const marcados = new Set(EN_VIVO.ids);
@@ -4670,9 +4702,78 @@ function pintarEnVivo(){
       <br><span class="sub">${esc(v.id)} · ${esc(etapaAhora(v, P, n, true).ahora)}${situacion(v) !== 'Abierto' ? ' · ' + esc(situacion(v)) : ''}</span></span></label>`; }).join('')
     : '<p class="sub">No hay viajes abiertos.</p>';
   $('#evN').textContent = `${EN_VIVO.ids.length} pedido${EN_VIVO.ids.length === 1 ? '' : 's'} en vivo${EN_VIVO.por ? ' · último cambio: ' + EN_VIVO.por : ''}`;
-  filtrarEnVivo(); pintarEnlaceEnVivo();
+  filtrarEnVivo(); pintarEnlaceEnVivo(); pintarCorreoEnVivo();
 }
 function filtrarEnVivo(){ const q = minus($('#evBuscar').value); document.querySelectorAll('#evLista [data-buscar]').forEach(x => { x.style.display = !q || x.dataset.buscar.includes(q) ? '' : 'none'; }); }
+
+/* ---------- 🖼️ imagen PNG (para WhatsApp): los mismos datos que ve el cliente (GET ?envivo=CÓDIGO), dibujados en un canvas ---------- */
+const TEMAS_IMG_EV = {
+  netfleet: {fondo: '#02050F', tarjeta: '#0A1A3A', borde: '#1E4E78', texto: '#ECF7FF', suave: '#A9BDD8', marca: '#22C3E6', marcaSuave: '#0F2450', ok: '#2BD08A', pend: '#1E4E78'},
+  cliente: {fondo: '#f5f6f8', tarjeta: '#ffffff', borde: '#e5e7eb', texto: '#1b1f27', suave: '#667085', marca: '#ff007f', marcaSuave: '#ffe9f3', ok: '#16a34a', pend: '#e5e7eb'}};
+const OP_IMG_EV = {EXPO: '#0ea5e9', IMPO: '#f59e0b', NACIONAL: '#10b981'}, ICONO_IMG_EV = {camion: '🚛', grua: '🏗️', barco: '🚢'};
+async function datosImagenEnVivo(){
+  if (!EN_VIVO || !EN_VIVO.codigo) throw new Error('Primero marque al menos un pedido');
+  const j = await (await fetch(CFG.SHEETS_API_URL + '?envivo=' + encodeURIComponent(EN_VIVO.codigo))).json();
+  if (!j.ok) throw new Error(j.error || 'error');
+  if (!j.viajes.length) throw new Error('No hay pedidos marcados');
+  return j;
+}
+function dibujarImagenEnVivo(j, tema){
+  const C = TEMAS_IMG_EV[tema] || TEMAS_IMG_EV.netfleet, W = 1080, M = 40, PADC = 28, F = '"Segoe UI",Roboto,Helvetica,Arial,sans-serif';
+  const cv = document.createElement('canvas'), x = cv.getContext('2d');
+  const lineas = (t, font, max) => { x.font = font; const L = []; let l = ''; String(t || '').split(/\s+/).forEach(w => { const p = l ? l + ' ' + w : w;
+    if (x.measureText(p).width > max && l) { L.push(l); l = w; } else l = p; }); if (l) L.push(l); return L; };
+  const caja = (X, Y, w, h, r, fill, borde) => { x.beginPath(); if (x.roundRect) x.roundRect(X, Y, w, h, r); else x.rect(X, Y, w, h); x.fillStyle = fill; x.fill(); if (borde) { x.strokeStyle = borde; x.lineWidth = 2; x.stroke(); } };
+  const texto = (L, X, Y, font, color, alto) => { x.font = font; x.fillStyle = color; x.textBaseline = 'top'; L.forEach((l, i) => x.fillText(l, X, Y + i * alto)); return L.length * alto; };
+  const iw = W - 2 * M - 2 * PADC;
+  // una tarjeta: devuelve su alto; con dibujar = true la pinta en (M, y)
+  const tarjeta = (v, y, dibujar) => {
+    let h = PADC; const X = M + PADC, chip = v.operacion === 'NACIONAL' ? 'NAC' : v.operacion;
+    x.font = `bold 24px ${F}`; const cw = x.measureText(chip).width + 20;
+    const ref = lineas(v.ref, `bold 34px ${F}`, iw - cw - 14), dest = [v.destino, v.contenedor].filter(Boolean).join(' · ');
+    const ahora = lineas(`${v.situacion === 'Cerrado' ? '✅' : ICONO_IMG_EV[v.icono] || '📦'}  ${v.ahora}`, `bold 30px ${F}`, iw - 36);
+    const prox = v.proximo && v.situacion !== 'Cerrado' && !String(v.ahora).toLowerCase().includes(String(v.proximo.que).toLowerCase())
+      ? lineas(`Próximo: ${v.proximo.que} · ${fd(v.proximo.fecha)}${v.proximo.donde ? ' · ' + v.proximo.donde : ''}`, `26px ${F}`, iw) : [];
+    const com = v.comentario ? lineas((v.comentario.hecho ? '✅ ' : '') + v.comentario.texto, `26px ${F}`, iw - 20) : [];
+    const altoRef = ref.length * 42, altoDest = dest ? 34 : 0, altoAhora = ahora.length * 40 + 32, P = v.paradas || [];
+    const total = PADC + Math.max(altoRef, 40) + altoDest + 18 + altoAhora + (P.length ? 18 + 12 + 34 : 0) + (prox.length ? 16 + prox.length * 34 : 0) + (com.length ? 16 + com.length * 34 : 0) + PADC;
+    if (!dibujar) return total;
+    caja(M, y, W - 2 * M, total, 20, C.tarjeta, C.borde);
+    h = y + PADC;
+    caja(X, h + 4, cw, 34, 6, OP_IMG_EV[v.operacion] || C.marca); texto([chip], X + 10, h + 9, `bold 24px ${F}`, '#ffffff', 28);
+    texto(ref, X + cw + 14, h, `bold 34px ${F}`, C.texto, 42); h += Math.max(altoRef, 40);
+    if (dest) { texto([dest], X + cw + 14, h, `26px ${F}`, C.suave, 34); h += altoDest; }
+    h += 18; caja(X, h, iw, altoAhora, 14, C.marcaSuave); texto(ahora, X + 18, h + 16, `bold 30px ${F}`, v.situacion === 'Cerrado' ? C.ok : C.texto, 40); h += altoAhora;
+    if (P.length) { h += 18; const g = 6, sw = (iw - g * (P.length - 1)) / P.length;
+      P.forEach((p, i) => { const sx = X + i * (sw + g); caja(sx, h, sw, 12, 6, p.hecho ? C.marca : i === v.n ? C.marcaSuave : C.pend, !p.hecho && i === v.n ? C.marca : '');
+        const et = lineas(p.etapa, `22px ${F}`, sw)[0] || ''; texto([et], sx, h + 18, `22px ${F}`, p.hecho || i === v.n ? C.texto : C.suave, 26); });
+      h += 12 + 34; }
+    if (prox.length) { h += 16; texto(prox, X, h, `26px ${F}`, C.texto, 34); h += prox.length * 34; }
+    if (com.length) { h += 16; caja(X, h, 5, com.length * 34, 2, v.comentario.hecho ? C.ok : C.marca); texto(com, X + 20, h, `26px ${F}`, C.texto, 34); }
+    return total;
+  };
+  const L = j.viajes, cab = 150, pie = 90, altos = L.map(v => tarjeta(v, 0, false));
+  cv.width = W; cv.height = cab + altos.reduce((s, a) => s + a + 24, 0) + pie;
+  x.fillStyle = C.fondo; x.fillRect(0, 0, W, cv.height);
+  texto(['Operaciones en seguimiento'], M, 40, `bold 46px ${F}`, C.texto, 54);
+  texto([`ENTRAPETROL · ${j.hora} · ${L.length} pedido${L.length === 1 ? '' : 's'}`], M, 98, `26px ${F}`, C.suave, 32);
+  x.fillStyle = C.marca; x.fillRect(M, cab - 12, W - 2 * M, 5);
+  let y = cab + 12; L.forEach((v, i) => { tarjeta(v, y, true); y += altos[i] + 24; });
+  texto([tema === 'cliente' ? 'Pedidos en seguimiento para Reckitt' : 'NETFLEET · Pedidos en seguimiento'], M, cv.height - pie + 30, `22px ${F}`, C.suave, 28);
+  return cv;
+}
+async function imagenEnVivo(){
+  const b = $('#evImagen'); b.disabled = true; const antes = b.textContent; b.textContent = '🖼️ Armando…';
+  try {
+    const j = await datosImagenEnVivo(), cv = dibujarImagenEnVivo(j, temaEnVivo());
+    const blob = await new Promise(ok => cv.toBlob(ok, 'image/png')), nombre = `operaciones-en-vivo-${HOY}.png`;
+    const file = new File([blob], nombre, {type: 'image/png'});
+    if (navigator.canShare && navigator.canShare({files: [file]})) { try { await navigator.share({files: [file], title: 'Operaciones en seguimiento'}); return; } catch (e) { if (e.name === 'AbortError') return; } }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nombre; document.body.appendChild(a); a.click(); a.remove();
+    toast('Imagen descargada: adjúntela en WhatsApp o en el correo', 4000);
+  } catch (e) { toast('No se pudo armar la imagen: ' + e.message, 5000); }
+  finally { b.disabled = false; b.textContent = antes; }
+}
 montarEnVivo();
 /* ---------- version.js · el tablero se actualiza solo cuando se publica una versión nueva ---------- */
 // Capa: pantalla. generar_publico.py pone en VERSION_TABLERO la huella de esta publicación y escribe publico/version.json con la
@@ -4683,7 +4784,7 @@ montarEnVivo();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '65b401a357';
+const VERSION_TABLERO = '7990036d6e';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
