@@ -78,6 +78,18 @@ a.hud,button.hud{display:block;width:100%;text-align:left;border:0;cursor:pointe
 .paradas b{display:block;font:600 16px var(--font)}
 .paradas .cuando{font:500 14px var(--mono);color:var(--muted)}
 
+/* ofertas selladas (fase 2, 8-nov): valor en mono grande; cian si la oferta está abierta, verde si es tuya */
+.flete{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-top:8px;font:500 26px/1.1 var(--mono);color:var(--cyan);white-space:nowrap}
+.flete.tuya{color:var(--green)}
+.flete small{order:-1;font:400 14px var(--font);color:var(--muted);letter-spacing:0}
+.valor{position:relative}
+.valor span{position:absolute;z-index:1;left:16px;top:50%;transform:translateY(-50%);font:500 30px var(--mono);color:var(--muted);pointer-events:none}
+.valor input{min-height:72px;padding-left:48px;font:500 32px var(--mono);letter-spacing:.02em;clip-path:var(--cut)}
+.secreto{display:flex;gap:10px;align-items:flex-start;margin-top:12px}
+.secreto p{margin:0}
+.secreto b{display:block;font:700 16px var(--font)}
+.monto{font:500 32px var(--mono);color:var(--green);margin:6px 0 14px}
+
 /* ---------- botones ---------- */
 .btn{display:flex;align-items:center;justify-content:center;gap:10px;min-height:var(--btn-h);width:100%;border:0;text-decoration:none;
   background:linear-gradient(90deg,var(--cyan),var(--cyan-2));color:var(--on-cyan);font:700 17px var(--font);clip-path:var(--cut);border-radius:2px;cursor:pointer}

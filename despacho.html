@@ -245,9 +245,10 @@ function pintar() {
       <button class="${pestana === 'libres' ? 'on' : ''}" onclick="pestana='libres';pintar()">Viajes sin asignar<span class="num">${libres.length}</span></button>
       <button class="${pestana === 'term' ? 'on' : ''}" onclick="pestana='term';pintar()">Terminadas / anuladas<span class="num">${term.length}</span></button>
       <button class="${pestana === 'turnos' ? 'on' : ''}" onclick="pestana='turnos';pintar()">🙋 Enturnados<span class="num">${nEnt}</span>${nDisp ? `<span class="num" title="Disponibles">🟢 ${nDisp}</span>` : ''}</button>
+      <button class="${pestana === 'ofertas' ? 'on' : ''}" onclick="pestana='ofertas';pintar()">🔒 Ofertas<span class="num">${(D.ofertas || []).filter(c => c.estado === 'Abierta').length}</span>${(D.ofertas || []).some(c => c.estado === 'Abierta' && !c.abierta) ? '<span class="num" style="background:var(--warn-soft);color:var(--warn)" title="Cerraron: elegir ganador">⚑ elegir</span>' : ''}</button>
       <button class="${pestana === 'conductores' ? 'on' : ''}" onclick="pestana='conductores';cargarConductores();pintar()">👤 Conductores y vehículos${CONDS ? `<span class="num">${condVigentes().length}</span>${(condConProblema().length + vehConProblema()) ? `<span class="num" style="background:var(--warn-soft);color:var(--warn)" title="Con algo por revisar">⚠ ${condConProblema().length + vehConProblema()}</span>` : ''}` : ''}</button>
     </div>
-    ${pestana === 'curso' ? tarjetas(curso.filter(pasa)) : pestana === 'term' ? tarjetas(term.filter(pasa).reverse()) : pestana === 'turnos' ? vistaTurnos(f) : pestana === 'conductores' ? vistaConductores(f) : tablaLibres(libres.filter(pasa))}
+    ${pestana === 'curso' ? tarjetas(curso.filter(pasa)) : pestana === 'term' ? tarjetas(term.filter(pasa).reverse()) : pestana === 'turnos' ? vistaTurnos(f) : pestana === 'ofertas' ? vistaOfertas(f) : pestana === 'conductores' ? vistaConductores(f) : tablaLibres(libres.filter(pasa))}
   </main>`;
 }
 
@@ -291,11 +292,12 @@ function tarjetas(lista) {
 
 function tablaLibres(lista) {
   if (!lista.length) return '<div class="vacio">Todos los viajes abiertos de la hoja ya tienen conductor asignado en la app.</div>';
-  return `<div class="tabla"><table><thead><tr><th>Op.</th><th>Booking</th><th>Placa</th><th>Conductor</th><th>Retiro</th><th>Llenado</th><th>Patio / Puerto</th><th>Status</th><th>🙋 Enturnados</th><th></th></tr></thead><tbody>
+  return `<div class="tabla"><table><thead><tr><th>Op.</th><th>Booking</th><th>Placa</th><th>Conductor</th><th>Retiro</th><th>Llenado</th><th>Patio / Puerto</th><th>Status</th><th>🙋 Enturnados</th><th>🔒 Oferta</th><th></th></tr></thead><tbody>
     ${lista.map(v => `<tr><td><span class="op ${v.operacion}">${esc(v.operacion)}</span></td><td><b>${esc(v.booking)}</b></td>
       <td><span class="placa">${esc(v.placa || '—')}</span></td><td>${esc(v.conductor || '—')}</td><td>${esc(v.fechaRetiro)}</td><td>${esc(v.fechaCargue)}</td>
       <td>${esc([v.patio, v.puerto].filter(Boolean).join(' / '))}</td><td>${esc(v.situacion)}</td>
       <td>${enturnadosDe(v).map(t => botonTurno(v, t)).join(' ') || '<span class="sub">—</span>'}</td>
+      <td>${celdaOferta(v)}</td>
       <td><button class="b b-mini b-pri" onclick="formulario(null,'${esc(v.id)}')">Asignar</button></td></tr>`).join('')}
   </tbody></table></div>`;
 }
@@ -340,6 +342,82 @@ function vistaTurnos(f) {
   return `<p class="sub" style="margin:0 0 10px">Lo que los conductores marcaron en la app Viajes ETP (últimos 10 días, sin los que se retiraron). 🙋 abre la asignación con el vehículo, el conductor y su celular ya puestos.</p>
     <h3 style="margin:0 0 8px">🙋 Enturnados por viaje</h3>${porViaje}
     <h3 style="margin:18px 0 8px">🟢 Disponibles</h3>${disponibles}`;
+}
+
+/* ---------- ofertas selladas (app Viajes ETP, 8-nov) ----------
+   Operaciones abre a oferta un viaje sin vehículo: referencia para el conductor (opcional, nunca la tarifa del cliente) y hora de
+   cierre. Los conductores del registro ofertan desde la app; nadie ve las ofertas antes del cierre (aquí solo cuántas hay). Al
+   cerrar se ven ordenadas por precio y operaciones elige: eso abre la asignación con el ganador puesto (Conductores.gs). */
+const pesos = n => '$ ' + Number(n || 0).toLocaleString('es-CO');
+const ofertaDe = id => (D.ofertas || []).find(c => c.viajeId === id);
+const cierreTxt = iso => new Date(iso).toLocaleString('es-CO', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+function celdaOferta(v) {
+  const c = ofertaDe(v.id);
+  if (!c) return v.placa ? '<span class="sub">—</span>' : `<button class="b b-mini" onclick="abrirOferta('${esc(v.id)}')">🔒 Abrir a oferta</button>`;
+  if (c.estado === 'Adjudicada') return '<span class="sub">Con ganador</span>';
+  return c.abierta ? `<button class="b b-mini" onclick="pestana='ofertas';pintar()" title="Cierra ${esc(cierreTxt(c.cierre))}">🔒 ${c.n} oferta${c.n === 1 ? '' : 's'} · abierta</button>`
+    : `<button class="b b-mini b-pri" onclick="pestana='ofertas';pintar()">⚑ Cerró · elegir (${c.n})</button>`;
+}
+function abrirOferta(viajeId) {
+  const v = D.viajes.find(x => x.id === viajeId), c = ofertaDe(viajeId);
+  // cierre por defecto: 24 h antes del primer evento (a las 12 m.); si ya pasó, en 2 horas
+  const pd = primerDia(v || {}), dia = pd ? new Date(pd.slice(0, 10) + 'T12:00:00-05:00') : null;
+  let cierre = c && c.estado === 'Abierta' ? new Date(c.cierre) : dia ? new Date(dia - 864e5) : new Date(Date.now() + 2 * 36e5);
+  if (cierre < new Date(Date.now() + 30 * 6e4)) cierre = new Date(Date.now() + 2 * 36e5);
+  const local = new Date(cierre.getTime() - 5 * 36e5).toISOString().slice(0, 16);   // hora de Colombia para el campo
+  ventana(`<h2>🔒 ${c && c.estado === 'Abierta' ? 'Cambiar oferta' : 'Abrir a oferta'} · ${esc(viajeId)}</h2>
+    <p class="sub">${v ? esc(nombreViaje(v)) + ' · ' + esc(diaTxt(primerDia(v))) : ''}. Lo verán los conductores en la app Viajes ETP; solo pueden ofertar los del registro con datos completos.</p>
+    <form class="form" id="fo" onsubmit="guardarOferta(event,'${esc(viajeId)}')">
+      <label>Referencia para el conductor (opcional)<input name="referencia" inputmode="numeric" placeholder="Ej: 3.200.000" value="${c && c.referencia ? Number(c.referencia).toLocaleString('es-CO') : ''}"
+        oninput="const d=this.value.replace(/\D/g,'').slice(0,8);this.value=d?Number(d).toLocaleString('es-CO'):''"></label>
+      <label>Cierra (hora de Colombia)<input type="datetime-local" name="cierre" required value="${local}"></label>
+      <p class="sub full">La referencia la ve el conductor: nunca ponga la tarifa del cliente. Las ofertas se abren aquí a la hora de cierre.</p>
+      <div class="pie full"><button type="button" class="b" onclick="cerrarVentana()">Cancelar</button>
+        ${c && c.estado === 'Abierta' ? `<button type="button" class="b" onclick="cancelarOferta('${esc(viajeId)}')">⛔ Cancelar la oferta</button>` : ''}
+        <button class="b b-pri" id="bofertar">${c && c.estado === 'Abierta' ? 'Guardar' : 'Abrir a oferta'}</button></div>
+    </form>`);
+}
+async function guardarOferta(e, viajeId) {
+  e.preventDefault(); const f = e.target, b = $('#bofertar'); b.disabled = true;
+  try {
+    const r = await postear({ action: 'abrirOferta', viajeId, referencia: f.referencia.value.replace(/\D/g, ''), cierre: f.cierre.value });
+    if (!r.ok) throw new Error(r.error);
+    cerrarVentana(); toast('🔒 Viaje abierto a oferta'); await cargar(true);
+  } catch (err) { b.disabled = false; toast('Error: ' + err.message); }
+}
+async function cancelarOferta(viajeId) {
+  if (!confirm('¿Cancelar la oferta de ' + viajeId + '? Los conductores que ofertaron verán "No quedó esta vez".')) return;
+  const r = await postear({ action: 'cancelarOferta', viajeId });
+  if (!r.ok) return toast('Error: ' + r.error);
+  cerrarVentana(); toast('Oferta cancelada'); await cargar(true);
+}
+async function elegirOferta(viajeId, ofertaId) {
+  const c = ofertaDe(viajeId), o = c && c.ofertas.find(x => x.id === ofertaId);
+  if (!o || !confirm(`¿Elegir a ${o.conductor} (${o.placa}) por ${pesos(o.valor)}? Los demás verán "No quedó esta vez".`)) return;
+  const r = await postear({ action: 'elegirOferta', viajeId, ofertaId });
+  if (!r.ok) return toast('Error: ' + r.error);
+  await cargar(true);
+  toast(`Ganador: ${r.ganador.conductor} · ${pesos(r.ganador.valor)}. Complete la asignación.`);
+  formulario(null, viajeId, { placa: r.ganador.placa, conductor: r.ganador.conductor, telefono: r.ganador.telefono });
+}
+function vistaOfertas(f) {
+  const L = (D.ofertas || []).filter(c => !f || JSON.stringify(c).toLowerCase().includes(f))
+    .sort((a, b) => (a.estado === 'Adjudicada') - (b.estado === 'Adjudicada') || String(a.cierre).localeCompare(String(b.cierre)));
+  const viajeDe = id => D.viajes.find(v => v.id === id);
+  return `<p class="sub" style="margin:0 0 10px">Ofertas selladas de los conductores en la app Viajes ETP (últimos 15 días). Antes del cierre solo se sabe cuántas hay; al cerrar se ven por precio y usted elige. Para abrir un viaje a oferta: pestaña “Viajes sin asignar” → 🔒.</p>
+    ${L.length ? `<div class="grid">${L.map(c => { const v = viajeDe(c.viajeId), asig = v && asignacionDe(v);
+      return `<div class="card"><div class="top"><span class="op ${v ? v.operacion : ''}">${esc(v ? v.operacion : '')}</span>
+        <div><div class="bk">${esc(c.viajeId)} · ${esc(v ? nombreViaje(v) : 'viaje cerrado o no encontrado')}</div>
+        <div class="sub">${v ? `${v.booking ? 'Booking ' + esc(v.booking) + ' · ' : ''}<b>${esc(diaTxt(primerDia(v)))}</b>` : ''}${c.referencia ? ' · referencia ' + pesos(c.referencia) : ''}</div></div>
+        <span class="op" style="margin-left:auto">${c.estado === 'Adjudicada' ? '✔ Con ganador' : c.abierta ? '🔒 Abierta' : '⚑ Cerró'}</span></div>
+        <div class="estado"><span>${c.abierta ? `Cierra <b>${esc(cierreTxt(c.cierre))}</b>` : `Cerró ${esc(cierreTxt(c.cierre))}`}</span><span>${c.n} oferta${c.n === 1 ? '' : 's'}</span></div>
+        ${c.abierta ? `<div class="sub">🔒 Selladas: se ven a la hora de cierre.</div>`
+          : c.ofertas.length ? c.ofertas.map((o, i) => `<div class="estado" style="align-items:center"><span>${i + 1}. <b>${pesos(o.valor)}</b> · <span class="placa">${esc(o.placa)}</span> ${esc(o.conductor)} <span class="sub">· ${esc(o.telefono)}</span>${o.estado === 'Ganadora' ? ' <b>✔ ganadora</b>' : ''}</span>
+              ${c.estado === 'Abierta' && o.estado === 'Enviada' ? `<button class="b b-mini b-pri" onclick="elegirOferta('${esc(c.viajeId)}','${esc(o.id)}')">Elegir</button>` : ''}</div>`).join('')
+          : '<div class="sub">Nadie ofertó. Puede cambiar la hora de cierre para dejarla abierta más tiempo.</div>'}
+        <div class="acc">${c.estado === 'Abierta' ? `<button class="b b-mini" onclick="abrirOferta('${esc(c.viajeId)}')">✏️ Referencia / cierre</button>` : ''}
+          ${c.estado === 'Adjudicada' && v && !asig ? `<button class="b b-mini b-pri" onclick='formulario(null, ${JSON.stringify(c.viajeId)}, ${JSON.stringify((() => { const g = c.ofertas.find(o => o.estado === "Ganadora") || {}; return { placa: g.placa, conductor: g.conductor, telefono: g.telefono }; })())})'>Completar asignación</button>` : ''}</div>
+      </div>`; }).join('')}</div>` : '<div class="vacio">Todavía no hay viajes abiertos a oferta.</div>'}`;
 }
 
 /* ---------- asignar / editar ---------- */

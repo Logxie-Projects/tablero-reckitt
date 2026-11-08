@@ -24,6 +24,7 @@
   <symbol id="i-nuevo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6.1.6-4.6 4.1 1.3 6-5.4-3.1-5.4 3.1 1.3-6-4.6-4.1 6.1-.6z"/></symbol>
   <symbol id="i-gente" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c1-3.5 3.5-5.5 6.5-5.5s5.5 2 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5c2 .6 3.2 2.5 3.8 5.5"/></symbol>
   <symbol id="i-whats" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1.2-3.6A8 8 0 1 1 8 19z"/></symbol>
+  <symbol id="i-candado" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="1"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
   <symbol id="i-cel" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="1.5"/><path d="M11 18h2"/></symbol>
 </svg>
 
@@ -49,7 +50,7 @@
     <!-- CARGAS: viajes sin vehículo para enturnarse y "estoy disponible" -->
     <section id="tCargas" class="hidden">
       <div class="eyebrow">Carga disponible</div>
-      <h1>Viajes para enturnarte</h1>
+      <h1>Cargas para ti</h1>
       <p class="sec" id="actualizado"></p>
       <div class="lista" id="viajes" style="margin-top:12px"></div>
       <h2>¿Estás libre sin un viaje en particular?</h2>
@@ -65,6 +66,7 @@
       <div class="eyebrow">Mis viajes</div>
       <h1>Tus viajes</h1>
       <div class="lista" id="misViajes" style="margin-top:12px"></div>
+      <div id="bloqueOfertas" class="hidden"><h2>Mis ofertas</h2><div class="lista" id="misOfertas"></div></div>
       <h2>Mis turnos</h2>
       <div class="lista" id="mios"></div>
     </section>
@@ -167,6 +169,17 @@ async function cargar(){
   pintarSenal(); pintar();
 }
 
+// ---------- ofertas selladas: valor con miles ($ 1.250.000) y cuánto falta para el cierre ----------
+const pesos = n => '$ ' + Number(n || 0).toLocaleString('es-CO');
+function faltaPara(iso){ const m = Math.floor((new Date(iso) - Date.now()) / 60000); if (isNaN(m) || m < 0) return '';
+  const d = Math.floor(m / 1440), h = Math.floor(m % 1440 / 60), mi = m % 60;
+  return d ? `${d} d ${h} h` : h ? `${h} h ${String(mi).padStart(2, '0')} min` : `${mi} min`; }
+const chipOferta = o => !o.abierta ? `<span class="chip calma">${ico('i-candado', 1)}Cerró · operaciones elige</span>`
+  : o.mia ? `<span class="chip ok">${ico('i-ok', 1)}Ofertaste · cierra en <span class="num">${faltaPara(o.cierre)}</span></span>`
+  : `<span class="chip warn">${ico('i-reloj', 1)}Oferta · cierra en <span class="num">${faltaPara(o.cierre)}</span></span>`;
+const fleteHtml = o => o.mia ? `<div class="flete tuya">${pesos(o.mia)}<small>tu oferta</small></div>`
+  : o.referencia ? `<div class="flete">${pesos(o.referencia)}<small>referencia</small></div>` : '';
+
 // ---------- pintar ----------
 const cuandoPaso = p => p.cuando ? fd(p.cuando) : p.antesDe ? 'antes del ' + fd(p.antesDe) : 'fecha por confirmar';
 const paradasHtml = P => `<ol class="paradas">${P.map((p, i) => `<li><span class="n">${i + 1}</span><div><b>${esc(p.que)}</b><span class="cuando">${esc(cuandoPaso(p))}</span>${p.donde ? ` · <span class="sec">${esc(p.donde)}</span>` : ''}</div></li>`).join('')}</ol>`;
@@ -189,11 +202,12 @@ function pintar(){
   const vistos = new Set(guardado('etp-turnos-vistos') || []);
   $('#actualizado').innerHTML = `Actualizado <span class="num">${new Date().toLocaleTimeString('es-CO', {hour: 'numeric', minute: '2-digit'})}</span> · ${datos.viajes.length} viaje${datos.viajes.length === 1 ? '' : 's'} sin vehículo`;
   $('#viajes').innerHTML = datos.viajes.length ? datos.viajes.map(v => { const P = v.pasos || [], primero = P.find(p => p.cuando || p.antesDe);
-    return `<button class="hud${v.yo ? ' on' : ''}" data-ver="${esc(v.id)}"><div class="in">
+    return `<button class="hud${v.yo || (v.oferta && v.oferta.mia) ? ' on' : ''}" data-ver="${esc(v.id)}"><div class="in">
       <p class="ruta">${rutaDe(P)}</p>
       <div class="datos">${[esc(v.operacion), primero ? esc(cuandoPaso(primero)).toUpperCase() : '', v.unidad ? esc(v.unidad.replace('1X', '')) + "'" : '', P.length + ' PASO' + (P.length === 1 ? '' : 'S')].filter(Boolean).join(' · ')}</div>
-      <div class="chips">${v.yo ? `<span class="chip ok">${ico('i-ok', 1)}Estás enturnado</span>` : !vistos.has(v.id) ? `<span class="chip info">${ico('i-nuevo', 1)}Nuevo</span>` : ''}
-        ${v.enturnados && !v.yo ? `<span class="chip calma">${ico('i-gente', 1)}${v.enturnados} enturnado${v.enturnados > 1 ? 's' : ''}</span>` : ''}</div>
+      ${v.oferta ? fleteHtml(v.oferta) : ''}
+      <div class="chips">${v.oferta ? chipOferta(v.oferta) : ''}${v.yo ? `<span class="chip ok">${ico('i-ok', 1)}Estás enturnado</span>` : !vistos.has(v.id) ? `<span class="chip info">${ico('i-nuevo', 1)}Nuevo</span>` : ''}
+        ${v.enturnados && !v.yo && !v.oferta ? `<span class="chip calma">${ico('i-gente', 1)}${v.enturnados} enturnado${v.enturnados > 1 ? 's' : ''}</span>` : ''}</div>
     </div></button>`; }).join('')
     : '<div class="hud"><div class="in vacio">Por ahora no hay viajes sin vehículo. Vuelve a mirar más tarde.</div></div>';
   guardar('etp-turnos-vistos', datos.viajes.map(v => v.id));
@@ -202,12 +216,20 @@ function pintar(){
       <div class="chips"><span class="chip ${asig ? 'ok' : 'calma'}">${ico(asig ? 'i-ok' : 'i-reloj', 1)}${asig ? 'Asignado a ti' : esc(t.estado)}</span></div>
       ${asig ? '<p class="sec" style="margin:8px 0 0">Para cambiarlo, habla con operaciones.</p>' : ''}</div></div>`; }).join('')
     : '<p class="sec">Todavía no te has enturnado.</p>';
+  const MO = datos.misOfertas || [];
+  $('#bloqueOfertas').classList.toggle('hidden', !MO.length);
+  $('#misOfertas').innerHTML = MO.map(o => { const gano = o.estado === 'Ganaste', no = /No quedó|Cancelada/.test(o.estado);
+    return `<div class="hud${gano ? ' on' : ''}"><div class="in"><p class="ruta">${rutaDe(o.pasos || [])}</p>
+      <div class="flete${gano || o.estado === 'Enviada' ? ' tuya' : ''}"${no ? ' style="color:var(--muted)"' : ''}>${pesos(o.valor)}<small>tu oferta</small></div>
+      <div class="chips"><span class="chip ${gano ? 'ok' : no ? 'calma' : o.estado === 'En revisión' ? 'warn' : 'info'}">${ico(gano ? 'i-ok' : no ? 'i-candado' : 'i-reloj', 1)}${esc(o.estado)}</span></div>
+      ${gano ? '<p class="sec" style="margin:8px 0 0">Operaciones te envía el enlace del viaje para aceptarlo.</p>' : o.estado === 'En revisión' ? '<p class="sec" style="margin:8px 0 0">Ya cerró: operaciones está eligiendo.</p>' : ''}</div></div>`; }).join('');
   if (datos.telefonoOperaciones) { const a = $('#ayuda'); a.href = 'https://wa.me/' + datos.telefonoOperaciones; a.classList.remove('hidden'); }
 }
 
 // ---------- hoja inferior: detalle del viaje y una sola acción ----------
 function abrirHoja(id){
   const v = (datos.viajes || []).find(x => x.id === id); if (!v) return;
+  if (v.oferta) return hojaOferta(v);
   const miTurno = datos.viajes.find(x => x.yo);
   $('#hoja').innerHTML = `<div class="eyebrow">${v.yo ? 'Estás enturnado' : 'Carga disponible'}</div>
     <h2 id="hojaTitulo">${rutaDe(v.pasos || [])}</h2>
@@ -220,6 +242,26 @@ function abrirHoja(id){
     <button class="btn-2" data-cerrar="1">Cerrar</button>`;
   $('#velo').classList.remove('hidden'); requestAnimationFrame(() => $('#hoja').classList.add('ver'));
 }
+// oferta sellada: una sola acción (Enviar o Cambiar oferta); el valor en mono grande con teclado numérico y miles en vivo
+function hojaOferta(v){
+  const o = v.oferta;
+  $('#hoja').innerHTML = `<div class="eyebrow">Oferta sellada</div>
+    <h2 id="hojaTitulo">${rutaDe(v.pasos || [])}</h2>
+    <div class="chips" style="margin-top:6px">${chipOferta(o)}</div>
+    ${paradasHtml(v.pasos || [])}
+    ${o.referencia ? `<div class="flete">${pesos(o.referencia)}<small>referencia</small></div>` : ''}
+    ${o.abierta ? `<label for="valor" style="font-size:17px;font-weight:700">¿Cuánto cobras por este flete?</label>
+      <div class="valor"><span aria-hidden="true">$</span><input id="valor" inputmode="numeric" autocomplete="off" placeholder="0" value="${o.mia ? Number(o.mia).toLocaleString('es-CO') : ''}" aria-describedby="nota"></div>
+      <div class="secreto" id="nota">${ico('i-candado')}<p><b>Nadie ve tu oferta</b><span class="sec">Ni los otros conductores ni operaciones antes del cierre. Puedes cambiarla hasta que cierre.</span></p></div>
+      <div style="margin-top:16px"><button class="btn brilla" id="bOfertar" data-ofertar="${esc(v.id)}" ${o.mia ? '' : 'disabled'}>${ico('i-candado')}${o.mia ? 'Cambiar mi oferta' : 'Enviar oferta'}</button></div>
+      ${o.mia ? `<button class="btn-2" data-retiroferta="${esc(v.id)}">Retirar mi oferta</button>` : ''}`
+      : `<p class="sec" style="margin:14px 0">${o.mia ? `Tu oferta: <b class="num" style="color:var(--green)">${pesos(o.mia)}</b>. ` : ''}La oferta ya cerró: operaciones está eligiendo.</p>`}
+    <button class="btn-2" data-cerrar="1">Cerrar</button>`;
+  $('#velo').classList.remove('hidden'); requestAnimationFrame(() => $('#hoja').classList.add('ver'));
+}
+$('#hoja').addEventListener('input', e => { if (e.target.id !== 'valor') return;
+  const d = e.target.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 8);
+  e.target.value = d ? Number(d).toLocaleString('es-CO') : ''; const b = $('#bOfertar'); if (b) b.disabled = Number(d) < 100000; });
 function cerrarHoja(){ $('#hoja').classList.remove('ver'); $('#velo').classList.add('hidden'); }
 $('#velo').onclick = cerrarHoja;
 $('#viajes').onclick = e => { const b = e.target.closest('[data-ver]'); if (b) abrirHoja(b.dataset.ver); };
@@ -229,6 +271,9 @@ $('#hoja').onclick = e => {
   b.disabled = true;
   if (b.dataset.enturnar) enviar({action: 'enturnar', viajeId: b.dataset.enturnar}, 'Listo: quedaste enturnado. Operaciones te confirma si te lo asignan.');
   else if (b.dataset.retirar) enviar({action: 'retirarTurno', viajeId: b.dataset.retirar}, 'Te retiraste de ese viaje');
+  else if (b.dataset.ofertar) { const n = Number((($('#valor') || {}).value || '').replace(/\D/g, ''));
+    enviar({action: 'ofertar', viajeId: b.dataset.ofertar, valor: n}, `Oferta enviada: ${pesos(n)}. Nadie más la ve.`); }
+  else if (b.dataset.retiroferta) enviar({action: 'retirarOferta', viajeId: b.dataset.retiroferta}, 'Retiraste tu oferta');
 };
 
 async function enviar(cuerpo, ok){
@@ -246,6 +291,8 @@ async function enviar(cuerpo, ok){
   $('#dEnviar').disabled = false;
 }
 $('#dEnviar').onclick = () => { $('#dEnviar').disabled = true; enviar({action: 'disponible', desde: $('#dDesde').value, ciudad: $('#dCiudad').value}, 'Listo: operaciones ya sabe que estás disponible'); };
+// el "cierra en" se pone al día cada minuto (solo el texto: nada se anima)
+setInterval(() => { if (datos && datos.ok && !$('#hoja').classList.contains('ver') && !document.hidden) pintar(); }, 60000);
 $('#dDesde').value = new Date().toLocaleDateString('en-CA', {timeZone: 'America/Bogota'});
 
 // ---------- instalar como app (Android / Chrome); sin "Instalar" se explica cómo ----------
