@@ -4927,7 +4927,7 @@ async function abrirDevolucion(id){
     if (!j.ok) throw new Error(j.error || 'error');
     // 8-nov (pedido del usuario: "que el correo se envíe sobre la secuencia o título del correo de ese proceso"): se responde en el
     // hilo del proceso (instrucción, orden de retiro, revalidación…) que el equipo elija; el más probable va primero. Al final, correo nuevo
-    DEV_DEST = [...j.hilos.map(h => ({...h, etiqueta: `↩ ${h.hilo}${h.fecha ? ' · ' + h.fecha.slice(5, 16) : ''}`})),
+    DEV_DEST = [...j.hilos.filter(h => h.id).map(h => ({...h, etiqueta: `↩ ${h.hilo}${h.fecha ? ' · ' + h.fecha.slice(5, 16) : ''}`})),
       {...j.nuevo, id: '', etiqueta: `✉ Correo nuevo: “${j.asuntoNuevo}”`}];
     $('#devHilo').innerHTML = DEV_DEST.map((d, i) => `<option value="${i}">${esc(d.etiqueta)}</option>`).join(''); $('#devHilo').disabled = false;
     pintarParaDevolucion();
@@ -4964,7 +4964,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '3aa6e8b215';
+const VERSION_TABLERO = '7229ce52d9';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
