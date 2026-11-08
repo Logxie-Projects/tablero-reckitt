@@ -624,6 +624,10 @@ body.lv-abierta{overflow:hidden}
   .lv-ags{grid-template-columns:1fr}.lv-fila{grid-template-columns:1fr}.lv-flujo-f{grid-template-columns:1fr auto}.lv-ley{grid-column:1/-1;display:flex;gap:12px}.lv-flujo-s{display:none}
   .lv-ev{grid-template-columns:70px 1fr}.lv-ev .lv-tag{grid-column:2}.lv-ev-t{grid-column:1/-1}.lv-nombre{font-size:24px}.lv-reloj{font-size:18px;min-width:0}}
 @media (prefers-reduced-motion:reduce){.lv *,.lv *::before,.lv *::after{animation:none!important;transition:none!important}}
+.lv-volver{position:sticky;top:0;z-index:2;max-width:1180px;margin:0 auto 10px;display:flex}
+.lv-volver-b{display:inline-flex;align-items:center;gap:6px;background:#111827;color:#fff;border:0;border-radius:999px;padding:9px 16px;font:inherit;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 6px 18px rgba(17,24,39,.25)}
+.lv-volver-b:hover{background:#000}
+@media (max-width:700px){.lv-volver{margin:0;padding:8px 10px;background:#efede7}}
 </style>
 </head>
 <body>
@@ -5083,7 +5087,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'c49887bfd3';
+const VERSION_TABLERO = '1e7d41aca5';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5235,7 +5239,7 @@ function montarLV(){
   // capa a pantalla completa (sirve también en el televisor) y "✕ Cerrar" vuelve al tablero
   const ref = $('#btnEnVivo') || $('#btnResCli'); if (!ref || $('#v-logxia')) return;
   ref.insertAdjacentHTML('afterend', `<button class="btn solo-interno" id="btnLogxia" title="LogxIA trabajando en vivo, en una pantalla aparte: los agentes revisando cada viaje y lo que van encontrando">🤖 LogxIA en vivo</button>`);
-  document.body.insertAdjacentHTML('beforeend', `<section id="v-logxia" class="lv-capa hidden" role="dialog" aria-modal="true" aria-label="LogxIA en vivo"><div class="lv" id="lv">
+  document.body.insertAdjacentHTML('beforeend', `<section id="v-logxia" class="lv-capa hidden" role="dialog" aria-modal="true" aria-label="LogxIA en vivo"><div class="lv-volver"><button class="lv-volver-b" id="lvVolver" title="Volver al tablero (también con Esc o la flecha atrás del navegador)">← Volver al tablero</button></div><div class="lv" id="lv">
   <div class="lv-card lv-top">
     <div class="lv-marca"><div class="lv-logo">${AVATAR_LV}</div>
       <div><div class="lv-nombre">LogxIA</div><div class="lv-modo">OPERACIÓN RECKITT · IMPO + EXPO</div><div class="lv-verbos">lee · cruza · verifica · califica · cobra</div></div></div>
@@ -5272,9 +5276,14 @@ function montarLV(){
   <div class="lv-pie">Los hallazgos son reales: salen de la base con las mismas reglas del tablero; la animación solo marca el ritmo. El lector y el archivista trabajan en la nube cada hora; aquí se repasa lo que hicieron.</div>
   </div></section>`);
   $('#btnLogxia').onclick = abrirLV;
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#v-logxia').classList.contains('hidden') && !document.fullscreenElement && !document.querySelector('.ov.open')) cerrarLV(); });
+  // 8-nov: la vista es una capa, no otra página: al abrirla se agrega #logxia a la dirección para que la flecha "atrás" del
+  // navegador (o el gesto atrás del celular) vuelva al tablero en vez de salir de él
+  window.addEventListener('popstate', () => { if (location.hash !== '#logxia' && !$('#v-logxia').classList.contains('hidden')) cerrarLV(); });
+  if (location.hash === '#logxia') history.replaceState(null, '', location.pathname + location.search);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#v-logxia').classList.contains('hidden') && !document.fullscreenElement && !document.querySelector('.ov.open')) salirLV(); });
+  $('#lvVolver').onclick = salirLV;
   $('#lv').addEventListener('click', e => {
-    if (e.target.closest('#lvCerrar')) { cerrarLV(); return; }
+    if (e.target.closest('#lvCerrar')) { salirLV(); return; }
     if (e.target.closest('#lvYa')) { LV.prox = Date.now(); return; }
     if (e.target.closest('#lvPantalla')) { const s = $('#lv'); document.fullscreenElement ? document.exitFullscreen() : s.requestFullscreen && s.requestFullscreen(); return; }
     const f = e.target.closest('[data-viaje]'); if (f && f.dataset.viaje) abrir(f.dataset.viaje);
@@ -5355,12 +5364,15 @@ function lineasLV(){
 function abrirLV(){
   if (window.MODO_CLIENTE) return;
   $('#v-logxia').classList.remove('hidden'); document.body.classList.add('lv-abierta');
+  if (location.hash !== '#logxia') history.pushState(null, '', '#logxia');
   pintarLV(); historicoLog(); requestAnimationFrame(lineasLV);
   cargarDocsLV().then(() => { pintarLV(); historicoLog(); });
   if (!LV.ro && window.ResizeObserver) { LV.ro = new ResizeObserver(() => lineasLV()); LV.ro.observe($('#lvMapa')); }
   if (!LV.tick) LV.tick = setInterval(tickLV, 1000);
   LV.prox = Date.now() + 1500; tickLV();
 }
+// volver al tablero: si se abrió con #logxia en la dirección, se regresa en el historial (popstate cierra la capa)
+function salirLV(){ if (location.hash === '#logxia') history.back(); else cerrarLV(); }
 function cerrarLV(){ $('#v-logxia')?.classList.add('hidden'); document.body.classList.remove('lv-abierta'); if (document.fullscreenElement) document.exitFullscreen(); LV.token++; LV.corriendo = false; clearInterval(LV.tick); LV.tick = null; AGENTES.forEach(a => $('#lva-' + a.id)?.classList.remove('activo')); }
 function tickLV(){
   if (!$('#lvReloj')) return;
