@@ -2366,7 +2366,9 @@ function estadoTurno(){
   const rondaHecha = !r || rondaSaltada || !segPend, rondaVencida = !!r && !rondaHecha && resta <= 0;
   const rojas = M.map((m, i) => m.filas.filter(x => x.bloquea).length + (i === 0 && rondaVencida ? 1 : 0));
   const excepciones = [...R.values()].filter(x => x.clave.startsWith('exc|')).map(x => { const k = x.clave.slice(4).split('|').slice(0, -1).join('|'); return {k, ...excepcionDe(k, R)}; });
-  return {r, n, R, M, resta, rondaHecha, rondaVencida, rondaExc, rojas, excepciones, bloqueado: !window.MODO_CLIENTE && !esGerencia() && !esFacturacion() && !enPausa() && rojas.some(Boolean)};
+  // 7-nov: sin bloqueo. Las líneas rojas siguen saliendo (en rojo y primero en la Bandeja), pero el equipo siempre puede ver y usar
+  // el tablero; ya no hace falta que Gerencia lo desbloquee ni pausar el bloqueo
+  return {r, n, R, M, resta, rondaHecha, rondaVencida, rondaExc, rojas, excepciones, bloqueado: false};
 }
 
 // con la placa sola a veces no se sabe qué viaje es: va también el número con que lo identifica el cliente (booking en EXPO,
@@ -2530,7 +2532,7 @@ function renderTurno(){
       <button type="button" class="btn" data-t-pausa="1">Aplicar</button>${enPausa() ? ` <button type="button" class="btn" data-t-pausafin="1" title="Termina la pausa de las ${pausaHasta()}">▶ Bloquear de nuevo</button>` : ''}
       <button type="button" class="btn" data-t-gsalir="1">Salir</button>`
     : '<button type="button" class="btn" data-t-gerencia="1" title="Con la clave de Gerencia el tablero no se bloquea y se pueden aprobar excepciones">🔑 Entrar como Gerencia</button>';
-  $('#turnoReloj').innerHTML = `${ronda}${rojas.length ? enPausa() ? ` · <span class="tr-urge">⏸ Bloqueo en pausa hasta las ${pausaHasta()} (Gerencia) · pendientes: ${rojas.join(', ')}</span>` : ` · <span class="tr-vencida">⛔ Tablero bloqueado: ${rojas.join(', ')}</span>` : ''}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}`;
+  $('#turnoReloj').innerHTML = `${ronda}${rojas.length ? ` · <span class="tr-urge">Urgente (en rojo): ${rojas.join(', ')}</span>` : ''}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}`;
   let m = M.find(x => x.id === turnoMenu);
   if (!m) { m = M[0]; turnoMenu = m.id; }   // el paso elegido ya no existe (ej. "Cierre del día" pasada la medianoche)
   const pend = m.filasOp.filter(x => !x.hecha), hechos = m.filasOp.filter(x => x.hecha);
@@ -4861,7 +4863,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '6797688327';
+const VERSION_TABLERO = 'cce8067865';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5504,9 +5506,8 @@ function renderBandeja(){
     : T.rondaHecha ? `✓ Ronda ${r.n} de ${RONDAS.length} ${T.rondaExc ? 'con excepción' : 'hecha'}${r.n < RONDAS.length ? ` · la siguiente a las ${RONDAS[r.n]}:00` : ''}`
     : T.rondaVencida ? `<span class="tr-vencida">⛔ Ronda ${r.n} vencida a las ${hhmm(r.vence)}: falta confirmar dónde va cada vehículo</span> ${btnT('No se puede: excepción', `data-t-exc="ronda${r.n}"`)}`
     : `<span class="${T.resta <= 30 ? 'tr-urge' : ''}">⏱ Ronda ${r.n} de ${RONDAS.length} · faltan ${hhmm(T.resta)} (vence ${hhmm(r.vence)})</span>`;
-  const bloqueo = !nRojas ? '' : T.bloqueado ? ` · <span class="tr-vencida">⛔ Tablero bloqueado: ${nRojas} línea${nRojas === 1 ? '' : 's'} roja${nRojas === 1 ? '' : 's'} (abajo, en rojo)</span>`
-    : enPausa() ? ` · <span class="tr-urge">⏸ Bloqueo en pausa hasta las ${pausaHasta()} (Gerencia) · ${nRojas} línea${nRojas === 1 ? '' : 's'} roja${nRojas === 1 ? '' : 's'}</span>`
-    : ` · <span class="tr-urge">${nRojas} línea${nRojas === 1 ? '' : 's'} roja${nRojas === 1 ? '' : 's'}${esGerencia() ? ' (Gerencia no se bloquea)' : ''}</span>`;
+  // 7-nov: el tablero ya no se bloquea; las líneas rojas solo se señalan (van primero)
+  const bloqueo = !nRojas ? '' : ` · <span class="tr-urge">${nRojas} urgente${nRojas === 1 ? '' : 's'} (en rojo, arriba)</span>`;
   const EXC = {pendiente: e => '⏳ Excepción esperando a Gerencia', aprobada: e => `✓ Excepción aprobada por ${esc(e.aprobo?.usuario || 'Gerencia')} · vale hasta las ${e.vence}`,
     vencida: e => `✖ La aprobación venció a las ${e.vence}: hay que resolverlo`, rechazada: e => `✖ Excepción rechazada por ${esc(e.aprobo?.usuario || 'Gerencia')}: hay que resolverlo`};
   const extra = i => (i.exc ? `<div class="sub tr-exc tr-exc-${i.exc.estado}">${EXC[i.exc.estado](i.exc)} · ${esc(i.exc.motivo)} (${esc(i.exc.usuario)} ${esc(i.exc.hora)})</div>` : '')
@@ -5516,7 +5517,7 @@ function renderBandeja(){
     : (n => `<details class="bj-plegado"><summary><span class="pill p-ok">Falta</span> Faltan ${n} dato${n === 1 ? '' : 's'} para el próximo paso <span class="sub">· ver</span></summary>${h}</details>`)(i.html.split('<br>').length);
   const accExc = i => i.rojaSinExc ? btnT('⚠ No se puede: excepción', `data-t-exc="${esc(i.k)}"`, 'Pide a Gerencia que apruebe dejarlo así; queda registrado con su nombre') : '';
   // entrar o salir del modo Gerencia también desde aquí (antes solo en Mi turno): aprobar excepciones, no bloquearse
-  const llave = esGerencia() ? ` · <span class="tr-ger">🔓 Modo Gerencia</span> ${btnT('Salir', 'data-t-gsalir="1"')}` : ` · ${btnT('🔑 Entrar como Gerencia', 'data-t-gerencia="1"', 'Con la clave de Gerencia: aprobar excepciones, editar novedades y no bloquearse en esta pestaña')}`;
+  const llave = esGerencia() ? ` · <span class="tr-ger">🔓 Modo Gerencia</span> ${btnT('Salir', 'data-t-gsalir="1"')}` : ` · ${btnT('🔑 Entrar como Gerencia', 'data-t-gerencia="1"', 'Con la clave de Gerencia: aprobar excepciones y editar o borrar novedades')}`;
   // lo que el sistema cerró solo (acciones.js autocerrarHechas), con su razón y Deshacer: visible pero plegado, 24 h
   const C = cerradasPorSistema();
   const avisoAuto = !C.length ? '' : `<details class="bj-auto"><summary>✔ El sistema cerró ${C.length} acci${C.length === 1 ? 'ón' : 'ones'} que el viaje ya muestra hecha${C.length === 1 ? '' : 's'} <span class="sub">· ver</span></summary>`
