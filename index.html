@@ -4426,7 +4426,13 @@ async function abrirDocumentos(){
 function pintarDocumentos(){
   const mes = $('#docsMes').value, q = minus($('#docsBuscar').value.trim()), soloFalta = $('#docsFalta').checked;
   const deBooking = bk => DOCS.archivos.filter(a => bk && a.booking.toUpperCase() === bk.toUpperCase());
-  const enlaces = (bk, tipo) => deBooking(bk).filter(a => a.tipo === tipo).map(a => `<a href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.nombre)}">📄</a>`).join(' ');
+  // 8-nov (versiones: Jhonier reenvía documentos actualizados): primero el más nuevo con su fecha; los anteriores quedan como
+  // "anterior" (no se borran). Un archivo repetido (mismo enlace) se muestra una vez
+  const enlaces = (bk, tipo) => { const L = deBooking(bk).filter(a => a.tipo === tipo).filter((a, i, arr) => arr.findIndex(b => b.url === a.url) === i)
+      .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+    const dia = a => a.fecha ? fd(String(a.fecha).slice(0, 10)) : '';
+    return L.map((a, i) => i === 0 ? `<a href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.nombre)}">📄${L.length > 1 ? ' <span class="sub">' + esc(dia(a)) + '</span>' : ''}</a>`
+      : `<a href="${esc(a.url)}" target="_blank" rel="noopener" class="sub" style="font-size:11px" title="Versión anterior · ${esc(a.nombre)}">anterior ${esc(dia(a))}</a>`).join(' '); };
   const filas = DOCS.porBooking.filter(r => r.mes === mes && (!soloFalta || r.falta)
     && (!q || minus([r.booking, r.pais, r.viaje, r.mn].join(' ')).includes(q)));
   const marca = (r, tipo, ok) => !r.booking || r.booking === 'PTE' ? '<span class="sub">—</span>'
@@ -4793,7 +4799,7 @@ montarEnVivo();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'e88ed6d23c';
+const VERSION_TABLERO = '1ecd3ebf0e';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
