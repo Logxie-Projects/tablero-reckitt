@@ -4574,7 +4574,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '2364fd2317';
+const VERSION_TABLERO = '61ad1be0b7';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5158,7 +5158,8 @@ function armarBandeja(){
       : {b: 'cierre', k: x.k, html: `<b>Nota de entrega de turno</b><br><span class="sub">Qué queda pendiente, qué se habló con Reckitt o con los conductores, qué debe mirar el siguiente turno. Va en el resumen del día a Gerencia y Calidad.</span>`
           + `<textarea id="bjNota" maxlength="180" rows="2" class="tr-nota" placeholder="Ej.: booking 088ICO0103300 sin confirmar cita; Jhonier espera la tirilla de JYY043"></textarea>`,
         acc: btnT('Guardar nota', 'data-b-nota="1"')};
-    it.desde = HOY; add(null, it, 'Cierre del día');
+    it.desde = HOY; it.opViaje = v ? v.operacion : '';   // lo de mañana va en la operación de su viaje; la nota, en todas
+    add(null, it, 'Cierre del día');
   });
   // roja = la misma línea roja de Mi turno (bloquea el tablero mientras no tenga excepción vigente); su excepción, la misma
   // una línea que junta varias cosas (datos + sus acciones; sin vehículo + "asignar vehículo") lleva todas sus claves (ks):
@@ -5203,7 +5204,7 @@ function renderBandeja(){
   const L0 = R.L, porArea = a => L0.filter(t => t.items.some(i => !a || i.area === a)).length;
   R.L = R.L.map(t => ({...t, items: t.items.filter(enArea)})).filter(t => t.items.length).map(t => ({...t, roja: t.items.some(i => i.roja)}));
   // barra IMPO / EXPO / Nacional: cuenta tarjetas del área elegida; ⛔ si esa operación tiene líneas rojas (para no perderlas de vista)
-  const deOp = (t, o) => t.items.filter(i => !o || i.op === o || i.b === 'cierre');
+  const deOp = (t, o) => t.items.filter(i => !o || (i.b === 'cierre' ? !i.opViaje || i.opViaje === o : i.op === o));
   const opN = o => R.L.filter(t => deOp(t, o).length).length, opRoja = o => R.L.some(t => deOp(t, o).some(i => i.roja));
   if (bandejaOp && !opN(bandejaOp) && !OPS_BANDEJA.some(([o]) => o === bandejaOp)) bandejaOp = '';
   const barraOp = barraOperaciones(opN, opRoja);
