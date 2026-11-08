@@ -272,7 +272,7 @@ function tarjetas(lista) {
       ${ultNov ? `<div class="nov">⚠️ ${esc(ultNov.pasoTexto)}${ultNov.texto ? ': ' + esc(ultNov.texto) : ''} · ${hace(ultNov.fecha)}</div>` : ''}
       <div class="acc">
         <button class="b b-mini b-wa" onclick="whatsapp('${a.token}')">💬 WhatsApp</button>
-        <button class="b b-mini" onclick="formulario('${a.token}')">✏️ Cita / archivos</button>
+        ${activa(a) ? `<button class="b b-mini" onclick="formulario('${a.token}')">✏️ Cita / archivos</button>` : ''}
         <button class="b b-mini" onclick="detalle('${a.token}')">📋 Detalle</button>
         ${activa(a) && a.booking ? `<button class="b b-mini" onclick='confirmarCargue(${esc(JSON.stringify(String(a.booking)))})'>📧 Orden de cargue</button>` : ''}
         ${activa(a) ? `<button class="b b-mini" onclick="cerrar('${a.token}','terminar')">✔ Terminar</button>
@@ -308,7 +308,8 @@ function vistaTurnos(f) {
   const turnos = D.turnos.filter(t => t.tipo === 'Turno' && pasaT(t)), disp = D.turnos.filter(t => t.tipo === 'Disponible' && pasaT(t));
   const viajeDe = id => D.viajes.find(v => v.id === id);
   const ids = [...new Set(turnos.map(t => t.viajeId))].sort((a, b) => String(primerDia(viajeDe(a) || {}) || '9').localeCompare(String(primerDia(viajeDe(b) || {}) || '9')));
-  const wa = (t, txt) => t.telefono ? `<a class="b b-mini b-wa" target="_blank" href="https://wa.me/${String(t.telefono).replace(/\D/g, '')}?text=${encodeURIComponent(txt)}">💬</a>` : '';
+  // el celular de la app de turnos llega con 10 dígitos: WhatsApp necesita el 57 delante (7-nov)
+  const wa = (t, txt) => t.telefono ? `<a class="b b-mini b-wa" target="_blank" href="https://wa.me/${String(t.telefono).replace(/\D/g, '').replace(/^(3\d{9})$/, '57$1')}?text=${encodeURIComponent(txt)}">💬</a>` : '';
   const porViaje = ids.length ? `<div class="grid">${ids.map(id => {
     const v = viajeDe(id), L = turnos.filter(t => t.viajeId === id).sort((a, b) => String(a.creado).localeCompare(String(b.creado)));
     const asig = v && asignacionDe(v);
@@ -348,7 +349,7 @@ function formulario(token, viajeId, pre) {
   ventana(`<h2>${a ? 'Actualizar asignación' : 'Nueva asignación'}</h2>
     <form class="form" id="fa" onsubmit="guardarAsig(event, ${a ? `'${a.token}'` : 'null'})">
       <input type="hidden" name="viajeId" value="${esc(o.viajeId || '')}">
-      <label>Operación<select name="operacion"><option ${o.operacion !== 'IMPO' ? 'selected' : ''}>EXPO</option><option ${o.operacion === 'IMPO' ? 'selected' : ''}>IMPO</option></select></label>
+      <label>Operación<select name="operacion">${['EXPO', 'IMPO', 'NACIONAL'].map(x => `<option ${(o.operacion || 'EXPO') === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
       <label>Booking<input name="booking" required value="${esc(o.booking || '')}"></label>
       <label>Placa<input name="placa" list="dlRegPlacas" value="${esc(o.placa || '')}" onchange="autoTel()" placeholder="Del registro"></label>
       <label>Conductor<input name="conductor" list="dlRegConds" value="${esc(o.conductor || '')}" onchange="autoTel()" placeholder="Del registro"></label>
