@@ -4509,9 +4509,15 @@ async function abrirResumenCliente(){
 function filaResCli(x, marcado){
   const por = [x.hoy && x.hoy.length && 'hoy: ' + x.hoy.join(', '), x.avisos && x.avisos.length && 'aviso: ' + x.avisos.join(' · '), x.motivo].filter(Boolean).join(' · ');
   const texto = minus([x.id, x.operacion, x.ref, x.destino, x.solicitante, x.ahora, por].join(' '));   // lo que encuentra el buscador
+  // 7-nov ("deberia mostrar ultima actualizacion y ultimo comentario para que el cliente realmente vea lo que esta pasando"): la
+  // etapa de hoy y el comentario que le llega al cliente (dominio comentarioViaje, el mismo del correo y de la tarjeta). El aviso en
+  // cola (escrito cuando se guardó la fecha) ya no se muestra como estado: solo dice por qué el viaje está en la lista
+  const v = viajes.find(y => y.id === x.id), n = v && ultimaNovedad(v);
+  const com = n ? `${n.tipo === 'Hecho' ? '✅' : '💬'} ${esc(textoNovedad(n))} <span class="sub">· ${esc(haceCuanto(fechaLocal(n.fecha)))}${n.usuario && n.tipo !== 'Hecho' ? ' · ' + esc(n.usuario) : ''}</span>` : '<span class="sub">Sin comentario: le llega solo la etapa</span>';
+  const porque = [x.hoy && x.hoy.length && 'paso hoy', x.avisos && x.avisos.length && 'aviso en cola', x.motivo].filter(Boolean).join(' · ');
   return `<label class="rc-fila" data-buscar="${esc(texto)}"><input type="checkbox" data-rc="${esc(x.id)}" ${marcado ? 'checked' : ''}>
-    <span><b>${esc(x.operacion)} · ${esc([x.ref, x.destino].filter(Boolean).join(' · ') || x.id)}</b> <span class="sub">${esc(x.id)} · ${esc(x.solicitante || '')}</span><br>
-    <span class="sub">${esc(x.ahora || '')}${por ? ' · ' + esc(por) : ''}${x.primer && !por ? ' · ' + fd(x.primer) : ''}</span></span></label>`;
+    <span><b>${esc(x.operacion)} · ${esc([x.ref, x.destino].filter(Boolean).join(' · ') || x.id)}</b> <span class="sub">${esc(x.id)} · ${esc(x.solicitante || '')}${porque ? ' · va por: ' + esc(porque) : ''}</span><br>
+    <span>Ahora: <b>${esc(x.ahora || (v && v.estado) || '')}</b></span><br><span class="rc-com">${com}</span></span></label>`;
 }
 const paraGuardado = () => { try { return JSON.parse(localStorage.getItem('rkt-rc-para') || 'null'); } catch(e) { return null; } };
 function pintarResumenCliente(){
@@ -4595,7 +4601,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'e876b1de10';
+const VERSION_TABLERO = '5d82144cb3';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
