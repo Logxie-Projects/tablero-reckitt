@@ -5126,7 +5126,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '5312e4a2c9';
+const VERSION_TABLERO = 'a248087d07';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5279,7 +5279,7 @@ function montarLV(){
   // capa a pantalla completa (sirve también en el televisor) y "✕ Cerrar" vuelve al tablero
   const ref = $('#btnEnVivo') || $('#btnResCli'); if (!ref || $('#v-logxia')) return;
   ref.insertAdjacentHTML('afterend', `<button class="btn solo-interno" id="btnLogxia" title="LogxIA trabajando en vivo, en una pantalla aparte: los agentes revisando cada viaje y lo que van encontrando"><span class="lv-btn-logo">${AVATAR_LV}</span>LogxIA en vivo</button>`);
-  document.body.insertAdjacentHTML('beforeend', `<section id="v-logxia" class="lv-capa hidden" role="dialog" aria-modal="true" aria-label="LogxIA en vivo"><div class="lv-volver"><button class="lv-volver-b" id="lvVolver" title="Volver al tablero (también con Esc o la flecha atrás del navegador)">← Volver al tablero</button></div><div class="lv" id="lv">
+  document.body.insertAdjacentHTML('beforeend', `<section id="v-logxia" class="lv-capa hidden" role="dialog" aria-modal="true" aria-label="LogxIA en vivo"><div class="lv-volver"><button class="lv-volver-b" id="lvVolver" title="Volver (también con Esc o la flecha atrás del navegador)">← Volver a la Torre de Control</button></div><div class="lv" id="lv">
   <div class="lv-card lv-top">
     <div class="lv-marca"><div class="lv-logo">${AVATAR_LV}</div>
       <div><div class="lv-nombre">LogxIA</div><div class="lv-modo">OPERACIÓN RECKITT · IMPO + EXPO</div><div class="lv-verbos">lee · cruza · verifica · califica · cobra</div></div></div>
@@ -5288,7 +5288,7 @@ function montarLV(){
   <div class="lv-estado">
     <span class="lv-pill" id="lvPill"><i></i><b>en guardia</b></span><span class="lv-reloj" id="lvReloj"></span>
     <div class="lv-semana" id="lvSemana"><div class="lv-sem-linea"><i id="lvSemFill"></i><span id="lvSemMarcas"></span><b id="lvSemPunto"></b></div><div class="lv-sem-dias">${DIAS_LV.map(d => `<span>${d}</span>`).join('')}</div></div>
-    <button class="lv-btn" id="lvYa" title="Que los agentes pasen otra vez ahora">▶ pasar ahora</button><button class="lv-btn" id="lvPantalla" title="Pantalla completa (televisor de la oficina)">⛶</button><button class="lv-btn" id="lvCerrar" title="Volver al tablero">✕ cerrar</button>
+    <button class="lv-btn" id="lvYa" title="Que los agentes pasen otra vez ahora">▶ pasar ahora</button><button class="lv-btn" id="lvPantalla" title="Pantalla completa (televisor de la oficina)">⛶</button><button class="lv-btn" id="lvCerrar" title="Volver a la pestaña de donde se abrió">✕ cerrar</button>
   </div>
   <div class="lv-card">
     <div class="lv-titulo"><b>1 router · ${AGENTES.length} agentes</b> · lee los correos, cruza cada uno con su viaje, revisa la hoja y sigue el cobro</div>
@@ -5403,9 +5403,12 @@ function lineasLV(){
   S.setAttribute('viewBox', `0 0 ${R.width} ${R.height}`);
   S.innerHTML = src.join('') + ags.join('');
 }
+// 8-nov: el botón nombra la pestaña a la que se vuelve (la que estaba abierta): "Volver a la Torre de Control", "…a la Bandeja…"
+const PESTANAS_VOLVER = {bandeja: 'la Bandeja de Pendientes', tablero: 'la Torre de Control', viajes: 'Viajes', motonaves: 'Motonaves', errores: 'Errores', acciones: 'Acciones'};
+const textoVolver = () => '← Volver a ' + (PESTANAS_VOLVER[(document.querySelector('#nav button.on') || {}).dataset?.v] || 'la Torre de Control');
 function abrirLV(){
   if (window.MODO_CLIENTE) return;
-  $('#v-logxia').classList.remove('hidden'); document.body.classList.add('lv-abierta');
+  $('#v-logxia').classList.remove('hidden'); document.body.classList.add('lv-abierta'); $('#lvVolver').textContent = textoVolver();
   if (location.hash !== '#logxia') history.pushState(null, '', '#logxia');
   pintarLV(); historicoLog(); requestAnimationFrame(lineasLV);
   cargarDocsLV().then(() => { pintarLV(); historicoLog(); });
@@ -5558,7 +5561,7 @@ function montarKV(){
   const ref = $('#btnLogxia') || $('#btnEnVivo') || $('#btnResCli'); if (!ref || $('#v-kpis')) return;
   ref.insertAdjacentHTML('beforebegin', `<button class="btn solo-interno" id="btnKpis" title="Indicadores de la operación Reckitt en una pantalla aparte: cumplimiento, puntualidad, lead time, puntaje, documentos, demoras y facturación"><span class="lv-btn-logo">${ICONO_KV}</span>KPIs Reckitt</button>`);
   document.body.insertAdjacentHTML('beforeend', `<section id="v-kpis" class="lv-capa hidden" role="dialog" aria-modal="true" aria-label="KPIs Reckitt">
-  <div class="lv-volver"><button class="lv-volver-b" id="kvVolver" title="Volver al tablero (también con Esc o la flecha atrás del navegador)">← Volver al tablero</button></div><div class="lv" id="kv">
+  <div class="lv-volver"><button class="lv-volver-b" id="kvVolver" title="Volver (también con Esc o la flecha atrás del navegador)">← Volver a la Torre de Control</button></div><div class="lv" id="kv">
   <div class="lv-card lv-top">
     <div class="lv-marca"><div class="lv-logo kv-logo">${ICONO_KV}</div>
       <div><div class="lv-nombre">KPIs Reckitt</div><div class="lv-modo">OPERACIÓN RECKITT · IMPO + EXPO + NACIONAL</div><div class="lv-verbos">asigna · cumple · entrega · documenta · factura</div></div></div>
@@ -5607,7 +5610,7 @@ function salirKV(){ if (location.hash === '#kpis') history.back(); else cerrarKV
 function cerrarKV(){ $('#v-kpis')?.classList.add('hidden'); document.body.classList.remove('lv-abierta'); clearInterval(KV.tick); KV.tick = null; }
 function abrirKV(){
   if (window.MODO_CLIENTE) return;
-  $('#v-kpis').classList.remove('hidden'); document.body.classList.add('lv-abierta');
+  $('#v-kpis').classList.remove('hidden'); document.body.classList.add('lv-abierta'); $('#kvVolver').textContent = textoVolver();
   if (location.hash !== '#kpis') history.pushState(null, '', '#kpis');
   $('#kvInd').innerHTML = ''; pintarKV();
   // el tablero trae datos nuevos de la hoja cada 5 min: la pantalla se repinta cada minuto mientras está abierta
