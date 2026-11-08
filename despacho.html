@@ -118,7 +118,8 @@ const qs = new URLSearchParams(location.search);
 let CLAVE = qs.get('clave') || ls.get('despacho_clave') || '';
 let USUARIO = ls.get('despacho_usuario') || '';
 const CON_PRUEBA = new URLSearchParams(location.search).get('prueba') === '1';   // viajes de prueba (PRUEBA ETP): solo con ?prueba=1
-let D = null, pestana =ls.get('despacho_tab') || 'curso', filtro = '';
+// desde la Bandeja del tablero (7-nov): ?pestana=conductores&reg=conductores|vehiculos&filtro=problemas&buscar=… abre directo lo que hay que corregir
+let D = null, pestana = qs.get('pestana') || ls.get('despacho_tab') || 'curso', filtro = qs.get('buscar') || '';
 const fotos = {};
 
 async function pedir(params) {
@@ -660,7 +661,7 @@ async function enviarCargue(prueba) {
 /* ---------- 👤 Conductores: revisar, editar y limpiar el registro (Registro.gs revisionConductores_ / cambiarConductores_) ---------- */
 // Lo que hay que revisar lo dice el servidor (dominio problemasConductores). Cada cambio: vista previa → la persona confirma →
 // se guarda. Nada se borra: lo fusionado o retirado queda "Archivado" y lo reemplazado queda en la pestaña Historial registro.
-let CONDS = null, VEHS = null, condHora = 0, condFiltro = 'todos', condError = '', condPend = null, condVista = 'conductores';   // condVista: conductores | vehiculos
+let CONDS = null, VEHS = null, condHora = 0, condFiltro = qs.get('filtro') || 'todos', condError = '', condPend = null, condVista = qs.get('reg') === 'vehiculos' ? 'vehiculos' : 'conductores';   // condVista: conductores | vehiculos
 const condVigentes = () => (CONDS || []).filter(c => !/^archivad/i.test(c.estado || ''));
 const condConProblema = () => condVigentes().filter(c => c.problemas.length);
 const vehConProblema = () => (VEHS || []).filter(v => !/^archivad/i.test(v.estado || '') && v.problemas.length).length;

@@ -4572,7 +4572,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'bba53600ef';
+const VERSION_TABLERO = 'c0e9da3699';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -4986,6 +4986,7 @@ const BLOQUES = [
   ['datos', 'Datos de correos', 'p-warn', 'Valores nuevos de los correos para aprobar'],
   ['pedido', 'Pedido', 'p-warn', 'Lo que pide un correo y solo una persona puede hacer'],
   ['falta', 'Falta', 'p-ok', 'Datos que faltan para el próximo paso'],
+  ['registro', 'Base de conductores', 'p-warn', 'Conductores y vehículos del registro con datos por corregir (las mismas reglas de Despacho → Conductores)'],
   ['cierre', 'Cierre del día', 'p-acc', 'Última ronda: lo de mañana listo y la nota de entrega de turno (antes en Mi turno)'],
 ];
 const HORIZONTE_FALTA = 5;   // días: los faltantes de viajes que arrancan después quedan en Errores (revisión, no del día)
@@ -5032,6 +5033,11 @@ function elegirOperacion(o){
 }
 
 // la fecha de la próxima acción de la tarjeta (el orden de la Bandeja): atrasada, hoy, mañana o el día
+// Despacho → Conductores (o Vehículos) con el filtro "Por revisar" y, si se da, el nombre o la placa buscados (despacho.html lee
+// pestana, reg, filtro y buscar); entra con la misma clave del equipo (el enlace 🚛 Despacho ya la lleva)
+const urlDespacho = (vista, buscar) => { const u = new URL(($('#lnkDespacho') || {}).href || 'despacho.html', location.href);
+  u.searchParams.set('pestana', 'conductores'); u.searchParams.set('reg', vista); u.searchParams.set('filtro', 'problemas');
+  if (buscar) u.searchParams.set('buscar', buscar); else u.searchParams.delete('buscar'); return u.toString(); };
 const fechaTarjeta = t => { if (!t.fecha) return ''; const d = diffDias(t.fecha);
   return `<span class="bj-fecha ${d < 0 ? 'atras' : d === 0 ? 'hoy' : ''}">📅 ${d < 0 ? `${t.v ? 'Atrasado' : 'Pedido'} desde ${fd(t.fecha)}` : d === 0 ? 'Hoy' : d === 1 ? 'Mañana' : fd(t.fecha)}</span>`; };
 
@@ -5145,6 +5151,22 @@ function armarBandeja(){
       html: `${desdeCuando(b.fechaCorreo || b.registrado)}${areaDe(b) !== 'Operaciones' ? `<span class="tg">${esc(areaDe(b))}</span> ` : ''}${esc(b.accion)}${pista(b)}${queHacer(b)}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>`,
       acc: verCorreo(b) + botonAtajo(b) + accHecha(b)}, v && vivos.includes(v) ? '' : 'Pedidos sin viaje', b);
     usadas.add(b.id); });
+  // 9 · Base de conductores y vehículos (7-nov): lo que hay que corregir en el registro (dominio problemasConductores /
+  // problemasVehiculos, las mismas reglas de Despacho → Conductores): datos vacíos o mal escritos, posibles duplicados. Una sola
+  // tarjeta, plegada, en todas las operaciones y siempre a la vista (no depende de un viaje); se corrige en Despacho
+  if (REG()) {
+    const C = REG().conductores || [], V = REG().vehiculos || [], pc = problemasConductores(C), pv = problemasVehiculos(V, C);
+    const malC = C.map((c, i) => ({n: c.nombre, p: pc[i] || []})).filter(x => x.p.length), malV = V.map((v, i) => ({n: v.placa, p: pv[i] || []})).filter(x => x.p.length);
+    const dup = x => x.p.some(p => p.tipo === 'Duplicado');
+    const linea = (x, vista) => `<div class="sub">• ${dup(x) ? '<b style="color:var(--bad)">⚠ ' : '<b>'}${esc(x.n)}</b>: ${esc(x.p.map(p => p.msg).join(' · '))} ${lnkT('Corregir', urlDespacho(vista, x.n))}</div>`;
+    const orden = L => L.sort((a, b) => dup(b) - dup(a));
+    if (malC.length || malV.length) {
+      add(null, {b: 'registro', k: 'reg-base', html: `<b>${[malC.length && `${malC.length} conductor${malC.length === 1 ? '' : 'es'}`, malV.length && `${malV.length} vehículo${malV.length === 1 ? '' : 's'}`].filter(Boolean).join(' y ')} con datos por corregir</b>${[...malC, ...malV].some(dup) ? ' · <b style="color:var(--bad)">hay posibles duplicados</b>' : ''}`
+        + `<details class="bj-plegado"><summary class="sub">Ver cuáles</summary>${orden(malC).map(x => linea(x, 'conductores')).join('')}${orden(malV).map(x => linea(x, 'vehiculos')).join('')}</details>`,
+        acc: (malC.length ? lnkT('🪪 Corregir conductores', urlDespacho('conductores')) : '') + (malV.length ? lnkT('🚚 Corregir vehículos', urlDespacho('vehiculos')) : '')}, 'Base de conductores y vehículos');
+      tarjetas.get('Base de conductores y vehículos').fija = true;
+    }
+  }
   // 8 · Cierre del día (7-nov, antes solo en Mi turno): en la última ronda, lo de mañana listo y la nota de entrega de turno.
   // Mismas claves que Mi turno ("man|ID", nota|…): lo marcado aquí cuenta allá. Sale en todas las operaciones y con fecha de hoy
   const cie = T.M.find(m => m.id === 'cie');
@@ -5202,7 +5224,7 @@ function renderBandeja(){
   const L0 = R.L, porArea = a => L0.filter(t => t.items.some(i => !a || i.area === a)).length;
   R.L = R.L.map(t => ({...t, items: t.items.filter(enArea)})).filter(t => t.items.length).map(t => ({...t, roja: t.items.some(i => i.roja)}));
   // barra IMPO / EXPO / Nacional: cuenta tarjetas del área elegida; ⛔ si esa operación tiene líneas rojas (para no perderlas de vista)
-  const deOp = (t, o) => t.items.filter(i => !o || (i.b === 'cierre' ? !i.opViaje || i.opViaje === o : i.op === o));
+  const deOp = (t, o) => t.items.filter(i => !o || i.b === 'registro' || (i.b === 'cierre' ? !i.opViaje || i.opViaje === o : i.op === o));
   const opN = o => R.L.filter(t => deOp(t, o).length).length, opRoja = o => R.L.some(t => deOp(t, o).some(i => i.roja));
   if (bandejaOp && !opN(bandejaOp) && !OPS_BANDEJA.some(([o]) => o === bandejaOp)) bandejaOp = '';
   const barraOp = barraOperaciones(opN, opRoja);
@@ -5239,11 +5261,11 @@ function renderBandeja(){
     + `<div class="bj-resumen"><div><b>${nViajes} viaje${nViajes === 1 ? '' : 's'} necesita${nViajes === 1 ? '' : 'n'} algo</b>${R.L.length > nViajes ? ` · ${R.L.length - nViajes} grupo${R.L.length - nViajes === 1 ? '' : 's'} sin viaje` : ''}
       · <label class="sub">Área <select class="bj-area" data-b-areasel="1">${[['', 'Todas'], ...AREAS.map(a => [a, a])].map(([a, t]) => `<option value="${a}" ${bandejaArea === a ? 'selected' : ''}>${t} (${porArea(a)})</option>`).join('')}</select></label></div>
       <div class="chips">${`<button type="button" class="chip ${!bandejaFiltro ? 'on' : ''}" data-b-filtro="">Todo · ${R.L.length}</button>`}${BLOQUES.map(([k, t]) => cuenta(k) ? `<button type="button" class="chip ${bandejaFiltro === k ? 'on' : ''}" data-b-filtro="${k}" title="${esc(BLOQUES.find(x => x[0] === k)[3])}">${t} · ${cuenta(k)}</button>` : '').join('')}</div></div>`
-    + (ver.filter((t, ix) => bandejaTodo || ix < BANDEJA_PRIMERAS || t.roja).map(t => `<div class="bj-card${t.roja ? ' roja' : ''}"><div class="bj-h">${fechaTarjeta(t)}<b>${esc(t.titulo)}</b>${t.v ? ` <span class="sub">${esc([t.v.contenedor, t.v.estado].filter(Boolean).join(' · '))}</span> ${btnT('Abrir viaje', `data-b-abrir="${t.v.id}"`)}` : ''}</div>`
+    + (ver.filter((t, ix) => bandejaTodo || ix < BANDEJA_PRIMERAS || t.roja || t.fija).map(t => `<div class="bj-card${t.roja ? ' roja' : ''}"><div class="bj-h">${fechaTarjeta(t)}<b>${esc(t.titulo)}</b>${t.v ? ` <span class="sub">${esc([t.v.contenedor, t.v.estado].filter(Boolean).join(' · '))}</span> ${btnT('Abrir viaje', `data-b-abrir="${t.v.id}"`)}` : ''}</div>`
       + BLOQUES.flatMap(([k, nombre, cls]) => t.items.filter(i => i.b === k && (!bandejaFiltro || bandejaFiltro === k)).map(i => plegar(i, `<div class="bj-item${i.roja ? ' roja' : ''}"><span class="pill ${cls}">${nombre}</span><div class="bj-txt">${i.html}${extra(i)}</div><div class="tr-acc">${i.acc || ''}${accExc(i)}</div></div>`))).join('')
       + '</div>').join('') || '<div class="tr-vacio">✓ Nada pendiente en este filtro</div>')
-    + (!bandejaTodo && ver.length > ver.filter((t, ix) => ix < BANDEJA_PRIMERAS || t.roja).length
-      ? `<button type="button" class="bj-mas" data-b-todo="1">Ver los otros ${ver.length - ver.filter((t, ix) => ix < BANDEJA_PRIMERAS || t.roja).length} viajes (menos urgentes)</button>` : '')
+    + (!bandejaTodo && ver.length > ver.filter((t, ix) => ix < BANDEJA_PRIMERAS || t.roja || t.fija).length
+      ? `<button type="button" class="bj-mas" data-b-todo="1">Ver los otros ${ver.length - ver.filter((t, ix) => ix < BANDEJA_PRIMERAS || t.roja || t.fija).length} viajes (menos urgentes)</button>` : '')
     + `<div class="bj-pie"><div><b>${F.length ? `⚠ ${F.length} cosa${F.length === 1 ? '' : 's'} solo en otra pantalla` : '✓ Nada queda solo en otra pantalla'}</b> <span class="sub">(control: lo que piden las reglas de turno y no sale en la Bandeja; debe quedar en 0)</span> · ${btnT('📒 Bitácora de acciones', 'data-b-bitacora="1"', 'Historial: qué pidió quién y quién lo cerró (la antigua pestaña Acciones)')}</div>
       ${F.length ? `<details><summary class="sub">Ver cuáles</summary>${F.map(([p, t]) => `<div class="sub">• <b>${esc(p)}</b>: ${esc(t)}</div>`).join('')}</details>` : ''}
       ${errLejos ? `<div class="sub">${errLejos} viaje${errLejos === 1 ? '' : 's'} que arranca${errLejos === 1 ? '' : 'n'} en más de ${HORIZONTE_FALTA} días con datos por completar: quedan en Errores, no en la bandeja del día.</div>` : ''}</div>`;
