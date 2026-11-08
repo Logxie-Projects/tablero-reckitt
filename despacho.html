@@ -163,7 +163,7 @@ async function cargar(silencioso) {
 }
 // conductores enturnados y disponibles en la app Viajes ETP (turnos.html): vienen con los datos del tablero
 // (turnosConductores, Conductores.gs resumenTurnos_: últimos 10 días, sin los retirados); se piden aparte para no demorar Despacho
-let TURNOS = [], turnosHora = 0, DESTINOS = {}, VIAJES = [], REGISTRO = null;   // REGISTRO: vehículos y conductores (cédula para la orden de cargue)   // DESTINOS: id del viaje -> país o bodega (Despacho no los trae)
+let TURNOS = [], turnosHora = 0, DESTINOS = {}, VIAJES = [], REGISTRO = null, CALC = {};   // CALC: lo que el tablero calcula de cada viaje (etapa y qué pasa hoy)   // REGISTRO: vehículos y conductores (cédula para la orden de cargue)   // DESTINOS: id del viaje -> país o bodega (Despacho no los trae)
 async function cargarTurnos(forzar) {
   if (!forzar && Date.now() - turnosHora < 5 * 60e3) return;
   try {
@@ -172,6 +172,7 @@ async function cargarTurnos(forzar) {
     TURNOS = j.turnosConductores || []; turnosHora = Date.now();
     VIAJES = (j.viajes || []).filter(v => CON_PRUEBA || String(v.empresa || '').trim().toUpperCase() !== 'PRUEBA ETP'); REGISTRO = j.registro || null;   // también para 📧 Orden de cargue (destino, motonave, puerto, fechas)
     VIAJES.forEach(v => { DESTINOS[v.id] = v.operacion === 'EXPO' ? v.pais : (v.bodega || v.destino); });
+    CALC = j.calc || {};
     if (D) { D.turnos = TURNOS; if (!$('#velo')) pintar(); }
   } catch (e) { /* sin turnos: Despacho sigue igual */ }
 }
@@ -266,7 +267,8 @@ function tarjetas(lista) {
         ${a.estado !== 'Activa' ? `<span class="op" style="margin-left:auto">${esc(a.estado)}</span>` : ''}</div>
       ${a.cita ? `<div class="sub">📅 ${esc(citaTxt(a.cita))}${a.lugarCita ? ' · ' + esc(a.lugarCita) : ''}</div>` : ''}
       <div class="barra"><i style="width:${Math.round(100 * n / t)}%"></i></div>
-      <div class="estado"><span>${n ? `<b>${esc(a.pasos[n - 1].corto)}</b> · <span class="${quieto ? 'tarde' : ''}">${hace(ult.fecha)}</span>` : (sinAbrir ? '<span class="tarde">Aún no marca ningún paso</span>' : '')}</span><span>${n}/${t}</span></div>
+      <div class="estado"><span>${n ? `<b>${esc(a.pasos[n - 1].corto)}</b> · <span class="${quieto ? 'tarde' : ''}">${hace(ult.fecha)}</span>` : (sinAbrir ? '<span class="sub">El conductor aún no usa la app</span>' : '')}</span><span>${n}/${t}</span></div>
+      ${a.viajeId && CALC[a.viajeId] ? `<div class="sub">📋 Tablero: <b>${esc(CALC[a.viajeId].ahora || CALC[a.viajeId].etapa || '')}</b></div>` : ''}
       ${sig && activa(a) ? `<div class="sub">Sigue: ${sig.icono} ${esc(sig.texto)}</div>` : ''}
       ${identidadHtml(a)}
       ${ultNov ? `<div class="nov">⚠️ ${esc(ultNov.pasoTexto)}${ultNov.texto ? ': ' + esc(ultNov.texto) : ''} · ${hace(ultNov.fecha)}</div>` : ''}
