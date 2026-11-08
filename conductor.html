@@ -3,106 +3,84 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#d4006f">
-<title>Mi viaje · Reckitt</title>
-<meta property="og:title" content="Mi viaje · Entrapetrol – Reckitt">
-<meta property="og:description" content="Toque aquí para ver su cita y marcar cada paso del viaje.">
+<meta name="theme-color" content="#02050F">
+<title>Mi viaje · Viajes ETP</title>
+<meta property="og:title" content="Mi viaje · Viajes ETP">
+<meta property="og:description" content="Toca aquí para ver tu cita y marcar cada paso del viaje.">
+<link rel="preload" href="fuentes/plus-jakarta-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fuentes/jetbrains-mono-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="conductores.css">
 <style>
-:root{
-  --bg:#f3f4f6; --surface:#fff; --text:#111827; --muted:#4b5563; --line:#e5e7eb;
-  --accent:#d4006f; --ok:#15803d; --ok-soft:#dcfce7; --warn:#c2410c; --warn-soft:#ffedd5;
-  --bad:#b91c1c; --info-soft:#fef9c3;
-}
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;background:var(--bg);color:var(--text);font:18px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
-button{font:inherit;cursor:pointer;border:0}
-.wrap{max-width:560px;margin:0 auto;padding:0 14px 120px}
-header{background:var(--accent);color:#fff;padding:14px 16px 18px;padding-top:max(14px,env(safe-area-inset-top))}
-header .marca{font-size:13px;opacity:.85;letter-spacing:.04em;text-transform:uppercase}
-header .volver{display:inline-block;margin-bottom:8px;padding:8px 12px;border-radius:10px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;font-size:14px;text-decoration:none}
-header h1{margin:4px 0 6px;font-size:24px;line-height:1.2}
-header .chips{display:flex;flex-wrap:wrap;gap:6px}
-.chip{background:rgba(255,255,255,.18);border-radius:999px;padding:3px 10px;font-size:15px;font-weight:600}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px;margin-top:14px}
-.card h2{margin:0 0 8px;font-size:16px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-.aviso{background:var(--info-soft);border:2px solid #facc15;border-radius:16px;padding:14px 16px;margin-top:14px;font-weight:700;display:flex;gap:10px;align-items:center}
-.aviso button{margin-left:auto;background:#fff;border:1px solid #d6d3d1;border-radius:10px;padding:8px 12px;font-size:15px}
-.cita{font-size:22px;font-weight:800}
-.lugar{color:var(--muted);margin-top:2px}
-.instr{white-space:pre-wrap;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
-.docs{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:10px}
-.doc{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fafafa;text-align:center;font-size:14px;color:var(--muted);min-height:110px;display:flex;flex-direction:column}
-.doc img{width:100%;height:110px;object-fit:cover;display:block;background:#e5e7eb}
+/* lo propio de "Mi viaje" (lo común está en conductores.css: guía DISENO-APP-CONDUCTORES.md, 7-nov) */
+.aviso{display:flex;align-items:center;gap:10px;margin-top:12px;padding:12px 14px;font:600 16px var(--font);clip-path:var(--cut-sm);background:color-mix(in srgb,currentColor 14%,transparent)}
+.aviso.info{color:var(--cyan)} .aviso.mal{color:var(--red-text)}
+.aviso button,.aviso a{margin-left:auto}
+.aviso .lnk{min-height:var(--tap);padding:0 14px;display:flex;align-items:center;background:rgba(34,195,230,.14);color:var(--ink);border:0;clip-path:var(--cut-sm);font:600 15px var(--font);text-decoration:none;cursor:pointer}
+/* pasos del viaje: barra de segmentos (hecho cian sólido, actual cian con borde, pendiente línea) */
+.segs{display:flex;gap:4px;margin-top:8px}
+.segs i{flex:1;height:10px;background:var(--line);clip-path:polygon(0 0,100% 0,calc(100% - 4px) 100%,0 100%)}
+.segs i.ok{background:var(--cyan)}
+.segs i.ya{background:color-mix(in srgb,var(--cyan) 45%,var(--line));box-shadow:0 0 0 1px var(--cyan) inset}
+.progreso{display:flex;justify-content:space-between;align-items:baseline;margin-top:16px}
+.progreso b{font:700 17px var(--font)}
+.progreso .num{color:var(--muted);font-size:14px}
+.listo{text-align:center}
+.listo b{display:block;font:800 22px var(--font);color:var(--green)}
+.ultimo{display:flex;align-items:center;gap:8px;margin-top:12px;color:var(--green);font:600 15px var(--font)}
+.ultimo{flex-wrap:wrap;column-gap:8px;row-gap:0}
+.ultimo .num{color:var(--muted);font-size:14px;white-space:nowrap}
+.ultimo button{margin-left:auto;min-height:var(--tap);padding:0 12px;background:none;border:0;color:var(--muted);font:600 15px var(--font);text-decoration:underline;cursor:pointer}
+.cita{font:700 20px/1.3 var(--font);margin-top:4px}
+.lugar{color:var(--muted);margin-top:4px}
+.instr{white-space:pre-wrap;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)}
+.docs{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:12px}
+.doc{display:flex;flex-direction:column;min-height:120px;background:#061230;border:0;clip-path:var(--cut-sm);color:var(--muted);font:400 14px var(--font);text-align:center;cursor:pointer;padding:0}
+.doc img{width:100%;height:110px;object-fit:cover;display:block;background:#0F2450}
 .doc .nom{padding:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.doc .pdf{flex:1;display:grid;place-items:center;font-size:40px}
-.progreso{display:flex;justify-content:space-between;align-items:baseline;margin-top:18px;font-weight:700}
-.progreso small{color:var(--muted);font-weight:500}
-.barra{height:12px;background:#e5e7eb;border-radius:99px;overflow:hidden;margin-top:6px}
-.barra i{display:block;height:100%;background:var(--ok);border-radius:99px;transition:width .4s}
-.siguiente{margin-top:14px;width:100%;min-height:120px;border-radius:20px;background:var(--ok);color:#fff;font-size:24px;font-weight:800;
-  padding:18px;box-shadow:0 6px 0 #0f5f2d;display:flex;align-items:center;gap:14px;text-align:left}
-.siguiente:active{transform:translateY(4px);box-shadow:0 2px 0 #0f5f2d}
-.siguiente .ico{font-size:44px;line-height:1}
-.siguiente .toca{display:block;font-size:15px;font-weight:600;opacity:.9;margin-top:4px}
-.listo{margin-top:14px;background:var(--ok-soft);border:2px solid var(--ok);border-radius:20px;padding:22px;text-align:center}
-.listo b{display:block;font-size:26px;color:var(--ok)}
-.ultimo{display:flex;align-items:center;gap:10px;margin-top:12px;color:var(--ok);font-weight:700;font-size:16px}
-.ultimo button{margin-left:auto;background:none;color:var(--muted);text-decoration:underline;font-size:15px;padding:8px 0}
-.pasos{list-style:none;margin:0;padding:0}
-.pasos li{display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);font-size:17px}
+.doc .pdf{flex:1;display:grid;place-items:center;font:500 18px var(--mono);color:var(--cyan)}
+.acciones{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
+.acciones .ancho{grid-column:1/-1}
+.btn-2.alerta{color:var(--amber);background:rgba(245,184,61,.12)}
+.pasos{list-style:none;margin:8px 0 0;padding:0}
+.pasos li{display:grid;grid-template-columns:32px 1fr auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(30,78,120,.6)}
 .pasos li:last-child{border-bottom:0}
-.pasos .n{flex:none;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:15px;background:#e5e7eb;color:var(--muted)}
-.pasos .hecho .n{background:var(--ok);color:#fff}
-.pasos .actual .n{background:var(--accent);color:#fff}
-.pasos .actual{font-weight:800}
-.pasos .hora{margin-left:auto;color:var(--muted);font-size:14px;white-space:nowrap}
-.pasos .pend{color:var(--warn)}
-.acciones{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
-.btn{min-height:64px;border-radius:16px;font-weight:800;font-size:17px;padding:10px;display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;color:inherit;text-align:center}
-.btn-problema{background:var(--warn-soft);color:var(--warn);border:2px solid #fdba74;grid-column:1/-1}
-.btn-gris{background:var(--surface);border:2px solid var(--line)}
-.btn-wa{background:#25d366;color:#fff}
-.cola{position:fixed;left:0;right:0;bottom:0;background:#1f2937;color:#fff;padding:12px 16px;padding-bottom:max(12px,env(safe-area-inset-bottom));font-size:16px;display:flex;align-items:center;gap:10px;z-index:5}
-.cola button{margin-left:auto;background:#fff;color:#111;border-radius:10px;padding:8px 14px;font-weight:700;font-size:15px}
-/* hoja inferior (confirmar, novedad, foto) */
-.velo{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10;display:flex;align-items:flex-end;justify-content:center}
-.hoja{background:var(--surface);width:100%;max-width:560px;border-radius:22px 22px 0 0;padding:20px 16px;padding-bottom:max(20px,env(safe-area-inset-bottom));max-height:92vh;overflow:auto}
-.hoja h3{margin:0 0 4px;font-size:16px;color:var(--muted);font-weight:600}
-.hoja .grande{font-size:24px;font-weight:800;margin:0 0 14px;display:flex;gap:10px;align-items:center}
-.hoja .grande span{font-size:38px}
-.hoja textarea{width:100%;min-height:90px;font:inherit;padding:12px;border:2px solid var(--line);border-radius:12px;margin-top:8px}
-.btn-si{width:100%;min-height:72px;border-radius:16px;background:var(--ok);color:#fff;font-size:22px;font-weight:800;margin-top:12px}
-.btn-si:disabled{opacity:.5}
-.btn-no{width:100%;min-height:56px;border-radius:16px;background:none;color:var(--muted);font-size:18px;font-weight:700;margin-top:6px}
-.btn-foto{width:100%;min-height:64px;border-radius:16px;background:#eef2ff;color:#3730a3;border:2px dashed #a5b4fc;font-weight:800;font-size:18px;margin-top:4px}
-.prev{width:100%;max-height:260px;object-fit:contain;border-radius:12px;margin-top:8px;background:#000}
+.pasos .n{width:32px;height:32px;display:grid;place-items:center;clip-path:var(--cut-sm);background:var(--surface-2);font:500 15px var(--mono);color:var(--muted)}
+.pasos .hecho .n{background:var(--cyan);color:var(--on-cyan)}
+.pasos .actual .n{background:var(--surface-2);color:var(--cyan);box-shadow:inset 0 0 0 2px var(--cyan)}
+.pasos .actual{font-weight:700}
+.pasos .hora{font:500 14px var(--mono);color:var(--muted);white-space:nowrap}
+.pasos .hora.pend{color:var(--amber)}
+/* hojas: confirmar, aceptar, novedad, foto */
+.grande{display:flex;align-items:center;gap:10px;margin:4px 0 14px;font:800 22px/1.25 var(--font)}
+.grande span{font-size:32px}
+.evid{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:64px;border:1px dashed var(--cyan);background:rgba(34,195,230,.08);color:var(--ink);font:700 16px var(--font);cursor:pointer}
+.prev{width:100%;max-height:240px;object-fit:contain;margin-top:8px;background:#000}
+.evid-ok{margin-top:6px;color:var(--green);font:600 15px var(--font)}
 .tipos{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.tipos button{min-height:60px;border-radius:14px;background:var(--surface);border:2px solid var(--line);font-weight:700;font-size:16px;padding:8px}
-.tipos button.sel{border-color:var(--warn);background:var(--warn-soft);color:var(--warn)}
-.visor{position:fixed;inset:0;background:#000;z-index:20;display:flex;align-items:center;justify-content:center}
+.tipos button{min-height:56px;padding:8px;background:var(--surface);border:0;clip-path:var(--cut-sm);color:var(--ink);font:600 15px var(--font);cursor:pointer}
+.tipos button.sel{background:rgba(245,184,61,.18);color:var(--amber);box-shadow:inset 0 0 0 2px var(--amber)}
+.fotosv{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+.fotosv button{min-height:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:8px;background:rgba(34,195,230,.08);border:1px dashed var(--cyan);color:var(--ink);font:700 15px var(--font);overflow:hidden;cursor:pointer}
+.fotosv button.lista{border:1px solid var(--green);background:rgba(43,208,138,.10);color:var(--green)}
+.fotosv img{width:100%;height:100px;object-fit:cover}
+.fotosv .ico{font-size:36px}
+.acepto{display:flex;gap:10px;align-items:flex-start;margin:4px 0 0;padding:12px;background:#061230;color:var(--muted);font:400 14px/1.45 var(--font)}
+.acepto input{width:26px;height:26px;min-height:0;flex:none;margin:0;accent-color:var(--cyan)}
+.idok{margin-top:10px;color:var(--green);font:600 15px var(--font)}
+.rechazo{color:var(--red-text);font-weight:700}
+.visor{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;background:#000}
 .visor img{max-width:100%;max-height:100%}
-.visor button{position:fixed;top:max(12px,env(safe-area-inset-top));right:12px;background:#fff;border-radius:999px;width:48px;height:48px;font-size:22px;font-weight:800}
-.toast{position:fixed;left:50%;top:16px;transform:translateX(-50%);background:#111827;color:#fff;padding:14px 18px;border-radius:14px;z-index:30;font-weight:700;max-width:92vw;text-align:center;box-shadow:0 6px 20px rgba(0,0,0,.3)}
-.toast.mal{background:var(--bad)}
+.visor button{position:fixed;top:max(12px,env(safe-area-inset-top));right:12px;width:48px;height:48px;background:var(--surface-2);color:var(--ink);border:0;clip-path:var(--cut-sm);font:700 20px var(--font)}
 .centro{text-align:center;padding:60px 20px;color:var(--muted)}
-.centro b{display:block;font-size:22px;color:var(--text);margin-bottom:8px}
+.centro b{display:block;margin-bottom:8px;font:800 22px var(--font);color:var(--ink)}
+.msg.mal{border-left-color:var(--red)}
 .oculto{display:none!important}
-.verif{border:2px solid var(--accent)}
-.verif p{margin:0 0 4px}
-.rechazo{color:var(--bad);font-weight:700}
-.fotosv{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:6px 0 10px}
-.fotosv button{min-height:150px;border-radius:16px;background:#eef2ff;color:#3730a3;border:2px dashed #a5b4fc;font-weight:800;font-size:16px;padding:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;overflow:hidden}
-.fotosv button.lista{border-style:solid;border-color:var(--ok);background:var(--ok-soft);color:var(--ok)}
-.fotosv img{width:100%;height:110px;object-fit:cover;border-radius:10px}
-.fotosv .ico{font-size:40px}
-.acepto{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--muted);background:var(--bg);border-radius:12px;padding:10px}
-.acepto input{width:26px;height:26px;flex:none;margin:0}
-.idok{margin-top:10px;font-size:15px;color:var(--muted)}
 </style>
 </head>
 <body>
-<div id="app"><div class="centro"><b>Cargando su viaje…</b>Un momento por favor</div></div>
+<div class="app" id="app"><div class="centro"><b>Cargando tu viaje…</b>Un momento</div></div>
 <input type="file" id="archivo" accept="image/*" capture="environment" class="oculto">
+<div class="msg" id="msg" role="status"></div>
 
 <script>
 const API = window.API_URL || 'https://script.google.com/macros/s/AKfycbz_st7NWwfY57QfMyTBLGxnufoIMgvlh3wKIwgi2PuzcrT409dFKI7iPsz3hOhUFKQ0/exec';
@@ -129,14 +107,14 @@ async function postear(body) {
 }
 
 async function cargar() {
-  if (!TOKEN) return fallo('Este enlace está incompleto. Pida a operaciones que se lo envíen de nuevo.');
+  if (!TOKEN) return fallo('Este enlace está incompleto. Pide a operaciones que te lo envíen de nuevo.');
   if (S) pintar();
   try {
     const d = await pedir({});
     if (!d.ok) return fallo(d.error || 'No se pudo abrir el viaje');
     aplicar(d);
   } catch (e) {
-    if (!S) fallo('No hay señal. Vuelva a intentar cuando tenga internet.', true);
+    if (!S) fallo('No hay señal. Vuelve a intentar cuando tengas internet.', true);
   }
   vaciarCola();
 }
@@ -165,7 +143,7 @@ function identidadVista() {
 }
 
 function fallo(msg, reintentar) {
-  $('#app').innerHTML = `<div class="centro"><b>😕 ${esc(msg)}</b>${reintentar ? '<p><button class="btn btn-gris" onclick="location.reload()" style="margin:16px auto;padding:0 24px">Intentar de nuevo</button></p>' : ''}</div>`;
+  $('#app').innerHTML = `<div class="centro"><b>${esc(msg)}</b>${reintentar ? '<div style="max-width:280px;margin:18px auto 0"><button class="btn" onclick="location.reload()">Intentar de nuevo</button></div>' : ''}</div>`;
 }
 
 /* ---------- cola de envíos (funciona sin señal) ---------- */
@@ -193,8 +171,8 @@ async function vaciarCola() {
       const d = await postear(item);
       cola.shift(); guardarCola();
       if (!d.ok) toast(d.error || 'No se pudo guardar', true);
-      else if (item.action === 'novedad') toast('✅ Operaciones recibió su novedad');
-      else if (item.action === 'foto') toast('✅ Foto enviada');
+      else if (item.action === 'novedad') toast('✓ Operaciones recibió tu novedad');
+      else if (item.action === 'foto') toast('✓ Foto subida ' + hora(new Date().toISOString()));
       if (d.asignacion) aplicar(d);
     }
   } catch (e) {
@@ -203,19 +181,40 @@ async function vaciarCola() {
     enviando = false; pintarCola();
   }
 }
-window.addEventListener('online', vaciarCola);
+window.addEventListener('online', () => { vaciarCola(); pintarCola(); });
+window.addEventListener('offline', pintarCola);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { vaciarCola(); if (!cola.length) cargar(); } });
 
+// franja de señal arriba: sin señal (ámbar) con lo que espera en cola, o "enviando"
 function pintarCola() {
-  let el = $('#cola');
-  if (!cola.length) { if (el) el.remove(); return; }
-  if (!el) { el = document.createElement('div'); el.id = 'cola'; el.className = 'cola'; document.body.appendChild(el); }
-  el.innerHTML = enviando && navigator.onLine !== false
-    ? `⏳ Enviando…`
-    : `📶 Sin señal: ${cola.length} envío${cola.length > 1 ? 's' : ''} guardado${cola.length > 1 ? 's' : ''}. Se enviará${cola.length > 1 ? 'n' : ''} solo${cola.length > 1 ? 's' : ''} al tener señal. <button onclick="vaciarCola()">Reintentar</button>`;
+  const el = $('#senal'); if (!el) return;
+  const sin = navigator.onLine === false, n = cola.length;
+  if (!n && !sin) { el.classList.add('oculto'); pintarIcoSenal(false); return; }
+  el.classList.remove('oculto'); pintarIcoSenal(sin || (n && !enviando));
+  el.innerHTML = enviando && !sin
+    ? `<svg class="icono"><use href="#i-reloj"/></svg>Enviando…`
+    : `<svg class="icono"><use href="#i-sinsenal"/></svg><span>Sin señal${n ? ` · <span class="num">${n}</span> envío${n > 1 ? 's' : ''} en cola: se envía${n > 1 ? 'n' : ''} al tener señal` : ' · tus fotos se envían luego'}</span>${n ? '<button class="lnk" onclick="vaciarCola()" style="margin-left:auto;min-height:40px;padding:0 12px;background:rgba(245,184,61,.18);border:0;color:var(--amber);font:600 14px var(--font);clip-path:var(--cut-sm)">Reintentar</button>' : ''}`;
+}
+function pintarIcoSenal(sin) {
+  const i = $('#icoSenal'); if (!i) return;
+  i.innerHTML = `<use href="#${sin ? 'i-sinsenal' : 'i-senal'}"/>`; i.style.color = sin ? 'var(--amber)' : 'var(--green)';
+  i.setAttribute('aria-label', sin ? 'Sin señal' : 'Con señal');
 }
 
 /* ---------- pantalla ---------- */
+const ICONOS = `<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-sinsenal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.5a15 15 0 0 1 6-3.2M22 8.5a15 15 0 0 0-9-3.4M5 12a10 10 0 0 1 4-2.3M19 12a10 10 0 0 0-2.4-1.6M8.5 15.5a5 5 0 0 1 5.5-.8M12 19h.01M3 3l18 18"/></symbol>
+  <symbol id="i-senal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 18v-2M9 18v-5M14 18V9M19 18V5"/></symbol>
+  <symbol id="i-reloj" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-atras" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-camara" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+  <symbol id="i-alerta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l10 18H2zM12 10v5M12 18h.01"/></symbol>
+  <symbol id="i-whats" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1.2-3.6A8 8 0 1 1 8 19z"/></symbol>
+  <symbol id="i-tel" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></symbol>
+  <symbol id="i-recarga" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></symbol>
+</svg>`;
+const ico = id => `<svg class="icono"><use href="#${id}"/></svg>`;
+
 function pintar() {
   if (!S) return;
   const a = S.asignacion, pasos = S.pasos, h = hechosVistos();
@@ -228,62 +227,66 @@ function pintar() {
   const tel = S.telefonoOperaciones;
   const idEstado = identidadVista();
   const falta = sig && a.estado !== 'Anulada' && (idEstado === 'Sin verificar' || idEstado === 'Rechazada');
+  // una sola acción principal, abajo: aceptar el viaje o el siguiente paso
+  const principal = a.estado === 'Anulada' ? ''
+    : falta ? `<button class="btn brilla" onclick="verificar()">Aceptar el viaje</button>`
+    : sig ? `<button class="btn brilla" onclick="confirmar(${i})"><span style="font-size:22px">${sig.icono}</span>${esc(sig.texto)}</button>` : '';
 
-  $('#app').innerHTML = `
-  <header>
-    <a class="volver" href="turnos.html">← Viajes ETP · mis viajes y disponibles</a>
-    <div class="marca">Entrapetrol · Reckitt</div>
-    <h1>${a.operacion === 'IMPO' ? '📥 Importación' : '📤 Exportación'} · Booking ${esc(a.booking)}</h1>
-    <div class="chips">${a.placa ? `<span class="chip">🚛 ${esc(a.placa)}</span>` : ''}${a.contenedor ? `<span class="chip">📦 ${esc(a.contenedor)}</span>` : ''}${a.conductor ? `<span class="chip">👤 ${esc(a.conductor)}</span>` : ''}</div>
+  $('#app').innerHTML = `${ICONOS}
+  <header class="top">
+    <a class="atras" href="turnos.html">${ico('i-atras')}Mis viajes</a>
+    <div class="der">${a.placa ? `<span class="placa">${esc(a.placa)}</span>` : ''}<svg class="icono" id="icoSenal" style="color:var(--green)" aria-label="Con señal"><use href="#i-senal"/></svg></div>
   </header>
-  <div class="wrap">
-    ${nuevo ? `<div class="aviso">🔔 Operaciones le envió información nueva<button onclick="verNuevo()">Ver</button></div>` : ''}
-    ${a.estado === 'Anulada' ? `<div class="aviso" style="background:#fee2e2;border-color:#f87171">⛔ Este viaje fue cancelado por operaciones</div>` : ''}
-    <a class="aviso" style="display:block;text-decoration:none;color:inherit" href="turnos.html">📲 Tenga todos sus viajes y los disponibles en la app <b>Viajes ETP</b> · instálela aquí</a>
+  <div class="senal oculto" id="senal" role="status"></div>
+  <main class="cuerpo">
+    <div class="eyebrow">${a.operacion === 'IMPO' ? 'Importación' : a.operacion === 'NACIONAL' ? 'Operación nacional' : 'Exportación'}</div>
+    <h1>Booking <span class="num">${esc(a.booking)}</span></h1>
+    <div class="datos">${[a.contenedor, a.conductor].filter(Boolean).map(esc).join(' · ')}</div>
+    ${nuevo ? `<div class="aviso info">${ico('i-alerta')}Operaciones te envió información nueva<button class="lnk" onclick="verNuevo()">Ver</button></div>` : ''}
+    ${a.estado === 'Anulada' ? `<div class="aviso mal">${ico('i-alerta')}Este viaje lo canceló operaciones</div>` : ''}
 
-    <div class="progreso"><span>${i >= total ? 'Viaje terminado' : `Paso ${i + 1} de ${total}`}</span><small>${i} de ${total} listos</small></div>
-    <div class="barra"><i style="width:${Math.round(100 * i / total)}%"></i></div>
+    <div class="progreso"><b>${i >= total ? 'Viaje terminado' : `Paso ${i + 1} de ${total}`}</b><span class="num">${i}/${total} listos</span></div>
+    <div class="segs">${pasos.map((p, j) => `<i class="${j < i ? 'ok' : j === i ? 'ya' : ''}"></i>`).join('')}</div>
 
-    ${falta ? `<div class="card verif"><h2>✅ Acepte el viaje</h2>
-        ${idEstado === 'Rechazada' ? '<p class="rechazo">Operaciones no pudo confirmar su identidad. Acéptelo otra vez y tómese las fotos con buena luz.</p>' : ''}
-        <p>Para confirmar que usted hace este viaje: <b>su número de cédula</b>, <b>una selfie</b> y <b>una foto de su cédula</b>.</p>
-        <button class="siguiente" onclick="verificar()"><span class="ico">✅</span><span>Aceptar el viaje<span class="toca">👆 Toque aquí</span></span></button></div>`
-    : sig ? `<button class="siguiente" onclick="confirmar(${i})"><span class="ico">${sig.icono}</span><span>${esc(sig.texto)}<span class="toca">👆 Toque aquí cuando esté listo</span></span></button>`
-          : `<div class="listo"><b>🏁 ¡Viaje terminado!</b>Gracias. Operaciones ya fue avisado.</div>`}
-    ${idEstado === 'Por revisar' ? '<div class="idok">✅ Viaje aceptado · operaciones está revisando su identidad</div>' : idEstado === 'Aprobada' ? '<div class="idok">✅ Viaje aceptado · identidad verificada ✔</div>' : ''}
-    ${ultimo ? `<div class="ultimo">✔ ${esc(pasos[i - 1].corto)} · ${hora(ultimo.fecha)}${ultimo.pendiente ? ' (sin enviar)' : ''}
+    ${falta ? `<div class="hud on" style="margin-top:14px"><div class="in"><div class="eyebrow">Acepta el viaje</div>
+        ${idEstado === 'Rechazada' ? '<p class="rechazo" style="margin:8px 0 0">Operaciones no pudo confirmar tu identidad. Acéptalo otra vez y tómate las fotos con buena luz.</p>' : ''}
+        <p style="margin:8px 0 0">Para confirmar que tú haces este viaje: <b>tu número de cédula</b>, <b>una selfie</b> y <b>una foto de tu cédula</b>.</p></div></div>`
+      : !sig ? `<div class="hud" style="margin-top:14px"><div class="in listo"><b>✓ Viaje terminado</b>Gracias. Operaciones ya está enterado.</div></div>` : ''}
+    ${idEstado === 'Por revisar' ? '<div class="idok">✓ Viaje aceptado · operaciones revisa tu identidad</div>' : idEstado === 'Aprobada' ? '<div class="idok">✓ Viaje aceptado · identidad verificada</div>' : ''}
+    ${ultimo ? `<div class="ultimo">✓ ${esc(pasos[i - 1].corto)} <span class="num">${hora(ultimo.fecha)}${ultimo.pendiente ? ' · en cola' : ''}</span>
       ${puedeDeshacer ? `<button onclick="deshacer()">Me equivoqué</button>` : ''}</div>` : ''}
 
-    <div class="card" id="info">
-      <h2>📅 Cita</h2>
-      <div class="cita">${a.cita ? esc(fechaCita(a.cita)) : 'Operaciones le avisará'}</div>
-      ${a.lugarCita ? `<div class="lugar">📍 ${esc(a.lugarCita)}</div>` : ''}
-      ${a.instrucciones ? `<div class="instr">📝 ${esc(a.instrucciones)}</div>` : ''}
+    <div class="hud" id="info" style="margin-top:16px"><div class="in">
+      <div class="eyebrow">Cita</div>
+      <div class="cita">${a.cita ? esc(fechaCita(a.cita)) : 'Operaciones te avisa'}</div>
+      ${a.lugarCita ? `<div class="lugar">${esc(a.lugarCita)}</div>` : ''}
+      ${a.instrucciones ? `<div class="instr">${esc(a.instrucciones)}</div>` : ''}
       ${a.archivos.length ? `<div class="docs">${a.archivos.map(docHtml).join('')}</div>` : ''}
-    </div>
+    </div></div>
 
     <div class="acciones">
-      <button class="btn btn-problema" onclick="problema()">⚠️ Tengo un problema</button>
-      <button class="btn btn-gris" onclick="enviarFoto()">📷 Enviar foto</button>
-      ${tel ? `<a class="btn btn-wa" href="https://wa.me/${tel}?text=${encodeURIComponent('Hola, soy ' + (a.conductor || 'el conductor') + ' (' + a.placa + '), booking ' + a.booking + '. ')}">💬 Escribir</a>`
-            : `<button class="btn btn-gris" onclick="cargar()">🔄 Actualizar</button>`}
-      ${tel ? `<a class="btn btn-gris" href="tel:+${tel}" style="grid-column:1/-1">📞 Llamar a operaciones</a>` : ''}
+      <button class="btn-2 alerta ancho" onclick="problema()">${ico('i-alerta')}Tengo un problema</button>
+      <button class="btn-2" onclick="enviarFoto()">${ico('i-camara')}Enviar foto</button>
+      ${tel ? `<a class="btn-2" href="https://wa.me/${tel}?text=${encodeURIComponent('Hola, soy ' + (a.conductor || 'el conductor') + ' (' + a.placa + '), booking ' + a.booking + '. ')}">${ico('i-whats')}Escribir</a>`
+            : `<button class="btn-2" onclick="cargar()">${ico('i-recarga')}Actualizar</button>`}
+      ${tel ? `<a class="btn-2 ancho" href="tel:+${tel}">${ico('i-tel')}Llamar a operaciones</a>` : ''}
     </div>
 
-    <div class="card">
-      <h2>Pasos del viaje</h2>
+    <div class="hud" style="margin-top:16px"><div class="in">
+      <div class="eyebrow">Pasos del viaje</div>
       <ol class="pasos">${pasos.map((p, j) => `<li class="${j < i ? 'hecho' : j === i ? 'actual' : ''}">
         <span class="n">${j < i ? '✓' : j + 1}</span><span>${p.icono} ${esc(p.texto)}</span>
-        ${h[j] ? `<span class="hora ${h[j].pendiente ? 'pend' : ''}">${hora(h[j].fecha)}</span>` : ''}</li>`).join('')}</ol>
-    </div>
-  </div>`;
+        <span class="hora ${h[j] && h[j].pendiente ? 'pend' : ''}">${h[j] ? hora(h[j].fecha) : ''}</span></li>`).join('')}</ol>
+    </div></div>
+  </main>
+  ${principal ? `<div class="pie">${principal}</div>` : ''}`;
   a.archivos.forEach(cargarImagen);
   pintarCola();
 }
 
 function docHtml(f) {
   const img = /^image\//.test(f.tipo);
-  return `<button class="doc" onclick="abrirDoc('${f.id}')">${img ? `<img id="img-${f.id}" alt="">` : '<span class="pdf">📄</span>'}<span class="nom">${esc(f.nombre)}</span></button>`;
+  return `<button class="doc" onclick="abrirDoc('${f.id}')">${img ? `<img id="img-${f.id}" alt="">` : '<span class="pdf">PDF</span>'}<span class="nom">${esc(f.nombre)}</span></button>`;
 }
 async function traer(id) {
   if (imgs[id]) return imgs[id];
@@ -309,7 +312,7 @@ async function abrirDoc(id) {
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = f.nombre; a.target = '_blank';
       document.body.appendChild(a); a.click(); a.remove();
     }
-  } catch (e) { toast('No se pudo abrir. Revise la señal.', true); }
+  } catch (e) { toast('No se pudo abrir. Revisa la señal.', true); }
 }
 
 function verNuevo() { guardar(K.visto, S.asignacion.version); pintar(); $('#info').scrollIntoView({ behavior: 'smooth' }); }
@@ -323,18 +326,20 @@ function ubicar() {
     () => { }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 120000 });
 }
 
+// hoja inferior (nunca ventanas que bloqueen): velo + hoja con animación corta
 function hoja(html) {
   cerrarHoja();
   const v = document.createElement('div'); v.className = 'velo'; v.id = 'velo';
-  v.innerHTML = `<div class="hoja">${html}</div>`;
-  v.addEventListener('click', e => { if (e.target === v) cerrarHoja(); });
-  document.body.appendChild(v);
+  v.addEventListener('click', cerrarHoja);
+  const h = document.createElement('div'); h.className = 'hoja'; h.id = 'hojaV'; h.setAttribute('role', 'dialog'); h.setAttribute('aria-modal', 'true');
+  h.innerHTML = html;
+  document.body.append(v, h); requestAnimationFrame(() => h.classList.add('ver'));
 }
-function cerrarHoja() { const v = $('#velo'); if (v) v.remove(); fotoActual = null; }
+function cerrarHoja() { const v = $('#velo'), h = $('#hojaV'); if (v) v.remove(); if (h) h.remove(); fotoActual = null; }
 
 let fotoActual = null;
 function bloqueFoto(texto) {
-  return `<button class="btn-foto" id="bfoto" onclick="tomarFoto()">📷 ${esc(texto)}</button><img id="prev" class="prev oculto" alt="">`;
+  return `<button class="evid" id="bfoto" onclick="tomarFoto()">${ico('i-camara')}${esc(texto)}</button><img id="prev" class="prev oculto" alt=""><div id="fotoOk" class="evid-ok oculto">✓ Foto lista</div>`;
 }
 function tomarFoto() {
   const inp = $('#archivo'); inp.value = ''; inp.setAttribute('capture', 'environment');
@@ -343,7 +348,8 @@ function tomarFoto() {
     try {
       fotoActual = await comprimir(f);
       const p = $('#prev'); if (p) { p.src = fotoActual.base64; p.classList.remove('oculto'); }
-      const b = $('#bfoto'); if (b) b.textContent = '📷 Cambiar foto';
+      const b = $('#bfoto'); if (b) b.innerHTML = ico('i-camara') + 'Cambiar foto';
+      const ok = $('#fotoOk'); if (ok) ok.classList.remove('oculto');
       const s = $('#bsi'); if (s && s.dataset.foto) s.disabled = false;
     } catch (e) { toast('No se pudo leer la foto', true); }
   };
@@ -367,11 +373,11 @@ function comprimir(file) {
 function confirmar(i) {
   const p = S.pasos[i];
   ubicar();
-  hoja(`<h3>¿Confirma?</h3>
+  hoja(`<div class="eyebrow">¿Confirmas?</div>
     <p class="grande"><span>${p.icono}</span>${esc(p.texto)}</p>
     ${p.foto ? bloqueFoto(p.foto + ' (opcional)') : ''}
-    <button class="btn-si" id="bsi" onclick="marcar(${i})">✅ Sí, confirmar</button>
-    <button class="btn-no" onclick="cerrarHoja()">No, volver</button>`);
+    <div style="margin-top:14px"><button class="btn brilla" id="bsi" onclick="marcar(${i})">Sí, confirmar</button>
+    <button class="btn-2" onclick="cerrarHoja()">No, volver</button></div>`);
 }
 function marcar(i) {
   const item = { action: 'paso', paso: i };
@@ -379,14 +385,14 @@ function marcar(i) {
   Object.assign(item, pos || {});
   cerrarHoja();
   encolar(item);
-  toast('✅ ' + S.pasos[i].corto);
+  toast('✓ ' + S.pasos[i].corto);
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 function deshacer() {
   const h = hechosVistos(), p = S.pasos[h.length - 1];
-  hoja(`<h3>¿Deshacer el último paso?</h3><p class="grande"><span>↩️</span>${esc(p.texto)}</p>
-    <button class="btn-si" style="background:var(--bad)" onclick="cerrarHoja();encolar({action:'deshacer'})">Sí, deshacer</button>
-    <button class="btn-no" onclick="cerrarHoja()">No, está bien</button>`);
+  hoja(`<div class="eyebrow">¿Deshacer el último paso?</div><p class="grande"><span>↩</span>${esc(p.texto)}</p>
+    <button class="btn" style="background:var(--red);color:#fff" onclick="cerrarHoja();encolar({action:'deshacer'})">Sí, deshacer</button>
+    <button class="btn-2" onclick="cerrarHoja()">No, está bien</button>`);
 }
 
 /* ---------- aceptar el viaje: cédula + selfie + foto de la cédula (con la ubicación de ese momento) ---------- */
@@ -394,17 +400,18 @@ const fotosV = {};
 function verificar() {
   ubicar(); delete fotosV.selfie; delete fotosV.documento;
   const A = S.asignacion;
-  hoja(`<p class="grande"><span>✅</span>Aceptar el viaje</p>
-    <p class="sub" style="margin:-4px 0 10px">${esc(A.operacion)} · placa <b>${esc(A.placa)}</b>${A.cita ? ` · cita ${esc(String(A.cita).replace('T', ' '))}` : ''}${A.lugarCita ? ` · ${esc(A.lugarCita)}` : ''}</p>
-    <input id="cedula" inputmode="numeric" autocomplete="off" placeholder="Número de cédula" oninput="listoV()"
-      style="width:100%;box-sizing:border-box;font-size:22px;padding:14px;border-radius:14px;border:2px solid #a5b4fc;margin-bottom:10px;letter-spacing:1px">
+  hoja(`<div class="eyebrow">Aceptar el viaje</div>
+    <p class="grande">Confirma que tú haces este viaje</p>
+    <p class="datos" style="margin:-6px 0 12px">${esc(A.operacion)} · ${esc(A.placa)}${A.cita ? ' · ' + esc(String(A.cita).replace('T', ' ')) : ''}</p>
+    <label for="cedula" style="margin-top:0">Número de cédula</label>
+    <input id="cedula" class="num" inputmode="numeric" autocomplete="off" placeholder="1234567890" oninput="listoV()" style="font-size:22px;letter-spacing:.04em">
     <div class="fotosv">
-      <button id="v-selfie" onclick="tomarV('selfie')"><span class="ico">🤳</span>1. Tomarme una selfie</button>
-      <button id="v-documento" onclick="tomarV('documento')"><span class="ico">🪪</span>2. Foto de mi cédula</button>
+      <button id="v-selfie" onclick="tomarV('selfie')"><span class="ico">🤳</span>1. Selfie</button>
+      <button id="v-documento" onclick="tomarV('documento')"><span class="ico">🪪</span>2. Foto de tu cédula</button>
     </div>
     <label class="acepto"><input type="checkbox" id="acepto" onchange="listoV()"><span>${esc(S.avisoDatos)}</span></label>
-    <button class="btn-si" id="bsi" disabled onclick="enviarV()">✅ Acepto el viaje</button>
-    <button class="btn-no" onclick="cerrarHoja()">Ahora no</button>`);
+    <div style="margin-top:14px"><button class="btn brilla" id="bsi" disabled onclick="enviarV()">Acepto el viaje</button>
+    <button class="btn-2" onclick="cerrarHoja()">Ahora no</button></div>`);
 }
 function tomarV(slot) {
   const inp = $('#archivo'); inp.value = '';
@@ -414,7 +421,7 @@ function tomarV(slot) {
     try {
       fotosV[slot] = await comprimir(f);
       const b = $('#v-' + slot);
-      if (b) { b.classList.add('lista'); b.innerHTML = `<img src="${fotosV[slot].base64}" alt="">✔ ${slot === 'selfie' ? 'Selfie' : 'Documento'} (cambiar)`; }
+      if (b) { b.classList.add('lista'); b.innerHTML = `<img src="${fotosV[slot].base64}" alt="">✓ ${slot === 'selfie' ? 'Selfie' : 'Cédula'} · cambiar`; }
       listoV();
     } catch (e) { toast('No se pudo leer la foto', true); }
   };
@@ -425,18 +432,18 @@ function listoV() { const b = $('#bsi'); if (b) b.disabled = !(fotosV.selfie && 
 function enviarV() {
   const item = Object.assign({ action: 'verificar', cedula: cedulaV(), selfie: fotosV.selfie, documento: fotosV.documento, acepta: true }, pos || {});
   cerrarHoja(); encolar(item);
-  toast('✅ Viaje aceptado. Ya puede empezar');
+  toast('✓ Viaje aceptado. Ya puedes empezar');
 }
 
 let tipoNovedad = '';
 function problema() {
   ubicar(); tipoNovedad = '';
-  hoja(`<p class="grande"><span>⚠️</span>¿Qué pasó?</p>
+  hoja(`<div class="eyebrow">Novedad</div><p class="grande">¿Qué pasó?</p>
     <div class="tipos">${S.novedades.map(t => `<button onclick="elegir(this)">${esc(t)}</button>`).join('')}</div>
-    <textarea id="txt" placeholder="Cuéntenos (opcional)"></textarea>
-    ${bloqueFoto('Agregar foto (opcional)')}
-    <button class="btn-si" id="bsi" style="background:var(--warn)" disabled onclick="enviarNovedad()">Enviar a operaciones</button>
-    <button class="btn-no" onclick="cerrarHoja()">Cancelar</button>`);
+    <label for="txt">Cuéntanos (opcional)</label><textarea id="txt"></textarea>
+    <div style="margin-top:10px">${bloqueFoto('Agregar foto (opcional)')}</div>
+    <div style="margin-top:14px"><button class="btn brilla" id="bsi" disabled onclick="enviarNovedad()">Enviar a operaciones</button>
+    <button class="btn-2" onclick="cerrarHoja()">Cancelar</button></div>`);
 }
 function elegir(b) {
   document.querySelectorAll('.tipos button').forEach(x => x.classList.toggle('sel', x === b));
@@ -449,15 +456,16 @@ function enviarNovedad() {
 }
 function enviarFoto() {
   ubicar();
-  hoja(`<p class="grande"><span>📷</span>Enviar foto a operaciones</p>
+  hoja(`<div class="eyebrow">Evidencia</div><p class="grande">Enviar foto a operaciones</p>
     ${bloqueFoto('Tomar o elegir foto')}
-    <textarea id="txt" placeholder="¿Qué es la foto? (opcional)"></textarea>
-    <button class="btn-si" id="bsi" data-foto="1" disabled onclick="mandarFoto()">Enviar foto</button>
-    <button class="btn-no" onclick="cerrarHoja()">Cancelar</button>`);
+    <label for="txt">¿Qué es la foto? (opcional)</label><textarea id="txt"></textarea>
+    <div style="margin-top:14px"><button class="btn brilla" id="bsi" data-foto="1" disabled onclick="mandarFoto()">Enviar foto</button>
+    <button class="btn-2" onclick="cerrarHoja()">Cancelar</button></div>`);
 }
 function mandarFoto() {
   const item = Object.assign({ action: 'foto', foto: fotoActual, texto: $('#txt').value.trim() }, pos || {});
   cerrarHoja(); encolar(item);
+  if (navigator.onLine === false) toast('⏳ En cola · se envía al tener señal');
 }
 
 /* ---------- utilidades ---------- */
@@ -477,9 +485,8 @@ function fechaCita(s) {
 }
 let tt;
 function toast(msg, mal) {
-  let t = $('#toast'); if (!t) { t = document.createElement('div'); t.id = 'toast'; document.body.appendChild(t); }
-  t.className = 'toast' + (mal ? ' mal' : ''); t.textContent = msg; t.style.display = '';
-  clearTimeout(tt); tt = setTimeout(() => { t.style.display = 'none'; }, mal ? 5000 : 2500);
+  const t = $('#msg'); t.textContent = msg; t.classList.toggle('mal', !!mal); t.classList.add('ver');
+  clearTimeout(tt); tt = setTimeout(() => t.classList.remove('ver'), mal ? 5000 : 2500);
 }
 
 cargar();

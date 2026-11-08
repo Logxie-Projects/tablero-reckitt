@@ -6,8 +6,8 @@
   "start_url": "turnos.html",
   "scope": "turnos",
   "display": "standalone",
-  "background_color": "#f4f5f7",
-  "theme_color": "#d4006f",
+  "background_color": "#02050F",
+  "theme_color": "#02050F",
   "lang": "es",
   "icons": [
     { "src": "turnos-icono.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }

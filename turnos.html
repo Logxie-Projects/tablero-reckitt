@@ -4,85 +4,113 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Viajes ETP</title>
-<meta name="theme-color" content="#d4006f">
+<meta name="theme-color" content="#02050F">
 <link rel="manifest" href="turnos.webmanifest">
 <link rel="icon" href="turnos-icono.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="turnos-icono.svg">
-<style>
-:root{--accent:#d4006f;--bg:#f4f5f7;--card:#fff;--text:#1b1f27;--muted:#667085;--border:#e4e7ec;--ok:#15803d;--warn:#b45309;--bad:#dc2626}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#181b21;--text:#eef0f3;--muted:#98a2b3;--border:#2a2f38}}
-*{box-sizing:border-box}
-body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text);font-size:16px;line-height:1.45}
-header{position:sticky;top:0;z-index:2;background:var(--accent);color:#fff;padding:12px 16px calc(12px) 16px;padding-top:max(12px,env(safe-area-inset-top))}
-header h1{margin:0;font-size:19px}
-header .sub{font-size:13px;opacity:.9}
-main{padding:12px 16px 90px;max-width:560px;margin:0 auto}
-.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px}
-.tags{display:flex;gap:6px;justify-content:space-between;align-items:center;margin-bottom:8px}
-.tag{font-size:12px;font-weight:700;padding:3px 9px;border-radius:99px;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent)}
-.tag.impo{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)}
-.tag.nuevo{background:color-mix(in srgb,var(--ok) 14%,transparent);color:var(--ok)}
-.paso{display:flex;gap:10px;padding:5px 0}
-.paso b{display:block;font-size:15px}
-.paso span{color:var(--muted);font-size:14px}
-.num{flex:none;width:24px;height:24px;border-radius:99px;background:var(--border);display:grid;place-items:center;font-size:13px;font-weight:700}
-button,.btn{font:inherit;font-weight:700;border:0;border-radius:12px;padding:13px 16px;width:100%;background:var(--accent);color:#fff;cursor:pointer;margin-top:10px;text-align:center;display:block;text-decoration:none}
-button.sec{background:transparent;color:var(--accent);border:1.5px solid var(--accent)}
-button:disabled{opacity:.6}
-.sub{color:var(--muted);font-size:14px}
-label{display:block;font-size:14px;color:var(--muted);margin:10px 0 4px}
-input{font:inherit;width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--card);color:var(--text)}
-h2{font-size:17px;margin:18px 0 8px}
-.ok{color:var(--ok);font-weight:700}
-.vacio{text-align:center;padding:28px 12px;color:var(--muted)}
-#msg{position:fixed;left:16px;right:16px;bottom:max(16px,env(safe-area-inset-bottom));background:#1b1f27;color:#fff;padding:12px 14px;border-radius:12px;display:none;z-index:5}
-.hidden{display:none}
-</style>
+<link rel="preload" href="fuentes/plus-jakarta-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fuentes/jetbrains-mono-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="conductores.css">
 </head>
 <body>
-<header><h1>Viajes ETP</h1><div class="sub" id="quien">Enturnarse y reportar disponibilidad</div></header>
-<main>
-  <!-- primera vez: datos del conductor (se guardan en este celular) -->
-  <section id="registro" class="card hidden">
-    <b>Antes de empezar</b>
-    <div class="sub">Se guardan en este celular para no volver a escribirlos.</div>
-    <label for="rPlaca">Placa del vehículo</label><input id="rPlaca" autocapitalize="characters" placeholder="TKP402">
-    <label for="rNombre">Nombre completo</label><input id="rNombre" autocomplete="name" placeholder="Juan Pérez">
-    <label for="rTel">Celular (WhatsApp)</label><input id="rTel" inputmode="tel" autocomplete="tel" placeholder="3001234567">
-    <button id="rGuardar">Guardar</button>
-  </section>
-  <section id="app" class="hidden">
-    <button id="instalar" class="sec hidden">📲 Instalar la app en este celular</button>
-    <div id="guiaInstalar" class="card hidden"></div>
-    <section id="misViajesBloque" class="hidden"><h2>Mis viajes</h2><div id="misViajes"></div></section>
-    <h2>Viajes disponibles</h2>
-    <div class="sub" id="actualizado"></div>
-    <div id="viajes"></div>
-    <h2>¿Está libre sin un viaje en particular?</h2>
-    <div class="card">
-      <label for="dDesde">Disponible desde</label><input id="dDesde" type="date">
-      <label for="dCiudad">Ciudad donde está</label><input id="dCiudad" placeholder="Buenaventura">
-      <button id="dEnviar" class="sec">Estoy disponible</button>
-    </div>
-    <h2>Mis turnos</h2>
-    <div id="mios"></div>
-    <a id="ayuda" class="btn sec hidden" target="_blank" rel="noopener">💬 Escribir a operaciones</a>
-    <button id="cambiar" class="sec">Cambiar placa o datos</button>
-  </section>
-</main>
-<div id="msg" role="status"></div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-carga" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></symbol>
+  <symbol id="i-viajes" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM9 16h6a3 3 0 0 0 0-6H9"/></symbol>
+  <symbol id="i-perfil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></symbol>
+  <symbol id="i-sinsenal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.5a15 15 0 0 1 6-3.2M22 8.5a15 15 0 0 0-9-3.4M5 12a10 10 0 0 1 4-2.3M19 12a10 10 0 0 0-2.4-1.6M8.5 15.5a5 5 0 0 1 5.5-.8M12 19h.01M3 3l18 18"/></symbol>
+  <symbol id="i-senal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 18v-2M9 18v-5M14 18V9M19 18V5"/></symbol>
+  <symbol id="i-reloj" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-nuevo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6.1.6-4.6 4.1 1.3 6-5.4-3.1-5.4 3.1 1.3-6-4.6-4.1 6.1-.6z"/></symbol>
+  <symbol id="i-gente" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c1-3.5 3.5-5.5 6.5-5.5s5.5 2 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5c2 .6 3.2 2.5 3.8 5.5"/></symbol>
+  <symbol id="i-whats" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1.2-3.6A8 8 0 1 1 8 19z"/></symbol>
+  <symbol id="i-cel" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="1.5"/><path d="M11 18h2"/></symbol>
+</svg>
+
+<div class="app">
+  <header class="top">
+    <div class="marca"><i></i>VIAJES ETP</div>
+    <div class="der"><span class="placa hidden" id="placaTop"></span><svg class="icono" id="icoSenal" style="color:var(--green)" aria-label="Con señal"><use href="#i-senal"/></svg></div>
+  </header>
+  <div class="senal hidden" id="sinSenal" role="status"><svg class="icono"><use href="#i-sinsenal"/></svg><span id="sinSenalTxt">Sin señal · se muestra lo último que cargaste</span></div>
+
+  <main class="cuerpo">
+    <!-- primera vez: datos del conductor (se guardan en este celular) -->
+    <section id="registro" class="hidden">
+      <div class="eyebrow">Bienvenido</div>
+      <h1>Antes de empezar</h1>
+      <p class="sec">Se guardan en este celular para no volver a escribirlos.</p>
+      <label for="rPlaca">Placa del vehículo</label><input id="rPlaca" class="num" autocapitalize="characters" placeholder="TKP402">
+      <label for="rNombre">Nombre completo</label><input id="rNombre" autocomplete="name" placeholder="Juan Pérez">
+      <label for="rTel">Celular (WhatsApp)</label><input id="rTel" class="num" inputmode="tel" autocomplete="tel" placeholder="3001234567">
+      <div style="margin-top:20px"><button class="btn brilla" id="rGuardar">Guardar</button></div>
+    </section>
+
+    <!-- CARGAS: viajes sin vehículo para enturnarse y "estoy disponible" -->
+    <section id="tCargas" class="hidden">
+      <div class="eyebrow">Carga disponible</div>
+      <h1>Viajes para enturnarte</h1>
+      <p class="sec" id="actualizado"></p>
+      <div class="lista" id="viajes" style="margin-top:12px"></div>
+      <h2>¿Estás libre sin un viaje en particular?</h2>
+      <div class="hud"><div class="in">
+        <label for="dDesde" style="margin-top:0">Disponible desde</label><input id="dDesde" type="date" class="num">
+        <label for="dCiudad">Ciudad donde estás</label><input id="dCiudad" placeholder="Buenaventura">
+        <div style="margin-top:14px"><button class="btn-2" id="dEnviar">Estoy disponible</button></div>
+      </div></div>
+    </section>
+
+    <!-- MIS VIAJES: asignados y mis turnos -->
+    <section id="tMios" class="hidden">
+      <div class="eyebrow">Mis viajes</div>
+      <h1>Tus viajes</h1>
+      <div class="lista" id="misViajes" style="margin-top:12px"></div>
+      <h2>Mis turnos</h2>
+      <div class="lista" id="mios"></div>
+    </section>
+
+    <!-- PERFIL: datos, instalar la app y ayuda -->
+    <section id="tPerfil" class="hidden">
+      <div class="eyebrow">Perfil</div>
+      <h1 id="perfilNombre">Tus datos</h1>
+      <p class="num" id="perfilDatos" style="color:var(--muted);margin:0"></p>
+      <div style="margin-top:18px" class="lista">
+        <button class="btn-2 hidden" id="instalar"><svg class="icono"><use href="#i-cel"/></svg>Instalar la app en este celular</button>
+        <div id="guiaInstalar" class="hud hidden"><div class="in"></div></div>
+        <a id="ayuda" class="btn-2 hidden" target="_blank" rel="noopener"><svg class="icono"><use href="#i-whats"/></svg>Escribir a operaciones</a>
+        <button class="btn-2" id="cambiar">Cambiar placa o datos</button>
+      </div>
+    </section>
+  </main>
+
+  <nav class="nav hidden" id="nav" aria-label="Secciones">
+    <button data-tab="tCargas" class="on"><svg class="icono"><use href="#i-carga"/></svg>Cargas</button>
+    <button data-tab="tMios"><svg class="icono"><use href="#i-viajes"/></svg>Mis viajes</button>
+    <button data-tab="tPerfil"><svg class="icono"><use href="#i-perfil"/></svg>Perfil</button>
+  </nav>
+</div>
+
+<!-- detalle de un viaje disponible: hoja inferior con una sola acción principal -->
+<div class="velo hidden" id="velo"></div>
+<div class="hoja" id="hoja" role="dialog" aria-modal="true" aria-labelledby="hojaTitulo"></div>
+<div class="msg" id="msg" role="status"></div>
+
 <script>
-// App de conductores "Viajes ETP": mis viajes (asignados), viajes disponibles para enturnarse y disponibilidad. Los datos los sirve el Apps Script (Conductores.gs: app=turnos):
-// solo viajes sin vehículo de los próximos días, con fechas y lugares; nunca cliente, booking, contenedor ni tarifa.
+// App de conductores "Viajes ETP": mis viajes (asignados), viajes disponibles para enturnarse y disponibilidad. Los datos los sirve
+// el Apps Script (Conductores.gs: app=turnos): solo viajes sin vehículo de los próximos días, con fechas y lugares; nunca cliente,
+// booking, contenedor ni tarifa. Estilo: conductores.css (guía DISENO-APP-CONDUCTORES.md, 7-nov).
 const API = 'https://script.google.com/macros/s/AKfycbz_st7NWwfY57QfMyTBLGxnufoIMgvlh3wKIwgi2PuzcrT409dFKI7iPsz3hOhUFKQ0/exec';
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const guardado = k => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch(e){ return null; } };
 const guardar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} };
 const DIAS = ['dom','lun','mar','mié','jue','vie','sáb'], MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-const fd = iso => { const d = new Date(iso + 'T12:00'); return `${DIAS[d.getDay()]} ${d.getDate()} ${MES[d.getMonth()]}`; };
-const aviso = t => { const m = $('#msg'); m.textContent = t; m.style.display = 'block'; clearTimeout(aviso.t); aviso.t = setTimeout(() => m.style.display = 'none', 3500); };
-let yo = guardado('etp-conductor'), datos = null;
+// fecha "AAAA-MM-DD" o "AAAA-MM-DD HH:mm" (la de los viajes nacionales trae la hora): "mié 11 nov" (· 10:00)
+const fd = iso => { const t = String(iso || ''), d = new Date(t.slice(0, 10) + 'T12:00'); if (isNaN(d)) return t;
+  const h = (t.match(/[ T](\d{1,2}:\d{2})/) || [])[1]; return `${DIAS[d.getDay()]} ${d.getDate()} ${MES[d.getMonth()]}${h ? ' · ' + h : ''}`; };
+const ico = (id, s) => `<svg class="icono${s ? ' s' : ''}"><use href="#${id}"/></svg>`;
+const aviso = t => { const m = $('#msg'); m.textContent = t; m.classList.add('ver'); clearTimeout(aviso.t); aviso.t = setTimeout(() => m.classList.remove('ver'), 3500); };
+let yo = guardado('etp-conductor'), datos = null, sinRed = false;
 // enlace que manda operaciones: turnos.html?t=CÓDIGO del viaje (con él la app reconoce al conductor y abre su viaje)
 // el código se guarda: al abrir la app instalada (sin el enlace) sigue mostrando sus viajes
 const codigo = new URLSearchParams(location.search).get('t') || guardado('etp-codigo') || '';
@@ -91,15 +119,35 @@ if (codigo) guardar('etp-codigo', codigo);
 if (new URLSearchParams(location.search).get('prueba') === '1') guardar('etp-prueba', '1');
 const prueba = guardado('etp-prueba') === '1';
 
+// ---------- señal: franja ámbar visible cuando no hay conexión ----------
+function pintarSenal(){
+  const sin = !navigator.onLine || sinRed;
+  $('#sinSenal').classList.toggle('hidden', !sin);
+  const i = $('#icoSenal'); i.innerHTML = `<use href="#${sin ? 'i-sinsenal' : 'i-senal'}"/>`; i.style.color = sin ? 'var(--amber)' : 'var(--green)';
+  i.setAttribute('aria-label', sin ? 'Sin señal' : 'Con señal');
+}
+addEventListener('online', () => { sinRed = false; pintarSenal(); if (yo || codigo) cargar(); });
+addEventListener('offline', pintarSenal);
+
+// ---------- pestañas (barra inferior) ----------
+let tab = 'tCargas';
+function verTab(t){ tab = t; ['tCargas', 'tMios', 'tPerfil'].forEach(x => $('#' + x).classList.toggle('hidden', x !== t));
+  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === t)); scrollTo(0, 0); }
+$('#nav').onclick = e => { const b = e.target.closest('[data-tab]'); if (b) verTab(b.dataset.tab); };
+
 function mostrar(){
   if (!yo && codigo) return cargar();   // con el código del viaje no hace falta registrarse
-  $('#registro').classList.toggle('hidden', !!yo); $('#app').classList.toggle('hidden', !yo);
-  $('#quien').textContent = yo ? `${yo.conductor} · ${yo.placa}` : 'Enturnarse y reportar disponibilidad';
-  if (yo) cargar();
+  $('#registro').classList.toggle('hidden', !!yo); $('#nav').classList.toggle('hidden', !yo);
+  if (yo) { verTab(tab); pintarYo(); cargar(); } else ['tCargas', 'tMios', 'tPerfil'].forEach(x => $('#' + x).classList.add('hidden'));
+}
+function pintarYo(){
+  $('#placaTop').textContent = yo ? yo.placa : ''; $('#placaTop').classList.toggle('hidden', !yo);
+  $('#perfilNombre').textContent = yo ? yo.conductor : 'Tus datos';
+  $('#perfilDatos').textContent = yo ? [yo.placa, yo.telefono].filter(Boolean).join(' · ') : '';
 }
 $('#rGuardar').onclick = () => {
   const placa = $('#rPlaca').value.toUpperCase().replace(/[^A-Z0-9]/g, ''), conductor = $('#rNombre').value.trim(), telefono = $('#rTel').value.replace(/\D/g, '');
-  if (placa.length < 5 || conductor.length < 3 || telefono.length < 10) return aviso('Revise la placa, el nombre y el celular (10 números)');
+  if (placa.length < 5 || conductor.length < 3 || telefono.length < 10) return aviso('Revisa la placa, el nombre y el celular (10 números)');
   yo = {placa, conductor, telefono}; guardar('etp-conductor', yo); mostrar();
 };
 $('#cambiar').onclick = () => { if (yo) { $('#rPlaca').value = yo.placa; $('#rNombre').value = yo.conductor; $('#rTel').value = yo.telefono; } yo = null; mostrar(); };
@@ -107,87 +155,119 @@ $('#cambiar').onclick = () => { if (yo) { $('#rPlaca').value = yo.placa; $('#rNo
 async function cargar(){
   try {
     const r = await fetch(`${API}?app=turnos&placa=${encodeURIComponent(yo ? yo.placa : '')}&tel=${encodeURIComponent(yo ? yo.telefono : '')}${codigo ? '&t=' + encodeURIComponent(codigo) : ''}${prueba ? '&prueba=1' : ''}`);
-    datos = await r.json(); guardar('etp-turnos-ultimo', datos);
+    datos = await r.json(); guardar('etp-turnos-ultimo', datos); sinRed = false;
     // el código del viaje dice quién es: se guarda en el celular y queda como su app
     if (datos.identidad && (!yo || yo.placa !== datos.identidad.placa)) {
       yo = {placa: datos.identidad.placa, conductor: datos.identidad.conductor || 'Conductor', telefono: String(datos.identidad.telefono || '').replace(/^57/, '')}; guardar('etp-conductor', yo);
-      $('#registro').classList.add('hidden'); $('#app').classList.remove('hidden'); $('#quien').textContent = `${yo.conductor} · ${yo.placa}`;
+      $('#registro').classList.add('hidden'); $('#nav').classList.remove('hidden'); verTab(datos.misViajes && datos.misViajes.length ? 'tMios' : tab); pintarYo();
     }
     if (!yo) { $('#registro').classList.remove('hidden'); return; }
     // sin celular (operaciones no lo registró): sus viajes se ven igual; el celular se pide solo al enturnarse (enviar)
-  } catch(e) { datos = guardado('etp-turnos-ultimo'); if (datos) aviso('Sin señal: se muestra la última lista que cargó'); }
-  pintar();
+  } catch(e) { sinRed = true; datos = guardado('etp-turnos-ultimo'); }
+  pintarSenal(); pintar();
 }
-// "Nuevo": viajes que no estaban la última vez que abrió la app
+
+// ---------- pintar ----------
+const cuandoPaso = p => p.cuando ? fd(p.cuando) : p.antesDe ? 'antes del ' + fd(p.antesDe) : 'fecha por confirmar';
+const paradasHtml = P => `<ol class="paradas">${P.map((p, i) => `<li><span class="n">${i + 1}</span><div><b>${esc(p.que)}</b><span class="cuando">${esc(cuandoPaso(p))}</span>${p.donde ? ` · <span class="sec">${esc(p.donde)}</span>` : ''}</div></li>`).join('')}</ol>`;
+// ruta = primer y último lugar del viaje
+const rutaDe = P => { const L = P.map(p => p.donde).filter(Boolean); return L.length > 1 ? `${esc(L[0])} <span class="fl">→</span> ${esc(L[L.length - 1])}` : esc(L[0] || 'Viaje'); };
 function pintar(){
-  if (!datos || !datos.ok) { $('#viajes').innerHTML = '<div class="card vacio">No se pudieron cargar los viajes. Intente de nuevo.</div>'; return; }
-  // Mis viajes: solo si la placa y el celular coinciden con lo que registró operaciones (si no, null y no se muestra)
-  const M = datos.misViajes;
-  $('#misViajesBloque').classList.toggle('hidden', !M);
-  if (M) $('#misViajes').innerHTML = M.length ? M.map(v => `<div class="card" ${datos.identidad && datos.identidad.viajeId === v.viajeId ? 'style="border:2px solid var(--accent)"' : ''}>
-    <div class="tags"><span class="tag ${v.operacion === 'IMPO' ? 'impo' : ''}">${esc(v.operacion)}${v.fecha ? ' · ' + fd(v.fecha) : ''}</span>${v.avance ? `<span class="sub">${esc(v.avance)}</span>` : ''}</div>
-    ${v.ultimo ? `<div><b>${esc(v.ultimo)}</b></div>` : ''}
-    ${v.pasos.map((p, i) => `<div class="paso"><div class="num">${i + 1}</div><div><b>${esc(p.que)} · ${p.cuando ? fd(p.cuando) : p.antesDe ? 'antes del ' + fd(p.antesDe) : 'fecha por confirmar'}</b><span>${esc(p.donde)}</span></div></div>`).join('')}
-    ${v.enlace ? `<a class="btn" href="${esc(v.enlace)}">${v.aceptado === false ? '✅ Aceptar el viaje · cédula y selfie' : 'Abrir viaje · pasos, fotos y novedades'}</a>` : '<div class="sub">Operaciones le enviará la cita y los detalles de este viaje.</div>'}</div>`).join('')
-    : '<div class="card vacio">No tiene viajes asignados en este momento.</div>';
-  const vistos = new Set(guardado('etp-turnos-vistos') || []), miTurno = datos.viajes.find(v => v.yo);
-  $('#actualizado').textContent = `Actualizado ${new Date().toLocaleTimeString('es-CO', {hour: 'numeric', minute: '2-digit'})} · ${datos.viajes.length} viaje${datos.viajes.length === 1 ? '' : 's'} sin vehículo`;
-  $('#viajes').innerHTML = datos.viajes.length ? datos.viajes.map(v => `<div class="card">
-    <div class="tags"><span class="tag ${v.operacion === 'IMPO' ? 'impo' : ''}">${esc(v.operacion)}${v.unidad ? ' · ' + esc(v.unidad.replace('1X', '')) + "'" : ''}</span>
-      ${vistos.has(v.id) ? `<span class="sub">${v.enturnados ? v.enturnados + ' enturnado' + (v.enturnados > 1 ? 's' : '') : ''}</span>` : '<span class="tag nuevo">Nuevo</span>'}</div>
-    ${v.pasos.map((p, i) => `<div class="paso"><div class="num">${i + 1}</div><div><b>${esc(p.que)} · ${p.cuando ? fd(p.cuando) : p.antesDe ? 'antes del ' + fd(p.antesDe) : 'fecha por confirmar'}</b><span>${esc(p.donde)}</span></div></div>`).join('')}
-    <div class="sub">Las condiciones (cita, documentos, sello) se le confirman al asignarle el viaje.</div>
-    ${v.yo ? `<div class="ok" style="margin-top:10px">✓ Usted está enturnado</div><button class="sec" data-retirar="${esc(v.id)}">Retirarme de este viaje</button>`
-      : miTurno ? `<button disabled>Ya está enturnado en el viaje del ${fd(miTurno.primero)}: retírese de ese primero</button>`
-      : `<button data-enturnar="${esc(v.id)}">Me enturno</button>`}</div>`).join('')
-    : '<div class="card vacio">Por ahora no hay viajes sin vehículo. Vuelva a mirar más tarde.</div>';
+  if (!datos || !datos.ok) { $('#viajes').innerHTML = '<div class="hud"><div class="in vacio">No se pudieron cargar los viajes. Intenta de nuevo.</div></div>'; return; }
+  // Mis viajes: solo si la placa y el celular coinciden con lo que registró operaciones (si no, null)
+  const M = datos.misViajes || [], actual = datos.identidad && datos.identidad.viajeId;
+  $('#misViajes').innerHTML = M.length ? M.map((v, i) => { const prin = actual ? v.viajeId === actual : i === 0;
+    return `<div class="hud${prin ? ' on' : ''}"><div class="in">
+      <div class="eyebrow">${esc(v.operacion)}${v.fecha ? ' · ' + esc(fd(v.fecha)) : ''}</div>
+      <p class="ruta" style="margin-top:4px">${rutaDe(v.pasos || [])}</p>
+      <div class="chips">${v.aceptado === false ? `<span class="chip warn">${ico('i-reloj', 1)}Por aceptar</span>` : `<span class="chip ok">${ico('i-ok', 1)}Asignado a ti</span>`}${v.avance ? `<span class="chip calma">${esc(v.avance)}</span>` : ''}</div>
+      ${v.ultimo ? `<p style="margin:10px 0 0"><b>${esc(v.ultimo)}</b></p>` : ''}
+      ${paradasHtml(v.pasos || [])}
+      <div style="margin-top:14px">${v.enlace ? `<a class="${prin ? 'btn brilla' : 'btn-2'}" href="${esc(v.enlace)}">${v.aceptado === false ? 'Aceptar el viaje · cédula y selfie' : 'Abrir viaje · pasos, fotos y novedades'}</a>`
+        : '<p class="sec" style="margin:0">Operaciones te envía la cita y los detalles de este viaje.</p>'}</div></div></div>`; }).join('')
+    : '<div class="hud"><div class="in vacio">No tienes viajes asignados en este momento.</div></div>';
+  const vistos = new Set(guardado('etp-turnos-vistos') || []);
+  $('#actualizado').innerHTML = `Actualizado <span class="num">${new Date().toLocaleTimeString('es-CO', {hour: 'numeric', minute: '2-digit'})}</span> · ${datos.viajes.length} viaje${datos.viajes.length === 1 ? '' : 's'} sin vehículo`;
+  $('#viajes').innerHTML = datos.viajes.length ? datos.viajes.map(v => { const P = v.pasos || [], primero = P.find(p => p.cuando || p.antesDe);
+    return `<button class="hud${v.yo ? ' on' : ''}" data-ver="${esc(v.id)}"><div class="in">
+      <p class="ruta">${rutaDe(P)}</p>
+      <div class="datos">${[esc(v.operacion), primero ? esc(cuandoPaso(primero)).toUpperCase() : '', v.unidad ? esc(v.unidad.replace('1X', '')) + "'" : '', P.length + ' PASO' + (P.length === 1 ? '' : 'S')].filter(Boolean).join(' · ')}</div>
+      <div class="chips">${v.yo ? `<span class="chip ok">${ico('i-ok', 1)}Estás enturnado</span>` : !vistos.has(v.id) ? `<span class="chip info">${ico('i-nuevo', 1)}Nuevo</span>` : ''}
+        ${v.enturnados && !v.yo ? `<span class="chip calma">${ico('i-gente', 1)}${v.enturnados} enturnado${v.enturnados > 1 ? 's' : ''}</span>` : ''}</div>
+    </div></button>`; }).join('')
+    : '<div class="hud"><div class="in vacio">Por ahora no hay viajes sin vehículo. Vuelve a mirar más tarde.</div></div>';
   guardar('etp-turnos-vistos', datos.viajes.map(v => v.id));
-  $('#mios').innerHTML = datos.mios.length ? datos.mios.map(t => `<div class="card"><b>${t.tipo === 'Turno' ? esc(t.resumen || t.viajeId) : 'Disponible' + (t.desde ? ' desde el ' + fd(t.desde) : '') + (t.ciudad ? ' en ' + esc(t.ciudad) : '')}</b>
-    <div class="${t.estado === 'Asignado a usted' ? 'ok' : 'sub'}">${esc(t.estado)}${t.estado === 'Asignado a usted' ? ' · para cambiarlo hable con operaciones' : ''}</div></div>`).join('') : '<div class="sub">Todavía no se ha enturnado.</div>';
+  $('#mios').innerHTML = datos.mios.length ? datos.mios.map(t => { const asig = t.estado === 'Asignado a usted';
+    return `<div class="hud"><div class="in"><b>${t.tipo === 'Turno' ? esc(t.resumen || t.viajeId) : 'Disponible' + (t.desde ? ' desde el ' + fd(t.desde) : '') + (t.ciudad ? ' en ' + esc(t.ciudad) : '')}</b>
+      <div class="chips"><span class="chip ${asig ? 'ok' : 'calma'}">${ico(asig ? 'i-ok' : 'i-reloj', 1)}${asig ? 'Asignado a ti' : esc(t.estado)}</span></div>
+      ${asig ? '<p class="sec" style="margin:8px 0 0">Para cambiarlo, habla con operaciones.</p>' : ''}</div></div>`; }).join('')
+    : '<p class="sec">Todavía no te has enturnado.</p>';
   if (datos.telefonoOperaciones) { const a = $('#ayuda'); a.href = 'https://wa.me/' + datos.telefonoOperaciones; a.classList.remove('hidden'); }
 }
+
+// ---------- hoja inferior: detalle del viaje y una sola acción ----------
+function abrirHoja(id){
+  const v = (datos.viajes || []).find(x => x.id === id); if (!v) return;
+  const miTurno = datos.viajes.find(x => x.yo);
+  $('#hoja').innerHTML = `<div class="eyebrow">${v.yo ? 'Estás enturnado' : 'Carga disponible'}</div>
+    <h2 id="hojaTitulo">${rutaDe(v.pasos || [])}</h2>
+    <div class="datos">${[esc(v.operacion), v.unidad ? esc(v.unidad.replace('1X', '')) + "'" : ''].filter(Boolean).join(' · ')}</div>
+    ${paradasHtml(v.pasos || [])}
+    <p class="sec" style="margin:14px 0">La cita, los documentos y el sello te los confirman al asignarte el viaje.</p>
+    ${v.yo ? `<button class="btn-2" data-retirar="${esc(v.id)}">Retirarme de este viaje</button>`
+      : miTurno ? `<button class="btn" disabled>Ya estás enturnado en el viaje del ${esc(fd(miTurno.primero))}</button><p class="sec" style="margin:8px 0 0;text-align:center">Retírate de ese primero</p>`
+      : `<button class="btn brilla" data-enturnar="${esc(v.id)}">Me enturno</button>`}
+    <button class="btn-2" data-cerrar="1">Cerrar</button>`;
+  $('#velo').classList.remove('hidden'); requestAnimationFrame(() => $('#hoja').classList.add('ver'));
+}
+function cerrarHoja(){ $('#hoja').classList.remove('ver'); $('#velo').classList.add('hidden'); }
+$('#velo').onclick = cerrarHoja;
+$('#viajes').onclick = e => { const b = e.target.closest('[data-ver]'); if (b) abrirHoja(b.dataset.ver); };
+$('#hoja').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.cerrar) return cerrarHoja();
+  b.disabled = true;
+  if (b.dataset.enturnar) enviar({action: 'enturnar', viajeId: b.dataset.enturnar}, 'Listo: quedaste enturnado. Operaciones te confirma si te lo asignan.');
+  else if (b.dataset.retirar) enviar({action: 'retirarTurno', viajeId: b.dataset.retirar}, 'Te retiraste de ese viaje');
+};
+
 async function enviar(cuerpo, ok){
   if (!yo.telefono) {   // entró con el código del viaje sin celular registrado: se pide aquí, una sola vez
-    $('#rPlaca').value = yo.placa; $('#rNombre').value = yo.conductor; $('#registro').classList.remove('hidden');
-    $('#registro').scrollIntoView({behavior: 'smooth'}); $('#rTel').focus();
-    document.querySelectorAll('#viajes button, #dEnviar').forEach(b => b.disabled = false);
-    return aviso('Escriba su celular para que operaciones lo pueda llamar');
+    cerrarHoja(); $('#rPlaca').value = yo.placa; $('#rNombre').value = yo.conductor; $('#registro').classList.remove('hidden');
+    $('#registro').scrollIntoView({behavior: 'smooth'}); $('#rTel').focus(); $('#dEnviar').disabled = false;
+    return aviso('Escribe tu celular para que operaciones te pueda llamar');
   }
   try {
     const r = await fetch(API, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify({...cuerpo, ...yo})});
     const j = await r.json();
-    if (!j.ok) return aviso(j.error || 'No se pudo enviar');
-    aviso(ok); cargar();
-  } catch(e) { aviso('Sin señal: intente de nuevo'); }
+    if (!j.ok) { document.querySelectorAll('#hoja button, #dEnviar').forEach(b => b.disabled = false); return aviso(j.error || 'No se pudo enviar'); }
+    cerrarHoja(); aviso(ok); cargar();
+  } catch(e) { sinRed = true; pintarSenal(); document.querySelectorAll('#hoja button, #dEnviar').forEach(b => b.disabled = false); aviso('Sin señal: inténtalo de nuevo cuando tengas señal'); }
+  $('#dEnviar').disabled = false;
 }
-$('#viajes').onclick = e => {
-  const b = e.target.closest('button'); if (!b) return; b.disabled = true;
-  if (b.dataset.enturnar) enviar({action: 'enturnar', viajeId: b.dataset.enturnar}, 'Listo: quedó enturnado. Operaciones le confirma si se lo asignan.');
-  else if (b.dataset.retirar) enviar({action: 'retirarTurno', viajeId: b.dataset.retirar}, 'Se retiró de ese viaje');
-};
-$('#dEnviar').onclick = () => enviar({action: 'disponible', desde: $('#dDesde').value, ciudad: $('#dCiudad').value}, 'Listo: operaciones ya sabe que está disponible');
+$('#dEnviar').onclick = () => { $('#dEnviar').disabled = true; enviar({action: 'disponible', desde: $('#dDesde').value, ciudad: $('#dCiudad').value}, 'Listo: operaciones ya sabe que estás disponible'); };
 $('#dDesde').value = new Date().toLocaleDateString('en-CA', {timeZone: 'America/Bogota'});
-// instalar como app (Android / Chrome): el navegador lo ofrece cuando la página cumple los requisitos
+
+// ---------- instalar como app (Android / Chrome); sin "Instalar" se explica cómo ----------
 let instalar = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); instalar = e; $('#instalar').classList.remove('hidden'); });
 $('#instalar').onclick = async () => { if (!instalar) return; instalar.prompt(); await instalar.userChoice; instalar = null; $('#instalar').classList.add('hidden'); };
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('turnos-sw.js').catch(() => {});
-// sin "Instalar" (navegador de WhatsApp u otra app, o iPhone): se explica cómo hacerlo; ya instalada, no se muestra nada
 const instalada = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
 const dentroDeApp = /WhatsApp|FBAN|FBAV|Instagram|; wv\)/i.test(navigator.userAgent), iphone = /iPhone|iPad/i.test(navigator.userAgent);
 setTimeout(() => {
   if (instalada || instalar) return;
   const g = $('#guiaInstalar');
-  g.innerHTML = '<b>📲 Para tener Viajes ETP como app</b><div class="sub" style="margin-top:6px">' + (dentroDeApp
-    ? (iphone ? 'Está dentro de WhatsApp. Toque <b>⋯</b> o <b>Compartir</b> y elija <b>Abrir en Safari</b>; ahí toque <b>Compartir › Agregar a inicio</b>.'
-              : 'Está dentro de WhatsApp. Toque <b>⋮</b> (arriba a la derecha) y elija <b>Abrir en Chrome</b>; ahí toque <b>⋮ › Instalar app</b> o <b>Agregar a pantalla de inicio</b>.')
-    : (iphone ? 'En Safari toque <b>Compartir</b> (el cuadrito con flecha) y luego <b>Agregar a inicio</b>.'
-              : 'En Chrome toque <b>⋮</b> (arriba a la derecha) y luego <b>Instalar app</b> o <b>Agregar a pantalla de inicio</b>.'))
-    + '</div>';
+  g.firstElementChild.innerHTML = '<b>Para tener Viajes ETP como app</b><p class="sec" style="margin:6px 0 0">' + (dentroDeApp
+    ? (iphone ? 'Estás dentro de WhatsApp. Toca <b>⋯</b> o <b>Compartir</b> y elige <b>Abrir en Safari</b>; ahí toca <b>Compartir › Agregar a inicio</b>.'
+              : 'Estás dentro de WhatsApp. Toca <b>⋮</b> (arriba a la derecha) y elige <b>Abrir en Chrome</b>; ahí toca <b>⋮ › Instalar app</b>.')
+    : (iphone ? 'En Safari toca <b>Compartir</b> y luego <b>Agregar a inicio</b>.'
+              : 'En Chrome toca <b>⋮</b> (arriba a la derecha) y luego <b>Instalar app</b>.'))
+    + '</p>';
   g.classList.remove('hidden');
 }, 2500);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && yo) cargar(); });   // al volver a la app, lista al día
-mostrar();
+pintarSenal(); mostrar();
 </script>
 </body>
 </html>
