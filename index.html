@@ -2405,18 +2405,16 @@ function manejarTurno(e){
   else if (d.tAsignar) asignarSugerido(d.tAsignar, d.placa, d.conductor, d.telefono);
   else if (d.tProp) abrirPropuestas();
 }
-/* ---------- avisos de hitos (F2): al guardar un hito, el coordinador ve el aviso y decide si sale ---------- */
-// A Entrapetrol sale al momento; al solicitante del viaje (CORREOS_SOLICITANTE) no: queda en cola y le llega en el resumen de
-// las 10 a. m. y las 3 p. m. (AVISO_CLIENTE en Código.gs), para no saturar al cliente con un correo por hito.
+/* ---------- avisos de hitos (F2): al guardar un hito, queda para el resumen al cliente ---------- */
+// 7-nov ("llegan muchos correos cada que algo se actualiza"): al equipo ya no le llega un correo por hito (AVISO_HITOS.equipo en
+// Código.gs); el equipo lo ve en la Bandeja y el Tablero. Al guardar, sin preguntar, el hito queda en la cola del solicitante del
+// viaje (CORREOS_SOLICITANTE) y sale en 📨 Resumen al cliente, que el equipo revisa y envía.
 async function ofrecerAviso(v, cambios, usuario){
-  const H = hitosDelCambio(v, cambios); if (!H.length || !claveActual() || window.MODO_CLIENTE) return;
-  const viaje = `${refCliente(v) || v.placa || 'Sin referencia'} · ${v.operacion} ${v.operacion === 'EXPO' ? (v.pais || '') : (v.bodega || v.destino || '')}`;
-  if (!confirm(`¿Avisar este hito?\n\n${viaje}\n${H.map(h => '• ' + h.txt).join('\n')}\n\nEntrapetrol: ahora${v.solicitante ? `\n${v.solicitante} (cliente): en el resumen de las 10 a. m. o las 3 p. m.` : ''}`)) return;
+  const H = hitosDelCambio(v, cambios); if (!H.length || !claveActual() || window.MODO_CLIENTE || !v.solicitante || esPrueba(v)) return;
   try {
     const j = await api('avisoHito', {id: v.id, cambios, usuario});
-    toast(!j.ok ? 'No se envió el aviso: ' + (j.error || 'error')
-      : `Aviso enviado a Entrapetrol${j.cliente ? ` · a ${j.cliente} le llega en el próximo resumen (10 a. m. / 3 p. m.)` : ''}${j.sinCorreo ? ` · no hay correo de ${j.sinCorreo}: no le llegará` : ''}`);
-  } catch(e) { toast('No se pudo enviar el aviso'); }
+    if (j.ok && j.cliente) toast(`Hito anotado para el resumen a ${j.cliente} (📨 Resumen al cliente)`);
+  } catch(e) { /* sin aviso: el hito ya quedó guardado en el viaje */ }
 }
 /* ---------- asignación única: el vehículo guardado en el tablero queda asignado en Despacho ---------- */
 // Al guardar placa o conductor, el backend crea o actualiza la asignación de Despacho (Conductores.gs) y devuelve el mensaje
@@ -4574,7 +4572,7 @@ $('#rcEnviar').onclick = () => enviarResCli(false);
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '61ad1be0b7';
+const VERSION_TABLERO = 'bba53600ef';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
