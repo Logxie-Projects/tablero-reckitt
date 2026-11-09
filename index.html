@@ -691,6 +691,24 @@ body.lv-abierta{overflow:hidden}
 .kv-solo{background:transparent;border:1px solid var(--lv-borde);border-radius:6px;padding:0 4px;margin-right:6px;cursor:pointer;font-size:12px;line-height:18px}
 .kv-solo:hover{border-color:#111827}
 @media (max-width:700px){.kv-emb-f{grid-template-columns:1fr auto}.kv-emb-b{grid-column:1/-1;grid-row:2}.kv-buscar input{width:100%}.kv-buscar{flex:1 1 100%}}
+/* causa del cambio de fecha con su respaldo (causa.js, 8-nov) */
+.ca-box{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.ca-l{font-size:12px;color:var(--muted)}
+.ca-causas,.ca-medios{display:flex;flex-wrap:wrap;gap:6px}
+.ca-c,.ca-m{font:inherit;font-size:12.5px;padding:5px 11px;border-radius:999px;border:1px solid var(--border);background:var(--surface);color:inherit;cursor:pointer}
+.ca-c.on,.ca-m.on{background:var(--text);color:var(--surface);border-color:var(--text)}
+.ca-fila{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.ca-fila input{flex:1;min-width:180px}
+.ca-quien{margin-left:4px}
+.ca-correo{font-size:12px}
+.ca-correo.ok{padding:6px 10px;border-radius:8px;background:color-mix(in srgb,var(--ok) 12%,var(--surface));color:var(--ok)}
+.ca-correo.espera{padding:6px 10px;border-radius:8px;background:color-mix(in srgb,var(--warn) 12%,var(--surface))}
+.ca-nota{font-size:12px;color:var(--muted)}
+.ca-nota:empty,.ca-correo:empty{display:none}
+.ca-mail{border:1px solid var(--border);border-radius:10px;background:var(--surface);padding:10px 12px}
+.ca-mail-t{font-size:12px;font-weight:600}
+.ca-mail-a{font-size:12px;color:var(--muted);margin:2px 0 6px}
+.ca-mail-c{white-space:pre-wrap;font-size:13px;line-height:1.5}
 </style>
 </head>
 <body>
@@ -899,9 +917,7 @@ body.lv-abierta{overflow:hidden}
     <div class="plan" id="mPlan"></div>
     <div class="full" style="margin-top:16px"><label>Etapa de la operación</label><div class="states" id="mStates"></div></div>
     <div id="mForm"></div>
-    <div class="causa-box hidden" id="mCausa"><b>Cambio de fecha programada</b> <span class="sub" id="mCausaLista"></span>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><span id="mCausaSel"></span><input id="mCausaDet" placeholder="Detalle (ej: planta sin producto, vehículo varado)" style="flex:1;min-width:200px">
-        <input id="mCausaCosto" inputmode="numeric" placeholder="Costo extra $ (si hubo)" style="width:170px"><input id="mCausaInc" placeholder="Incidente (si hubo)" style="width:200px"></div></div>
+    <div class="causa-box hidden" id="mCausa"><b>Cambio de fecha programada</b> <span class="sub" id="mCausaLista"></span><div id="mCausaCaja"></div></div>
     <datalist id="dlExtra"></datalist><datalist id="dlPatio"></datalist><datalist id="dlFwd"></datalist>
     <div class="calif" id="mCalif"></div>
     <div class="hist" id="mHist"></div>
@@ -1073,16 +1089,54 @@ const HITOS_PLAN = {
   NACIONAL: [['Recogida','planRetiro',['fechaRetiro']], ['Entrega','planCargue',['fechaCargue']]],
 };
 // causa → responsable; "Corrección de dato" no cuenta como reprogramación (la fecha estaba mal escrita)
-const CAUSAS_REPROG = [['Cliente (Reckitt)','Reckitt'], ['Transportadora (Entrapetrol)','Entrapetrol'], ['Puerto o naviera','Terceros'],
-  ['Externo (paro, vía, clima)','Terceros'], ['Corrección de dato','']];
+// 8-nov: "Puerto o naviera" pasa a "Patio, puerto o naviera" (2 pedidos de Argentina sin citas en el patio de retiro); el nombre
+// viejo sigue en CAUSAS_REPROG para leer lo ya registrado, pero ya no se ofrece (CAUSAS_ELEGIR)
+const CAUSAS_REPROG = [['Cliente (Reckitt)','Reckitt'], ['Transportadora (Entrapetrol)','Entrapetrol'], ['Patio, puerto o naviera','Terceros'],
+  ['Externo (paro, vía, clima)','Terceros'], ['Corrección de dato',''], ['Puerto o naviera','Terceros']];
+const CAUSAS_ELEGIR = CAUSAS_REPROG.filter(c => c[0] !== 'Puerto o naviera');
 // los cambios de plan anteriores al registro de causas (30-oct-2026) no tienen historial: no se le pide causa a nadie
 const INICIO_CAUSAS = '2026-10-30', SIN_HISTORIAL = 'Sin historial';
 const responsable = causa => causa === SIN_HISTORIAL ? SIN_HISTORIAL : (CAUSAS_REPROG.find(c => c[0]===causa) || [, 'Sin causa'])[1];
 // registro guardado en la base: "fecha|campo|antes|después|causa|detalle|usuario" separados por ";;"
-// registro: "fecha|campo|antes|después|causa|detalle|usuario|costo|incidente" (costo e incidente desde el 31-oct)
+// registro: "fecha|campo|antes|después|causa|detalle|usuario|costo|incidente|respaldo" (costo e incidente desde el 31-oct; respaldo
+// desde el 8-nov: con qué se prueba la causa, ver "respaldo de la causa")
 const reprogsDe = v => String(v.reprog||'').split(';;').map(x => x.trim()).filter(Boolean)
-  .map(x => { const [fecha, campo, antes, despues, causa, detalle, usuario, costo, incidente] = x.split('|');
-    return {fecha, campo, antes, despues, causa, detalle, usuario, costo: Number(costo)||0, incidente: incidente||''}; });
+  .map(x => { const [fecha, campo, antes, despues, causa, detalle, usuario, costo, incidente, respaldo] = x.split('|');
+    return {fecha, campo, antes, despues, causa, detalle, usuario, costo: Number(costo)||0, incidente: incidente||'', respaldo: respaldo||''}; });
+/* ---------- respaldo de la causa (8-nov, regla del usuario) ----------
+ * En el sistema las fechas siempre las mueve Entrapetrol; lo que prueba que el cambio fue del cliente es su correo. Al mover una
+ * fecha con causa Cliente, el coordinador dice quién lo pidió y por dónde: si fue por correo y LogxIA ya lo leyó, ese correo es el
+ * respaldo; si fue por teléfono o WhatsApp, sale al momento un correo de acuerdo a quien lo pidió ("según lo conversado…") y ese es
+ * el respaldo. Con causa de terceros (patio, puerto, naviera, externo) sale al momento un aviso al solicitante del viaje con el
+ * motivo. Entrapetrol y Corrección de dato no envían nada. Lo registrado antes del 8-nov queda "sin respaldo" (el equipo decide).
+ * Campo respaldo (sin "|" ni ";"): "correo · <asunto> · <quién>", "acuerdo · <medio> · <quién>", "aviso · <solicitante>",
+ * "correo pendiente · <quién>" (lo pidió por correo pero LogxIA aún no lo había leído: lo liga en su siguiente pasada). */
+const PERSONAS_CAMBIO = [['jhonier','Jhonier Gómez'], ['diana','Diana Toro'], ['willington','Willington Rayo'], ['samir','Samir Bastidas'],
+  ['gallego','José Gallego'], ['milena','Milena Andrade'], ['celis','Viviana Celis']];   // mismas claves de DESTINATARIOS_RESUMEN (Código.gs)
+const MEDIOS_CAMBIO = ['teléfono', 'WhatsApp', 'correo'];
+const sinRespaldo = r => !!r && ['Reckitt', 'Terceros'].includes(responsable(r.causa)) && !r.respaldo;
+// quién de Reckitt pide normalmente por el viaje (para sugerirlo): el solicitante, si está en la lista (por el primer nombre)
+const personaSolicitante = v => { const s = minus(v.solicitante || '').split(' ')[0]; return (PERSONAS_CAMBIO.find(([, n]) => s && minus(n).split(' ')[0] === s) || [''])[0]; };
+// el correo que sale al guardar (lo arma igual el tablero, para mostrarlo, y el servidor, para enviarlo):
+// d = {causa, quien (nombre), medio, detalle}; movidas = fechasMovidas. null si no sale correo.
+function textoCambio(v, movidas, d){
+  const r = responsable(d.causa); if (!movidas || !movidas.length || !['Reckitt', 'Terceros'].includes(r)) return null;
+  if (r === 'Reckitt' && d.medio === 'correo') return null;
+  // la referencia que usa el cliente (booking en EXPO, pedido o DO en IMPO: clavesBusqueda), sin la lista completa
+  const cb = clavesBusqueda(v).filter(([k]) => k !== 'Placa')[0], ref = cb ? `${cb[0].toLowerCase()} ${cb[1]}` : (v.booking || v.pedido || v.id);
+  const pais = v.operacion === 'EXPO' && v.pais ? ` (${String(v.pais).toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase())})` : '';
+  const fl = iso => { const x = new Date(String(iso).slice(0, 10) + 'T12:00'); return isNaN(x) ? String(iso || '—')
+    : `${['domingo','lunes','martes','miércoles','jueves','viernes','sábado'][x.getDay()]} ${x.getDate()} de ${['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'][x.getMonth()]}`; };
+  const cambios = movidas.map(m => `${m.hito.charAt(0).toLowerCase() + m.hito.slice(1)} pasa del ${fl(m.antes)} al ${fl(m.despues)}`);
+  const que = cambios.length === 1 ? ` el ${cambios[0]}.` : ':\n' + cambios.map(c => `· el ${c}`).join('\n');
+  const acuerdo = r === 'Reckitt';
+  return {tipo: acuerdo ? 'acuerdo' : 'aviso',
+    asunto: `${acuerdo ? 'Cambio acordado' : 'Cambio de fecha'} · ${movidas.map(m => m.hito.toLowerCase()).join(' y ')} · ${ref}`,
+    lineas: ['Equipo Reckitt:', '',
+      `${acuerdo ? `Según lo conversado con ${d.quien || 'ustedes'} por ${d.medio || 'teléfono'}, para` : 'Para'} ${ref}${pais}${que}`, '',
+      acuerdo ? 'Si no corresponde, por favor respondan este correo.' : `Motivo: ${String(d.detalle || '').trim().replace(/^./, c => c.toLowerCase()).replace(/\.$/, '')}.`,
+      '', 'LogxIA · Entrapetrol']};
+}
 // fechas que se apartan del plan y piden causa: (a) una fecha ya puesta que se mueve; (b) una fecha vacía que se llena distinta
 // de la fecha original (plan) del hito, si ese hito aún no tiene causa. Una fecha que se llena igual al plan no pregunta nada.
 // (b) desde el 7-nov: el retiro del pedido 11338 se llenó el 22-oct con plan 17-oct y quedó "sin causa" sin que nadie la pidiera.
@@ -1096,10 +1150,10 @@ function fechasMovidas(v, ch){
 }
 // agrega al cambio el registro de la causa; con "Corrección de dato" el plan pasa a la fecha corregida
 // con costo extra: si lo causó el cliente se agrega como extracosto "Reprogramación" (por aprobar); si no, queda solo registrado
-function conCausa(v, ch, movidas, causa, detalle, usuario, costo, incidente){
+function conCausa(v, ch, movidas, causa, detalle, usuario, costo, incidente, respaldo){
   const limpio = t => String(t||'').replace(/[|;]/g, ' ').trim();
   const $c = Number(String(costo||'').replace(/[^\d]/g, '')) || 0;
-  const nuevas = movidas.map((m, i) => [HOY, m.campo, m.antes, m.despues, causa, limpio(detalle), limpio(usuario), i ? '' : ($c || ''), i ? '' : limpio(incidente)].join('|'));
+  const nuevas = movidas.map((m, i) => [HOY, m.campo, m.antes, m.despues, causa, limpio(detalle), limpio(usuario), i ? '' : ($c || ''), i ? '' : limpio(incidente), limpio(respaldo)].join('|').replace(/\|+$/, ''));
   const out = {...ch, reprog: [String(v.reprog||'').trim(), ...nuevas].filter(Boolean).join(' ;; ')};
   if (causa === 'Corrección de dato') movidas.forEach(m => { if (v[m.plan] === m.antes || !v[m.plan]) out[m.plan] = m.despues; });
   if ($c && responsable(causa) === 'Reckitt') {
@@ -1118,7 +1172,7 @@ function desviosPlan(v){
     if (!p || !actual || p === actual) return null;
     const r = R.filter(x => campos.includes(x.campo) && x.causa !== 'Corrección de dato').pop();
     const viejo = !r && actual < INICIO_CAUSAS;
-    return {hito, plan:p, actual, dias:dDias(p, actual), causa: r ? r.causa : viejo ? SIN_HISTORIAL : 'Sin causa',
+    return {hito, plan:p, actual, dias:dDias(p, actual), causa: r ? r.causa : viejo ? SIN_HISTORIAL : 'Sin causa', respaldo: r ? r.respaldo : '', sinRespaldo: sinRespaldo(r),
       detalle: r ? r.detalle : viejo ? 'Pasó antes del registro de causas (30-oct): no se sabe por qué' : '',
       costo: R.filter(x => campos.includes(x.campo)).reduce((t, x) => t + x.costo, 0), incidente: R.filter(x => campos.includes(x.campo) && x.incidente).map(x => x.incidente).join(' · ')};
   }).filter(Boolean);
@@ -1645,6 +1699,23 @@ const hitosPlan = v => (HITOS_PLAN[v.operacion] || []).map(([hito, plan, campos]
   const f = v[campos[0]];
   return [hito, v[plan] || campos.slice(1).map(k => v[k]).find(Boolean) || f || '', cumplido(v, campos[0])];
 });
+// puntualidad por paso hecho (8-nov, regla del usuario: "si el cliente mueve el viaje no es mal puntaje para la transportadora"):
+// se mide contra la fecha original, salvo que el último cambio de ese paso lo haya pedido Reckitt, un tercero o no tenga historial;
+// entonces contra la fecha nueva acordada (sin ella registrada, el paso no cuenta como tarde). Lo movido por Entrapetrol o sin causa
+// sigue contra la original. → [{hito, plan, meta, real, ok, excusa}] solo de los pasos con plan y ya hechos.
+function hitosATiempo(v){
+  const R = reprogsDe(v), D = desviosPlan(v), H = hitosPlan(v), d10 = x => String(x || '').slice(0, 10);
+  return (HITOS_PLAN[v.operacion] || []).map(([hito, , campos], i) => {
+    const [, plan, real] = H[i]; if (!plan || !real) return null;
+    const d = D.find(x => x.hito === hito), r = d && responsable(d.causa);
+    let meta = plan, excusa = '';
+    if (r && !['Entrapetrol', 'Sin causa'].includes(r)) {
+      const ult = R.filter(x => campos.includes(x.campo) && x.causa !== 'Corrección de dato').pop();
+      meta = ult && /^\d{4}-\d{2}-\d{2}/.test(ult.despues || '') ? d10(ult.despues) : d10(real); excusa = r;
+    }
+    return {hito, plan, meta, real, ok: d10(real) <= d10(meta), excusa};
+  }).filter(Boolean);
+}
 // lead time total: del primer al último hito; real = completo, o "en curso" contando hasta hoy
 function leadTime(v){
   const H = hitosPlan(v), u = H.length - 1;
@@ -1658,7 +1729,7 @@ function leadTime(v){
 /* ---------- puntaje del viaje (8-nov): nota de 0 a 100 de cómo se ejecutó un viaje con el transporte finalizado ----------
  * Idea tomada del "calificador" que pone nota a cada borrador y devuelve los débiles: aquí cada viaje terminado recibe una nota
  * y los de menos de PUNTAJE_BAJO salen marcados para revisar. Solo el equipo (el cliente no lo ve). Cinco partes:
- *  Puntualidad 40 · hitos ejecutados en la fecha original o antes (proporción; sin hitos con plan no descuenta)
+ *  Puntualidad 40 · hitos ejecutados a tiempo (hitosATiempo: fecha original, o la nueva si el cambio lo pidió Reckitt o un tercero; proporción; sin hitos con plan no descuenta)
  *  Reprogramaciones 20 · −10 por cada hito movido por la transportadora o sin causa (Reckitt, terceros y "sin historial" no descuentan)
  *  Novedades y demoras 15 · −8 si tiene novedad, −4 por incidente registrado, −3 por día de demora del vacío (IMPO)
  *  Cierre 15 · 8 por la tirilla (entrega EXPO / devolución IMPO; sin tirilla exigible, completo) y 7 por los pasos confirmados (−3 por cada uno sin confirmar)
@@ -1668,8 +1739,8 @@ const PUNTAJE_BAJO = 60;
 function puntajeViaje(v){
   if (!v || v.padre || situacion(v) === 'Cancelado' || !transporteFinalizado(v)) return null;
   const tope = (x, max) => Math.max(0, Math.min(max, Math.round(x)));
-  const H = hitosPlan(v).filter(h => h[1] && h[2]), ok = H.filter(h => h[2] <= h[1]).length;
-  const tarde = H.filter(h => h[2] > h[1]).map(h => h[0]);
+  const H = hitosATiempo(v), ok = H.filter(h => h.ok).length, tarde = H.filter(h => !h.ok).map(h => h.hito);
+  const movidos = H.filter(h => h.excusa).length;
   const D = desviosPlan(v), culpa = D.filter(d => ['Entrapetrol', 'Sin causa'].includes(responsable(d.causa)));
   const incid = reprogsDe(v).filter(r => r.incidente).length, dem = v.operacion === 'IMPO' ? (demora(v) || 0) : 0;
   const exigeTirilla = v.operacion === 'EXPO' || (v.operacion === 'IMPO' && !esLCL(v));
@@ -1678,7 +1749,7 @@ function puntajeViaje(v){
   const fin = fechaFinTransporte(v), dFact = fin ? dDias(fin, v.fechaFactura || HOY) : null;
   const partes = [
     ['Puntualidad', H.length ? tope(40 * ok / H.length, 40) : 40, 40,
-      H.length ? `${ok} de ${H.length} hitos a tiempo${tarde.length ? ' · tarde: ' + tarde.join(', ') : ''}` : 'sin hitos con plan'],
+      H.length ? `${ok} de ${H.length} hitos a tiempo${tarde.length ? ' · tarde: ' + tarde.join(', ') : ''}${movidos ? ` · ${movidos} movido${movidos === 1 ? '' : 's'} por el cliente o terceros, medido${movidos === 1 ? '' : 's'} con la fecha nueva` : ''}` : 'sin hitos con plan'],
     ['Reprogramaciones', tope(20 - 10 * culpa.length, 20), 20,
       D.length ? `${D.length} reprogramaci${D.length === 1 ? 'ón' : 'ones'}${culpa.length ? ` · ${culpa.length} de la transportadora o sin causa` : ' · ninguna de la transportadora'}` : 'sin reprogramaciones'],
     ['Novedades y demoras', tope(15 - (v.novedad ? 8 : 0) - 4 * incid - 3 * dem, 15), 15,
@@ -2152,7 +2223,8 @@ async function guardarCambio(id, cambios, usuario, opciones = {}){
       else if (j.confirmados !== undefined) { v.confirmados = j.confirmados; etapasViajes(); }
       if (j.ok && j.aviso) { v.confirmados = confAntes; etapasViajes(); toast(j.aviso); }   // guardado, pero sin confirmar el paso
       if (j.ok && j.cambios) ofrecerAviso(v, cambios, usuario).then(() => ofrecerEnlaceConductor(v, j.asignacion));
-    }catch(e){ toast('No se pudo guardar en la base, intente de nuevo'); }
+      render(); return !!j.ok;   // quien llama sabe si la base lo aceptó (causa.js envía el correo de acuerdo solo si se guardó)
+    }catch(e){ toast('No se pudo guardar en la base, intente de nuevo'); render(); return false; }
   }
   render();
 }
@@ -2738,7 +2810,7 @@ function leadKpi(){
   const L = visibles().map(leadTime).filter(x=>x.real!==null);
   const prom = a => a.length ? Math.round(a.reduce((s,x)=>s+x,0)/a.length*10)/10 : null;
   const real = prom(L.map(x=>x.real)), plan = prom(L.filter(x=>x.plan!==null).map(x=>x.plan));
-  const H = visibles().flatMap(v=>hitosPlan(v)).filter(x=>x[1] && x[2]), ok = H.filter(x=>x[2]<=x[1]).length;
+  const H = visibles().flatMap(hitosATiempo), ok = H.filter(x=>x.ok).length;   // lo movido por Reckitt o terceros se mide con la fecha nueva (dominio)
   const pct = H.length ? Math.round(ok/H.length*100) : null;
   return {l:'Lead time promedio', v: real===null ? '—' : real+' d', h:`${plan!==null?`plan ${plan} d · `:''}${L.length} viajes completos<br>${pct===null?'sin hitos cumplidos':`${pct}% hitos a tiempo`}`, m: pct===null?undefined:pct, bad: real!==null && plan!==null && real>plan};
 }
@@ -2909,7 +2981,7 @@ function resumenCobro(v){
   return `<div class="sub" style="margin-top:8px">💲 Tarifa <b>${pesos(c.tarifa)}</b>${c.extra ? ` · Extracostos <b>${pesos(c.extra)}</b> ${tagCobro(c.aprob)}` : ''} · Total a facturar <b>${pesos(c.total)}</b> ${tagCobro(c.fact)}${v.numFactura?` · Factura ${esc(v.numFactura)}`:''}</div>`;
 }
 /* ---------- reprogramaciones: cambios de una fecha ya programada, con su causa y responsable ---------- */
-const htmlCausas = (nombre) => `<select class="${nombre}"><option value="">Causa del cambio…</option>${CAUSAS_REPROG.map(([c, r]) => `<option value="${esc(c)}">${esc(c)}${r ? ' · responde '+r : ''}</option>`).join('')}</select>`;
+const htmlCausas = (nombre) => `<select class="${nombre}"><option value="">Causa del cambio…</option>${CAUSAS_ELEGIR.map(([c, r]) => `<option value="${esc(c)}">${esc(c)}${r ? ' · responde '+r : ''}</option>`).join('')}</select>`;
 // indicador: viajes que cumplieron la fecha original y reprogramaciones por responsable
 function reprogKpi(){
   const L = activos().filter(v => (HITOS_PLAN[v.operacion]||[]).some(([, p]) => v[p]));
@@ -3440,6 +3512,106 @@ function resumenEventos(E){
 }
 
 const ICONO_EVENTO = {'Programación':'📋', 'Cambio de plan':'⟲', 'Correo':'✉', 'Edición':'✎', 'Excel':'▦', 'Subviaje':'↪', 'Incidente':'⚠'};
+/* ---------- causa.js · causa de un cambio de fecha con su respaldo (8-nov-2026) ----------
+ * Capa: pantalla. Regla del usuario: en el sistema las fechas siempre las mueve Entrapetrol; lo que prueba que el cambio fue del
+ * cliente es su correo. Al mover una fecha ya programada (ventana del viaje y chat) se elige la causa:
+ *  - Cliente (Reckitt): quién lo pidió y por dónde. Por correo → se liga el correo que leyó LogxIA (o queda "pendiente de ligar");
+ *    por teléfono o WhatsApp → al guardar sale al momento un correo de acuerdo a esa persona, con el equipo en copia.
+ *  - Patio, puerto o naviera / Externo: qué pasó → al guardar sale al momento un aviso al solicitante del viaje con el motivo.
+ *  - Entrapetrol / Corrección de dato: solo se registra.
+ * El texto del correo es el del dominio (textoCambio), el mismo que envía el servidor (doPost 'cambioFecha', Cliente.gs). El respaldo
+ * queda en la reprogramación (dominio conCausa). La caja funciona por delegación: sirve en la ventana del viaje y en el chat.
+ * Prefijo de clases CSS: ca-. */
+// la caja (conCosto: casillas de costo extra e incidente, solo en la ventana del viaje)
+function htmlCausa(v, conCosto){
+  const quien = personaSolicitante(v) || 'jhonier';
+  return `<div class="ca-box" data-ca-v="${esc(v.id)}" data-medio="teléfono">
+    <div class="ca-l">¿Por qué se mueve?</div>
+    <div class="ca-causas">${CAUSAS_ELEGIR.map(([c]) => `<button type="button" class="ca-c" data-causa="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+    <div class="ca-cli hidden"><div class="ca-fila">
+      <label class="ca-l">¿Quién lo pidió? <select class="ca-quien">${PERSONAS_CAMBIO.map(([k, n]) => `<option value="${k}"${k === quien ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
+      <span class="ca-l">¿Por dónde?</span><span class="ca-medios">${MEDIOS_CAMBIO.map(m => `<button type="button" class="ca-m${m === 'teléfono' ? ' on' : ''}" data-medio="${m}">${m.charAt(0).toUpperCase() + m.slice(1)}</button>`).join('')}</span></div>
+      <div class="ca-correo"></div></div>
+    <div class="ca-fila"><input class="ca-det" placeholder="Detalle (opcional)">${conCosto ? `<input class="ca-costo" inputmode="numeric" placeholder="Costo extra $ (si hubo)"><input class="ca-inc" placeholder="Incidente (si hubo)">` : ''}</div>
+    <div class="ca-nota"></div>
+    <div class="ca-mail hidden"><div class="ca-mail-t"></div><div class="ca-mail-a"></div><div class="ca-mail-c"></div></div>
+  </div>`;
+}
+// fechas que se mueven, según dónde está la caja: en el chat, las casillas de la propuesta; en la ventana, el formulario
+function movidasCausa(box){
+  const v = viajes.find(x => x.id === box.dataset.caV); if (!v) return [];
+  const pc = box.closest('.pc');
+  if (pc) { const ch = {}; pc.querySelectorAll('[data-pc]').forEach(i => { ch[i.dataset.pc] = i.value.trim(); }); return fechasMovidas(v, ch); }
+  return typeof cambiosForm === 'function' ? fechasMovidas(v, cambiosForm(v)) : [];
+}
+// el correo del cliente sobre ese viaje que ya leyó LogxIA (últimos 5 días), de quien lo pidió (Diana escribe desde Agecoldex)
+function correoDelCliente(v, quienK){
+  const n = (PERSONAS_CAMBIO.find(p => p[0] === quienK) || ['', ''])[1], partes = minus(n).split(' ').filter(x => x.length > 2);
+  const desde = new Date(Date.now() - 5 * 864e5).toISOString();
+  const deEl = b => { const r = minus(b.remitente || ''); return partes.some(p => r.includes(p)) || (quienK === 'diana' && r.includes('agecoldex')); };
+  return (window.BITACORA || []).filter(b => String(b.registrado || '') >= desde && deEl(b) && (viajeDeAccion(b) || {}).id === v.id)
+    .sort((a, b) => String(b.fechaCorreo || b.registrado).localeCompare(a.fechaCorreo || a.registrado))[0] || null;
+}
+// lo que eligió el coordinador → {causa, quienK, quien, medio, detalle, costo, incidente, respaldo, texto (correo que sale o null), error}
+function leerCausa(box){
+  const v = viajes.find(x => x.id === box.dataset.caV), causa = box.dataset.causa || '', r = responsable(causa);
+  const quienK = (box.querySelector('.ca-quien') || {}).value || '', quien = (PERSONAS_CAMBIO.find(p => p[0] === quienK) || ['', ''])[1];
+  const medio = box.dataset.medio || 'teléfono', detalle = (box.querySelector('.ca-det') || {}).value?.trim() || '';
+  const d = {causa, quienK, quien, medio, detalle, costo: (box.querySelector('.ca-costo') || {}).value || '', incidente: (box.querySelector('.ca-inc') || {}).value || ''};
+  if (!causa) return {...d, error: 'Elija la causa del cambio de fecha'};
+  if (r === 'Terceros' && !detalle) return {...d, error: 'Escriba qué pasó: va en el aviso al cliente'};
+  const corto = t => String(t || '').replace(/[|;]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+  let respaldo = '';
+  if (r === 'Reckitt') {
+    if (medio === 'correo') { const c = correoDelCliente(v, quienK); respaldo = c ? `correo · ${corto(c.asunto)} · ${quien}` : `correo pendiente · ${quien}`; }
+    else respaldo = `acuerdo · ${medio} · ${quien}`;
+  } else if (r === 'Terceros') respaldo = `aviso · ${corto(v.solicitante) || 'solicitante'}`;
+  return {...d, respaldo, texto: textoCambio(v, movidasCausa(box), d)};
+}
+function pintarCausa(box){
+  const v = viajes.find(x => x.id === box.dataset.caV); if (!v) return;
+  const causa = box.dataset.causa || '', r = responsable(causa), cli = r === 'Reckitt', ter = r === 'Terceros';
+  box.querySelectorAll('.ca-c').forEach(b => b.classList.toggle('on', b.dataset.causa === causa));
+  box.querySelectorAll('.ca-m').forEach(b => b.classList.toggle('on', b.dataset.medio === box.dataset.medio));
+  box.querySelector('.ca-cli').classList.toggle('hidden', !cli);
+  const det = box.querySelector('.ca-det');
+  det.placeholder = ter ? (causa.startsWith('Patio') ? '¿Qué pasó? (ej: el patio no tenía citas de retiro para el 10 nov)' : '¿Qué pasó? (ej: paro camionero en la vía a Buenaventura)') : 'Detalle (opcional)';
+  const d = leerCausa(box), c = cli && box.dataset.medio === 'correo' ? correoDelCliente(v, d.quienK) : null;
+  const cc = box.querySelector('.ca-correo');
+  cc.className = 'ca-correo' + (cli && box.dataset.medio === 'correo' ? (c ? ' ok' : ' espera') : '');
+  cc.textContent = !(cli && box.dataset.medio === 'correo') ? '' : c ? `✉ LogxIA tiene el correo: «${lvCortoCa(c.asunto, 70)}» · ${diaHoraCa(c.fechaCorreo || c.registrado).replace(/\.$/, '')}. Queda como respaldo; no se envía nada.`
+    : '✉ LogxIA todavía no tiene ese correo (pasa cada hora): queda pendiente de ligar y lo liga en su siguiente pasada. No se envía nada.';
+  box.querySelector('.ca-nota').textContent = r === 'Entrapetrol' ? 'Queda registrado como causa de Entrapetrol. No se envía correo.'
+    : causa === 'Corrección de dato' ? 'La fecha estaba mal escrita: el plan se corrige y no cuenta como reprogramación. No se envía correo.' : '';
+  const t = d.texto, mail = box.querySelector('.ca-mail');
+  mail.classList.toggle('hidden', !t);
+  if (t) {
+    const para = t.tipo === 'acuerdo' ? d.quien : (v.solicitante || 'el solicitante del viaje');
+    mail.querySelector('.ca-mail-t').textContent = `${t.tipo === 'acuerdo' ? 'Correo de acuerdo' : 'Aviso al cliente'} · sale al guardar · Para: ${para} · CC: equipo Entrapetrol${esPrueba(v) ? ' (viaje de prueba: solo a calidad+prueba@)' : ''}`;
+    mail.querySelector('.ca-mail-a').textContent = 'Asunto: ' + t.asunto;
+    mail.querySelector('.ca-mail-c').textContent = t.lineas.join('\n');
+  }
+}
+const lvCortoCa = (t, n) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+const diaHoraCa = x => { const d = new Date(x); return isNaN(d) ? '' : d.toLocaleString('es-CO', {weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota'}); };
+document.addEventListener('click', e => {
+  const box = e.target.closest('.ca-box'); if (!box) return;
+  const c = e.target.closest('.ca-c'), m = e.target.closest('.ca-m');
+  if (c) { box.dataset.causa = box.dataset.causa === c.dataset.causa ? '' : c.dataset.causa; pintarCausa(box); }
+  if (m) { box.dataset.medio = m.dataset.medio; pintarCausa(box); }
+});
+document.addEventListener('input', e => { const box = e.target.closest('.ca-box'); if (box && e.target.matches('.ca-det, .ca-quien')) pintarCausa(box); });
+document.addEventListener('change', e => { const box = e.target.closest('.ca-box'); if (box && e.target.matches('.ca-quien')) pintarCausa(box); });
+// envía el correo de acuerdo o el aviso (después de guardar el cambio); el servidor arma el mismo texto y responde a quién salió
+async function enviarCambio(v, movidas, d, usuario){
+  if (!d || !d.texto) return;
+  try {
+    const j = await api('cambioFecha', {id: v.id, movidas: movidas.map(m => ({hito: m.hito, campo: m.campo, antes: m.antes, despues: m.despues})),
+      causa: d.causa, quienK: d.quienK, medio: d.medio, detalle: d.detalle, usuario});
+    toast(j.ok ? `${d.texto.tipo === 'acuerdo' ? 'Correo de acuerdo' : 'Aviso al cliente'} enviado a ${(j.para || []).join(', ')}${j.prueba ? ' (prueba)' : ''}`
+      : `El cambio se guardó, pero el correo NO salió: ${j.error || 'error'}. Avise al cliente a mano.`);
+  } catch (e) { toast('El cambio se guardó, pero el correo NO salió (sin conexión). Avise al cliente a mano.'); }
+}
 /* ---------- viaje.js · ventana del viaje ---------- */
 // Capa: pantalla. Abre un viaje, muestra el plan y el detalle, edita los campos de Seguimiento EXPO / IMPO (CAMPOS_VIAJE,
 // CAMPOS_ETAPA = columnas de Base.gs SEGUIMIENTO) y guarda (datos.js guardarCambio). Antes de guardar placa o conductor exige el
@@ -3447,7 +3619,7 @@ const ICONO_EVENTO = {'Programación':'📋', 'Cambio de plan':'⟲', 'Correo':'
 function abrir(id){
   const v = viajes.find(x=>x.id===id); if (!v) { toast('No se encontró el viaje ' + id); return; }
   editId = id; estadoSel = MARCAS.some(m=>m.k===v.estadoHoja) ? v.estadoHoja : '';
-  $('#mCausa').classList.add('hidden'); $('#mCausaSel').innerHTML = ''; $('#mCausaDet').value = ''; $('#mCausaCosto').value = ''; $('#mCausaInc').value = '';
+  $('#mCausa').classList.add('hidden'); $('#mCausaCaja').innerHTML = '';   // causa del cambio de fecha con su respaldo (causa.js)
   $('#mTitle').textContent = `${v.placa || 'Sin vehículo'} · ${v.operacion} ${v.pais||''}`;
   $('#mSub').textContent = `${v.id} · ${v.fechaRetiro?`Retiro en patio ${fd(v.fechaRetiro)} · Llenado planta ${fd(v.fechaCargue)}`:`Cargue ${fd(v.fechaCargue)}`} · Última actualización ${new Date(v.actualizado).toLocaleString('es-CO')}`;
   const fx = x => x ? fd(x) : '';
@@ -3601,8 +3773,9 @@ function marcarCambios(){
   const mov = fechasMovidas(v, c);
   $('#mCausa').classList.toggle('hidden', !mov.length);
   if (mov.length) {
-    if (!$('#mCausaSel').firstChild) $('#mCausaSel').innerHTML = htmlCausas('mCausaSelect');
+    if (!$('#mCausaCaja').firstChild) $('#mCausaCaja').innerHTML = htmlCausa(v, true);
     $('#mCausaLista').textContent = '· ' + mov.map(m => `${m.hito}: ${fd(m.antes)} → ${fd(m.despues)}`).join(' · ');
+    pintarCausa($('#mCausaCaja .ca-box'));
   }
   $('#mForm').querySelectorAll('[data-k]').forEach(el => el.classList.toggle('cambio', el.dataset.k in c));
   $('#mNCambios').textContent = n ? `${n} dato${n===1?'':'s'} por guardar` : '';
@@ -3627,10 +3800,12 @@ $('#mSave').onclick = () => {
   const v = viajes.find(x=>x.id===editId);
   let cambios = cambiosForm(v); const usuario = $('#mUsuario').value.trim();
   const mov = fechasMovidas(v, cambios);
+  let causaSel = null;   // causa con su respaldo y el correo que sale al guardar (causa.js)
   if (mov.length) {
-    const causa = $('#mCausa .mCausaSelect') ? $('#mCausa .mCausaSelect').value : '';
-    if (!causa) { $('#mCausa').classList.remove('hidden'); $('#mCausa .mCausaSelect')?.focus(); return toast('Indique la causa del cambio de fecha'); }
-    cambios = conCausa(v, cambios, mov, causa, $('#mCausaDet').value, usuario, $('#mCausaCosto').value, $('#mCausaInc').value);
+    const box = $('#mCausaCaja .ca-box');
+    causaSel = box ? leerCausa(box) : {error: 'Indique la causa del cambio de fecha'};
+    if (causaSel.error) { $('#mCausa').classList.remove('hidden'); $('#mCausa').scrollIntoView({block: 'center', behavior: 'smooth'}); return toast(causaSel.error); }
+    cambios = conCausa(v, cambios, mov, causaSel.causa, causaSel.detalle, usuario, causaSel.costo, causaSel.incidente, causaSel.respaldo);
   }
   // la columna Estado de la base solo guarda las marcas (Novedad / Cancelado); la etapa sale de las fechas
   const marcaAntes = MARCAS.some(m=>m.k===v.estadoHoja) ? v.estadoHoja : '';
@@ -3642,7 +3817,7 @@ $('#mSave').onclick = () => {
   // placa o conductor nuevos: solo con sus datos completos en el registro (registro.js); al completarlos se vuelve a guardar
   if (!registroCompleto(cambios.placa, cambios.conductor, () => $('#mSave').click())) return;
   guardarUsuario(usuario);
-  if (Object.keys(cambios).length) guardarCambio(editId, cambios, usuario);
+  if (Object.keys(cambios).length) guardarCambio(editId, cambios, usuario).then(ok => { if (ok !== false && causaSel && causaSel.texto) enviarCambio(v, mov, causaSel, usuario); });
   cerrar();
 };
 $('#mForm').addEventListener('input', e => { if (e.target.closest('#mExtras')) syncExtras();
@@ -4511,7 +4686,9 @@ async function aplicarProgramacion(){
       (docSel[i] || []).forEach(k => { ch[k] = f.doc[k].cuadro; });
       if (!Object.keys(ch).length) continue;
       const mov = fechasMovidas(f.v, ch);
-      if (mov.length) ch = conCausa(f.v, ch, mov, causa, `Programación ${mesTxt} actualizada (correo ${c.fecha.replace('T', ' ')})`, usuario);
+      // respaldo: el propio correo de la programación de Reckitt (causa Cliente); las otras causas quedan como se eligieron
+      if (mov.length) ch = conCausa(f.v, ch, mov, causa, `Programación ${mesTxt} actualizada (correo ${c.fecha.replace('T', ' ')})`, usuario, '', '',
+        responsable(causa) === 'Reckitt' ? `correo · Programación ${mesTxt} · ${c.firma || 'Reckitt'}` : '');
       // fuente programación: sus fechas son planes; aunque sean de hoy o pasadas no confirman ningún paso (Base.gs)
       const j = await post({action:'update', id: f.v.id, cambios: ch, fuente: 'programacion'});
       if (!j.ok) throw new Error(`${f.v.id}: ${j.error || 'error'}`);
@@ -5237,7 +5414,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '95c74bf5dc';
+const VERSION_TABLERO = 'd6992e5a66';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5617,6 +5794,10 @@ const EN_RUTA_KV = ['Vacío retirado', 'Retirado de puerto', 'Recogido', 'Llenad
 function semanasKV(){ const d = new Date(HOY + 'T12:00'), lun = addDias(HOY, -((d.getDay() + 6) % 7)); return [7, 6, 5, 4, 3, 2, 1, 0].map(i => addDias(lun, -7 * i)); }
 const semanaIdx = (S, f) => { f = String(f || '').slice(0, 10); if (!f) return -1; for (let i = S.length - 1; i >= 0; i--) if (f >= S[i]) return f <= addDias(S[i], 6) ? i : -1; return -1; };
 const kvAtendido = v => tieneVehiculo(v) || transporteFinalizado(v) || situacion(v) === 'Cerrado';
+const KV_DIAS_VEHICULO = 3;   // un pedido debe tener vehículo cuando arranca en 3 días o menos (lo mismo que sinCobertura: 72 h)
+const kvLeToca = v => { const f = primerEvento(v) || kvFechaPedido(v); return !!f && diffDias(f) <= KV_DIAS_VEHICULO; };
+// pedido sin cambio de fecha causado por Entrapetrol (o sin causa): lo que pidió Reckitt o causaron terceros no cuenta en contra
+const kvCumpleETP = v => !desviosPlan(v).some(d => ['Entrapetrol', 'Sin causa'].includes(responsable(d.causa)));
 const kvPorOp = L => ['EXPO', 'IMPO', 'NACIONAL'].map(o => [o, L.filter(v => v.operacion === o).length]).filter(x => x[1]).map(([o, n]) => `${n} ${o}`).join(' · ');
 
 function calcKV(){
@@ -5625,7 +5806,10 @@ function calcKV(){
   const culpaETP = v => desviosPlan(v).some(d => ['Entrapetrol', 'Sin causa'].includes(responsable(d.causa)));
   // ---- 1 · lo que pide Reckitt y cómo se atiende (viajes pedidos para el periodo) ----
   const Ped = Todos.filter(v => kvEnPer(kvFechaPedido(v))), Canc = Ped.filter(kvCancel), Vig = Ped.filter(v => !kvCancel(v));
-  const Asig = Vig.filter(kvAtendido), SinAt = Vig.filter(v => !kvAtendido(v)), Ejec = Vig.filter(transporteFinalizado);
+  // atendido se mide solo contra lo que ya debía tener vehículo (arranca en 3 días o menos, o ya pasó): un pedido para dentro de un
+  // mes sin placa no es una falla, va en "por programar" (8-nov, el usuario: "daría mala impresión al cliente")
+  const Asig = Vig.filter(kvAtendido), Debe = Vig.filter(v => kvLeToca(v) || kvAtendido(v)), SinAt = Debe.filter(v => !kvAtendido(v));
+  const PorProg = Vig.filter(v => !kvLeToca(v) && !kvAtendido(v)), Ejec = Vig.filter(transporteFinalizado);
   const Rep = Vig.filter(v => desviosPlan(v).length), D = Rep.flatMap(v => desviosPlan(v).map(d => ({...d, v})));
   const porResp = {}; D.forEach(d => { const r = responsable(d.causa); porResp[r] = (porResp[r] || 0) + 1; });
   const conPlan = L => L.filter(v => (HITOS_PLAN[v.operacion] || []).some(([, p]) => v[p]));
@@ -5633,20 +5817,23 @@ function calcKV(){
   const emb = [
     {id: 'e-ped', cod: 'PEDIDOS', color: '#111827', n: Ped.length, pct: null, sub: kvPorOp(Ped) || 'sin pedidos',
       L: Ped.slice().sort((a, b) => String(kvFechaPedido(a)).localeCompare(kvFechaPedido(b))).map(v => rev(v, kvCancel(v) ? 'cancelado' : kvAtendido(v) ? 'atendido' : 'sin vehículo', `${pedTxt(v)}${v.pais ? ' · ' + v.pais : ''}${v.mesProg ? ' · programación de ' + MES[Number(String(v.mesProg).slice(5, 7)) - 1] : ''}`, 'info'))},
-    {id: 'e-asig', cod: 'ATENDIDOS', color: '#16a34a', n: Asig.length, pct: kvPct(Asig.length, Vig.length), sub: `con vehículo · ${SinAt.length} sin atender`,
-      L: [...SinAt.sort((a, b) => String(kvFechaPedido(a)).localeCompare(kvFechaPedido(b))).map(v => { const d = diffDias(primerEvento(v) || kvFechaPedido(v)); return rev(v, 'sin vehículo', `${pedTxt(v)} · ${d < 0 ? 'ya pasó la fecha' : d === 0 ? 'es hoy' : 'faltan ' + d + ' d'}`, d <= 3 ? 'bad' : 'warn'); }),
+    {id: 'e-asig', cod: 'ATENDIDOS', color: '#16a34a', n: Asig.length, pct: kvPct(Asig.length, Debe.length), de: 'de los que ya les toca', sub: SinAt.length ? `con vehículo · ${SinAt.length} ya ${SinAt.length === 1 ? 'le toca' : 'les toca'} y no ${SinAt.length === 1 ? 'tiene' : 'tienen'} vehículo` : 'todos los que ya les toca tienen vehículo',
+      L: [...SinAt.sort((a, b) => String(kvFechaPedido(a)).localeCompare(kvFechaPedido(b))).map(v => { const d = diffDias(primerEvento(v) || kvFechaPedido(v)); return rev(v, 'sin vehículo', `${pedTxt(v)} · ${d < 0 ? 'ya pasó la fecha' : d === 0 ? 'es hoy' : 'faltan ' + d + ' d'}`, 'bad'); }),
         ...Asig.map(v => rev(v, 'atendido', `${pedTxt(v)} · ${v.placa || 'terminado'}${v.conductor ? ' · ' + v.conductor : ''}`, 'info'))]},
-    {id: 'e-ejec', cod: 'EJECUTADOS', color: '#0d9488', n: Ejec.length, pct: kvPct(Ejec.length, Vig.length), sub: 'transporte terminado',
+    {id: 'e-prog', cod: 'POR PROGRAMAR', color: '#64748b', n: PorProg.length, pct: null, sub: `pedidos para después de ${KV_DIAS_VEHICULO} días: aún no les toca vehículo`,
+      L: PorProg.sort((a, b) => String(kvFechaPedido(a)).localeCompare(kvFechaPedido(b))).map(v => rev(v, 'por programar', `${pedTxt(v)} · faltan ${diffDias(primerEvento(v) || kvFechaPedido(v))} d`, 'info'))},
+    {id: 'e-ejec', cod: 'EJECUTADOS', color: '#0d9488', n: Ejec.length, pct: kvPct(Ejec.length, Asig.length), de: 'de lo atendido', sub: 'transporte terminado',
       L: Ejec.map(v => rev(v, 'terminado', `${pedTxt(v)} · terminó ${fd(fin(v))}`, 'info'))},
-    {id: 'e-rep', cod: 'REPROGRAMADOS', color: '#ea580c', n: Rep.length, pct: kvPct(Rep.length, Vig.length), sub: `Reckitt ${porResp.Reckitt || 0} · Entrapetrol ${porResp.Entrapetrol || 0} · terceros ${porResp.Terceros || 0}${porResp['Sin causa'] ? ' · sin causa ' + porResp['Sin causa'] : ''}`,
-      L: Rep.map(v => { const d = desviosPlan(v); return rev(v, 'reprogramado', d.map(x => `${x.hito.toLowerCase()} +${Math.max(0, x.dias || 0)} d (${responsable(x.causa)})`).join(' · '), culpaETP(v) ? 'bad' : 'warn'); })},
+    {id: 'e-rep', cod: 'REPROGRAMADOS', color: '#ea580c', n: Rep.length, pct: kvPct(Rep.length, Vig.length), sub: `Reckitt ${porResp.Reckitt || 0} · Entrapetrol ${porResp.Entrapetrol || 0} · terceros ${porResp.Terceros || 0}${porResp['Sin causa'] ? ' · sin causa ' + porResp['Sin causa'] : ''}${D.some(d => d.sinRespaldo) ? ` · ${D.filter(d => d.sinRespaldo).length} sin respaldo` : ''}`,
+      // respaldo (8-nov): el cambio del cliente se prueba con su correo o el correo de acuerdo; lo de antes queda "sin respaldo"
+      L: Rep.map(v => { const d = desviosPlan(v), sr = d.some(x => x.sinRespaldo); return rev(v, culpaETP(v) ? 'reprogramado' : sr ? 'sin respaldo' : 'con respaldo', d.map(x => `${x.hito.toLowerCase()} +${Math.max(0, x.dias || 0)} d (${responsable(x.causa)}${x.respaldo ? ' · ' + x.respaldo : x.sinRespaldo ? ' · sin respaldo' : ''})`).join(' · '), culpaETP(v) ? 'bad' : sr ? 'warn' : 'info'); })},
     {id: 'e-canc', cod: 'CANCELADOS', color: '#9ca3af', n: Canc.length, pct: kvPct(Canc.length, Ped.length), sub: 'pedidos que no se hicieron',
       L: Canc.map(v => rev(v, 'cancelado', `${pedTxt(v)}${v.observacion ? ' · ' + lvCorto(v.observacion, 70) : ''}`, 'info'))},
   ];
   // ---- 2 · de lo asignado, cómo se cumple ----
   const L = conPlan(Asig), conDesv = L.filter(v => desviosPlan(v).length), culpa = conDesv.filter(culpaETP);
-  const H = Asig.flatMap(v => hitosPlan(v).filter(h => h[1] && h[2]).map(h => ({h, v}))), hOk = H.filter(x => x.h[2] <= x.h[1]).length;
-  const tarde = [...new Set(H.filter(x => x.h[2] > x.h[1]).map(x => x.v))];
+  const H = Asig.flatMap(v => hitosATiempo(v).map(h => ({h, v}))), hOk = H.filter(x => x.h.ok).length, hMov = H.filter(x => x.h.excusa).length;
+  const tarde = [...new Set(H.filter(x => !x.h.ok).map(x => x.v))];
   const EjA = Asig.filter(transporteFinalizado);
   const LT = EjA.map(v => ({v, l: leadTime(v)})).filter(x => x.l.real !== null), ltLargo = LT.filter(x => x.l.plan !== null && x.l.real > x.l.plan);
   const PS = Asig.map(v => ({v, p: puntajeViaje(v)})).filter(x => x.p), bajos = PS.filter(x => x.p.bajo);
@@ -5656,10 +5843,10 @@ function calcKV(){
   const LF = EjA.map(v => ({v, f: leadFactura(v)})).filter(x => x.f), lfHechos = LF.filter(x => x.f.hecho), lfLargo = LF.filter(x => !x.f.hecho && x.f.dias > 5);
   const conExtra = Asig.filter(v => cobro(v).extra), sumaExtra = conExtra.reduce((s, v) => s + cobro(v).extra, 0);
   const ind = [
-    {id: 'cumple', cod: 'FECHA ORIGINAL', ic: '◷', color: '#2563eb', v: kvPct(L.length - conDesv.length, L.length), suf: '%', sub: `de ${L.length} asignados se hacen en la fecha pedida · sin contar Reckitt ni terceros: ${kvPct(L.length - culpa.length, L.length) ?? '—'}%`, n: culpa.length,
-      L: conDesv.map(v => { const d = desviosPlan(v); return rev(v, 'reprogramado', d.map(x => `${x.hito.toLowerCase()} +${Math.max(0, x.dias || 0)} d (${responsable(x.causa)})`).join(' · '), culpa.includes(v) ? 'bad' : 'warn'); })},
-    {id: 'puntual', cod: 'PUNTUALIDAD', ic: '✓', color: '#0d9488', v: kvPct(hOk, H.length), suf: '%', sub: `${hOk} de ${H.length} pasos hechos el día programado`,
-      L: tarde.map(v => rev(v, 'tarde', hitosPlan(v).filter(h => h[1] && h[2] && h[2] > h[1]).map(h => `${h[0].toLowerCase()} +${dDias(h[1], h[2])} d`).join(' · '), 'warn'))},
+    {id: 'cumple', cod: 'CUMPLIMIENTO', ic: '◷', color: '#2563eb', v: kvPct(L.length - culpa.length, L.length), suf: '%', sub: `de ${L.length} asignados sin cambios de fecha por Entrapetrol · en la fecha original exacta: ${kvPct(L.length - conDesv.length, L.length) ?? '—'}% (${conDesv.length - culpa.length} movidos por Reckitt o terceros)`, n: culpa.length,
+      L: conDesv.map(v => { const d = desviosPlan(v); return rev(v, culpa.includes(v) ? 'Entrapetrol' : 'pedido del cliente', d.map(x => `${x.hito.toLowerCase()} +${Math.max(0, x.dias || 0)} d (${responsable(x.causa)})`).join(' · '), culpa.includes(v) ? 'bad' : 'info'); })},
+    {id: 'puntual', cod: 'PUNTUALIDAD', ic: '✓', color: '#0d9488', v: kvPct(hOk, H.length), suf: '%', sub: `${hOk} de ${H.length} pasos a tiempo${hMov ? ` · ${hMov} con la fecha nueva que pidió Reckitt o un tercero` : ''}`,
+      L: tarde.map(v => rev(v, 'tarde', hitosATiempo(v).filter(h => !h.ok).map(h => `${h.hito.toLowerCase()} +${dDias(h.meta, h.real)} d${h.excusa ? ' (sobre la fecha nueva)' : ''}`).join(' · '), 'warn'))},
     {id: 'lead', cod: 'LEAD TIME', ic: '⇥', color: '#7c3aed', v: kvProm(LT.map(x => x.l.real)), suf: ' d', sub: `plan ${kvNum(kvProm(LT.filter(x => x.l.plan !== null).map(x => x.l.plan)))} d · ${LT.length} viajes terminados`,
       L: ltLargo.map(x => rev(x.v, 'lento', `${kvNum(x.l.real)} d contra ${kvNum(x.l.plan)} d del plan (+${kvNum(Math.round((x.l.real - x.l.plan) * 10) / 10)} d)`, 'warn'))},
     {id: 'nota', cod: 'PUNTAJE', ic: '★', color: '#ea580c', v: kvProm(PS.map(x => x.p.total)), suf: '/100', sub: `${PS.length} viajes calificados · ${bajos.length} bajo ${PUNTAJE_BAJO}`,
@@ -5694,8 +5881,8 @@ function calcKV(){
   const S = semanasKV(), semPed = S.map((s, i) => Todos.filter(v => semanaIdx(S, kvFechaPedido(v)) === i && !kvCancel(v)));
   const serie = {
     pedidos: semPed.map(l => l.length), atendidos: semPed.map(l => l.filter(kvAtendido).length), ejecutados: semPed.map(l => l.filter(transporteFinalizado).length),
-    pAtend: semPed.map(l => kvPct(l.filter(kvAtendido).length, l.length) ?? 0), pRep: semPed.map(l => kvPct(l.filter(v => desviosPlan(v).length).length, l.length) ?? 0),
-    cumple: semPed.map(l => { const c = conPlan(l.filter(kvAtendido)); return kvPct(c.filter(v => !desviosPlan(v).length).length, c.length) ?? 0; }),
+    pAtend: semPed.map(l => kvPct(l.filter(kvAtendido).length, l.filter(v => kvLeToca(v) || kvAtendido(v)).length) ?? 0), pRep: semPed.map(l => kvPct(l.filter(v => desviosPlan(v).length).length, l.length) ?? 0),
+    cumple: semPed.map(l => { const c = conPlan(l.filter(kvAtendido)); return kvPct(c.filter(kvCumpleETP).length, c.length) ?? 0; }),
   };
   // ---- 4 · gestión del periodo: correos leídos, solicitudes y su tiempo de respuesta, reprogramaciones registradas, cambios en la
   // hoja, errores (hoy), datos que LogxIA espera aprobar y novedades. Con una operación o un viaje elegido: lo que no se pudo
@@ -5747,7 +5934,7 @@ function calcKV(){
 
 /* ---------- pantalla ---------- */
 const ICONO_KV = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="12" width="3.4" height="8" rx="1" fill="#4ade80"/><rect x="10.3" y="7" width="3.4" height="13" rx="1" fill="#7dd3fc"/><rect x="16.6" y="3.5" width="3.4" height="16.5" rx="1" fill="#eef2f7"/></svg>`;
-const KPIS_KV = [['pedidos', 'viajes pedidos', '#111827', ''], ['atendidos', 'atendidos con vehículo', '#16a34a', '%'], ['reprog', 'reprogramados', '#ea580c', '%'], ['cumple', 'asignados en la fecha original', '#2563eb', '%']];
+const KPIS_KV = [['pedidos', 'viajes pedidos', '#111827', ''], ['atendidos', 'atendidos con vehículo', '#16a34a', '%'], ['reprog', 'reprogramados', '#ea580c', '%'], ['cumple', 'cumplimiento de lo asignado', '#2563eb', '%']];
 const RESP_KV = [['Reckitt', '#2563eb'], ['Entrapetrol', '#dc2626'], ['Terceros', '#ca8a04'], ['Sin causa', '#9ca3af'], [SIN_HISTORIAL, '#d1d5db']];
 function montarKV(){
   const ref = $('#btnLogxia') || $('#btnEnVivo') || $('#btnResCli'); if (!ref || $('#v-kpis')) return;
@@ -5849,7 +6036,7 @@ function pintarKV(suave){
   const maxE = Math.max(1, K.Ped.length);
   $('#kvEmb').innerHTML = K.emb.map(x => `<div class="kv-emb-f${KV.sel === x.id ? ' activo' : ''}" data-ind="${x.id}" style="--c:${x.color}" role="button" tabindex="0">
     <span class="kv-emb-l"><b>${x.cod}</b><small>${esc(x.sub)}</small></span><span class="kv-emb-b"><i style="width:${(x.n / maxE * 100).toFixed(1)}%"></i></span>
-    <span class="kv-emb-n"><b>${miles(x.n)}</b><small>${x.pct === null ? '' : x.pct + '%' + (x.id === 'e-canc' ? ' de lo pedido' : ' de lo vigente')}</small></span></div>`).join('');
+    <span class="kv-emb-n"><b>${miles(x.n)}</b><small>${x.pct === null ? '' : `${x.pct}% ${x.de || (x.id === 'e-canc' ? 'de lo pedido' : 'de lo vigente')}`}</small></span></div>`).join('');
   // reprogramaciones de lo pedido y quién las causó
   kvContar($('#kvRep'), K.D.length);
   $('#kvRepS').textContent = `cambios de fecha en ${K.Rep.length} de ${K.Vig.length} pedidos${K.diasReprog ? ` · +${K.diasReprog} d corridos` : ''}`;
@@ -6094,7 +6281,7 @@ function proponerCambio(v, q){
   const mov = fechasMovidas(v, ch);
   return `Propongo actualizar <b>${esc(ref)}</b> ${sitTag(v)}:<div class="pc" data-vid="${esc(v.id)}">${filas}
     ${notas.length ? `<div class="sub" style="margin-top:4px">${notas.join(' ')}</div>` : ''}
-    ${mov.length ? `<div class="sub" style="margin-top:4px">Es un cambio de fecha programada: ¿por qué?</div>${htmlCausas('pc-causa')}<input class="pc-det" placeholder="Detalle (opcional)">` : ''}
+    ${mov.length ? `<div class="sub" style="margin-top:4px">Es un cambio de fecha programada: ¿por qué?</div>${htmlCausa(v, false)}` : ''}
     <div class="pc-act"><input class="pc-user" placeholder="Su nombre" value="${esc(usuario)}"><button type="button" class="btn primary" onclick="confirmarChat(this)">Confirmar</button><button type="button" class="btn" onclick="cancelarChat(this)">Cancelar</button></div></div>`;
 }
 async function confirmarChat(btn){
@@ -6104,15 +6291,17 @@ async function confirmarChat(btn){
   guardarUsuario(usuario);
   let ch = {}; caja.querySelectorAll('[data-pc]').forEach(i => { ch[i.dataset.pc] = i.value.trim(); });
   const mov = fechasMovidas(v, ch);
+  let causaSel = null;   // causa con su respaldo y el correo que sale al guardar (causa.js)
   if (mov.length) {
-    const causa = caja.querySelector('.pc-causa') ? caja.querySelector('.pc-causa').value : '';
-    if (!causa) { caja.querySelector('.pc-causa')?.focus(); return toast('Elija la causa del cambio de fecha'); }
-    ch = conCausa(v, ch, mov, causa, caja.querySelector('.pc-det')?.value, usuario);
+    causaSel = caja.querySelector('.ca-box') ? leerCausa(caja.querySelector('.ca-box')) : {error: 'Elija la causa del cambio de fecha'};
+    if (causaSel.error) return toast(causaSel.error);
+    ch = conCausa(v, ch, mov, causaSel.causa, causaSel.detalle, usuario, '', '', causaSel.respaldo);
   }
   caja.querySelectorAll('button,input,select').forEach(x => x.disabled = true);
   // lo que propone el chat se guarda como plan: confirmar que un paso se hizo es un clic aparte (confirmar.js)
-  await guardarCambio(v.id, ch, usuario + ' (chat LogxIA)', {confirma: false});
-  burbuja(`✅ Guardado en <b>${esc(v.placa || v.id)}</b>: ${Object.keys(ch).filter(k => k!=='reprog' && !/^plan/.test(k)).map(k => esc(etiquetaCampo(v, k))).join(', ')}${mov.length ? ` (causa: ${esc(caja.querySelector('.pc-causa').value)})` : ''}. Queda en el Historial a nombre de ${esc(usuario)}.`, 'bot');
+  const ok = await guardarCambio(v.id, ch, usuario + ' (chat LogxIA)', {confirma: false});
+  if (ok !== false && causaSel && causaSel.texto) enviarCambio(v, mov, causaSel, usuario);
+  burbuja(`✅ Guardado en <b>${esc(v.placa || v.id)}</b>: ${Object.keys(ch).filter(k => k!=='reprog' && !/^plan/.test(k)).map(k => esc(etiquetaCampo(v, k))).join(', ')}${causaSel ? ` (causa: ${esc(causaSel.causa)})` : ''}. Queda en el Historial a nombre de ${esc(usuario)}.`, 'bot');
 }
 function cancelarChat(btn){ btn.closest('.pc').querySelectorAll('button,input,select').forEach(x => x.disabled = true); burbuja('Listo, no cambié nada.', 'bot'); }
 function elegirChat(i){
