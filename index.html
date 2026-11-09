@@ -734,6 +734,7 @@ body.lv-abierta{overflow:hidden}
 .kc-st-c b{font-size:24px;color:var(--c);line-height:1.1}.kc-st-c span{font-weight:600;font-size:13px}
 .kc-st-c small{font-family:var(--lv-mono);font-size:10px;color:var(--lv-gris)}
 .kc-st-c.gris{opacity:.7}
+.kc-dias{font-family:var(--lv-mono);font-size:11.5px;color:var(--lv-gris);margin-top:8px}
 .kc-st-c.activo{background:color-mix(in srgb,var(--c) 9%,#fff);border-color:var(--c)}
 @media (prefers-reduced-motion: reduce){.kc-pulpo::after,.kc-tarea{animation:none}}
 @media (max-width:700px){.kc-res{grid-template-columns:1fr 1fr}.kc-nombre{font-size:20px}.kc-mapa{grid-template-columns:1fr}}
@@ -1184,8 +1185,10 @@ function conCausa(v, ch, movidas, causa, detalle, usuario, costo, incidente, res
   const nuevas = movidas.map((m, i) => [HOY, m.campo, m.antes, m.despues, causa, limpio(detalle), limpio(usuario), i ? '' : ($c || ''), i ? '' : limpio(incidente), limpio(respaldo)].join('|').replace(/\|+$/, ''));
   const out = {...ch, reprog: [String(v.reprog||'').trim(), ...nuevas].filter(Boolean).join(' ;; ')};
   if (causa === 'Corrección de dato') movidas.forEach(m => { if (v[m.plan] === m.antes || !v[m.plan]) out[m.plan] = m.despues; });
-  if ($c && responsable(causa) === 'Reckitt') {
-    const items = [...itemsExtra(v), ['Reprogramación', $c]];
+  // costo del cambio que se cobra a Reckitt (pendiente de su aprobación): el que pidió Reckitt y, desde el 9-nov, el de terceros
+  // (hora extra del patio, bodegaje…: Entrapetrol lo paga y lo pasa al cliente). El de Entrapetrol queda solo en el registro.
+  if ($c && ['Reckitt', 'Terceros'].includes(responsable(causa))) {
+    const items = [...itemsExtra(v), [responsable(causa) === 'Reckitt' ? 'Reprogramación' : 'Costo de terceros', $c]];
     out.conceptoExtra = items.map(([k, x]) => `${k}: ${x}`).join('; ');
     out.extracostos = String(items.reduce((t, x) => t + x[1], 0));
     out.aprobacionExtra = 'Pendiente';
@@ -1204,6 +1207,34 @@ function desviosPlan(v){
       detalle: r ? r.detalle : viejo ? 'Pasó antes del registro de causas (30-oct): no se sabe por qué' : '',
       costo: R.filter(x => campos.includes(x.campo)).reduce((t, x) => t + x.costo, 0), incidente: R.filter(x => campos.includes(x.campo) && x.incidente).map(x => x.incidente).join(' · ')};
   }).filter(Boolean);
+}
+/* ---------- retrasos: días y plata por responsable (9-nov, pedido del usuario: "medir cuánto se paga por retrasos") ----------
+ * Caso que lo originó: 2 EXPO a Argentina esperando cita en el patio Simaritima del 6 al 9 nov y $220.000 + IVA por contenedor
+ * de hora extra para retirarlos. Por viaje:
+ *  - días: por cada paso, lo que corrieron sus fechas hacia adelante en cada cambio, según quién lo causó; el viaje pierde lo del
+ *    paso que más corrió (el llenado que se corre porque el retiro se corrió no suma dos veces).
+ *  - plata: el costo anotado al mover la fecha (por responsable) + los extracostos de demora escritos a mano (stand by, hora
+ *    extra, parqueadero, bodegaje…), que van como "sin causa" si no se sabe de quién fueron. "Reprogramación" y "Costo de terceros"
+ *    ya vienen del costo del cambio: no se cuentan dos veces.
+ *  - lugar: dónde se perdió el tiempo por terceros (patio del retiro, puerto o patio de devolución según el paso), para agrupar.
+ * → {dias: {Reckitt, Entrapetrol, Terceros, 'Sin causa'}, costo: {...igual}, lugar, total: {dias, costo}} o null si nada. */
+const EXTRA_DEMORA = /stand ?by|hora extra|parqueadero|bodegaje|espera|demora/i;
+function retrasosViaje(v){
+  const R = reprogsDe(v).filter(r => r.causa !== 'Corrección de dato'), dias = {}, costo = {}, porPaso = {};
+  const resp = c => { const r = responsable(c); return r === SIN_HISTORIAL || !r ? 'Sin causa' : r; };
+  R.forEach(r => {
+    const k = resp(r.causa), d = dDias(r.antes, r.despues);
+    if (d > 0) { const p = porPaso[r.campo] = porPaso[r.campo] || {}; p[k] = (p[k] || 0) + d; }
+    if (r.costo) costo[k] = (costo[k] || 0) + r.costo;
+  });
+  Object.values(porPaso).forEach(p => Object.entries(p).forEach(([k, d]) => { dias[k] = Math.max(dias[k] || 0, d); }));
+  itemsExtra(v).filter(([c, x]) => x && EXTRA_DEMORA.test(c) && !/^(Reprogramación|Costo de terceros)$/.test(c)).forEach(([, x]) => { costo['Sin causa'] = (costo['Sin causa'] || 0) + x; });
+  const tD = Object.values(dias).reduce((s, x) => s + x, 0), tC = Object.values(costo).reduce((s, x) => s + x, 0);
+  if (!tD && !tC) return null;
+  const campoT = Object.entries(porPaso).filter(([, p]) => p.Terceros).sort((a, b) => b[1].Terceros - a[1].Terceros).map(([c]) => c)[0];
+  const lugar = !campoT ? '' : campoT === 'fechaRetiro' || campoT === 'citaRetiro' ? (v.operacion === 'EXPO' ? v.patio : v.puerto) || ''
+    : /Devolucion/.test(campoT) ? v.patioDevolucion || v.patio || '' : /EntregaPuerto|citaIngreso/.test(campoT) ? v.puerto || '' : '';
+  return {dias, costo, lugar: String(lugar).trim(), total: {dias: tD, costo: tC}};
 }
 /* ---------- pasos confirmados: que una fecha ya pasó no prueba que el paso se hizo (5-nov) ----------
  * Un paso del viaje (retiro, llenado, entrega, devolución, urbano…) cuenta como hecho solo si su fecha es de hoy o pasada Y
@@ -5452,7 +5483,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'dc850514af';
+const VERSION_TABLERO = '2387d50fd1';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5880,6 +5911,12 @@ function calcKV(){
   const fact = EjA.filter(v => cobro(v).fact === 'Facturado' || v.fechaFactura);
   const LF = EjA.map(v => ({v, f: leadFactura(v)})).filter(x => x.f), lfHechos = LF.filter(x => x.f.hecho), lfLargo = LF.filter(x => !x.f.hecho && x.f.dias > 5);
   const conExtra = Asig.filter(v => cobro(v).extra), sumaExtra = conExtra.reduce((s, v) => s + cobro(v).extra, 0);
+  // retrasos (9-nov, el usuario: "medir cuánto se paga por retrasos"): días y plata por responsable, de lo pedido en el periodo
+  const RT = Vig.map(v => ({v, r: retrasosViaje(v)})).filter(x => x.r), sumR = (k, q) => RT.reduce((s, x) => s + (q ? x.r[q][k] || 0 : 0), 0);
+  const dR = k => sumR(k, 'dias'), cR = k => sumR(k, 'costo'), totDias = RT.reduce((s, x) => s + x.r.total.dias, 0), totPlata = RT.reduce((s, x) => s + x.r.total.costo, 0);
+  const lugares = {}; RT.filter(x => x.r.lugar && x.r.dias.Terceros).forEach(x => { const l = lugares[x.r.lugar] = lugares[x.r.lugar] || {d: 0, n: 0}; l.d += x.r.dias.Terceros; l.n++; });
+  const lugTxt = Object.entries(lugares).sort((a, b) => b[1].d - a[1].d).map(([k, l]) => `${k} ${l.d} d en ${l.n}`).join(', ');
+  const detR = r => ['Reckitt', 'Entrapetrol', 'Terceros', 'Sin causa'].filter(k => r.dias[k] || r.costo[k]).map(k => `${k === 'Terceros' ? 'terceros' + (r.lugar ? ' (' + r.lugar + ')' : '') : k} ${r.dias[k] ? r.dias[k] + ' d' : ''}${r.costo[k] ? ' ' + pesos(r.costo[k]) : ''}`.replace(/\s+/g, ' ').trim()).join(' · ');
   const ind = [
     {id: 'cumple', cod: 'REPROG. ENTRAPETROL', ic: '◷', color: '#dc2626', v: kvPct(culpa.length, L.length), suf: '%', sub: `${culpa.length} de ${L.length} con vehículo tuvieron un cambio de fecha de Entrapetrol o sin causa · ${conDesv.length - culpa.length} movidos por Reckitt o terceros`, n: culpa.length,
       L: conDesv.map(v => { const d = desviosPlan(v); return rev(v, culpa.includes(v) ? 'Entrapetrol' : 'pedido del cliente', d.map(x => `${x.hito.toLowerCase()} +${Math.max(0, x.dias || 0)} d (${responsable(x.causa)})`).join(' · '), culpa.includes(v) ? 'bad' : 'info'); })},
@@ -5897,6 +5934,10 @@ function calcKV(){
       L: lfLargo.sort((a, b) => b.f.dias - a.f.dias).map(x => rev(x.v, `${x.f.dias} d`, `${cobro(x.v).fact.toLowerCase()}${cobro(x.v).total ? ' · ' + pesos(cobro(x.v).total) : ''}`, x.f.dias > 10 ? 'bad' : 'warn'))},
     {id: 'extra', cod: 'EXTRACOSTOS', ic: '+', color: '#4f46e5', v: conExtra.length, suf: '', sub: sumaExtra ? `${pesos(sumaExtra)} en ${conExtra.length} viaje${conExtra.length === 1 ? '' : 's'}` : 'sin extracostos', n: conExtra.filter(v => cobro(v).aprob === 'Pendiente').length,
       L: conExtra.map(v => { const c = cobro(v); return rev(v, c.aprob ? c.aprob.toLowerCase() : 'extra', `${pesos(c.extra)} · ${itemsExtra(v).map(x => x[0]).join(', ')}`, c.aprob === 'Pendiente' ? 'warn' : 'info'); })},
+    {id: 'retraso', cod: 'DÍAS DE RETRASO', ic: '⌚', color: '#b45309', v: totDias, suf: ' d', sub: `${RT.filter(x => x.r.total.dias).length} viajes · Reckitt ${dR('Reckitt')} d, Entrapetrol ${dR('Entrapetrol')} d, terceros ${dR('Terceros')} d${lugTxt ? ' (' + lugTxt + ')' : ''}`, n: RT.filter(x => x.r.dias.Entrapetrol || x.r.dias['Sin causa']).length,
+      L: RT.filter(x => x.r.total.dias).sort((a, b) => b.r.total.dias - a.r.total.dias).map(x => rev(x.v, `${x.r.total.dias} d`, detR(x.r), x.r.dias.Entrapetrol || x.r.dias['Sin causa'] ? 'warn' : 'info'))},
+    {id: 'retrasoC', cod: 'COSTO DE RETRASOS', ic: '$', color: '#9a3412', v: totPlata ? Math.round(totPlata / 1000) : 0, suf: totPlata ? ' mil' : '', sub: totPlata ? `${pesos(totPlata)} · se cobra a Reckitt ${pesos(cR('Reckitt') + cR('Terceros'))}, de Entrapetrol ${pesos(cR('Entrapetrol'))}${cR('Sin causa') ? ', sin causa ' + pesos(cR('Sin causa')) : ''}` : 'sin costos de retraso registrados', n: RT.filter(x => x.r.costo['Sin causa']).length,
+      L: RT.filter(x => x.r.total.costo).sort((a, b) => b.r.total.costo - a.r.total.costo).map(x => rev(x.v, pesos(x.r.total.costo), detR(x.r), x.r.costo['Sin causa'] ? 'warn' : 'info'))},
   ];
   // ---- 3 · la operación ahora (no depende del periodo) ----
   const etapas = [['Sin asignar', A.filter(v => !tieneVehiculo(v)).length], ['Asignado', A.filter(v => tieneVehiculo(v) && v.estado === 'Asignado').length],
@@ -6223,7 +6264,10 @@ function calcKC(equipo){
     ...Rep.slice(0, 2).map(v => `registrando el cambio de fecha de ${kcRef(v)}`),
     ...PS.slice(0, 2).map(x => `calificando ${kcRef(x.v)} · ${x.p.total}/100`),
     ...Vig.slice(0, 2).map(v => `cruzando ${kcRef(v)} con los correos`)];
-  return {Ped, Vig, Asig, Debe, D, Rep, porResp, etapas, estados, cancel, res, insumos, tareas: tareas.length ? tareas : ['leyendo los correos de la operación']};
+  // días que corrieron las fechas por responsable (9-nov), con el lugar de lo de terceros (dominio retrasosViaje)
+  const RT = Vig.map(v => retrasosViaje(v)).filter(Boolean), diasR = {}, lug = {};
+  RT.forEach(r => { Object.entries(r.dias).forEach(([k, d]) => { diasR[k] = (diasR[k] || 0) + d; }); if (r.lugar && r.dias.Terceros) lug[r.lugar] = (lug[r.lugar] || 0) + r.dias.Terceros; });
+  return {diasR, lug, Ped, Vig, Asig, Debe, D, Rep, porResp, etapas, estados, cancel, res, insumos, tareas: tareas.length ? tareas : ['leyendo los correos de la operación']};
 }
 
 /* ---------- pantalla ---------- */
@@ -6251,7 +6295,7 @@ function montarKC(){
       <div class="lv-col"><div class="lv-rot">LO QUE ENTREGA</div><div class="kc-etapas" id="kcEtapas"></div></div>
     </div></div>
   <div class="lv-card"><div class="lv-titulo"><b>El resultado</b> · <span id="kcResT"></span></div><div class="kc-res" id="kcRes"></div></div>
-  <div class="lv-card"><div class="lv-rot">¿QUIÉN MOVIÓ LAS FECHAS? <span id="kcRepS"></span></div><div class="kv-barra" id="kcBarra"></div><div class="kv-ley" id="kcLey"></div></div>
+  <div class="lv-card"><div class="lv-rot">¿QUIÉN MOVIÓ LAS FECHAS? <span id="kcRepS"></span></div><div class="kv-barra" id="kcBarra"></div><div class="kv-ley" id="kcLey"></div><div class="kc-dias" id="kcDias"></div></div>
   <div class="lv-card lv-log"><div class="lv-rot"><b id="kcListaT"></b> <span id="kcListaS"></span></div><div class="lv-log-l" id="kcLista"></div></div>
   <div class="lv-pie">Pedidos = viajes pedidos para el periodo, por la fecha original de su primer paso. Vehículo a tiempo = de los pedidos que ya necesitaban vehículo (arrancan en 3 días o menos), los que lo tienen o ya terminaron; los de más adelante se programan después. Reprogramados = pedidos con algún cambio de fecha, con quién lo causó. Estados: por programar, vehículo listo, en tránsito, devolución del vacío (solo IMPO), en facturación y facturado; suman lo solicitado. Puntualidad = pasos hechos a tiempo (si el cambio lo pidió Reckitt o un tercero, con la fecha nueva). Calificación = puntualidad, reprogramaciones de Entrapetrol y novedades, sobre 100. Precios: flete y extracostos aprobados de los pedidos del periodo. Datos desde el 23 oct.</div>
   </div></section>`);
@@ -6310,6 +6354,9 @@ function pintarKC(suave){
   $('#kcRepS').textContent = tot ? `${tot} cambio${tot === 1 ? '' : 's'} de fecha en ${K.Vig.filter(v => desviosPlan(v).length).length} de ${K.Vig.length} pedidos` : 'ningún cambio de fecha en el periodo';
   $('#kcBarra').innerHTML = tot ? RESP_KV.filter(([k]) => K.porResp[k]).map(([k, c]) => `<i style="flex:${K.porResp[k]};background:${c}" title="${esc(k)}: ${K.porResp[k]}"></i>`).join('') : '<i style="flex:1;background:#e7e5df"></i>';
   $('#kcLey').innerHTML = RESP_KV.filter(([k]) => ['Reckitt', 'Entrapetrol', 'Terceros'].includes(k) || K.porResp[k]).map(([k, c]) => `<span><i style="background:${c}"></i>${esc(k === 'Terceros' ? 'Patio, puerto, naviera o externo' : k)} <b>${K.porResp[k] || 0}</b></span>`).join('');
+  const dTxt = ['Reckitt', 'Entrapetrol', 'Terceros'].filter(k => K.diasR[k]).map(k => `${k === 'Terceros' ? 'patio, puerto, naviera o externo' : k} ${K.diasR[k]} d`).join(' · ');
+  const lTxt = Object.entries(K.lug).sort((a, b) => b[1] - a[1]).map(([k, d]) => `${k} ${d} d`).join(', ');
+  $('#kcDias').textContent = dTxt ? `Días que se corrieron las fechas: ${dTxt}${lTxt ? ` (${lTxt})` : ''}` : '';
   // los viajes del paso elegido
   const sel = E[KC.sel] || S.find(x => x.id === KC.sel) || E.ped;
   $('#kcListaT').textContent = `TUS VIAJES · ${sel.cod}`;
