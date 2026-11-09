@@ -709,6 +709,34 @@ body.lv-abierta{overflow:hidden}
 .ca-mail-t{font-size:12px;font-weight:600}
 .ca-mail-a{font-size:12px;color:var(--muted);margin:2px 0 6px}
 .ca-mail-c{white-space:pre-wrap;font-size:13px;line-height:1.5}
+
+/* 📊 Indicadores para Reckitt (kpis-cliente.js): fuentes → pulpo de LogxIA → pasos */
+.kc-nombre{font-size:26px}
+.kc-mapa{grid-template-columns:minmax(200px,1fr) minmax(190px,.8fr) minmax(280px,1.25fr)}
+.kc-ins,.kc-etapas{display:grid;gap:8px}
+.kc-pulpo{width:112px;height:112px;border-radius:28px;background:linear-gradient(160deg,#1f2937,#0b1220);display:grid;place-items:center;position:relative;box-shadow:0 8px 24px rgba(17,24,39,.28)}
+.kc-pulpo svg{width:84px;height:84px}
+.kc-pulpo::after{content:"";position:absolute;inset:-12px;border-radius:38px;border:1.5px solid #7c3aed;opacity:.45;animation:kcHalo 2.4s ease-in-out infinite}
+@keyframes kcHalo{50%{opacity:.12;transform:scale(1.06)}}
+.kc-tarea{min-height:30px;color:#4f46e5;animation:lvEntra .35s ease-out}
+.kc-et{cursor:pointer;align-items:center}
+.kc-et .lv-ag-tx{flex:1}
+.kc-et-v{font-size:22px;font-weight:700;color:var(--c);white-space:nowrap}.kc-et-v small{font-size:12px;font-weight:500;color:var(--lv-gris)}
+.kc-res{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.kc-r{border:1px solid var(--lv-borde);border-left:4px solid var(--c);border-radius:12px;padding:9px 12px;background:#fff}
+.kc-r-v{font-size:26px;font-weight:700;color:var(--c);line-height:1.2}.kc-r-v small{font-size:13px;font-weight:500;color:var(--lv-gris)}
+.kc-r-s{font-family:var(--lv-mono);font-size:10.5px;color:var(--lv-gris)}
+#kcHilos path.kc-in{stroke:#5eead4}#kcHilos path.kc-out{stroke:#c4b5fd}#kcHilos circle{fill:#a78bfa}
+.kc-st-barra{display:flex;height:14px;border-radius:7px;overflow:hidden;gap:2px;margin-bottom:10px}
+.kc-st-barra i{display:block;min-width:6px;transition:flex .6s}
+.kc-st-l{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.kc-st-c{border:1px solid var(--lv-borde);border-top:4px solid var(--c);border-radius:12px;padding:8px 10px;background:#fff;cursor:pointer;display:grid;gap:1px}
+.kc-st-c b{font-size:24px;color:var(--c);line-height:1.1}.kc-st-c span{font-weight:600;font-size:13px}
+.kc-st-c small{font-family:var(--lv-mono);font-size:10px;color:var(--lv-gris)}
+.kc-st-c.gris{opacity:.7}
+.kc-st-c.activo{background:color-mix(in srgb,var(--c) 9%,#fff);border-color:var(--c)}
+@media (prefers-reduced-motion: reduce){.kc-pulpo::after,.kc-tarea{animation:none}}
+@media (max-width:700px){.kc-res{grid-template-columns:1fr 1fr}.kc-nombre{font-size:20px}.kc-mapa{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -1761,6 +1789,14 @@ function puntajeViaje(v){
   ];
   return {total: partes.reduce((s, p) => s + p[1], 0), partes, bajo: partes.reduce((s, p) => s + p[1], 0) < PUNTAJE_BAJO};
 }
+// calificación que ve Reckitt (8-nov, decidido con el usuario): solo lo que la transportadora controla en el viaje —puntualidad,
+// sus reprogramaciones y novedades/demoras—, llevado a 100. Cierre (tirillas, confirmaciones) y facturación son del equipo.
+const PARTES_CLIENTE = ['Puntualidad', 'Reprogramaciones', 'Novedades y demoras'];
+function puntajeCliente(v){
+  const p = puntajeViaje(v); if (!p) return null;
+  const P = p.partes.filter(x => PARTES_CLIENTE.includes(x[0])), total = Math.round(P.reduce((s, x) => s + x[1], 0) / P.reduce((s, x) => s + x[2], 0) * 100);
+  return {total, partes: P, bajo: total < PUNTAJE_BAJO};
+}
 function distancia(a, b){
   const d = Array.from({length: a.length + 1}, (_, i) => [i]);
   for (let j = 1; j <= b.length; j++) d[0][j] = j;
@@ -2173,6 +2209,8 @@ async function cargar(){
     window.CALIF = j.calificaciones || null;
     window.REGISTRO = j.registro || null;   // vehículos y conductores con sus datos, solo el equipo (registro.js)   // calificación de conductores, solo el equipo (calificacion.js)
     window.SEG_INICIO = j.seguimiento || '';
+    window.INSUMOS = j.insumos || null;   // lo que entra a LogxIA, solo día y viaje (📊 Indicadores: kpis-cliente.js)
+    if (typeof etiquetaKC === 'function') etiquetaKC();
     window.CLAVE = clave;
     try { localStorage.setItem('rkt-clave', clave); } catch(e) {}
     if (new URLSearchParams(location.search).has('clave')) { const u = new URL(location.href); u.searchParams.delete('clave'); history.replaceState(null, '', u); }
@@ -5414,7 +5452,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'd6992e5a66';
+const VERSION_TABLERO = 'a947ee4ac8';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -6100,6 +6138,214 @@ function lineasKV(){
 }
 window.addEventListener('resize', () => { if ($('#v-kpis') && !$('#v-kpis').classList.contains('hidden')) lineasKV(); });
 montarKV();
+/* ---------- kpis-cliente.js · 📊 Indicadores para Reckitt: la vista del cliente (8-nov-2026) ----------
+ * Capa: pantalla. La ve el cliente desde un botón en su tablero (el equipo la ve igual, para revisarla). Diseño de "LogxIA en
+ * vivo" (pedido del usuario): a la izquierda lo que recibe LogxIA (correos, documentos, datos del equipo, reportes de conductores),
+ * al centro el pulpo de LogxIA orquestando y a la derecha lo que sale de ahí: pedidos → asignaciones → vehículos → monitoreo →
+ * calificación; abajo el resultado (cumplimiento, puntualidad, lead time, precio) y quién movió las fechas.
+ * Decidido con el usuario (8-nov): se muestran también los cambios de fecha de Entrapetrol, con su número; precios solo en totales
+ * del periodo; la calificación es la del cliente (puntajeCliente: puntualidad, reprogramaciones y novedades, sobre 100).
+ * Mismas reglas y filtros de 📊 KPIs Reckitt (kpis-vivo.js: periodo calendario, pedido = fecha original del primer paso,
+ * atendido solo lo que ya debía tener vehículo). Al cliente el servidor le manda los cambios de fecha sin detalle ni costo y el
+ * cobro en totales (Código.gs paraCliente_: kc) y lo que entra a LogxIA solo como día y viaje (Cliente.gs insumosKpi_).
+ * Prefijo CSS: kc- (y lv-, kv-). */
+const KC = {sel: 'ped', tick: null, tarea: 0, tareas: []};
+// cobro en totales: el cliente lo recibe en kc = [flete, extracostos aprobados, etapa de facturación]; el equipo lo calcula
+const kcCobro = v => v.kc ? {flete: Number(v.kc[0]) || 0, extra: Number(v.kc[1]) || 0, fact: v.kc[2] || ''}
+  : (c => ({flete: c.tarifa, extra: c.aprob === 'Aprobado' ? c.extra : 0, fact: c.fact}))(cobro(v));
+// referencia que usa Reckitt (booking en EXPO, pedido o DO en IMPO) y país
+const kcRef = v => { const c = clavesBusqueda(v).filter(([k]) => k !== 'Placa')[0]; return `${v.operacion || ''} ${c ? c[1] : v.id}${v.pais ? ' · ' + String(v.pais).toLowerCase().replace(/(^|\s)\S/g, x => x.toUpperCase()) : ''}`; };
+const kcMillones = n => n >= 1e6 ? '$' + String(Math.round(n / 1e5) / 10).replace('.', ',') + ' M' : n ? pesos(n) : '$0';
+
+function calcKC(){
+  KV.viaje = '';   // esta vista siempre es de toda la operación (o de la que se elija)
+  const Todos = kvTodos(), Ped = Todos.filter(v => kvEnPer(kvFechaPedido(v))), Canc = Ped.filter(kvCancel), Vig = Ped.filter(v => !kvCancel(v));
+  const Asig = Vig.filter(kvAtendido), Debe = Vig.filter(v => kvLeToca(v) || kvAtendido(v)), SinAt = Debe.filter(v => !kvAtendido(v));
+  const PorProg = Vig.filter(v => !kvLeToca(v) && !kvAtendido(v)), Ejec = Vig.filter(transporteFinalizado);
+  const A = kvBase().filter(abierto), EnRuta = A.filter(v => EN_RUTA_KV.includes(v.estado)), Sin72 = A.filter(sinCobertura);
+  const culpa = v => desviosPlan(v).some(d => ['Entrapetrol', 'Sin causa'].includes(responsable(d.causa)));
+  const D = Vig.flatMap(v => desviosPlan(v).map(d => ({...d, v}))), Rep = Vig.filter(v => desviosPlan(v).length);
+  const porResp = {}; D.forEach(d => { const r = responsable(d.causa); porResp[r] = (porResp[r] || 0) + 1; });
+  const H = Asig.flatMap(v => hitosATiempo(v).map(h => ({h, v}))), hOk = H.filter(x => x.h.ok).length;
+  const pasos = Asig.reduce((s, v) => s + confirmacionesDe(v).length, 0);
+  const LT = Ejec.map(v => ({v, l: leadTime(v)})).filter(x => x.l.real !== null);
+  const PS = Vig.map(v => ({v, p: puntajeCliente(v)})).filter(x => x.p), bajos = PS.filter(x => x.p.bajo);
+  const CB = Vig.map(v => ({v, c: kcCobro(v)})).filter(x => x.c.flete || x.c.extra);
+  const flete = CB.reduce((s, x) => s + x.c.flete, 0), extra = CB.reduce((s, x) => s + x.c.extra, 0), conFlete = CB.filter(x => x.c.flete);
+  const facturado = CB.filter(x => x.c.fact === 'Facturado').reduce((s, x) => s + x.c.flete + x.c.extra, 0);
+  // lo que entra a LogxIA en el periodo (con una operación elegida, solo lo que se cruzó con un viaje de esa operación)
+  const vOk = id => { const v = id && viajes.find(x => x.id === id); return KV.op ? !!v && v.operacion === KV.op : !id || !!v; };
+  const ins = k => ((window.INSUMOS || {})[k] || []).filter(([d, id]) => kvEnPer(d) && vOk(id)).length;
+  const fila = (v, tag, txt, tono) => ({v, tag, txt, tono: tono || 'info'});
+  const pedTxt = v => `pedido para ${fd(kvFechaPedido(v))}`;
+  const orden = L => L.slice().sort((a, b) => String(kvFechaPedido(a)).localeCompare(kvFechaPedido(b)));
+  const etapas = [
+    {id: 'ped', cod: 'PEDIDOS', ic: '☰', color: '#2563eb', v: Ped.length, suf: '', sub: (kvPorOp(Ped) || 'sin pedidos') + (Canc.length ? ` · ${Canc.length} cancelado${Canc.length === 1 ? '' : 's'}` : ''),
+      L: orden(Ped).map(v => fila(v, kvCancel(v) ? 'cancelado' : kvAtendido(v) ? 'con vehículo' : kvLeToca(v) ? 'sin vehículo' : 'por programar', pedTxt(v), !kvCancel(v) && kvLeToca(v) && !kvAtendido(v) ? 'warn' : 'info'))},
+    {id: 'asig', cod: 'ASIGNACIONES', ic: '⇄', color: '#7c3aed', v: Asig.length, suf: '', sub: `con vehículo · ${PorProg.length + SinAt.length} por programar${SinAt.length ? ` (${SinAt.length} falta vehículo)` : ''}`,
+      L: [...orden(SinAt).map(v => fila(v, 'falta vehículo', `${pedTxt(v)} · arranca en 3 días o menos`, 'warn')), ...orden(Asig).map(v => fila(v, 'con vehículo', pedTxt(v))),
+        ...orden(PorProg).map(v => fila(v, 'por programar', `${pedTxt(v)} · aún no le toca vehículo`))]},
+    {id: 'veh', cod: 'VEHÍCULOS', ic: '⛟', color: '#0d9488', v: A.filter(tieneVehiculo).length, suf: '', sub: `con vehículo ahora · ${EnRuta.length} en ruta${Sin72.length ? ` · ${Sin72.length} sin vehículo en 72 h` : ''}`,
+      L: [...Sin72.map(v => fila(v, 'sin vehículo', `arranca ${fd(primerEvento(v))}`, 'warn')), ...A.filter(tieneVehiculo).map(v => fila(v, EnRuta.includes(v) ? 'en ruta' : 'con vehículo', String(v.estado || '').toLowerCase()))]},
+    {id: 'mon', cod: 'MONITOREO', ic: '◉', color: '#ea580c', v: pasos, suf: '', sub: `pasos confirmados · ${D.length} cambio${D.length === 1 ? '' : 's'} de fecha`,
+      L: Rep.map(v => fila(v, culpa(v) ? 'Entrapetrol' : 'cambio de fecha', desviosPlan(v).map(d => `${d.hito.toLowerCase()} ${fd(d.plan)} → ${fd(d.actual)} (${responsable(d.causa)})`).join(' · '), culpa(v) ? 'warn' : 'info'))},
+    {id: 'cal', cod: 'CALIFICACIÓN', ic: '★', color: '#ca8a04', v: PS.length ? Math.round(PS.reduce((s, x) => s + x.p.total, 0) / PS.length) : null, suf: '/100', sub: `${PS.length} viaje${PS.length === 1 ? '' : 's'} terminado${PS.length === 1 ? '' : 's'} · ${bajos.length} bajo ${PUNTAJE_BAJO}`,
+      L: PS.slice().sort((a, b) => a.p.total - b.p.total).map(x => { const peor = x.p.partes.slice().sort((a, b) => a[1] / a[2] - b[1] / b[2])[0];
+        return fila(x.v, `${x.p.total}/100`, peor[1] < peor[2] ? `${peor[0].toLowerCase()}: ${peor[3]}` : 'sin descuentos', x.p.bajo ? 'warn' : 'info'); })},
+  ];
+  // estados de lo solicitado (8-nov, con el usuario): hechos, no juicios; suman lo solicitado (los cancelados van aparte).
+  // "Vehículo listo" y no "asignado" (para Reckitt, asignado es el pedido que ellos asignan). Devolución del vacío solo existe en
+  // IMPO con contenedor: EXPO termina al entregar el lleno en puerto (ahí factura; el zarpe es de la naviera) y LCL en la bodega.
+  // Lo que ya debía tener vehículo y no lo tiene va en Por programar con la marca "falta vehículo".
+  const estadoKC = v => kcCobro(v).fact === 'Facturado' ? 'fac' : transporteFinalizado(v) || situacion(v) === 'Cerrado' ? 'enf'
+    : v.operacion === 'IMPO' && !esLCL(v) && v.estado === 'Entregado en bodega' ? 'dev' : !kvAtendido(v) ? 'prog' : ['Sin asignar', 'Asignado'].includes(v.estado) ? 'listo' : 'tra';
+  const ST = {}; Vig.forEach(v => { const k = estadoKC(v); (ST[k] = ST[k] || []).push(v); });
+  const st = (k, cod, color, sub, tag) => ({id: 'st-' + k, cod, color, v: (ST[k] || []).length, sub, L: orden(ST[k] || []).map(v => tag(v))});
+  const hayImpo = Vig.some(v => v.operacion === 'IMPO' && !esLCL(v));
+  const estados = [
+    st('prog', 'Por programar', '#64748b', SinAt.length ? `${SinAt.length} falta vehículo` : 'aún no les toca vehículo',
+      v => kvLeToca(v) ? fila(v, 'falta vehículo', `${pedTxt(v)} · ${(d => d < 0 ? 'la fecha ya pasó' : d === 0 ? 'arranca hoy' : `arranca en ${d} d`)(diffDias(primerEvento(v) || kvFechaPedido(v)))}`, 'warn') : fila(v, 'por programar', `${pedTxt(v)} · faltan ${diffDias(primerEvento(v) || kvFechaPedido(v))} d`)),
+    st('listo', 'Vehículo listo', '#7c3aed', 'tiene vehículo, aún no arranca', v => fila(v, 'vehículo listo', `${pedTxt(v)} · arranca ${fd(primerEvento(v) || kvFechaPedido(v))}`)),
+    st('tra', 'En tránsito', '#0d9488', 'retiro, llenado o camino a puerto o bodega', v => fila(v, 'en tránsito', String(v.estado || '').toLowerCase())),
+    ...(KV.op === 'EXPO' || KV.op === 'NACIONAL' || (!hayImpo && KV.op) ? [] : [st('dev', 'Devolución del vacío', '#0891b2', 'solo IMPO: entregado en bodega, falta devolver el contenedor',
+      v => fila(v, 'devolución', `entregado en bodega · límite ${fd(v.fechaLimite) || '—'}`))]),
+    st('enf', 'En facturación', '#ca8a04', 'transporte terminado', v => fila(v, String(kcCobro(v).fact || 'en facturación').toLowerCase(), `terminó ${fd(fechaFinTransporte(v) || '')}`)),
+    st('fac', 'Facturado', '#16a34a', 'con factura', v => fila(v, 'facturado', `terminó ${fd(fechaFinTransporte(v) || '')}`)),
+  ];
+  const cancel = {id: 'st-canc', cod: 'Cancelado', color: '#9ca3af', v: Canc.length, sub: 'no se hicieron', L: orden(Canc).map(v => fila(v, 'cancelado', pedTxt(v)))};
+  const res = [
+    // 8-nov (el usuario): en vez de "cumplimiento", cuántos pedidos se reprogramaron y quién lo causó
+    {id: 'rep', cod: 'REPROGRAMADOS', color: '#ea580c', v: kvPct(Rep.length, Vig.length), suf: '%', sub: `${Rep.length} de ${Vig.length} pedidos · ${D.length} cambio${D.length === 1 ? '' : 's'}: Reckitt ${porResp.Reckitt || 0}, Entrapetrol ${porResp.Entrapetrol || 0}, terceros ${porResp.Terceros || 0}`},
+    {id: 'puntual', cod: 'PUNTUALIDAD', color: '#0d9488', v: kvPct(hOk, H.length), suf: '%', sub: `${hOk} de ${H.length} pasos a tiempo`},
+    {id: 'lead', cod: 'LEAD TIME', color: '#7c3aed', v: kvProm(LT.map(x => x.l.real)), suf: ' d', sub: `plan ${kvNum(kvProm(LT.filter(x => x.l.plan !== null).map(x => x.l.plan)))} d · ${LT.length} terminados`},
+    {id: 'precio', cod: 'PRECIO POR VIAJE', color: '#111827', v: conFlete.length ? Math.round(flete / conFlete.length) : null, suf: '', pesos: true,
+      sub: `flete ${kcMillones(flete)} · extras aprobados ${kcMillones(extra)} · facturado ${kcMillones(facturado)}`},
+  ];
+  const insumos = [['correos', '✉', 'correos leídos', 'de Reckitt, agentes y el equipo'], ['documentos', '▤', 'documentos', 'cartas, bookings, BL, tirillas'],
+    ['datos', '✎', 'datos del equipo', 'fechas, placas y pasos registrados'], ['conductores', '⛟', 'reportes de conductores', 'desde la app del conductor']].map(([k, ic, l, s]) => ({k, ic, l, s, n: ins(k)}));
+  // lo que hace LogxIA, para el letrero del pulpo (con viajes reales del periodo, sin asuntos ni nombres)
+  const tareas = [
+    ...Vig.filter(v => !kvAtendido(v) && kvLeToca(v)).slice(0, 3).map(v => `buscando vehículo para ${kcRef(v)}`),
+    ...EnRuta.slice(0, 3).map(v => `siguiendo ${kcRef(v)} · ${String(v.estado || '').toLowerCase()}`),
+    ...Rep.slice(0, 2).map(v => `registrando el cambio de fecha de ${kcRef(v)}`),
+    ...PS.slice(0, 2).map(x => `calificando ${kcRef(x.v)} · ${x.p.total}/100`),
+    ...Vig.slice(0, 2).map(v => `cruzando ${kcRef(v)} con los correos`)];
+  return {Ped, Vig, Asig, Debe, D, Rep, porResp, etapas, estados, cancel, res, insumos, tareas: tareas.length ? tareas : ['leyendo los correos de la operación']};
+}
+
+/* ---------- pantalla ---------- */
+function montarKC(){
+  const ref = $('#btnCsv'); if (!ref || $('#v-kc')) return;
+  ref.insertAdjacentHTML('beforebegin', `<button class="btn" id="btnKC" title="Indicadores de la operación con Entrapetrol: lo que pide, cómo se atiende y cuánto se reprograma">📊 Indicadores</button>`);
+  document.body.insertAdjacentHTML('beforeend', `<section id="v-kc" class="lv-capa hidden" role="dialog" aria-modal="true" aria-label="Indicadores de la operación">
+  <div class="lv-volver"><button class="lv-volver-b" id="kcVolver">← Volver al tablero</button></div><div class="lv kc" id="kc">
+  <div class="lv-card lv-top">
+    <div class="lv-marca"><div class="lv-logo">${AVATAR_LV}</div>
+      <div><div class="lv-nombre kc-nombre">Tu operación con Entrapetrol</div><div class="lv-modo" id="kcModo"></div><div class="lv-verbos">LogxIA lee · asigna · monitorea · califica</div></div></div>
+    <div class="lv-kpis" id="kcKpis"></div>
+  </div>
+  <div class="lv-estado kv-estado">
+    <span class="lv-pill"><i></i><b>en vivo</b></span>
+    <div class="kv-chips" id="kcOp" role="group" aria-label="Operación">${[['', 'Todas'], ['EXPO', 'EXPO'], ['IMPO', 'IMPO'], ['NACIONAL', 'Nacional']].map(([k, l]) => `<button data-op="${k}">${l}</button>`).join('')}</div>
+    <div class="kv-chips" id="kcPer" role="group" aria-label="Periodo">${Object.entries(KV_PER).map(([k, [l]]) => `<button data-per="${k}">${l}</button>`).join('')}</div>
+    <span class="kv-rango" id="kcRango"></span>
+  </div>
+  <div class="lv-card"><div class="lv-titulo"><b>Dónde está lo que pediste</b> · <span id="kcStT"></span> · toca un estado para ver sus viajes</div><div class="kc-st" id="kcSt"></div></div>
+  <div class="lv-card"><div class="lv-titulo"><b>Cómo trabaja LogxIA en tu operación</b> · toca un paso para ver sus viajes</div>
+    <div class="lv-mapa kc-mapa" id="kcMapa"><svg class="lv-hilos" id="kcHilos"></svg>
+      <div class="lv-col"><div class="lv-rot">LO QUE RECIBE</div><div class="kc-ins" id="kcIns"></div></div>
+      <div class="lv-router"><div class="lv-rot">ORQUESTANDO</div><div class="kc-pulpo" id="kcPulpo">${AVATAR_LV}</div><div class="lv-burbuja">LogxIA</div><div class="lv-router-t kc-tarea" id="kcTarea"></div></div>
+      <div class="lv-col"><div class="lv-rot">LO QUE ENTREGA</div><div class="kc-etapas" id="kcEtapas"></div></div>
+    </div></div>
+  <div class="lv-card"><div class="lv-titulo"><b>El resultado</b> · <span id="kcResT"></span></div><div class="kc-res" id="kcRes"></div></div>
+  <div class="lv-card"><div class="lv-rot">¿QUIÉN MOVIÓ LAS FECHAS? <span id="kcRepS"></span></div><div class="kv-barra" id="kcBarra"></div><div class="kv-ley" id="kcLey"></div></div>
+  <div class="lv-card lv-log"><div class="lv-rot"><b id="kcListaT"></b> <span id="kcListaS"></span></div><div class="lv-log-l" id="kcLista"></div></div>
+  <div class="lv-pie">Pedidos = viajes pedidos para el periodo, por la fecha original de su primer paso. Vehículo a tiempo = de los pedidos que ya necesitaban vehículo (arrancan en 3 días o menos), los que lo tienen o ya terminaron; los de más adelante se programan después. Reprogramados = pedidos con algún cambio de fecha, con quién lo causó. Estados: por programar, vehículo listo, en tránsito, devolución del vacío (solo IMPO), en facturación y facturado; suman lo solicitado. Puntualidad = pasos hechos a tiempo (si el cambio lo pidió Reckitt o un tercero, con la fecha nueva). Calificación = puntualidad, reprogramaciones de Entrapetrol y novedades, sobre 100. Precios: flete y extracostos aprobados de los pedidos del periodo. Datos desde el 23 oct.</div>
+  </div></section>`);
+  $('#btnKC').onclick = abrirKC; $('#kcVolver').onclick = salirKC;
+  window.addEventListener('popstate', () => { if (location.hash !== '#indicadores' && !$('#v-kc').classList.contains('hidden')) cerrarKC(); });
+  if (location.hash === '#indicadores') history.replaceState(null, '', location.pathname + location.search);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#v-kc').classList.contains('hidden') && !document.querySelector('.ov.open')) salirKC(); });
+  $('#kc').addEventListener('click', e => {
+    const op = e.target.closest('[data-op]'), per = e.target.closest('[data-per]'), et = e.target.closest('[data-kc]'), vj = e.target.closest('[data-viaje]');
+    if (op) { KV.op = op.dataset.op; pintarKC(); return; }
+    if (per) { KV.per = per.dataset.per; pintarKC(); return; }
+    if (et) { KC.sel = et.dataset.kc; pintarKC(true); $('#kcLista').scrollIntoView({behavior: 'smooth', block: 'nearest'}); return; }
+    if (vj && vj.dataset.viaje) abrir(vj.dataset.viaje);
+  });
+  $('#kc').addEventListener('keydown', e => { const et = e.target.closest('[data-kc]'); if (et && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); et.click(); } });
+  window.addEventListener('resize', () => { if (!$('#v-kc').classList.contains('hidden')) lineasKC(); });
+}
+// el equipo ve el mismo botón como "vista del cliente" (se llama al cargar los datos: datos.js)
+function etiquetaKC(){ const b = $('#btnKC'); if (b) b.textContent = window.MODO_CLIENTE ? '📊 Indicadores' : '📊 Vista cliente'; }
+function salirKC(){ if (location.hash === '#indicadores') history.back(); else cerrarKC(); }
+function cerrarKC(){ $('#v-kc')?.classList.add('hidden'); document.body.classList.remove('lv-abierta'); clearInterval(KC.tick); KC.tick = null; }
+function abrirKC(){
+  $('#v-kc').classList.remove('hidden'); document.body.classList.add('lv-abierta');
+  if (location.hash !== '#indicadores') history.pushState(null, '', '#indicadores');
+  $('#kcEtapas').innerHTML = ''; pintarKC();
+  // cada 2,6 s cambia lo que hace LogxIA; cada minuto se repinta con los datos que el tablero trae de la hoja
+  clearInterval(KC.tick); let n = 0;
+  KC.tick = setInterval(() => { if (document.hidden) return; KC.tarea = (KC.tarea + 1) % KC.tareas.length; $('#kcTarea').textContent = KC.tareas[KC.tarea] || '';
+    pulsoKC(); if (++n % 23 === 0) pintarKC(true); }, 2600);
+}
+function pintarKC(suave){
+  if (!$('#kc')) return;
+  const K = calcKC(), [a, b] = kvRango(); KC.tareas = K.tareas; if (KC.tarea >= K.tareas.length) KC.tarea = 0;
+  $('#kcOp').querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.op === KV.op));
+  $('#kcPer').querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.per === KV.per));
+  $('#kcRango').textContent = `${fd(a)} → ${fd(b)}${a < INICIO_KV ? ' · datos desde el 23 oct' : ''}`;
+  $('#kcModo').textContent = `RECKITT · ${KV.op || 'EXPO + IMPO + NACIONAL'} · ${KV_PER[KV.per][0].toUpperCase()}`;
+  const E = Object.fromEntries(K.etapas.map(x => [x.id, x])), R = Object.fromEntries(K.res.map(x => [x.id, x]));
+  const top = [['pedidos', 'solicitados', '#111827', K.Ped.length, ''], ['rep', 'reprogramados', '#ea580c', K.Rep.length, ''],
+    ['puntual', 'puntualidad', '#0d9488', R.puntual.v, '%'], ['cal', 'calificación', '#ca8a04', E.cal.v, '/100']];
+  if (!$('#kcKpis').children.length) $('#kcKpis').innerHTML = top.map(([k, l, c]) => `<div class="lv-kpi"><div class="lv-kpi-l">${l}</div><div class="lv-kpi-v" style="color:${c}"><span id="kck-${k}">0</span><small id="kcu-${k}"></small></div></div>`).join('');
+  top.forEach(([k, , , n, u]) => { kvContar($('#kck-' + k), n); $('#kcu-' + k).textContent = n === null ? '' : u; });
+  // dónde está lo solicitado
+  const S = [...K.estados, K.cancel], totS = K.Vig.length;
+  $('#kcStT').textContent = `${totS} solicitado${totS === 1 ? '' : 's'}${K.cancel.v ? ` · ${K.cancel.v} cancelado${K.cancel.v === 1 ? '' : 's'} aparte` : ''}`;
+  $('#kcSt').innerHTML = `<div class="kc-st-barra">${K.estados.filter(x => x.v).map(x => `<i style="flex:${x.v};background:${x.color}" title="${esc(x.cod)}: ${x.v}"></i>`).join('') || '<i style="flex:1;background:#e7e5df"></i>'}</div>
+    <div class="kc-st-l">${S.map(x => `<div class="kc-st-c${KC.sel === x.id ? ' activo' : ''}${x.id === 'st-canc' ? ' gris' : ''}" data-kc="${x.id}" style="--c:${x.color}" role="button" tabindex="0"><b>${miles(x.v)}</b><span>${esc(x.cod)}</span><small>${esc(x.sub)}</small></div>`).join('')}</div>`;
+  // lo que recibe
+  $('#kcIns').innerHTML = K.insumos.map((x, i) => `<div class="lv-src kc-src"><span class="lv-src-ic">${x.ic}</span><div><b>${x.l}</b><small>${x.s}</small></div><span class="lv-src-n" id="kcin-${i}">0</span></div>`).join('');
+  K.insumos.forEach((x, i) => kvContar($('#kcin-' + i), x.n));
+  if (!window.INSUMOS) $('#kcIns').insertAdjacentHTML('beforeend', '<div class="lv-vacio">Los conteos llegan con la próxima actualización del sistema.</div>');
+  // lo que entrega
+  if (!$('#kcEtapas').children.length) $('#kcEtapas').innerHTML = K.etapas.map(x => `<div class="lv-ag kc-et" data-kc="${x.id}" id="kce-${x.id}" style="--c:${x.color}" role="button" tabindex="0">
+    <span class="lv-ag-ic">${x.ic}</span><div class="lv-ag-tx"><b>${x.cod}</b><small class="lv-ag-sub" id="kces-${x.id}"></small></div><span class="kc-et-v"><span id="kcev-${x.id}">0</span><small id="kceu-${x.id}"></small></span></div>`).join('');
+  K.etapas.forEach(x => { kvContar($('#kcev-' + x.id), x.v); $('#kceu-' + x.id).textContent = x.v === null ? '' : x.suf; $('#kces-' + x.id).textContent = x.sub; $('#kce-' + x.id).classList.toggle('activo', KC.sel === x.id); });
+  $('#kcTarea').textContent = KC.tareas[KC.tarea] || '';
+  // resultado
+  $('#kcResT').textContent = `de ${K.Asig.length} pedido${K.Asig.length === 1 ? '' : 's'} con vehículo`;
+  $('#kcRes').innerHTML = K.res.map(x => `<div class="kc-r" style="--c:${x.color}"><div class="lv-kpi-l">${x.cod}</div><div class="kc-r-v">${x.v === null ? '—' : x.pesos ? kcMillones(x.v) : kvNum(x.v) + `<small>${x.suf}</small>`}</div><div class="kc-r-s">${esc(x.sub)}</div></div>`).join('');
+  // quién movió las fechas (también Entrapetrol, con su número)
+  const tot = Object.values(K.porResp).reduce((s, n) => s + n, 0);
+  $('#kcRepS').textContent = tot ? `${tot} cambio${tot === 1 ? '' : 's'} de fecha en ${K.Vig.filter(v => desviosPlan(v).length).length} de ${K.Vig.length} pedidos` : 'ningún cambio de fecha en el periodo';
+  $('#kcBarra').innerHTML = tot ? RESP_KV.filter(([k]) => K.porResp[k]).map(([k, c]) => `<i style="flex:${K.porResp[k]};background:${c}" title="${esc(k)}: ${K.porResp[k]}"></i>`).join('') : '<i style="flex:1;background:#e7e5df"></i>';
+  $('#kcLey').innerHTML = RESP_KV.filter(([k]) => ['Reckitt', 'Entrapetrol', 'Terceros'].includes(k) || K.porResp[k]).map(([k, c]) => `<span><i style="background:${c}"></i>${esc(k === 'Terceros' ? 'Patio, puerto, naviera o externo' : k)} <b>${K.porResp[k] || 0}</b></span>`).join('');
+  // los viajes del paso elegido
+  const sel = E[KC.sel] || S.find(x => x.id === KC.sel) || E.ped;
+  $('#kcListaT').textContent = `TUS VIAJES · ${sel.cod}`;
+  $('#kcListaS').textContent = `${sel.L.length} viaje${sel.L.length === 1 ? '' : 's'} · toca otro paso arriba`;
+  $('#kcLista').innerHTML = sel.L.slice(0, 150).map(x => `<div class="lv-ev kv-ev clic" data-viaje="${esc(x.v.id)}"><span class="kv-ev-v">${esc(kcRef(x.v))}</span><span class="lv-tag ${x.tono === 'warn' ? 'naranja' : 'gris'}">${esc(x.tag)}</span><span class="lv-ev-t">${esc(x.txt)}</span></div>`).join('')
+    || '<div class="lv-vacio">Ningún viaje en este paso con estos filtros.</div>';
+  if (!suave) requestAnimationFrame(lineasKC);
+}
+// hilos: de cada fuente al pulpo y del pulpo a cada paso; uno "vivo" a la vez (pulsoKC)
+function lineasKC(){
+  const M = $('#kcMapa'), Sv = $('#kcHilos'); if (!M || !Sv || !M.offsetWidth || getComputedStyle(Sv).display === 'none') return;
+  const R = M.getBoundingClientRect(), c = $('#kcPulpo').getBoundingClientRect(), p = el => el.getBoundingClientRect();
+  const cl = c.left - R.left, cr = c.right - R.left, cy = c.top - R.top + c.height / 2;
+  const ent = [...M.querySelectorAll('.kc-src')].map(e => { const b = p(e), x = b.right - R.left, y = b.top - R.top + b.height / 2; return `<path class="kc-in" d="M${x},${y} C${(x + cl) / 2},${y} ${(x + cl) / 2},${cy} ${cl},${cy}"/>`; });
+  const sal = [...M.querySelectorAll('.kc-et')].map(e => { const b = p(e), x = b.left - R.left, y = b.top - R.top + b.height / 2; return `<path class="kc-out" d="M${cr},${cy} C${(cr + x) / 2},${cy} ${(cr + x) / 2},${y} ${x},${y}"/><circle cx="${x}" cy="${y}" r="2.5"/>`; });
+  Sv.setAttribute('viewBox', `0 0 ${R.width} ${R.height}`); Sv.innerHTML = ent.join('') + sal.join(''); pulsoKC();
+}
+function pulsoKC(){
+  const ins = [...document.querySelectorAll('#kcHilos .kc-in')], out = [...document.querySelectorAll('#kcHilos .kc-out')];
+  ins.forEach((x, i) => x.classList.toggle('vivo', i === KC.tarea % Math.max(1, ins.length)));
+  out.forEach((x, i) => x.classList.toggle('vivo', i === KC.tarea % Math.max(1, out.length)));
+}
+montarKC();
 /* ---------- navegación y eventos ---------- */
 $('#nav').onclick = e => { const b=e.target.closest('button'); if(!b) return;
   document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on', x===b));
