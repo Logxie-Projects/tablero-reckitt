@@ -5114,18 +5114,24 @@ function botonDevolucion(v, k){
   if (window.MODO_CLIENTE || v.padre) return '';
   const impo = k === 'fechaDevolucion' && v.operacion === 'IMPO' && !esLCL(v) && !v.tirillaDevolucion;
   const expo = k === 'fechaEntregaPuerto' && esTirillaExpo(v) && !v.tirillaEntrega;
+  // 8-nov (EXPO-009: se subió la tirilla pero el aviso no salió y el botón ya no aparecía): con la tirilla subida en LogxView y sin
+  // "aviso enviado", se puede mandar el aviso con la tirilla ya guardada (sin volver a subirla)
+  const t = k === 'fechaDevolucion' ? v.tirillaDevolucion : k === 'fechaEntregaPuerto' ? v.tirillaEntrega : '';
+  const sinAviso = ((k === 'fechaDevolucion' && v.operacion === 'IMPO') || (k === 'fechaEntregaPuerto' && esTirillaExpo(v))) && /subida en LogxView/i.test(t || '') && !/aviso enviado/i.test(t || '');
+  if (sinAviso) return `<div style="margin-top:4px"><button type="button" class="btn" data-dev="${esc(v.id)}" data-solo="1" title="La tirilla ya está guardada; manda el aviso con ella en el correo del proceso">✉ Enviar el aviso de la tirilla</button></div>`;
   if (!impo && !expo) return '';
   return `<div style="margin-top:4px"><button type="button" class="btn" data-dev="${esc(v.id)}" title="Sube la tirilla, confirma el paso y avisa en el correo del ${expo ? 'booking' : 'pedido'}">📎 Tirilla y aviso de ${expo ? 'entrega en puerto' : 'devolución'}</button></div>`;
 }
+let DEV_SOLO = false;
 function montarDevolucion(){
   if ($('#ovDev')) return;
   document.body.insertAdjacentHTML('beforeend', `<div class="ov" id="ovDev"><div class="modal" role="dialog" aria-modal="true" style="width:min(640px,100%)">
     <h3 id="devTitulo">📎 Vacío devuelto · tirilla y aviso</h3>
     <div class="sub" id="devViaje"></div>
-    <div class="fgrid3" style="margin-top:10px"><div><label id="devFechaLbl">Fecha de devolución</label><input type="date" id="devFecha"></div>
+    <div class="fgrid3" id="devSubida" style="margin-top:10px"><div><label id="devFechaLbl">Fecha de devolución</label><input type="date" id="devFecha"></div>
       <div style="grid-column:span 2"><label>Tirilla (foto o PDF)</label><input type="file" id="devArchivo" accept="image/*,application/pdf"></div></div>
     <div class="sub" id="devArchivoTxt"></div>
-    <label style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="devEnviar" checked> <b>Enviar el aviso con la tirilla</b></label>
+    <label id="devEnviarLbl" style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="devEnviar" checked> <b>Enviar el aviso con la tirilla</b></label>
     <div id="devCorreo" style="margin-top:6px"><label style="margin:0">Responder en el correo del proceso</label>
       <select id="devHilo" style="width:100%;margin-top:4px"><option>Buscando los correos del pedido…</option></select>
       <div class="sub" id="devPara" style="margin-top:4px"></div>
@@ -5144,7 +5150,7 @@ function montarDevolucion(){
     catch (e) { $('#devArchivoTxt').textContent = 'No se pudo leer el archivo'; } };
   $('#devGuardar').onclick = guardarDevolucion;
   $('#devHilo').onchange = pintarParaDevolucion;
-  document.addEventListener('click', e => { const b = e.target.closest('[data-dev]'); if (b) abrirDevolucion(b.dataset.dev); });
+  document.addEventListener('click', e => { const b = e.target.closest('[data-dev]'); if (b) abrirDevolucion(b.dataset.dev, !!b.dataset.solo); });
 }
 // las fotos grandes se reducen (como en Despacho); el PDF va tal cual
 function leerTirilla(file){
@@ -5160,17 +5166,18 @@ function leerTirilla(file){
     const r = new FileReader(); r.onload = () => ok({nombre: file.name, tipo: file.type, base64: r.result}); r.onerror = mal; r.readAsDataURL(file);
   });
 }
-async function abrirDevolucion(id){
+async function abrirDevolucion(id, solo){
   const v = viajes.find(x => x.id === id); if (!v) return;
   if (!pedirUsuario()) return;
-  DEV_ID = id; DEV_ARCHIVO = null;
+  DEV_ID = id; DEV_ARCHIVO = null; DEV_SOLO = !!solo;
   const expo = esTirillaExpo(v), fv = expo ? v.fechaEntregaPuerto : v.fechaDevolucion;
-  $('#devTitulo').textContent = expo ? '📎 Entregado en puerto · tirilla y aviso' : '📎 Vacío devuelto · tirilla y aviso';
+  $('#devTitulo').textContent = solo ? '✉ Aviso con la tirilla ya guardada' : expo ? '📎 Entregado en puerto · tirilla y aviso' : '📎 Vacío devuelto · tirilla y aviso';
+  $('#devSubida').style.display = $('#devEnviarLbl').style.display = solo ? 'none' : '';
   $('#devFechaLbl').textContent = expo ? 'Fecha de entrega en puerto' : 'Fecha de devolución';
   $('#devViaje').textContent = `${refCorta(v) || v.id} · contenedor ${v.contenedor || '—'} · ${expo ? 'puerto ' + (v.puerto || 'sin dato') + (v.pais ? ' · ' + v.pais : '') : v.patio || 'patio sin dato'}`;
   $('#devFecha').value = fv && fv <= HOY ? fv : HOY; $('#devFecha').max = HOY;
   $('#devArchivo').value = ''; $('#devArchivoTxt').textContent = ''; $('#devGuardar').disabled = true;
-  $('#devEnviar').checked = true; $('#devEnviar').onchange();
+  $('#devEnviar').checked = true; $('#devEnviar').onchange(); if (solo) $('#devGuardar').textContent = 'Enviar aviso';
   $('#devHilo').innerHTML = '<option>Buscando los correos del pedido…</option>'; $('#devHilo').disabled = true; $('#devPara').textContent = ''; $('#devTexto').value = '';
   $('#ovDev').classList.add('open');
   try {
@@ -5183,6 +5190,7 @@ async function abrirDevolucion(id){
     $('#devHilo').innerHTML = DEV_DEST.map((d, i) => `<option value="${i}">${esc(d.etiqueta)}</option>`).join(''); $('#devHilo').disabled = false;
     pintarParaDevolucion();
     $('#devTexto').value = j.texto;
+    if (DEV_SOLO) $('#devGuardar').disabled = false;
   } catch (e) { $('#devHilo').innerHTML = '<option>No se pudo buscar el correo</option>'; $('#devPara').textContent = 'No se pudo armar el aviso: ' + e.message + '. Puede guardar sin enviar.'; $('#devEnviar').checked = false; $('#devEnviar').onchange(); }
 }
 let DEV_DEST = [];
@@ -5200,16 +5208,18 @@ function pintarParaDevolucion(){
 const destinatariosDevolucion = () => [...document.querySelectorAll('#devDest [data-dest]')].filter(c => c.checked).map(c => c.dataset.dest)
   .concat($('#devOtros').value.split(/[,;\s]+/).map(x => x.trim()).filter(x => /^[\w.+-]+@[\w-]+(\.[\w-]+)+$/.test(x)));
 async function guardarDevolucion(){
-  const usuario = pedirUsuario(); if (!usuario || !DEV_ARCHIVO) return;
-  const enviar = $('#devEnviar').checked, b = $('#devGuardar');
+  const usuario = pedirUsuario(); if (!usuario || (!DEV_ARCHIVO && !DEV_SOLO)) return;
+  const enviar = DEV_SOLO || $('#devEnviar').checked, b = $('#devGuardar');
   if (enviar && !$('#devTexto').value.trim()) return toast('Escriba el texto del aviso');
   b.disabled = true; b.textContent = enviar ? 'Guardando y enviando…' : 'Guardando…';
   try {
     const d = DEV_DEST[+$('#devHilo').value] || {id: ''};
     const dest = destinatariosDevolucion();
     if (enviar && !dest.length) { b.disabled = false; $('#devEnviar').onchange(); return toast('Marque al menos un destinatario'); }
-    const j = await api('devolucion', {id: DEV_ID, fecha: $('#devFecha').value, archivo: DEV_ARCHIVO, texto: $('#devTexto').value, enviar, hiloId: d.id || '', destinatarios: dest, usuario});
+    const j = await api('devolucion', DEV_SOLO ? {id: DEV_ID, soloAviso: true, texto: $('#devTexto').value, enviar: true, hiloId: d.id || '', destinatarios: dest, usuario}
+      : {id: DEV_ID, fecha: $('#devFecha').value, archivo: DEV_ARCHIVO, texto: $('#devTexto').value, enviar, hiloId: d.id || '', destinatarios: dest, usuario});
     if (!j.ok) throw new Error(j.error || 'error');
+    if (DEV_SOLO) { if (!j.envio || !j.envio.ok) throw new Error(j.envio ? j.envio.error : 'no salió'); $('#ovDev').classList.remove('open'); toast('✓ Aviso enviado con la tirilla', 6000); await cargar(); render(); if (editId === DEV_ID) abrir(DEV_ID); b.disabled = false; return; }
     $('#ovDev').classList.remove('open');
     const hecho = esTirillaExpo(viajes.find(x => x.id === DEV_ID) || {}) ? 'Entregado en puerto' : 'Vacío devuelto';
     toast(j.envio ? (j.envio.ok ? `✓ ${hecho} y aviso enviado` + (j.envio.hilo ? ' en el correo del proceso' : '') : '✓ Guardado, pero el aviso no salió: ' + j.envio.error) : `✓ ${hecho} con su tirilla`, 6000);
@@ -5227,7 +5237,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '15471a7262';
+const VERSION_TABLERO = '95c74bf5dc';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
