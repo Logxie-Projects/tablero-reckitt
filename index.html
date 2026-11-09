@@ -726,7 +726,7 @@ body.lv-abierta{overflow:hidden}
 .kc-r{border:1px solid var(--lv-borde);border-left:4px solid var(--c);border-radius:12px;padding:9px 12px;background:#fff}
 .kc-r-v{font-size:26px;font-weight:700;color:var(--c);line-height:1.2}.kc-r-v small{font-size:13px;font-weight:500;color:var(--lv-gris)}
 .kc-r-s{font-family:var(--lv-mono);font-size:10.5px;color:var(--lv-gris)}
-#kcHilos path.kc-in{stroke:#5eead4}#kcHilos path.kc-out{stroke:#c4b5fd}#kcHilos circle{fill:#a78bfa}
+.lv-hilos path.kc-in{stroke:#5eead4}.lv-hilos path.kc-out{stroke:#c4b5fd}.kc-mapa .lv-hilos circle{fill:#a78bfa}
 .kc-st-barra{display:flex;height:14px;border-radius:7px;overflow:hidden;gap:2px;margin-bottom:10px}
 .kc-st-barra i{display:block;min-width:6px;transition:flex .6s}
 .kc-st-l{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
@@ -5452,7 +5452,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '25350f17b0';
+const VERSION_TABLERO = 'dc850514af';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -5807,7 +5807,7 @@ montarLV();
  * (buscador o 📊 en la lista): con un viaje, todo se calcula solo para él y sin periodo. Sin viajes de prueba ni subviajes; los
  * cancelados solo cuentan como pedidos cancelados. Reglas del dominio (puntajeViaje, desviosPlan, hitosPlan, leadTime, cobro,
  * demora…): mismos números que el tablero. Usa ayudas de logxia-vivo.js (enBog, contarLV, miles). Prefijo CSS: kv- (y lv-). */
-const KV = {op: '', per: 'mes', sel: '', viaje: '', tick: null};
+const KV = {op: '', per: 'mes', sel: '', viaje: '', tick: null, tick2: null, tarea: 0, tareas: []};
 const KV_PER = {semana: ['Semana'], mes: ['Mes'], trim: ['3 meses']};
 const INICIO_KV = '2026-10-23';   // primer registro del sistema: antes no hay datos
 const isoKV = x => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
@@ -5992,21 +5992,19 @@ function montarKV(){
     <span class="kv-buscar"><input id="kvViaje" list="kvViajes" placeholder="Un viaje: booking, pedido, placa…" autocomplete="off" aria-label="Ver los KPIs de un viaje"><datalist id="kvViajes"></datalist><button id="kvViajeX" class="hidden" title="Volver a todos los viajes">✕ todos</button></span>
     <span class="kv-rango" id="kvRango"></span><span style="flex:1"></span><span class="kv-hoja" id="kvHoja"></span>
   </div>
+  <div class="lv-card"><div class="lv-titulo" id="kvTF"></div>
+    <div class="lv-mapa kc-mapa" id="kvMapa"><svg class="lv-hilos" id="kvHilos"></svg>
+      <div class="lv-col"><div class="lv-rot">LO QUE RECIBE</div><div class="kc-ins" id="kvIns"></div></div>
+      <div class="lv-router"><div class="lv-rot">ORQUESTANDO</div><div class="kc-pulpo" id="kvPulpo">${AVATAR_LV}</div><div class="lv-burbuja">LogxIA</div><div class="lv-router-t kc-tarea" id="kvTarea"></div></div>
+      <div class="lv-col"><div class="lv-rot">LO QUE ENTREGA</div><div class="kc-etapas" id="kvEtapas"></div></div>
+    </div></div>
   <div class="lv-card"><div class="lv-titulo" id="kvT1"></div><div class="kv-emb" id="kvEmb"></div></div>
   <div class="lv-fila">
     <div class="lv-card lv-desc"><div class="lv-rot">REPROGRAMACIONES</div><div class="lv-desc-n" id="kvRep">0</div><div class="lv-desc-s" id="kvRepS"></div><div class="lv-anillo" id="kvRepA"></div></div>
     <div class="lv-card"><div class="lv-rot">¿QUIÉN LAS CAUSÓ? <span id="kvCosto"></span></div><div class="kv-barra" id="kvBarra"></div><div class="kv-ley" id="kvLey"></div></div>
   </div>
   <div class="lv-card"><div class="lv-titulo" id="kvT2"></div><div class="kv-gest" id="kvInd"></div></div>
-  <div class="lv-card">
-    <div class="lv-titulo" id="kvTitulo"></div>
-    <div class="lv-mapa kv-mapa" id="kvMapa"><svg class="lv-hilos" id="kvHilos"></svg>
-      <div class="lv-col"><div class="lv-rot">ETAPAS</div><div id="kvEtapas"></div></div>
-      <div class="lv-router"><div class="lv-rot">VIAJES ABIERTOS</div><div class="lv-burbuja" id="kvBurbuja">con vehículo</div>
-        <div class="kv-anillo" id="kvAnillo"></div><div class="lv-router-t" id="kvOps"></div><div class="lv-router-p" id="kvAlerta"></div></div>
-      <div class="lv-col"><div class="lv-rot">URGENTE · 4 <span>toca uno para ver sus viajes</span></div><div class="lv-ags" id="kvAhora"></div></div>
-    </div>
-  </div>
+  <div class="lv-card"><div class="lv-titulo" id="kvTitulo"></div><div class="kv-gest" id="kvAhora"></div></div>
   <div class="lv-card"><div class="lv-titulo" id="kvT4"></div><div class="kv-gest" id="kvGest"></div></div>
   <div class="lv-card lv-flujo"><div class="lv-rot">TENDENCIA · 8 SEMANAS <span>por la fecha del pedido</span></div>
     <div class="lv-flujo-f"><div class="lv-ley"><span style="color:#2563eb">pedidos</span><span style="color:#16a34a">con vehículo</span><span style="color:#ea580c">ejecutados</span></div>
@@ -6038,12 +6036,14 @@ function montarKV(){
   $('#kv').addEventListener('keydown', e => { const ind = e.target.closest('[data-ind]'); if (ind && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); ind.click(); } });
 }
 function salirKV(){ if (location.hash === '#kpis') history.back(); else cerrarKV(); }
-function cerrarKV(){ $('#v-kpis')?.classList.add('hidden'); document.body.classList.remove('lv-abierta'); clearInterval(KV.tick); KV.tick = null; }
+function cerrarKV(){ $('#v-kpis')?.classList.add('hidden'); document.body.classList.remove('lv-abierta'); clearInterval(KV.tick); clearInterval(KV.tick2); KV.tick = KV.tick2 = null; }
 function abrirKV(){
   if (window.MODO_CLIENTE) return;
   $('#v-kpis').classList.remove('hidden'); document.body.classList.add('lv-abierta'); $('#kvVolver').textContent = textoVolver();
   if (location.hash !== '#kpis') history.pushState(null, '', '#kpis');
-  $('#kvInd').innerHTML = ''; $('#kvAhora').innerHTML = ''; $('#kvGest').innerHTML = ''; pintarKV();
+  $('#kvInd').innerHTML = ''; $('#kvAhora').innerHTML = ''; $('#kvGest').innerHTML = ''; $('#kvEtapas').innerHTML = ''; pintarKV();
+  // lo que hace LogxIA cambia cada 2,6 s y se enciende un hilo a la vez (como en 📊 Indicadores)
+  clearInterval(KV.tick2); KV.tick2 = setInterval(() => { if (document.hidden || !KV.tareas.length) return; KV.tarea = (KV.tarea + 1) % KV.tareas.length; $('#kvTarea').textContent = KV.tareas[KV.tarea]; pulsoFlujo('kv', KV.tarea); }, 2600);
   // el tablero trae datos nuevos de la hoja cada 5 min: la pantalla se repinta cada minuto mientras está abierta
   if (!KV.tick) KV.tick = setInterval(() => { if (!document.hidden) pintarKV(true); }, 60e3);
 }
@@ -6092,16 +6092,13 @@ function pintarKV(suave){
   $('#kvT2').innerHTML = `<b>2 · De lo asignado, cómo se cumple</b> · ${uno ? 'este viaje' : `${K.Asig.length} pedidos con vehículo`} · toca uno para ver sus viajes`;
   const nuevo = !$('#kvAhora').children.length;
   tarjetasKV($('#kvInd'), K.ind, 0); tarjetasKV($('#kvAhora'), K.ahora, 8); tarjetasKV($('#kvGest'), K.gest, 12);
-  // 3 · la operación ahora
-  $('#kvTitulo').innerHTML = `<b>3 · La operación ahora</b> · ${K.A.length} viaje${K.A.length === 1 ? '' : 's'} abierto${K.A.length === 1 ? '' : 's'}${uno ? '' : KV.op ? ' · solo ' + KV.op : ''} · no depende del periodo`;
-  $('#kvEtapas').innerHTML = K.etapas.map(([l], i) => `<div class="lv-src kv-etapa" style="--c:${['#9ca3af', '#2563eb', '#ea580c', '#16a34a'][i]}"><span class="lv-src-ic kv-et-ic"></span><div><b>${l}</b><small>${['esperan vehículo', 'listos para salir', 'retirados, llenos o en bodega de paso', 'falta cerrar o facturar'][i]}</small></div><span class="lv-src-n" id="kvet-${i}">0</span></div>`).join('');
-  K.etapas.forEach(([, n], i) => kvContar($('#kvet-' + i), n));
-  const pa = K.A.length ? Math.round(K.asign / K.A.length * 100) : 0, r = 62, C = 2 * Math.PI * r;
-  $('#kvAnillo').innerHTML = `<svg viewBox="0 0 150 150"><circle cx="75" cy="75" r="${r}" fill="none" stroke="#efede7" stroke-width="12"/><circle class="kv-arco" cx="75" cy="75" r="${r}" fill="none" stroke="#16a34a" stroke-width="12" stroke-linecap="round" stroke-dasharray="${(C * pa / 100).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 75 75)"/></svg><div class="kv-anillo-t"><b id="kvAb">0</b><span>${pa}% con vehículo</span></div>`;
-  kvContar($('#kvAb'), K.A.length);
-  $('#kvOps').textContent = kvPorOp(K.A) || 'sin viajes abiertos';
-  const s72 = K.ahora[0].L.length; $('#kvAlerta').textContent = s72 ? `${s72} sin vehículo en las próximas 72 h` : 'todo lo de las próximas 72 h tiene vehículo';
-  $('#kvAlerta').style.color = s72 ? '#dc2626' : '#16a34a';
+  // 3 · urgente ahora (no depende del periodo)
+  const s72 = K.ahora[0].L.length, pa = K.A.length ? Math.round(K.asign / K.A.length * 100) : 0;
+  $('#kvTitulo').innerHTML = `<b>3 · Urgente ahora</b> · ${K.A.length} viaje${K.A.length === 1 ? '' : 's'} abierto${K.A.length === 1 ? '' : 's'} (${kvPorOp(K.A) || 'ninguno'}), ${pa}% con vehículo · <span style="color:${s72 ? '#dc2626' : '#16a34a'}">${s72 ? `${s72} sin vehículo en las próximas 72 h` : 'todo lo de las próximas 72 h tiene vehículo'}</span> · no depende del periodo`;
+  // el flujo de LogxIA (lo que recibe → lo que entrega), el mismo de 📊 Indicadores con el puntaje del equipo
+  const F = calcKC(true); KV.tareas = F.tareas; if (KV.tarea >= F.tareas.length) KV.tarea = 0; K.flujo = F.etapas.map(x => ({...x, id: 'f-' + x.id, L: x.L.map(f => ({...f, tono: f.tono === 'warn' ? 'warn' : 'info'}))}));
+  $('#kvTF').innerHTML = `<b>Cómo trabaja LogxIA</b> · lo que recibe y lo que entrega ${uno ? 'para este viaje' : 'en el periodo'} · toca un paso para ver sus viajes`;
+  pintarFlujo('kv', F, KV.sel, 'data-ind', 'f-', KV.tareas[KV.tarea]);
   // 4 · gestión
   $('#kvT4').innerHTML = `<b>4 · Gestión</b> · correos, solicitudes, cambios y errores ${uno ? 'de este viaje' : 'del periodo'} · toca uno para ver el detalle`;
   // tendencia
@@ -6112,8 +6109,8 @@ function pintarKV(suave){
   $('#kvSem').innerHTML = S.map(s => `<span>${fd(s).replace(/^\S+ /, '')}</span>`).join('');
   series.forEach(([k]) => kvContar($('#kvn-' + k), K.serie[k][ult]));
   // para revisar: lo de la tarjeta o fila elegida; sin elegir, lo pendiente de todo (lo rojo primero)
-  const todos = [...K.emb, ...K.ind, ...K.ahora, ...K.gest], sel = todos.find(x => x.id === KV.sel), esGest = sel && K.gest.includes(sel);
-  const filas = sel ? sel.L.map(x => ({...x, ind: sel})) : todos.filter(x => !K.gest.includes(x) || x.enTodo).flatMap(ind => ind.L.filter(x => x.tono !== 'info').map(x => ({...x, ind}))).sort((p, q) => (p.tono === 'bad' ? 0 : 1) - (q.tono === 'bad' ? 0 : 1));
+  const todos = [...K.emb, ...K.flujo, ...K.ind, ...K.ahora, ...K.gest], sel = todos.find(x => x.id === KV.sel), esGest = sel && (K.gest.includes(sel) || K.flujo.includes(sel));
+  const filas = sel ? sel.L.map(x => ({...x, ind: sel})) : todos.filter(x => (!K.gest.includes(x) && !K.flujo.includes(x)) || x.enTodo).flatMap(ind => ind.L.filter(x => x.tono !== 'info').map(x => ({...x, ind}))).sort((p, q) => (p.tono === 'bad' ? 0 : 1) - (q.tono === 'bad' ? 0 : 1));
   $('#kvListaT').textContent = sel ? `${esGest || K.emb.includes(sel) ? 'DETALLE' : 'PARA REVISAR'} · ${sel.cod}` : 'PARA REVISAR';
   $('#kvListaS').textContent = sel ? `${filas.length} registro${filas.length === 1 ? '' : 's'} · toca la tarjeta otra vez para ver todo` : `${filas.length} pendiente${filas.length === 1 ? '' : 's'} · lo rojo primero · 📊 = KPIs solo de ese viaje`;
   $('#kvLista').innerHTML = filas.slice(0, 150).map(x => `<div class="lv-ev kv-ev${x.v ? ' clic' : ''}" ${x.v ? `data-viaje="${esc(x.v.id)}"` : ''}><span class="kv-ev-v">${x.v && !uno ? `<button class="kv-solo" data-kvsolo="${esc(x.v.id)}" title="Ver los KPIs solo de este viaje">📊</button>` : ''}${esc(x.v ? kvViaje(x.v) : (x.et || '—'))}${x.v && x.et ? `<small>${esc(x.et)}</small>` : ''}</span><span class="lv-tag ${x.tono === 'bad' ? 'kv-rojo' : ''}" style="--c:${x.ind.color}">${esc(x.tag)}</span><span class="lv-ev-t"><b style="color:${x.ind.color}">${x.ind.cod}</b> ${esc(x.txt)}</span></div>`).join('')
@@ -6130,15 +6127,8 @@ function tarjetasKV(box, L, base){
     $('#kvi-' + x.id).classList.toggle('activo', KV.sel === x.id);
   });
 }
-function lineasKV(){
-  const M = $('#kvMapa'), Sv = $('#kvHilos'); if (!M || !Sv || !M.offsetWidth || getComputedStyle(Sv).display === 'none') return;
-  const R = M.getBoundingClientRect(), c = $('#kvAnillo').getBoundingClientRect(), p = el => el.getBoundingClientRect();
-  const cx = c.left - R.left, cy = c.top - R.top + c.height / 2, cr = c.right - R.left;
-  const src = [...M.querySelectorAll('.kv-etapa')].map(e => { const b = p(e), x = b.right - R.left, y = b.top - R.top + b.height / 2; return `<path d="M${x},${y} C${(x + cx) / 2},${y} ${(x + cx) / 2},${cy} ${cx},${cy}"/>`; });
-  const ind = [...M.querySelectorAll('.kv-ind')].filter((e, i) => i % 2 === 0).map(e => { const b = p(e), y = b.top - R.top + b.height / 2, x = b.left - R.left;
-    return `<path d="M${cr},${cy} C${(cr + x) / 2},${cy} ${(cr + x) / 2},${y} ${x},${y}"/><circle cx="${x}" cy="${y}" r="2.5"/>`; });
-  Sv.setAttribute('viewBox', `0 0 ${R.width} ${R.height}`); Sv.innerHTML = src.join('') + ind.join('');
-}
+// hilos del flujo de LogxIA (kpis-cliente.js lineasFlujo, común a las dos pantallas)
+function lineasKV(){ lineasFlujo('kv', KV.tarea); }
 window.addEventListener('resize', () => { if ($('#v-kpis') && !$('#v-kpis').classList.contains('hidden')) lineasKV(); });
 montarKV();
 /* ---------- kpis-cliente.js · 📊 Indicadores para Reckitt: la vista del cliente (8-nov-2026) ----------
@@ -6160,8 +6150,8 @@ const kcCobro = v => v.kc ? {flete: Number(v.kc[0]) || 0, extra: Number(v.kc[1])
 const kcRef = v => { const c = clavesBusqueda(v).filter(([k]) => k !== 'Placa')[0]; return `${v.operacion || ''} ${c ? c[1] : v.id}${v.pais ? ' · ' + String(v.pais).toLowerCase().replace(/(^|\s)\S/g, x => x.toUpperCase()) : ''}`; };
 const kcMillones = n => n >= 1e6 ? '$' + String(Math.round(n / 1e5) / 10).replace('.', ',') + ' M' : n ? pesos(n) : '$0';
 
-function calcKC(){
-  KV.viaje = '';   // esta vista siempre es de toda la operación (o de la que se elija)
+// equipo: lo usa también 📊 KPIs Reckitt (kpis-vivo.js) para su flujo; ahí la calificación es el puntaje interno y respeta el viaje elegido
+function calcKC(equipo){
   const Todos = kvTodos(), Ped = Todos.filter(v => kvEnPer(kvFechaPedido(v))), Canc = Ped.filter(kvCancel), Vig = Ped.filter(v => !kvCancel(v));
   const Asig = Vig.filter(kvAtendido), Debe = Vig.filter(v => kvLeToca(v) || kvAtendido(v)), SinAt = Debe.filter(v => !kvAtendido(v));
   const PorProg = Vig.filter(v => !kvLeToca(v) && !kvAtendido(v)), Ejec = Vig.filter(transporteFinalizado);
@@ -6172,12 +6162,12 @@ function calcKC(){
   const H = Asig.flatMap(v => hitosATiempo(v).map(h => ({h, v}))), hOk = H.filter(x => x.h.ok).length;
   const pasos = Asig.reduce((s, v) => s + confirmacionesDe(v).length, 0);
   const LT = Ejec.map(v => ({v, l: leadTime(v)})).filter(x => x.l.real !== null);
-  const PS = Vig.map(v => ({v, p: puntajeCliente(v)})).filter(x => x.p), bajos = PS.filter(x => x.p.bajo);
+  const PS = Vig.map(v => ({v, p: equipo ? puntajeViaje(v) : puntajeCliente(v)})).filter(x => x.p), bajos = PS.filter(x => x.p.bajo);
   const CB = Vig.map(v => ({v, c: kcCobro(v)})).filter(x => x.c.flete || x.c.extra);
   const flete = CB.reduce((s, x) => s + x.c.flete, 0), extra = CB.reduce((s, x) => s + x.c.extra, 0), conFlete = CB.filter(x => x.c.flete);
   const facturado = CB.filter(x => x.c.fact === 'Facturado').reduce((s, x) => s + x.c.flete + x.c.extra, 0);
   // lo que entra a LogxIA en el periodo (con una operación elegida, solo lo que se cruzó con un viaje de esa operación)
-  const vOk = id => { const v = id && viajes.find(x => x.id === id); return KV.op ? !!v && v.operacion === KV.op : !id || !!v; };
+  const vOk = id => { const v = id && viajes.find(x => x.id === id); return KV.viaje ? !!v && v.id === KV.viaje : KV.op ? !!v && v.operacion === KV.op : !id || !!v; };
   const ins = k => ((window.INSUMOS || {})[k] || []).filter(([d, id]) => kvEnPer(d) && vOk(id)).length;
   const fila = (v, tag, txt, tono) => ({v, tag, txt, tono: tono || 'info'});
   const pedTxt = v => `pedido para ${fd(kvFechaPedido(v))}`;
@@ -6277,7 +6267,7 @@ function montarKC(){
     if (vj && vj.dataset.viaje) abrir(vj.dataset.viaje);
   });
   $('#kc').addEventListener('keydown', e => { const et = e.target.closest('[data-kc]'); if (et && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); et.click(); } });
-  window.addEventListener('resize', () => { if (!$('#v-kc').classList.contains('hidden')) lineasKC(); });
+  window.addEventListener('resize', () => { if (!$('#v-kc').classList.contains('hidden')) lineasFlujo('kc', KC.tarea); });
 }
 // el equipo ve el mismo botón como "vista del cliente" (se llama al cargar los datos: datos.js)
 function etiquetaKC(){ const b = $('#btnKC'); if (b) b.textContent = window.MODO_CLIENTE ? '📊 Indicadores' : '📊 Vista cliente'; }
@@ -6290,10 +6280,11 @@ function abrirKC(){
   // cada 2,6 s cambia lo que hace LogxIA; cada minuto se repinta con los datos que el tablero trae de la hoja
   clearInterval(KC.tick); let n = 0;
   KC.tick = setInterval(() => { if (document.hidden) return; KC.tarea = (KC.tarea + 1) % KC.tareas.length; $('#kcTarea').textContent = KC.tareas[KC.tarea] || '';
-    pulsoKC(); if (++n % 23 === 0) pintarKC(true); }, 2600);
+    pulsoFlujo('kc', KC.tarea); if (++n % 23 === 0) pintarKC(true); }, 2600);
 }
 function pintarKC(suave){
   if (!$('#kc')) return;
+  KV.viaje = '';   // esta vista siempre es de toda la operación (o de la que se elija)
   const K = calcKC(), [a, b] = kvRango(); KC.tareas = K.tareas; if (KC.tarea >= K.tareas.length) KC.tarea = 0;
   $('#kcOp').querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.op === KV.op));
   $('#kcPer').querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.per === KV.per));
@@ -6309,15 +6300,8 @@ function pintarKC(suave){
   $('#kcStT').textContent = `${totS} solicitado${totS === 1 ? '' : 's'}${K.cancel.v ? ` · ${K.cancel.v} cancelado${K.cancel.v === 1 ? '' : 's'} aparte` : ''}`;
   $('#kcSt').innerHTML = `<div class="kc-st-barra">${K.estados.filter(x => x.v).map(x => `<i style="flex:${x.v};background:${x.color}" title="${esc(x.cod)}: ${x.v}"></i>`).join('') || '<i style="flex:1;background:#e7e5df"></i>'}</div>
     <div class="kc-st-l">${S.map(x => `<div class="kc-st-c${KC.sel === x.id ? ' activo' : ''}${x.id === 'st-canc' ? ' gris' : ''}" data-kc="${x.id}" style="--c:${x.color}" role="button" tabindex="0"><b>${miles(x.v)}</b><span>${esc(x.cod)}</span><small>${esc(x.sub)}</small></div>`).join('')}</div>`;
-  // lo que recibe
-  $('#kcIns').innerHTML = K.insumos.map((x, i) => `<div class="lv-src kc-src"><span class="lv-src-ic">${x.ic}</span><div><b>${x.l}</b><small>${x.s}</small></div><span class="lv-src-n" id="kcin-${i}">0</span></div>`).join('');
-  K.insumos.forEach((x, i) => kvContar($('#kcin-' + i), x.n));
-  if (!window.INSUMOS) $('#kcIns').insertAdjacentHTML('beforeend', '<div class="lv-vacio">Los conteos llegan con la próxima actualización del sistema.</div>');
-  // lo que entrega
-  if (!$('#kcEtapas').children.length) $('#kcEtapas').innerHTML = K.etapas.map(x => `<div class="lv-ag kc-et" data-kc="${x.id}" id="kce-${x.id}" style="--c:${x.color}" role="button" tabindex="0">
-    <span class="lv-ag-ic">${x.ic}</span><div class="lv-ag-tx"><b>${x.cod}</b><small class="lv-ag-sub" id="kces-${x.id}"></small></div><span class="kc-et-v"><span id="kcev-${x.id}">0</span><small id="kceu-${x.id}"></small></span></div>`).join('');
-  K.etapas.forEach(x => { kvContar($('#kcev-' + x.id), x.v); $('#kceu-' + x.id).textContent = x.v === null ? '' : x.suf; $('#kces-' + x.id).textContent = x.sub; $('#kce-' + x.id).classList.toggle('activo', KC.sel === x.id); });
-  $('#kcTarea').textContent = KC.tareas[KC.tarea] || '';
+  // lo que recibe → LogxIA → lo que entrega
+  pintarFlujo('kc', K, KC.sel, 'data-kc', '', KC.tareas[KC.tarea]);
   // resultado
   $('#kcResT').textContent = `de ${K.Asig.length} pedido${K.Asig.length === 1 ? '' : 's'} con vehículo`;
   $('#kcRes').innerHTML = K.res.map(x => `<div class="kc-r" style="--c:${x.color}"><div class="lv-kpi-l">${x.cod}</div><div class="kc-r-v">${x.v === null ? '—' : x.pesos ? kcMillones(x.v) : kvNum(x.v) + `<small>${x.suf}</small>`}</div><div class="kc-r-s">${esc(x.sub)}</div></div>`).join('');
@@ -6332,21 +6316,36 @@ function pintarKC(suave){
   $('#kcListaS').textContent = `${sel.L.length} viaje${sel.L.length === 1 ? '' : 's'} · toca otro paso arriba`;
   $('#kcLista').innerHTML = sel.L.slice(0, 150).map(x => `<div class="lv-ev kv-ev clic" data-viaje="${esc(x.v.id)}"><span class="kv-ev-v">${esc(kcRef(x.v))}</span><span class="lv-tag ${x.tono === 'warn' ? 'naranja' : 'gris'}">${esc(x.tag)}</span><span class="lv-ev-t">${esc(x.txt)}</span></div>`).join('')
     || '<div class="lv-vacio">Ningún viaje en este paso con estos filtros.</div>';
-  if (!suave) requestAnimationFrame(lineasKC);
+  if (!suave) requestAnimationFrame(() => lineasFlujo('kc', KC.tarea));
 }
-// hilos: de cada fuente al pulpo y del pulpo a cada paso; uno "vivo" a la vez (pulsoKC)
-function lineasKC(){
-  const M = $('#kcMapa'), Sv = $('#kcHilos'); if (!M || !Sv || !M.offsetWidth || getComputedStyle(Sv).display === 'none') return;
-  const R = M.getBoundingClientRect(), c = $('#kcPulpo').getBoundingClientRect(), p = el => el.getBoundingClientRect();
+// el flujo, común a 📊 Indicadores (pre 'kc') y 📊 KPIs Reckitt (pre 'kv'): fuentes con su conteo, pasos con su valor y la tarea de
+// LogxIA; attr/idp = cómo cada pantalla reconoce el clic en un paso (data-kc 'ped' o data-ind 'f-ped')
+function pintarFlujo(pre, K, sel, attr, idp, tarea){
+  const ins = $('#' + pre + 'Ins'), et = $('#' + pre + 'Etapas');
+  ins.innerHTML = K.insumos.map((x, i) => `<div class="lv-src kc-src"><span class="lv-src-ic">${x.ic}</span><div><b>${x.l}</b><small>${x.s}</small></div><span class="lv-src-n" id="${pre}in-${i}">0</span></div>`).join('')
+    + (window.INSUMOS ? '' : '<div class="lv-vacio">Los conteos llegan con la próxima actualización del sistema.</div>');
+  K.insumos.forEach((x, i) => kvContar($(`#${pre}in-${i}`), x.n));
+  if (!et.children.length) et.innerHTML = K.etapas.map(x => `<div class="lv-ag kc-et" ${attr}="${idp + x.id}" id="${pre}e-${x.id}" style="--c:${x.color}" role="button" tabindex="0">
+    <span class="lv-ag-ic">${x.ic}</span><div class="lv-ag-tx"><b>${x.cod}</b><small class="lv-ag-sub" id="${pre}es-${x.id}"></small></div><span class="kc-et-v"><span id="${pre}ev-${x.id}">0</span><small id="${pre}eu-${x.id}"></small></span></div>`).join('');
+  K.etapas.forEach(x => { kvContar($(`#${pre}ev-${x.id}`), x.v); $(`#${pre}eu-${x.id}`).textContent = x.v === null ? '' : x.suf; $(`#${pre}es-${x.id}`).textContent = x.sub; $(`#${pre}e-${x.id}`).classList.toggle('activo', sel === idp + x.id); });
+  $('#' + pre + 'Tarea').textContent = tarea || '';
+}
+// hilos: de cada fuente al pulpo y del pulpo a cada paso; uno "vivo" a la vez (pulsoFlujo)
+function lineasFlujo(pre, n){
+  const M = $('#' + pre + 'Mapa'), Sv = $('#' + pre + 'Hilos'); if (!M || !Sv || !M.offsetWidth || getComputedStyle(Sv).display === 'none') return;
+  const R = M.getBoundingClientRect(), c = $('#' + pre + 'Pulpo').getBoundingClientRect(), p = el => el.getBoundingClientRect();
   const cl = c.left - R.left, cr = c.right - R.left, cy = c.top - R.top + c.height / 2;
+  // en pantallas medianas las columnas se apilan: sin las tres en fila, los hilos se cruzarían y no se dibujan
+  const fila = [...M.querySelectorAll('.kc-src')].every(e => p(e).right <= c.left) && [...M.querySelectorAll('.kc-et')].every(e => p(e).left >= c.right);
+  if (!fila) { Sv.innerHTML = ''; return; }
   const ent = [...M.querySelectorAll('.kc-src')].map(e => { const b = p(e), x = b.right - R.left, y = b.top - R.top + b.height / 2; return `<path class="kc-in" d="M${x},${y} C${(x + cl) / 2},${y} ${(x + cl) / 2},${cy} ${cl},${cy}"/>`; });
   const sal = [...M.querySelectorAll('.kc-et')].map(e => { const b = p(e), x = b.left - R.left, y = b.top - R.top + b.height / 2; return `<path class="kc-out" d="M${cr},${cy} C${(cr + x) / 2},${cy} ${(cr + x) / 2},${y} ${x},${y}"/><circle cx="${x}" cy="${y}" r="2.5"/>`; });
-  Sv.setAttribute('viewBox', `0 0 ${R.width} ${R.height}`); Sv.innerHTML = ent.join('') + sal.join(''); pulsoKC();
+  Sv.setAttribute('viewBox', `0 0 ${R.width} ${R.height}`); Sv.innerHTML = ent.join('') + sal.join(''); pulsoFlujo(pre, n || 0);
 }
-function pulsoKC(){
-  const ins = [...document.querySelectorAll('#kcHilos .kc-in')], out = [...document.querySelectorAll('#kcHilos .kc-out')];
-  ins.forEach((x, i) => x.classList.toggle('vivo', i === KC.tarea % Math.max(1, ins.length)));
-  out.forEach((x, i) => x.classList.toggle('vivo', i === KC.tarea % Math.max(1, out.length)));
+function pulsoFlujo(pre, n){
+  const ins = [...document.querySelectorAll(`#${pre}Hilos .kc-in`)], out = [...document.querySelectorAll(`#${pre}Hilos .kc-out`)];
+  ins.forEach((x, i) => x.classList.toggle('vivo', i === n % Math.max(1, ins.length)));
+  out.forEach((x, i) => x.classList.toggle('vivo', i === n % Math.max(1, out.length)));
 }
 montarKC();
 /* ---------- navegación y eventos ---------- */
