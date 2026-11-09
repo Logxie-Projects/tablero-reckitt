@@ -4660,7 +4660,9 @@ $('#ovBarrido').onclick = e => {
 };
 // documentos.js · "Documentos de contenedores": los adjuntos de la programación de Jhonier (confirmación del booking, carta de
 // retiro…) que Apps Script archiva en Drive por mes (pestañas Documentos y Documentos por booking). Busca por booking, destino o
-// viaje y marca lo que falta. Solo lee.
+// viaje y marca lo que falta. 8-nov: "📎 Subir documento" (arriba y en cada booking) para lo que llega por WhatsApp o a otro correo:
+// POST 'subirDocumento' (Documentos.gs subirDocumentoExpo_); queda como la versión más nueva y el ✔ se ve de una vez (marcas con
+// lo que hay en archivos, no solo con el resumen de cada hora).
 let DOCS = null;
 const TIPOS_CLAVE = ['Confirmación de booking', 'Carta de retiro', 'Comodato', 'Order List'];
 
@@ -4688,22 +4690,73 @@ function pintarDocumentos(){
     const dia = a => a.fecha ? fd(String(a.fecha).slice(0, 10)) : '';
     return L.map((a, i) => i === 0 ? `<a href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.nombre)}">📄${L.length > 1 ? ' <span class="sub">' + esc(dia(a)) + '</span>' : ''}</a>`
       : `<a href="${esc(a.url)}" target="_blank" rel="noopener" class="sub" style="font-size:11px" title="Versión anterior · ${esc(a.nombre)}">anterior ${esc(dia(a))}</a>`).join(' '); };
-  const filas = DOCS.porBooking.filter(r => r.mes === mes && (!soloFalta || r.falta)
+  const filas = DOCS.porBooking.filter(r => r.mes === mes && (!soloFalta || faltaDe(r))
     && (!q || minus([r.booking, r.pais, r.viaje, r.mn].join(' ')).includes(q)));
+  // ✔ si el resumen lo dice o si ya hay un archivo de ese tipo (lo recién subido se ve sin esperar la corrida de cada hora)
+  const tiene = (r, tipo, ok) => ok === '✔' || deBooking(r.booking).some(a => a.tipo === tipo);
   const marca = (r, tipo, ok) => !r.booking || r.booking === 'PTE' ? '<span class="sub">—</span>'
-    : ok === '✔' ? `<span style="color:var(--ok)">✔</span> ${enlaces(r.booking, tipo)}` : '<b style="color:var(--bad)">✖ falta</b>';
+    : tiene(r, tipo, ok) ? `<span style="color:var(--ok)">✔</span> ${enlaces(r.booking, tipo)}` : '<b style="color:var(--bad)">✖ falta</b>';
+  const nav = r => (r.naviera || '').replace(/ [✔✖]$/, '');
+  const faltaDe = r => !r.booking || r.booking === 'PTE' ? r.falta : [!tiene(r, 'Confirmación de booking', r.confirmacion) && 'Confirmación del booking',
+    !tiene(r, 'Carta de retiro', r.carta) && 'Carta de retiro', nav(r) && !tiene(r, nav(r), /✔$/.test(r.naviera) ? '✔' : '✖') && nav(r)].filter(Boolean).join(' · ');
   const otros = bk => deBooking(bk).filter(a => !TIPOS_CLAVE.includes(a.tipo)).map(a => `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.tipo)}</a>`).join(' · ');
   const sinBk = DOCS.archivos.filter(a => a.mes === mes && !a.booking);
-  const faltan = DOCS.porBooking.filter(r => r.mes === mes && r.falta).length;
+  const faltan = DOCS.porBooking.filter(r => r.mes === mes && faltaDe(r)).length;
+  const subir = r => r.booking && r.booking !== 'PTE' ? ` <button class="link" data-subir="${esc(r.booking)}" data-mes="${esc(r.mes)}" data-tipo="${esc((faltaDe(r).split(' · ')[0] || '').replace('Confirmación del booking', 'Confirmación de booking'))}" title="Subir un documento a este booking">📎</button>` : '';
   $('#docsLista').innerHTML = `<p class="sub">${filas.length} contenedores · <b style="color:${faltan ? 'var(--bad)' : 'var(--ok)'}">${faltan} con documentos o booking pendientes</b></p>
     <div class="tbl-wrap"><table class="prop"><tr><th>Cargue</th><th>Destino</th><th>Motonave</th><th>Booking</th><th>Viaje</th><th>Confirmación</th><th>Carta de retiro</th><th title="MAERSK pide Comodato; MSC pide Order List">Comodato / Order List</th><th>Otros</th><th>Falta</th></tr>
     ${filas.map(r => `<tr><td style="white-space:nowrap">${fd(r.fechaCargue)}</td><td>${esc(r.pais)}<br><span class="sub">${esc(r.unidad)}</span></td><td>${esc(r.mn || '—')}</td>
       <td><b>${esc(r.booking)}</b></td><td>${r.viaje ? r.viaje.split(', ').map(id => `<button class="link" onclick="$('#ovDocs').classList.remove('open');abrir('${esc(id)}')">${esc(id)}</button>`).join(' ') : '<span class="sub">—</span>'}</td>
       <td>${marca(r, 'Confirmación de booking', r.confirmacion)}</td><td>${marca(r, 'Carta de retiro', r.carta)}</td>
-      <td>${(r.naviera || '') ? `<span class="sub">${esc(r.naviera.replace(/ [✔✖]$/, ''))}</span> ${marca(r, r.naviera.replace(/ [✔✖]$/, ''), /✔$/.test(r.naviera) ? '✔' : '✖')}` : '<span class="sub">no aplica</span>'}</td><td class="sub">${otros(r.booking)}</td>
-      <td>${r.falta ? `<span style="color:var(--bad)">${esc(r.falta)}</span>` : '<span style="color:var(--ok)">Completo</span>'}</td></tr>`).join('')}</table></div>
+      <td>${(r.naviera || '') ? `<span class="sub">${esc(nav(r))}</span> ${marca(r, nav(r), /✔$/.test(r.naviera) ? '✔' : '✖')}` : '<span class="sub">no aplica</span>'}</td><td class="sub">${otros(r.booking)}</td>
+      <td>${faltaDe(r) ? `<span style="color:var(--bad)">${esc(faltaDe(r))}</span>` : '<span style="color:var(--ok)">Completo</span>'}${subir(r)}</td></tr>`).join('')}</table></div>
     ${sinBk.length ? `<p class="sub" style="margin-top:8px">Archivos sin booking en el nombre (revisarlos y renombrarlos en Drive): ${sinBk.map(a => `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.nombre)}</a>`).join(' · ')}</p>` : ''}`;
 }
+/* ---------- 📎 subir documento a un booking ---------- */
+const TIPOS_SUBIDA = ['Confirmación de booking', 'Carta de retiro', 'Comodato', 'Order List', 'Orden logística', 'Tirilla de entrega', 'Otro'];
+let SUBIR_ARCHIVO = null;
+function montarSubirDoc(){
+  $('#docsFalta').closest('label').insertAdjacentHTML('afterend', '<button class="btn" id="docsSubir" title="Para lo que llega por WhatsApp o a otro correo">📎 Subir documento</button>');
+  document.body.insertAdjacentHTML('beforeend', `<div class="ov" id="ovSubirDoc" style="z-index:60"><div class="modal" role="dialog" aria-modal="true" style="width:min(520px,100%)">
+    <h3>📎 Subir documento a un booking</h3>
+    <div class="sub">Para lo que llegó por WhatsApp o a un correo que el sistema no lee. Queda como la versión más nueva de ese tipo.</div>
+    <div class="fgrid3" style="margin-top:10px"><div><label>Booking</label><input id="sdBooking" list="dlSdBooking" placeholder="96512933"><datalist id="dlSdBooking"></datalist></div>
+      <div><label>Tipo</label><select id="sdTipo">${TIPOS_SUBIDA.map(t => `<option>${esc(t)}</option>`).join('')}</select></div>
+      <div><label>Archivo (PDF o foto)</label><input type="file" id="sdArchivo" accept="image/*,application/pdf"></div></div>
+    <label style="margin-top:8px">De dónde llegó (opcional)</label><input id="sdNota" placeholder="Ej: WhatsApp de Jhonier, 8-nov" style="width:100%">
+    <div class="sub" id="sdTxt" style="margin-top:6px"></div>
+    <div class="mfoot"><button class="btn" id="sdCerrar">Cancelar</button><button class="btn primary" id="sdGuardar" disabled>Guardar</button></div>
+  </div></div>`);
+  $('#docsSubir').onclick = () => abrirSubirDoc('', $('#docsMes').value, '');
+  $('#docsLista').addEventListener('click', e => { const b = e.target.closest('[data-subir]'); if (b) abrirSubirDoc(b.dataset.subir, b.dataset.mes, b.dataset.tipo); });
+  $('#sdCerrar').onclick = () => $('#ovSubirDoc').classList.remove('open');
+  $('#sdArchivo').onchange = async () => { const f = $('#sdArchivo').files[0]; SUBIR_ARCHIVO = null; $('#sdGuardar').disabled = true; if (!f) return;
+    try { SUBIR_ARCHIVO = await leerTirilla(f); $('#sdTxt').textContent = `✓ ${SUBIR_ARCHIVO.nombre} · ${Math.round(SUBIR_ARCHIVO.base64.length * 0.75 / 1024)} KB`; $('#sdGuardar').disabled = false; }   // leerTirilla: devolucion.js
+    catch (e) { $('#sdTxt').textContent = 'No se pudo leer el archivo (PDF o foto)'; } };
+  $('#sdGuardar').onclick = guardarSubirDoc;
+}
+function abrirSubirDoc(bk, mes, tipo){
+  if (!pedirUsuario()) return;
+  $('#ovSubirDoc').dataset.mes = mes || '';
+  $('#dlSdBooking').innerHTML = [...new Set(DOCS.porBooking.filter(r => r.booking && r.booking !== 'PTE').map(r => r.booking))].map(b => `<option value="${esc(b)}">`).join('');
+  $('#sdBooking').value = bk || ''; $('#sdTipo').value = TIPOS_SUBIDA.includes(tipo) ? tipo : 'Carta de retiro';
+  $('#sdArchivo').value = ''; $('#sdNota').value = ''; $('#sdTxt').textContent = ''; $('#sdGuardar').disabled = true; SUBIR_ARCHIVO = null;
+  $('#ovSubirDoc').classList.add('open');
+}
+async function guardarSubirDoc(){
+  const usuario = pedirUsuario(); if (!usuario || !SUBIR_ARCHIVO) return;
+  const bk = $('#sdBooking').value.trim().toUpperCase(), fila = DOCS.porBooking.find(r => r.booking.toUpperCase() === bk);
+  if (bk.length < 6) return toast('Escriba el booking');
+  const b = $('#sdGuardar'); b.disabled = true; b.textContent = 'Guardando…';
+  try {
+    const j = await api('subirDocumento', {booking: bk, tipo: $('#sdTipo').value, mes: fila ? fila.mes : $('#ovSubirDoc').dataset.mes, archivo: SUBIR_ARCHIVO, nota: $('#sdNota').value, usuario});
+    if (!j.ok) throw new Error(j.error || 'error');
+    DOCS.archivos.push(j.doc); $('#ovSubirDoc').classList.remove('open'); pintarDocumentos();
+    toast(`✓ ${j.doc.tipo} guardada en ${bk}`, 5000);
+  } catch (e) { toast('No se pudo guardar: ' + e.message, 6000); }
+  b.textContent = 'Guardar'; b.disabled = !SUBIR_ARCHIVO;
+}
+montarSubirDoc();
 $('#btnDocs').onclick = abrirDocumentos;
 $('#docsCerrar').onclick = () => $('#ovDocs').classList.remove('open');
 ['docsMes', 'docsFalta'].forEach(id => $('#' + id).onchange = pintarDocumentos);
@@ -5159,7 +5212,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '8bdca6fd1e';
+const VERSION_TABLERO = 'c37a1a1694';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
