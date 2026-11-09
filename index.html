@@ -5129,8 +5129,10 @@ function montarDevolucion(){
     <div id="devCorreo" style="margin-top:6px"><label style="margin:0">Responder en el correo del proceso</label>
       <select id="devHilo" style="width:100%;margin-top:4px"><option>Buscando los correos del pedido…</option></select>
       <div class="sub" id="devPara" style="margin-top:4px"></div>
+      <div id="devDest" style="margin-top:6px;display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-size:13px"></div>
+      <input id="devOtros" placeholder="Otros correos (separados por coma)" style="width:100%;margin-top:6px">
       <textarea id="devTexto" style="width:100%;min-height:110px;margin-top:6px;box-sizing:border-box;font:13px/1.45 inherit"></textarea>
-      <div class="sub">Al final va su nombre y "Entrapetrol · Operaciones de transporte". El equipo va en copia.</div></div>
+      <div class="sub">Al final va su nombre y "Entrapetrol · Operaciones de transporte".</div></div>
     <div class="mfoot"><button class="btn" id="devCerrar">Cancelar</button><button class="btn primary" id="devGuardar" disabled>Guardar y enviar</button></div>
   </div></div>`);
   $('#devCerrar').onclick = () => $('#ovDev').classList.remove('open');
@@ -5186,8 +5188,17 @@ async function abrirDevolucion(id){
 let DEV_DEST = [];
 function pintarParaDevolucion(){
   const d = DEV_DEST[+$('#devHilo').value]; if (!d) return;
-  $('#devPara').innerHTML = `${d.id ? 'Responde en ese mismo hilo (mismo asunto)' : DEV_DEST.length > 1 ? 'Correo aparte, fuera de la conversación del pedido' : '<b>No se encontró el correo del pedido</b>: sale un correo nuevo'}<br>Para: ${esc(d.para.join(', '))}<br>Copia: ${esc(d.copia.join(', ') || '—')}`;
+  $('#devPara').innerHTML = d.id ? 'Responde en ese mismo hilo (mismo asunto). Marque a quién le llega:' : DEV_DEST.length > 1 ? 'Correo aparte, fuera de la conversación del pedido. Marque a quién le llega:' : '<b>No se encontró el correo del pedido</b>: sale un correo nuevo. Marque a quién le llega:';
+  // 8-nov (pedido del usuario: "que permita seleccionar los destinatarios del cliente y ETP"): dos columnas con casillas; a quien
+  // escribió el último correo del hilo se le responde siempre (casilla fija)
+  const todos = [...new Set([...d.para, ...d.copia].map(x => x.toLowerCase()))], etp = x => /@stentrapetrol\.com$/i.test(x);
+  const casilla = x => `<label style="display:flex;gap:5px;align-items:center;font-weight:400;margin:0"><input type="checkbox" data-dest="${esc(x)}" checked ${d.responde && x === d.responde.toLowerCase() ? 'disabled title="Se le responde a quien escribió el último correo"' : ''}>${esc(x)}${d.responde && x === d.responde.toLowerCase() ? ' <span class="sub">(responde a)</span>' : ''}</label>`;
+  $('#devDest').innerHTML = `<div><b>Cliente y agentes</b>${todos.filter(x => !etp(x)).map(casilla).join('') || '<div class="sub">—</div>'}</div>
+    <div><b>ETP</b>${todos.filter(etp).map(casilla).join('') || '<div class="sub">—</div>'}</div>`;
+  $('#devOtros').value = '';
 }
+const destinatariosDevolucion = () => [...document.querySelectorAll('#devDest [data-dest]')].filter(c => c.checked).map(c => c.dataset.dest)
+  .concat($('#devOtros').value.split(/[,;\s]+/).map(x => x.trim()).filter(x => /^[\w.+-]+@[\w-]+(\.[\w-]+)+$/.test(x)));
 async function guardarDevolucion(){
   const usuario = pedirUsuario(); if (!usuario || !DEV_ARCHIVO) return;
   const enviar = $('#devEnviar').checked, b = $('#devGuardar');
@@ -5195,7 +5206,9 @@ async function guardarDevolucion(){
   b.disabled = true; b.textContent = enviar ? 'Guardando y enviando…' : 'Guardando…';
   try {
     const d = DEV_DEST[+$('#devHilo').value] || {id: ''};
-    const j = await api('devolucion', {id: DEV_ID, fecha: $('#devFecha').value, archivo: DEV_ARCHIVO, texto: $('#devTexto').value, enviar, hiloId: d.id || '', usuario});
+    const dest = destinatariosDevolucion();
+    if (enviar && !dest.length) { b.disabled = false; $('#devEnviar').onchange(); return toast('Marque al menos un destinatario'); }
+    const j = await api('devolucion', {id: DEV_ID, fecha: $('#devFecha').value, archivo: DEV_ARCHIVO, texto: $('#devTexto').value, enviar, hiloId: d.id || '', destinatarios: dest, usuario});
     if (!j.ok) throw new Error(j.error || 'error');
     $('#ovDev').classList.remove('open');
     const hecho = esTirillaExpo(viajes.find(x => x.id === DEV_ID) || {}) ? 'Entregado en puerto' : 'Vacío devuelto';
@@ -5214,7 +5227,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'a71891fbf0';
+const VERSION_TABLERO = '15471a7262';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
