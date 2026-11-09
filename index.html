@@ -1804,7 +1804,9 @@ function etapaAhora(v, P, n, cliente){
   const proxHito = hitosDe(v).filter(h => h.f > HOY && h.que !== 'Cierre documental').sort((a, b) => a.f.localeCompare(b.f))[0];
   const sit = situacion(v), et = v.estado, ahora = et==='En bodega de paso' && subP ? `En bodega de paso ${subP.patioSub || ''} · urbano ${subP.fechaUrbano ? fd(subP.fechaUrbano) : 'sin fecha'}`
     : et==='Vacío devuelto' ? (sinTirilla ? 'Vacío devuelto · falta tirilla' : 'Vacío devuelto ✔')
-    : et==='Entregado en puerto' ? (sinTirilla ? 'Entregado en puerto · falta tirilla' : 'Entregado en puerto · esperando zarpe')
+    // 8-nov (usuario: "la transportadora cumple cuando entrega su contenedor en puerto... de allí en adelante es informativo"): ya no
+    // dice "esperando zarpe" (sonaba a algo pendiente); el zarpe queda como dato de la motonave
+    : et==='Entregado en puerto' ? (sinTirilla ? 'Entregado en puerto · falta tirilla' : 'Entregado en puerto ✔' + (v.etd ? ' · zarpe ' + fd(v.etd) : ''))
     : et==='Zarpó' ? (sinTirilla ? 'Zarpó · falta tirilla' : 'Zarpó ✔')
     : et==='Entregado' ? (sinTirilla ? 'Entregado · falta soporte de entrega' : 'Entregado ✔')
     // en curso: lo que está pasando ahora (el paso anterior ya se ve hecho en la ruta), ej. "En camino a puerto", no "Llenado · …"
@@ -5212,7 +5214,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'c37a1a1694';
+const VERSION_TABLERO = 'a71891fbf0';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
