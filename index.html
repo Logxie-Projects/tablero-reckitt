@@ -734,6 +734,9 @@ body.lv-abierta{overflow:hidden}
 .kc-st-c b{font-size:24px;color:var(--c);line-height:1.1}.kc-st-c span{font-weight:600;font-size:13px}
 .kc-st-c small{font-family:var(--lv-mono);font-size:10px;color:var(--lv-gris)}
 .kc-st-c.gris{opacity:.7}
+.sk-caja{overflow-x:auto}.sk{width:100%;min-width:560px;height:auto;display:block}
+.sk text{font-family:var(--lv-mono)}.sk .sk-th{font-size:12px;font-weight:600;fill:var(--lv-tinta)}.sk .sk-ts{font-size:11px;fill:var(--lv-gris)}
+.sk .sk-b,.sk .sk-n{cursor:pointer;transition:opacity .2s}.sk .sk-b:hover,.sk .sk-b.on{opacity:.75}
 .kc-dias{font-family:var(--lv-mono);font-size:11.5px;color:var(--lv-gris);margin-top:8px}
 .kc-st-c.activo{background:color-mix(in srgb,var(--c) 9%,#fff);border-color:var(--c)}
 @media (prefers-reduced-motion: reduce){.kc-pulpo::after,.kc-tarea{animation:none}}
@@ -5483,7 +5486,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '2387d50fd1';
+const VERSION_TABLERO = 'c95e391fc1';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -6040,6 +6043,7 @@ function montarKV(){
       <div class="lv-col"><div class="lv-rot">LO QUE ENTREGA</div><div class="kc-etapas" id="kvEtapas"></div></div>
     </div></div>
   <div class="lv-card"><div class="lv-titulo" id="kvT1"></div><div class="kv-emb" id="kvEmb"></div></div>
+  <div class="lv-card"><div class="lv-titulo" id="kvTS"></div><div class="sk-caja" id="kvSk"></div></div>
   <div class="lv-fila">
     <div class="lv-card lv-desc"><div class="lv-rot">REPROGRAMACIONES</div><div class="lv-desc-n" id="kvRep">0</div><div class="lv-desc-s" id="kvRepS"></div><div class="lv-anillo" id="kvRepA"></div></div>
     <div class="lv-card"><div class="lv-rot">¿QUIÉN LAS CAUSÓ? <span id="kvCosto"></span></div><div class="kv-barra" id="kvBarra"></div><div class="kv-ley" id="kvLey"></div></div>
@@ -6119,6 +6123,10 @@ function pintarKV(suave){
   $('#kvEmb').innerHTML = K.emb.map(x => `<div class="kv-emb-f${KV.sel === x.id ? ' activo' : ''}" data-ind="${x.id}" style="--c:${x.color}" role="button" tabindex="0">
     <span class="kv-emb-l"><b>${x.cod}</b><small>${esc(x.sub)}</small></span><span class="kv-emb-b"><i style="width:${(x.n / maxE * 100).toFixed(1)}%"></i></span>
     <span class="kv-emb-n"><b>${miles(x.n)}</b><small>${x.pct === null ? '' : `${x.pct}% ${x.de || (x.id === 'e-canc' ? 'de lo pedido' : 'de lo vigente')}`}</small></span></div>`).join('');
+  // normales y reprogramados (flujo, con plata): mismo diagrama de 📊 Indicadores
+  K.sk = flujoRetrasos(K.Ped, true);
+  $('#kvTS').innerHTML = `<b>Normales y reprogramados</b> · ${uno ? 'este viaje' : 'lo pedido para el periodo'}: quién movió las fechas, cuántos días se corrieron y cuánto costó · toca un grupo para ver sus viajes`;
+  $('#kvSk').innerHTML = svgFlujoRetrasos(K.sk, KV.sel, 'data-ind');
   // reprogramaciones de lo pedido y quién las causó
   kvContar($('#kvRep'), K.D.length);
   $('#kvRepS').textContent = `cambios de fecha en ${K.Rep.length} de ${K.Vig.length} pedidos${K.diasReprog ? ` · +${K.diasReprog} d corridos` : ''}`;
@@ -6150,8 +6158,8 @@ function pintarKV(suave){
   $('#kvSem').innerHTML = S.map(s => `<span>${fd(s).replace(/^\S+ /, '')}</span>`).join('');
   series.forEach(([k]) => kvContar($('#kvn-' + k), K.serie[k][ult]));
   // para revisar: lo de la tarjeta o fila elegida; sin elegir, lo pendiente de todo (lo rojo primero)
-  const todos = [...K.emb, ...K.flujo, ...K.ind, ...K.ahora, ...K.gest], sel = todos.find(x => x.id === KV.sel), esGest = sel && (K.gest.includes(sel) || K.flujo.includes(sel));
-  const filas = sel ? sel.L.map(x => ({...x, ind: sel})) : todos.filter(x => (!K.gest.includes(x) && !K.flujo.includes(x)) || x.enTodo).flatMap(ind => ind.L.filter(x => x.tono !== 'info').map(x => ({...x, ind}))).sort((p, q) => (p.tono === 'bad' ? 0 : 1) - (q.tono === 'bad' ? 0 : 1));
+  const todos = [...K.emb, ...K.flujo, K.sk.ok, K.sk.rep, K.sk.canc, ...K.sk.grupos, ...K.ind, ...K.ahora, ...K.gest], sel = todos.find(x => x.id === KV.sel), esGest = sel && (K.gest.includes(sel) || K.flujo.includes(sel) || /^sk-/.test(sel.id));
+  const filas = sel ? sel.L.map(x => ({...x, ind: sel})) : todos.filter(x => (!K.gest.includes(x) && !K.flujo.includes(x) && !/^sk-/.test(x.id)) || x.enTodo).flatMap(ind => ind.L.filter(x => x.tono !== 'info').map(x => ({...x, ind}))).sort((p, q) => (p.tono === 'bad' ? 0 : 1) - (q.tono === 'bad' ? 0 : 1));
   $('#kvListaT').textContent = sel ? `${esGest || K.emb.includes(sel) ? 'DETALLE' : 'PARA REVISAR'} · ${sel.cod}` : 'PARA REVISAR';
   $('#kvListaS').textContent = sel ? `${filas.length} registro${filas.length === 1 ? '' : 's'} · toca la tarjeta otra vez para ver todo` : `${filas.length} pendiente${filas.length === 1 ? '' : 's'} · lo rojo primero · 📊 = KPIs solo de ese viaje`;
   $('#kvLista').innerHTML = filas.slice(0, 150).map(x => `<div class="lv-ev kv-ev${x.v ? ' clic' : ''}" ${x.v ? `data-viaje="${esc(x.v.id)}"` : ''}><span class="kv-ev-v">${x.v && !uno ? `<button class="kv-solo" data-kvsolo="${esc(x.v.id)}" title="Ver los KPIs solo de este viaje">📊</button>` : ''}${esc(x.v ? kvViaje(x.v) : (x.et || '—'))}${x.v && x.et ? `<small>${esc(x.et)}</small>` : ''}</span><span class="lv-tag ${x.tono === 'bad' ? 'kv-rojo' : ''}" style="--c:${x.ind.color}">${esc(x.tag)}</span><span class="lv-ev-t"><b style="color:${x.ind.color}">${x.ind.cod}</b> ${esc(x.txt)}</span></div>`).join('')
@@ -6267,7 +6275,8 @@ function calcKC(equipo){
   // días que corrieron las fechas por responsable (9-nov), con el lugar de lo de terceros (dominio retrasosViaje)
   const RT = Vig.map(v => retrasosViaje(v)).filter(Boolean), diasR = {}, lug = {};
   RT.forEach(r => { Object.entries(r.dias).forEach(([k, d]) => { diasR[k] = (diasR[k] || 0) + d; }); if (r.lugar && r.dias.Terceros) lug[r.lugar] = (lug[r.lugar] || 0) + r.dias.Terceros; });
-  return {diasR, lug, Ped, Vig, Asig, Debe, D, Rep, porResp, etapas, estados, cancel, res, insumos, tareas: tareas.length ? tareas : ['leyendo los correos de la operación']};
+  const flujo = flujoRetrasos(Ped, false);
+  return {flujo, diasR, lug, Ped, Vig, Asig, Debe, D, Rep, porResp, etapas, estados, cancel, res, insumos, tareas: tareas.length ? tareas : ['leyendo los correos de la operación']};
 }
 
 /* ---------- pantalla ---------- */
@@ -6295,7 +6304,7 @@ function montarKC(){
       <div class="lv-col"><div class="lv-rot">LO QUE ENTREGA</div><div class="kc-etapas" id="kcEtapas"></div></div>
     </div></div>
   <div class="lv-card"><div class="lv-titulo"><b>El resultado</b> · <span id="kcResT"></span></div><div class="kc-res" id="kcRes"></div></div>
-  <div class="lv-card"><div class="lv-rot">¿QUIÉN MOVIÓ LAS FECHAS? <span id="kcRepS"></span></div><div class="kv-barra" id="kcBarra"></div><div class="kv-ley" id="kcLey"></div><div class="kc-dias" id="kcDias"></div></div>
+  <div class="lv-card"><div class="lv-rot">NORMALES Y REPROGRAMADOS · ¿QUIÉN MOVIÓ LAS FECHAS? <span id="kcRepS"></span></div><div class="sk-caja" id="kcSk"></div><div class="kc-dias" id="kcDias"></div></div>
   <div class="lv-card lv-log"><div class="lv-rot"><b id="kcListaT"></b> <span id="kcListaS"></span></div><div class="lv-log-l" id="kcLista"></div></div>
   <div class="lv-pie">Pedidos = viajes pedidos para el periodo, por la fecha original de su primer paso. Vehículo a tiempo = de los pedidos que ya necesitaban vehículo (arrancan en 3 días o menos), los que lo tienen o ya terminaron; los de más adelante se programan después. Reprogramados = pedidos con algún cambio de fecha, con quién lo causó. Estados: por programar, vehículo listo, en tránsito, devolución del vacío (solo IMPO), en facturación y facturado; suman lo solicitado. Puntualidad = pasos hechos a tiempo (si el cambio lo pidió Reckitt o un tercero, con la fecha nueva). Calificación = puntualidad, reprogramaciones de Entrapetrol y novedades, sobre 100. Precios: flete y extracostos aprobados de los pedidos del periodo. Datos desde el 23 oct.</div>
   </div></section>`);
@@ -6352,13 +6361,13 @@ function pintarKC(suave){
   // quién movió las fechas (también Entrapetrol, con su número)
   const tot = Object.values(K.porResp).reduce((s, n) => s + n, 0);
   $('#kcRepS').textContent = tot ? `${tot} cambio${tot === 1 ? '' : 's'} de fecha en ${K.Vig.filter(v => desviosPlan(v).length).length} de ${K.Vig.length} pedidos` : 'ningún cambio de fecha en el periodo';
-  $('#kcBarra').innerHTML = tot ? RESP_KV.filter(([k]) => K.porResp[k]).map(([k, c]) => `<i style="flex:${K.porResp[k]};background:${c}" title="${esc(k)}: ${K.porResp[k]}"></i>`).join('') : '<i style="flex:1;background:#e7e5df"></i>';
-  $('#kcLey').innerHTML = RESP_KV.filter(([k]) => ['Reckitt', 'Entrapetrol', 'Terceros'].includes(k) || K.porResp[k]).map(([k, c]) => `<span><i style="background:${c}"></i>${esc(k === 'Terceros' ? 'Patio, puerto, naviera o externo' : k)} <b>${K.porResp[k] || 0}</b></span>`).join('');
+  $('#kcSk').innerHTML = svgFlujoRetrasos(K.flujo, KC.sel, 'data-kc');
   const dTxt = ['Reckitt', 'Entrapetrol', 'Terceros'].filter(k => K.diasR[k]).map(k => `${k === 'Terceros' ? 'patio, puerto, naviera o externo' : k} ${K.diasR[k]} d`).join(' · ');
   const lTxt = Object.entries(K.lug).sort((a, b) => b[1] - a[1]).map(([k, d]) => `${k} ${d} d`).join(', ');
   $('#kcDias').textContent = dTxt ? `Días que se corrieron las fechas: ${dTxt}${lTxt ? ` (${lTxt})` : ''}` : '';
   // los viajes del paso elegido
-  const sel = E[KC.sel] || S.find(x => x.id === KC.sel) || E.ped;
+  const SK = [K.flujo.ok, K.flujo.rep, K.flujo.canc, ...K.flujo.grupos];
+  const sel = E[KC.sel] || S.find(x => x.id === KC.sel) || SK.find(x => x.id === KC.sel) || E.ped;
   $('#kcListaT').textContent = `TUS VIAJES · ${sel.cod}`;
   $('#kcListaS').textContent = `${sel.L.length} viaje${sel.L.length === 1 ? '' : 's'} · toca otro paso arriba`;
   $('#kcLista').innerHTML = sel.L.slice(0, 150).map(x => `<div class="lv-ev kv-ev clic" data-viaje="${esc(x.v.id)}"><span class="kv-ev-v">${esc(kcRef(x.v))}</span><span class="lv-tag ${x.tono === 'warn' ? 'naranja' : 'gris'}">${esc(x.tag)}</span><span class="lv-ev-t">${esc(x.txt)}</span></div>`).join('')
@@ -6394,6 +6403,69 @@ function pulsoFlujo(pre, n){
   ins.forEach((x, i) => x.classList.toggle('vivo', i === n % Math.max(1, ins.length)));
   out.forEach((x, i) => x.classList.toggle('vivo', i === n % Math.max(1, out.length)));
 }
+/* ---------- normales y reprogramados: diagrama de flujo (9-nov, mockup aprobado por el usuario) ----------
+ * Común a 📊 KPIs Reckitt (equipo, con plata) y 📊 Indicadores (cliente, sin plata). De lo solicitado en el periodo:
+ * cancelados, a la fecha original (sin cambios) y reprogramados; los reprogramados se abren por quién causó el cambio, con los
+ * días que se corrieron y la plata (dominio retrasosViaje). Un pedido con varias causas va a la que más días corrió (si no
+ * corrió días, a la del último cambio) y su detalle las nombra todas. El grosor de cada banda es el número de pedidos.
+ * Al tocar un grupo se ven sus viajes (ids sk-*: el que llama decide cómo se reconoce el clic). */
+const SK_GRUPOS = [['Reckitt', 'Reckitt', '#378ADD'], ['Terceros', 'Patio, puerto o naviera', '#BA7517'], ['Entrapetrol', 'Entrapetrol', '#E24B4A'], ['Sin causa', 'Sin causa', '#888780']];
+function flujoRetrasos(Ped, conPlata){
+  const fila = (v, tag, txt, tono) => ({v, tag, txt, tono: tono || 'info'});
+  const Canc = Ped.filter(kvCancel), Vig = Ped.filter(v => !kvCancel(v)), Rep = Vig.filter(v => desviosPlan(v).length), Ok = Vig.filter(v => !desviosPlan(v).length);
+  const resp = c => { const r = responsable(c); return r === SIN_HISTORIAL || !r ? 'Sin causa' : r; };
+  const G = Object.fromEntries(SK_GRUPOS.map(([k, l, c]) => [k, {id: 'sk-' + k.replace(' ', ''), k, cod: l, color: c, P: [], T: [], dias: 0, costo: 0, lug: {}, L: []}]));
+  Rep.forEach(v => {
+    const r = retrasosViaje(v) || {dias: {}, costo: {}, lugar: ''}, D = desviosPlan(v);
+    const k = Object.entries(r.dias).sort((a, b) => b[1] - a[1])[0]?.[0] || resp(D[D.length - 1].causa), g = G[k] || G['Sin causa'];
+    g.P.push(v);
+    // cada responsable que tocó el pedido lo cuenta y lo lista (el grosor de la banda va solo con la causa principal)
+    const det = D.map(d => `${d.hito.toLowerCase()} ${fd(d.plan)} → ${fd(d.actual)} (${resp(d.causa)})`).join(' · ');
+    const toca = new Set([...D.map(d => resp(d.causa)), ...Object.keys(r.dias), ...Object.keys(r.costo)]);
+    toca.forEach(x => { const gx = G[x] || G['Sin causa']; if (gx.T.includes(v)) return; gx.T.push(v);
+      gx.L.push(fila(v, `${r.dias[x] || 0} d${conPlata && r.costo[x] ? ' · ' + kcMillones(r.costo[x]) : ''}`, det, x === 'Entrapetrol' || x === 'Sin causa' ? 'warn' : 'info')); });
+  });
+  // días y plata de cada responsable: lo de todos los reprogramados (un pedido de Reckitt también puede traer días de terceros)
+  Rep.forEach(v => { const r = retrasosViaje(v); if (!r) return; Object.entries(r.dias).forEach(([k, d]) => { if (G[k]) G[k].dias += d; });
+    Object.entries(r.costo).forEach(([k, c]) => { if (G[k]) G[k].costo += c; }); if (r.lugar && r.dias.Terceros) G.Terceros.lug[r.lugar] = (G.Terceros.lug[r.lugar] || 0) + 1; });
+  const lugar = Object.entries(G.Terceros.lug).sort((a, b) => b[1] - a[1]).map(([l]) => l).slice(0, 2).join(', ');
+  if (lugar) G.Terceros.cod = lugar.length > 22 ? lugar.slice(0, 21) + '…' : lugar;
+  const okG = {id: 'sk-ok', cod: 'A la fecha original', color: '#639922', P: Ok, L: Ok.map(v => fila(v, 'sin cambios', `pedido para ${fd(kvFechaPedido(v))}`))};
+  const canG = {id: 'sk-canc', cod: 'Cancelados', color: '#888780', P: Canc, L: Canc.map(v => fila(v, 'cancelado', `pedido para ${fd(kvFechaPedido(v))}`))};
+  const repG = {id: 'sk-rep', cod: 'Reprogramados', color: '#D85A30', P: Rep, L: Rep.map(v => fila(v, 'reprogramado', desviosPlan(v).map(d => `${d.hito.toLowerCase()} ${fd(d.plan)} → ${fd(d.actual)} (${resp(d.causa)})`).join(' · ')))};
+  return {total: Ped.length, ok: okG, rep: repG, canc: canG, grupos: SK_GRUPOS.map(([k]) => G[k]).filter(g => g.T.length), conPlata};
+}
+// SVG del flujo (680 de ancho, se ajusta al contenedor); sel = id del grupo elegido; attr = atributo del clic (data-kc / data-ind)
+function svgFlujoRetrasos(F, sel, attr){
+  if (!F.total) return '<div class="lv-vacio">Sin pedidos en el periodo.</div>';
+  const H = 250, gap = 14, u = Math.max(2, (H - 2 * gap) / F.total), top = 34, h = n => Math.max(n ? 4 : 0, n * u);
+  const banda = (x1, a1, b1, x2, a2, b2, c, op, id) => { const m = (x1 + x2) / 2;
+    return `<path ${attr}="${id}" class="sk-b${sel === id ? ' on' : ''}" d="M${x1} ${a1} C${m} ${a1} ${m} ${a2} ${x2} ${a2} L${x2} ${b2} C${m} ${b2} ${m} ${b1} ${x1} ${b1} Z" fill="${c}" opacity="${op}"/>`; };
+  const nodo = (x, y, hh, c, id) => `<rect ${attr}="${id}" class="sk-n" x="${x}" y="${y}" width="12" height="${hh}" rx="2" fill="${c}"/>`;
+  const t = (x, y, s, cls, anc) => `<text class="${cls}" x="${x}" y="${y}"${anc ? ` text-anchor="${anc}"` : ''}>${esc(s)}</text>`;
+  const x0 = 20, x1 = 210, x2 = 400, hOk = h(F.ok.P.length), hRep = h(F.rep.P.length), hCan = h(F.canc.P.length);
+  const yOk = top, yRep = yOk + hOk + (hOk ? gap : 0), yCan = yRep + hRep + (hRep ? gap : 0), alto0 = hOk + hRep + hCan;
+  let s = nodo(x0, top, alto0, '#2C2C2A', 'sk-ok') + t(x0, top - 12, `Solicitados ${F.total}`, 'sk-th');
+  let y = top;
+  [[F.ok, yOk, hOk, .28], [F.rep, yRep, hRep, .35], [F.canc, yCan, hCan, .3]].forEach(([g, yy, hh, op]) => {
+    if (!hh) return; s += banda(x0 + 12, y, y + hh, x1, yy, yy + hh, g.color, op, g.id); y += hh; s += nodo(x1, yy, hh, g.color, g.id); });
+  if (hOk) { s += banda(x1 + 12, yOk, yOk + hOk, x2, yOk, yOk + hOk, '#639922', .16, 'sk-ok') + nodo(x2, yOk, hOk, '#639922', 'sk-ok');
+    s += t(x1 + 20, yOk + hOk / 2 - 4, 'A la fecha original', 'sk-ts') + t(x1 + 20, yOk + hOk / 2 + 14, `${F.ok.P.length} pedidos`, 'sk-th');
+    s += t(x2 + 20, yOk + hOk / 2 - 4, 'Sin retrasos', 'sk-th') + t(x2 + 20, yOk + hOk / 2 + 14, `${F.ok.P.length} pedido${F.ok.P.length === 1 ? '' : 's'} · 0 días`, 'sk-ts'); }
+  if (hRep) s += t(x1 - 6, yRep + hRep / 2 + 4, `Reprogramados ${F.rep.P.length}`, 'sk-ts', 'end');
+  if (hCan) s += t(x1 - 6, yCan + hCan / 2 + 4, `Cancelados ${F.canc.P.length}`, 'sk-ts', 'end');
+  // reprogramados → responsables (a la derecha, con aire entre grupos para sus dos líneas de texto)
+  let ys = yRep, yd = yRep;
+  F.grupos.forEach(g => { const hh = h(g.P.length), hn = hh || 4;
+    // sin pedidos propios (solo tocó pedidos de otra causa principal): un hilo delgado desde el borde de los reprogramados
+    s += (hh ? banda(x1 + 12, ys, ys + hh, x2, yd, yd + hh, g.color, .4, g.id) : banda(x1 + 12, yRep + hRep - 2, yRep + hRep, x2, yd, yd + 2, g.color, .5, g.id)) + nodo(x2, yd, hn, g.color, g.id);
+    const plata = F.conPlata ? (g.costo ? ` · ${kcMillones(g.costo)}${g.k === 'Entrapetrol' ? ' lo asume ETP' : ' se cobra'}` : ' · $0') : '';
+    s += t(x2 + 20, yd + 9, `${g.cod} · ${g.T.length} pedido${g.T.length === 1 ? '' : 's'}`, 'sk-th') + t(x2 + 20, yd + 24, `${g.dias} día${g.dias === 1 ? '' : 's'} corrido${g.dias === 1 ? '' : 's'}${plata}`, 'sk-ts');
+    ys += hh; yd += Math.max(hn, 30) + 8; });
+  const alto = Math.max(yCan + hCan, yd) + 10;
+  return `<svg class="sk" viewBox="0 0 680 ${alto}" role="img" aria-label="Flujo de pedidos: a la fecha original, reprogramados por responsable y cancelados">${s}</svg>`;
+}
+
 montarKC();
 /* ---------- navegación y eventos ---------- */
 $('#nav').onclick = e => { const b=e.target.closest('button'); if(!b) return;
