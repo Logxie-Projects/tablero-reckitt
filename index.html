@@ -824,6 +824,9 @@ body.lv-abierta{overflow:hidden}
 .km-v.warn.aprox circle{fill:color-mix(in srgb,var(--warn) 30%,var(--surface));stroke:var(--warn)}
 .km-v text{font-size:8px;font-weight:600;fill:#fff;pointer-events:none}
 .km-v.aprox text{fill:var(--text)}
+.km-v.quieto circle{fill:var(--muted)}.km-v.quieto.aprox circle{fill:color-mix(in srgb,var(--muted) 25%,var(--surface));stroke:var(--muted)}
+.km-cta.q{background:var(--surface-2);color:var(--muted)}.km-q{background:var(--muted)!important}
+.km-f.quieto>i{background:var(--muted)}.km-f.quieto>i.aprox{background:transparent;border-color:var(--muted)}
 .km-zona{fill:color-mix(in srgb,var(--ok) 25%,var(--surface));stroke:var(--ok);stroke-width:1.3}.km-zona.warn{fill:color-mix(in srgb,var(--warn) 25%,var(--surface));stroke:var(--warn)}
 .km-zt{margin:10px 0 5px;font-size:12.5px;color:var(--muted)}
 .km-z{background:var(--surface-2);border:1.3px solid var(--ok);border-radius:8px;box-sizing:border-box}.km-z.warn{border-color:var(--warn)}
@@ -5843,7 +5846,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'f23f4181df';
+const VERSION_TABLERO = '849e2dfc46';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -6830,8 +6833,13 @@ montarKC();
  * De dónde sale el punto (decisión del usuario, 9-nov: "Último reporte"):
  *   1. Donde el conductor hizo su último reporte en la app (lat / lng de su último paso: Conductores.gs resumenConductores_,
  *      solo para el equipo). Punto relleno.
- *   2. Si el viaje no tiene reporte con ubicación: sobre el trayecto, según el paso del conductor o la etapa del viaje. Punto
- *      con borde punteado ("aproximado"). No hay GPS continuo: no se inventa una posición exacta.
+ *   2. Si el viaje no tiene reporte con ubicación: según la etapa del viaje (10-nov: los EXPO con el vacío retirado salían
+ *      "viajando" a mitad de camino sin haber cargado). Punto con borde punteado ("aproximado"):
+ *        EXPO con el vacío retirado = en el origen, por cargar (gris: no cuenta como en movimiento);
+ *        en bodega de paso = en esa bodega si se reconoce el lugar; si no, junto al destino (IMPO) o al origen (EXPO) (gris);
+ *        ya cargado / retirado de puerto / recogido = sobre el trayecto, por los pasos del conductor o a la mitad;
+ *        IMPO entregado en bodega = devolviendo el vacío, cerca del destino.
+ *      No hay GPS continuo: no se inventa una posición exacta.
  * En ruta ahora = con vehículo y ya arrancó (en tránsito o devolviendo el vacío), sin importar el periodo elegido arriba; sí
  * respeta la operación elegida. Cada vehículo es un punto con su número (el mismo de su fila en la lista); el que cae encima de otro se corre un poco.
  * El mapa es un dibujo propio (contorno simplificado de Colombia, sin librerías ni mapas de terceros): sirve en modo oscuro
@@ -6882,10 +6890,13 @@ function calcKM(conNovedad){
     const [a, b] = kmTrayecto(v), c = conductorDe(v), lat = c && Number(c.lat), lng = c && Number(c.lng);
     const real = !!c && isFinite(lat) && isFinite(lng) && lat > KM.S && lat < KM.N && lng > KM.O && lng < KM.E && (lat || lng);
     // sin reporte con ubicación: sobre el trayecto, por los pasos que lleva el conductor o por la etapa
-    const f = kmDevolviendo(v) ? .9 : c && c.total && c.n ? Math.min(.95, Math.max(.08, c.n / c.total)) : .5;
-    const p = real ? [lat, lng] : [a[2] + (b[2] - a[2]) * f, a[3] + (b[3] - a[3]) * f];
+    // quieto = todavía no viaja: EXPO con el vacío retirado (falta cargar) o carga en la bodega de paso (falta el urbano)
+    const porCargar = v.operacion === 'EXPO' && v.estado === 'Vacío retirado', dePaso = v.estado === 'En bodega de paso';
+    const sitioPaso = dePaso ? kmLugar((hijosDe(v)[0] || {}).patioSub) : null;
+    const f = porCargar ? 0 : dePaso ? (v.operacion === 'EXPO' ? .08 : .92) : kmDevolviendo(v) ? .9 : c && c.total && c.n ? Math.min(.95, Math.max(.08, c.n / c.total)) : .5;
+    const p = real ? [lat, lng] : sitioPaso ? [sitioPaso[2], sitioPaso[3]] : [a[2] + (b[2] - a[2]) * f, a[3] + (b[3] - a[3]) * f];
     const nov = conNovedad.get(v.id);
-    return {v, a, b, real, lat: p[0], lng: p[1], valle: kmEnValle(p[0], p[1]), warn: !!nov, nov, c, fecha: c && (real ? c.ubiFecha || c.fecha : c.fecha) || '',
+    return {v, a, b, real, lat: p[0], lng: p[1], valle: kmEnValle(p[0], p[1]), quieto: porCargar || dePaso, porCargar, warn: !!nov, nov, c, fecha: c && (real ? c.ubiFecha || c.fecha : c.fecha) || '',
       tramo: kmDevolviendo(v) ? `${b[1]} · devolviendo el vacío` : a[1] === b[1] ? a[1] : `${a[1]} → ${b[1]}`};
   }).sort((p, q) => q.warn - p.warn || String(q.fecha).localeCompare(String(p.fecha)));
   // cada vehículo es un punto (10-nov: "ver todos los vehículos como puntos en el mapa"). El que cae encima de otro se corre:
@@ -6905,9 +6916,9 @@ function kmSeparar(L, xy, sep){
     const A = xy(p.a[2], p.a[3]), B = xy(p.b[2], p.b[3]), d = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1, ux = (B[0] - A[0]) / d, uy = (B[1] - A[1]) / d;
     const C = [[0, 0]];
     // primero a lo largo de su trayecto (sin salirse de él); si no cabe, alrededor
-    if (!p.real && d > 1) for (let k = 1; k <= 12; k++) [k, -k].forEach(s => { const t = ((p.x - A[0]) * ux + (p.y - A[1]) * uy + s * sep) / d; if (t > .04 && t < .96) C.push([ux * s * sep, uy * s * sep]); });
+    if (!p.real && !p.quieto && d > 1) for (let k = 1; k <= 12; k++) [k, -k].forEach(s => { const t = ((p.x - A[0]) * ux + (p.y - A[1]) * uy + s * sep) / d; if (t > .04 && t < .96) C.push([ux * s * sep, uy * s * sep]); });
     for (let k = 1; k <= 12; k++) {
-      for (let i = 0; i < 6 * k; i++) { const t = i / (6 * k) * 2 * Math.PI; C.push([Math.cos(t) * k * sep, Math.sin(t) * k * sep]); }
+      for (let i = 0; i < 6 * k; i++) { const t = i / (6 * k) * 2 * Math.PI + Math.PI / 2; C.push([Math.cos(t) * k * sep, Math.sin(t) * k * sep]); }
     }
     const c = C.find(([dx, dy]) => libre(p.x + dx, p.y + dy)) || [0, 0];
     p.x += c[0]; p.y += c[1]; puestos.push(p);
@@ -6916,12 +6927,15 @@ function kmSeparar(L, xy, sep){
 
 function htmlKM(N){
   const M = calcKM(new Map(N.filter(x => x.tag !== 'falta documento').map(x => [x.v.id, x])));
-  const nWarn = M.L.filter(p => p.warn).length, nReal = M.L.filter(p => p.real).length;
+  const nWarn = M.L.filter(p => p.warn).length, nQ = M.L.filter(p => p.quieto && !p.warn).length, nReal = M.L.filter(p => p.real).length;
   // un mapa = sus trayectos, sus sitios con nombre y sus vehículos, con la proyección xy de ese mapa
   const capas = (xy, tramos, sitios, rotulo, L, r) => { const pt = (lat, lng) => xy(lat, lng).map(n => Math.round(n * 10) / 10).join(',');
     return `${tramos.map(([a, b]) => `<line class="km-tramo" x1="${pt(a[2], a[3]).replace(',', '" y1="')}" x2="${pt(b[2], b[3]).replace(',', '" y2="')}"/>`).join('')}
-    ${sitios.map(s => { const [x, y] = xy(s[2], s[3]), e = rotulo[s[1]] || [8, 4, 'start']; return `<circle class="km-sitio" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5"/><text class="km-nom" x="${(x + e[0]).toFixed(1)}" y="${(y + e[1]).toFixed(1)}" text-anchor="${e[2]}">${esc(s[1])}</text>`; }).join('')}
-    ${L.map(p => `<g class="km-v${p.warn ? ' warn' : ''}${p.real ? '' : ' aprox'}"><title>${esc(`${p.v.placa} · ${p.tramo}`)}</title><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r}"/><text x="${p.x.toFixed(1)}" y="${(p.y + r / 2).toFixed(1)}" text-anchor="middle">${p.num}</text></g>`).join('')}`; };
+    ${sitios.map(s => { const [x, y] = xy(s[2], s[3]), e = rotulo[s[1]] || [8, 4, 'start'];
+      // el nombre a la derecha se corre hasta pasar los vehículos amontonados en ese sitio
+      const dx = e[2] === 'start' ? Math.max(e[0], ...L.filter(p => Math.abs(p.y - y - e[1]) < r + 8 && p.x > x - r && p.x - x < 5 * r).map(p => p.x + r + 5 - x)) : e[0];
+      return `<circle class="km-sitio" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5"/><text class="km-nom" x="${(x + dx).toFixed(1)}" y="${(y + e[1]).toFixed(1)}" text-anchor="${e[2]}">${esc(s[1])}</text>`; }).join('')}
+    ${L.map(p => `<g class="km-v${p.warn ? ' warn' : p.quieto ? ' quieto' : ''}${p.real ? '' : ' aprox'}"><title>${esc(`${p.v.placa} · ${p.tramo}`)}</title><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r}"/><text x="${p.x.toFixed(1)}" y="${(p.y + r / 2).toFixed(1)}" text-anchor="middle">${p.num}</text></g>`).join('')}`; };
   const pt = (lat, lng) => kmXY(lat, lng).map(n => Math.round(n * 10) / 10).join(',');
   const nV = M.valle.length, wV = M.valle.some(p => p.warn) ? ' warn' : '', enV = s => kmEnValle(s[2], s[3]);
   const z0 = kmXY(KM_Z.N, KM_Z.O), z1 = kmXY(KM_Z.S, KM_Z.E);
@@ -6938,13 +6952,13 @@ function htmlKM(N){
   <svg class="km-z${wV}" viewBox="0 0 ${KM_Z.W} ${KM_Z.H}" role="img" aria-label="Valle del Cauca ampliado con ${klPl(nV, 'vehículo')}">
     ${capas(kmZXY, M.tramos.filter(([a, b]) => enV(a) || enV(b)), M.sitios.filter(enV), KM_Z_ROTULO, M.valle, 9)}
   </svg>` : ''}`;
-  const fila = p => `<div class="km-f${p.warn ? ' warn' : ''}"><i class="${p.real ? '' : 'aprox'}">${p.num}</i><div><b>${esc(p.v.placa)}</b> <span>${esc(kcRef(p.v))}</span>
-      <small>${esc(p.warn ? `${p.nov.tag}${p.nov.dias ? ' · ' + klPl(p.nov.dias, 'día') : ''}` : String(p.v.estado || '').toLowerCase())}${p.c && p.c.n ? ` · ${esc(String(p.c.paso).toLowerCase())}` : ''}</small>
+  const fila = p => `<div class="km-f${p.warn ? ' warn' : p.quieto ? ' quieto' : ''}"><i class="${p.real ? '' : 'aprox'}">${p.num}</i><div><b>${esc(p.v.placa)}</b> <span>${esc(kcRef(p.v))}</span>
+      <small>${esc(p.warn ? `${p.nov.tag}${p.nov.dias ? ' · ' + klPl(p.nov.dias, 'día') : ''}` : String(p.v.estado || '').toLowerCase() + (p.porCargar ? ' · por cargar' : ''))}${p.c && p.c.n ? ` · ${esc(String(p.c.paso).toLowerCase())}` : ''}</small>
       <em>${p.real ? `Reportó ${haceTxt(p.fecha) || 'sin hora'}` : p.c && p.c.n && p.fecha ? `Reportó ${haceTxt(p.fecha)}, sin ubicación` : 'Sin reporte del conductor'}</em></div></div>`;
   const lista = [...porTramo.entries()].map(([t, L]) => `<div class="km-t"><h4>${esc(t)}<span>${klPl(L.length, 'vehículo')}</span></h4>${L.map(fila).join('')}</div>`).join('');
-  return `<h3 class="kl-h">Vehículos en ruta <span class="km-cta ok">${miles(M.L.length - nWarn)} en movimiento</span>${nWarn ? `<span class="km-cta warn">${miles(nWarn)} con novedad</span>` : ''}</h3>
-    ${M.L.length ? `<div class="km"><div class="km-mapa">${mapa}<div class="kl-ley"><span><i class="ok km-r"></i>en movimiento</span><span><i class="rep km-r"></i>con novedad o en espera</span><span><i class="km-r km-ap"></i>ubicación aproximada</span></div></div>
-      <div class="km-lista">${lista}<p class="km-nota">${nReal ? `${klPl(nReal, 'vehículo')} de ${miles(M.L.length)} con la ubicación de su último reporte.` : 'Ningún vehículo ha reportado su ubicación todavía.'} Los demás se muestran sobre su trayecto, según la etapa: es una ubicación aproximada.</p></div></div>`
+  return `<h3 class="kl-h">Vehículos en ruta <span class="km-cta ok">${miles(M.L.length - nWarn - nQ)} en movimiento</span>${nQ ? `<span class="km-cta q">${miles(nQ)} por cargar o en bodega de paso</span>` : ''}${nWarn ? `<span class="km-cta warn">${miles(nWarn)} con novedad</span>` : ''}</h3>
+    ${M.L.length ? `<div class="km"><div class="km-mapa">${mapa}<div class="kl-ley"><span><i class="ok km-r"></i>en movimiento</span><span><i class="km-r km-q"></i>por cargar o en bodega de paso</span><span><i class="rep km-r"></i>con novedad o en espera</span><span><i class="km-r km-ap"></i>ubicación aproximada</span></div></div>
+      <div class="km-lista">${lista}<p class="km-nota">${nReal ? `${klPl(nReal, 'vehículo')} de ${miles(M.L.length)} con la ubicación de su último reporte.` : 'Ningún vehículo ha reportado su ubicación todavía.'} Los demás se muestran según la etapa (el que no ha cargado, en el origen; el que va en camino, sobre su trayecto): es una ubicación aproximada.</p></div></div>`
       : '<div class="kl-vacio">Ningún vehículo en ruta en este momento.</div>'}`;
 }
 /* ---------- kpis-lean.js · 📊 Indicadores (nuevo): la versión corta para Reckitt (9-nov-2026) ----------
