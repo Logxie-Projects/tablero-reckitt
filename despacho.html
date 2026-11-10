@@ -148,17 +148,18 @@ function entrar(e) {
   cargar();
 }
 
-async function cargar(silencioso) {
+// fresco (10-nov): el botón 🔄 pide los datos sin el caché del servidor
+async function cargar(silencioso, fresco) {
   if (!CLAVE) return login();
   if (!D && !silencioso) $('#app').innerHTML = '<div class="vacio">Cargando…</div>';
   try {
-    const d = await pedir({});
+    const d = await pedir(fresco ? { fresco: '1' } : {});
     if (!d.ok) { if (d.error === 'clave') { CLAVE = ''; ls.set('despacho_clave', ''); return login(true); } throw new Error(d.error); }
     ls.set('despacho_clave', CLAVE);
     if (!USUARIO) return login();   // falta el nombre: se pide en el formulario (prompt() no funciona en todos los navegadores)
     D = d; D.turnos = turnosHora ? TURNOS : null; pintar();
     cargarTurnos();
-    if (pestana === 'conductores') cargarConductores();
+    if (pestana === 'conductores' || !CONDS) cargarConductores();   // 10-nov: el registro se pide de una vez, así la pestaña abre sin esperar
   } catch (e) { if (!silencioso) toast('No se pudo cargar: ' + e.message); }
 }
 // conductores enturnados y disponibles en la app Viajes ETP (turnos.html): vienen con los datos del tablero
@@ -223,7 +224,7 @@ function pintar() {
     <span class="hora">datos de ${esc(D.hora)} · ${esc(USUARIO)}</span>
     <div class="der">
       <input type="search" placeholder="Buscar booking, placa, conductor" value="${esc(filtro)}" oninput="filtro=this.value;pintar();this.focus();this.setSelectionRange(this.value.length,this.value.length)">
-      <button class="b" onclick="cargar();cargarTurnos(true)">🔄</button>
+      <button class="b" onclick="cargar(false, true);cargarTurnos(true)">🔄</button>
       <button class="b" onclick="confirmarCargue()" title="Orden de cargue por correo (contenedor vacío, llenado en planta o retiro en puerto): placa, conductor, fecha y hora, lugar y la imagen de la orden">📧 Orden de cargue</button>
       <button class="b b-pri" onclick="formulario()">+ Nueva asignación</button>
     </div>
@@ -764,7 +765,7 @@ const vehConProblema = () => (VEHS || []).filter(v => !/^archivad/i.test(v.estad
 async function cargarConductores(forzar) {
   if (!forzar && CONDS && Date.now() - condHora < 2 * 60e3) return;
   try {
-    const j = await (await fetch(API + '?' + new URLSearchParams({ formato: 'json', que: 'conductores', clave: CLAVE }))).json();
+    const j = await (await fetch(API + '?' + new URLSearchParams(Object.assign({ formato: 'json', que: 'conductores', clave: CLAVE }, forzar ? { fresco: '1' } : {})))).json();
     if (!j.ok) throw new Error(j.error || 'sin datos');
     CONDS = j.conductores || []; VEHS = j.vehiculos || []; condHora = Date.now(); condError = '';
   } catch (e) { condError = e.message; }
