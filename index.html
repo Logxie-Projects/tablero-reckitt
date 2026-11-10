@@ -902,6 +902,9 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 .ronda-modal h2{margin:8px 0 4px;font-size:26px}
 .ronda-num{font-size:19px;font-weight:700;margin:6px 0 10px}
 .ronda-modal.vencida .ronda-num{color:var(--bad)}
+
+/* ---------- 10-nov · programación y cambios de fecha de Reckitt: el botón que lo aplica, relleno ---------- */
+.bj-item .tr-acc [onclick^="hacerAqui"]{background:var(--accent);border-color:var(--accent);color:#fff}
 </style>
 </head>
 <body>
@@ -5948,7 +5951,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '5cb8dba3c9';
+const VERSION_TABLERO = '657d66006a';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -7602,6 +7605,9 @@ $('#chatMsgs').addEventListener('click', e => { const b = e.target.closest('[dat
  * Si la prueba sirve, reemplaza a Mi turno (docs/REGLAS-NEGOCIO.md "Bandeja"); si no, se quita esta pestaña y nada cambia. */
 
 const BLOQUES = [
+  // 10-nov ("¿dónde quedó eso?... sí, destaca, y también las reprogramaciones"): la programación nueva de Reckitt y los cambios de
+  // fecha que pide el cliente salían como un pedido más, perdidos entre los demás. Van primero, en su propia tarjeta y en rojo.
+  ['programacion', '📅 Programación', 'p-bad', 'Reckitt mandó una programación nueva o movió una fecha: se revisa y se aplica en el tablero. Nada se crea solo'],
   ['crear', 'Por crear', 'p-acc', 'El correo pide un viaje que no está en la base'],
   ['tomar', 'Por tomar', 'p-acc', 'Viaje nuevo: nadie del equipo lo ha tomado'],
   ['vehiculo', 'Sin vehículo', 'p-bad', `Arranca en ${HORAS_COBERTURA} h o menos y no tiene placa`],
@@ -7618,7 +7624,7 @@ const BLOQUES = [
 ];
 // 10-nov ("que el equipo entienda qué debe hacer"): cada renglón empieza con la instrucción, en una frase con verbo. El nombre del
 // bloque (la etiqueta de color) dice de qué tipo es; esto dice qué hacer.
-const QUE_HACER = {crear: 'Cree el viaje que pide el correo', tomar: 'Tome este viaje nuevo: ábralo y revise sus datos', vehiculo: 'Asigne vehículo y conductor',
+const QUE_HACER = {programacion: 'Revise lo que mandó Reckitt y aplíquelo en el tablero', crear: 'Cree el viaje que pide el correo', tomar: 'Tome este viaje nuevo: ábralo y revise sus datos', vehiculo: 'Asigne vehículo y conductor',
   sinact: 'Actualice el viaje: ¿se hizo o cambió la fecha?', paso: 'Confirme si este paso ya se hizo', donde: 'Confirme dónde va el vehículo',
   nocoincide: 'Decida cuál dato vale', datos: 'Revise y guarde lo que llegó por correo', pedido: 'Haga lo que pide el correo y márquelo hecho',
   falta: 'Complete estos datos en el viaje', registro: 'Corrija los datos del conductor o del vehículo', cierre: 'Cierre el día y deje la nota de entrega de turno'};
@@ -7705,6 +7711,12 @@ function queHacer(b){
 // i.hoy = false) o sea del registro de conductores sin línea roja. Lo atrasado también es de hoy. La usan armarBandeja, los filtros
 // de renderBandeja (se recalcula al filtrar) y el aviso de la ronda (ronda-alerta.js).
 const accionDeHoy = i => i.roja || (i.b === 'hacer' ? !!i.hoy : i.b !== 'registro');
+// 10-nov · qué acción es una programación nueva (la misma que abre el atajo "Aplicar programación", acciones.js) y cuál una
+// reprogramación: el cliente mueve la fecha de un paso de un viaje. Solo las de Operaciones.
+const TITULO_PROGRAMACION = 'Programación y cambios de fecha de Reckitt';
+const esProgramacionNueva = b => { const a = atajoDe(b); return !!a && a[0] === 'programacion'; };
+const esReprogramacion = b => /reprogram|cambi[oó] (de|la) fecha|nueva fecha de (cargue|retiro|llenado|entrega)|(cargue|retiro|llenado|cita|entrega|urbano|devoluci[oó]n)[^.;]{0,50}(→|pasa (a|para)|qued[oó] para|se (mueve|corre|aplaza|adelanta))/i
+  .test([b.accion, b.resumen, b.asunto].join(' '));
 function armarBandeja(){
   // rondas, líneas rojas y excepciones (turno.js estadoTurno), con las mismas claves ("cob|ID", "conf|ID",
   // "seg2|ID", "aLX-…", registro), así que una excepción o un "Sigue igual" vale en las dos pantallas
@@ -7814,6 +7826,12 @@ function armarBandeja(){
     add(v, {b: 'falta', k: x.k, html: `Registro: ${h.titulo}<br><span class="sub">${h.detalle}</span>`, acc: btnT('Completar registro', `data-b-reg="${esc(x.k)}"`)}); });
   // 6 · Pedidos: el resto de las acciones (con viaje en su tarjeta; sin viaje, en "Pedidos sin viaje")
   B.filter(b => !usadas.has(b.id)).forEach(b => { const v = padreDe(viajeDeAccion(b));
+    // programación nueva o cambio de fecha del cliente: a su tarjeta, arriba de todo y en rojo desde que llega
+    if (areaDe(b) === 'Operaciones' && !pareceHecha(b) && (esProgramacionNueva(b) || esReprogramacion(b))) {
+      add(null, {b: 'programacion', k: 'a' + b.id, area: 'Operaciones', prog: true,
+        html: `${desdeCuando(b.fechaCorreo || b.registrado)}<b>${esProgramacionNueva(b) ? 'Programación nueva' : 'Cambio de fecha'}</b>${v ? ' · ' + esc(nombreTurno(v)) : ''}<br>${esc(String(b.accion).replace(/^Operaciones:\s*/i, ''))}${b.resumen ? `<br><span class="sub">${esc(b.resumen)}</span>` : ''}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>`,
+        acc: botonAtajo(b) + (v ? btnT('Abrir el viaje', `data-b-abrir="${v.id}"`) : '') + verCorreo(b) + accHecha(b)}, TITULO_PROGRAMACION, b);
+      tarjetas.get(TITULO_PROGRAMACION).prog = true; usadas.add(b.id); return; }
     add(v && vivos.includes(v) ? v : null, {b: 'pedido', k: 'a' + b.id, area: areaDe(b),
       html: `${desdeCuando(b.fechaCorreo || b.registrado)}${areaDe(b) !== 'Operaciones' ? `<span class="tg">${esc(areaDe(b))}</span> ` : ''}${esc(b.accion)}${pista(b)}${queHacer(b)}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>`,
       acc: verCorreo(b) + botonAtajo(b) + accHecha(b)}, v && vivos.includes(v) ? '' : 'Pedidos sin viaje', b);
@@ -7854,7 +7872,7 @@ function armarBandeja(){
   tarjetas.forEach(t => t.items.forEach(i => { i.area = i.area || 'Operaciones'; const F = [i.k, ...(i.ks || [])].filter(Boolean).map(k => FILAS.get(k)).filter(Boolean);
     const f = F.find(x => x.bloquea) || F.find(x => x.roja) || F[0];
     if (f) i.k = f.k;
-    i.roja = !!(f && f.bloquea); i.exc = f ? f.exc : null; i.rojaSinExc = !!(f && f.roja && !f.exc); }));
+    i.roja = !!(f && f.bloquea) || !!i.prog; i.exc = f ? f.exc : null; i.rojaSinExc = !!(f && f.roja && !f.exc); }));
   // orden (6-nov): por la fecha de la próxima acción, la más cercana primero (lo atrasado arriba); las rojas antes que todo porque
   // bloquean. Fecha de la tarjeta: el próximo paso sin confirmar del viaje o de sus subviajes (pasosDe); sin pasos pendientes, el
   // primer evento; sin viaje, el día del correo que la pide (ya pasó: va arriba)
@@ -7868,7 +7886,7 @@ function armarBandeja(){
   };
   // una tarjeta es de hoy si cualquiera de sus acciones lo es (accionDeHoy); primero las de hoy, luego las de los próximos días
   const L = [...tarjetas.values()].map(t => ({...t, rango: rango(t), roja: t.items.some(i => i.roja), fecha: fechaAccion(t), hoy: t.items.some(accionDeHoy)}))
-    .sort((a, b) => b.hoy - a.hoy || b.roja - a.roja || (a.fecha || '9').localeCompare(b.fecha || '9') || a.rango - b.rango);
+    .sort((a, b) => (b.prog ? 1 : 0) - (a.prog ? 1 : 0) || b.hoy - a.hoy || b.roja - a.roja || (a.fecha || '9').localeCompare(b.fecha || '9') || a.rango - b.rango);
   return {L, usadas, propUsadas, hoyViajes, B, vivos, T};
 }
 
@@ -7892,7 +7910,7 @@ function renderBandeja(){
   const L0 = R.L, porArea = a => L0.filter(t => t.items.some(i => !a || i.area === a)).length;
   R.L = R.L.map(t => ({...t, items: t.items.filter(enArea)})).filter(t => t.items.length).map(t => ({...t, roja: t.items.some(i => i.roja), hoy: t.items.some(accionDeHoy)}));
   // barra IMPO / EXPO / Nacional: cuenta tarjetas del área elegida; ⛔ si esa operación tiene líneas rojas (para no perderlas de vista)
-  const deOp = (t, o) => t.items.filter(i => !o || i.b === 'registro' || (i.b === 'cierre' ? !i.opViaje || i.opViaje === o : i.op === o));
+  const deOp = (t, o) => t.items.filter(i => !o || i.b === 'registro' || i.b === 'programacion' || (i.b === 'cierre' ? !i.opViaje || i.opViaje === o : i.op === o));
   const opN = o => R.L.filter(t => deOp(t, o).length).length, opRoja = o => R.L.some(t => deOp(t, o).some(i => i.roja));
   if (bandejaOp && !opN(bandejaOp) && !OPS_BANDEJA.some(([o]) => o === bandejaOp)) bandejaOp = '';
   const barraOp = barraOperaciones(opN, opRoja);
@@ -8025,6 +8043,9 @@ function revisarAlertaRonda(){
     hoyN = L.length; atras = L.filter(t => t.fecha && diffDias(t.fecha) < 0).length; } catch(x) {}
   const seg = T.M[0].filas.filter(x => !x.hecha && x.tipo === 'seg').length, vencida = T.rondaVencida, hora = RONDAS[r.n - 1] + ':00';
   const resumen = `${hoyN} ${hoyN === 1 ? 'viaje con acciones' : 'viajes con acciones'} para hoy${atras ? `, ${atras} ${atras === 1 ? 'atrasado' : 'atrasados'}` : ''}`;
+  // 10-nov · programación nueva o cambios de fecha de Reckitt sin aplicar: es lo que más mueve el día, se dice aparte
+  let nProg = 0; try { nProg = armarBandeja().L.flatMap(t => t.items).filter(i => i.b === 'programacion').length; } catch(x) {}
+  const avisoProg = nProg ? `<p class="ronda-num" style="color:var(--bad)">📅 ${nProg === 1 ? 'Hay 1 programación o cambio de fecha de Reckitt sin aplicar' : `Hay ${nProg} programaciones o cambios de fecha de Reckitt sin aplicar`}</p>` : '';
   // en segundo plano o con otra ventana abierta (alguien está escribiendo): no se interrumpe; se avisa por el navegador, una vez
   if (document.hidden || document.querySelector('.ov.open, #chat.open')) {
     if (document.hidden && !e.notificada && 'Notification' in window && Notification.permission === 'granted') {
@@ -8039,7 +8060,7 @@ function revisarAlertaRonda(){
   document.body.insertAdjacentHTML('beforeend', `<div class="ov open" id="ovRonda" style="z-index:80"><div class="modal ronda-modal${vencida ? ' vencida' : ''}">
     <div class="ronda-ico">${vencida ? '⛔' : '⏱'}</div>
     <h2>Ronda de las ${hora}${vencida ? ' · vencida' : ''}</h2>
-    <p class="ronda-num">${resumen}</p>
+    <p class="ronda-num">${resumen}</p>${avisoProg}
     <p class="sub">${seg ? `Falta confirmar dónde va${seg === 1 ? '' : 'n'} <b>${seg}</b> vehículo${seg === 1 ? '' : 's'}. ` : ''}${vencida ? `La ronda vencía a las ${hhmm(r.vence)}.` : `Tiene hasta las ${hhmm(r.vence)}.`}
       Se cierra revisando cada acción en rojo: hecha, nueva fecha, "sigue igual" o "no se puede".</p>
     <div class="mfoot" style="flex-direction:column;gap:8px">
