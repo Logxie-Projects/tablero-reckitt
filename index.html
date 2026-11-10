@@ -818,11 +818,11 @@ body.lv-abierta{overflow:hidden}
 .km-tramo{stroke:var(--muted);stroke-width:1.3;stroke-dasharray:4 4;opacity:.7}
 .km-sitio{fill:var(--surface);stroke:var(--muted);stroke-width:1.5}
 .km-nom{font-size:11.5px;fill:var(--muted)}
-.km-v circle{fill:var(--ok);stroke:var(--surface);stroke-width:2}
+.km-v circle{fill:var(--ok);stroke:var(--surface);stroke-width:1.5}
 .km-v.warn circle{fill:var(--warn)}
-.km-v.aprox circle{fill:color-mix(in srgb,var(--ok) 30%,var(--surface));stroke:var(--ok);stroke-dasharray:3 2;stroke-width:1.6}
+.km-v.aprox circle{fill:color-mix(in srgb,var(--ok) 30%,var(--surface));stroke:var(--ok);stroke-dasharray:2.5 1.5;stroke-width:1.3}
 .km-v.warn.aprox circle{fill:color-mix(in srgb,var(--warn) 30%,var(--surface));stroke:var(--warn)}
-.km-v text{font-size:11.5px;font-weight:600;fill:#fff;pointer-events:none}
+.km-v text{font-size:8px;font-weight:600;fill:#fff;pointer-events:none}
 .km-v.aprox text{fill:var(--text)}
 .km-cta{font-size:12px;font-weight:400;border-radius:999px;padding:3px 10px;margin-left:8px;vertical-align:middle}
 .km-cta.ok{background:var(--kl-ok);color:var(--ok)}.km-cta.warn{background:var(--kl-warn);color:var(--text)}
@@ -831,9 +831,9 @@ body.lv-abierta{overflow:hidden}
 .km-t h4{margin:0 0 6px;font-size:13.5px;font-weight:600;display:flex;justify-content:space-between;gap:10px}
 .km-t h4 span{font-weight:400;color:var(--muted);font-size:12.5px;white-space:nowrap}
 .km-f{display:flex;gap:10px;padding:7px 0;border-top:1px solid var(--border);font-size:13px}
-.km-f>i{flex:none;width:10px;height:10px;border-radius:50%;background:var(--ok);margin-top:4px}
+.km-f>i{flex:none;box-sizing:border-box;width:18px;height:18px;border-radius:50%;background:var(--ok);margin-top:1px;font-style:normal;font-size:10.5px;font-weight:600;line-height:18px;text-align:center;color:#fff}
 .km-f.warn>i{background:var(--warn)}
-.km-f>i.aprox{background:transparent;border:1.5px dashed var(--ok)}.km-f.warn>i.aprox{border-color:var(--warn)}
+.km-f>i.aprox{background:transparent;border:1.5px dashed var(--ok);line-height:15px;color:var(--text)}.km-f.warn>i.aprox{border-color:var(--warn)}
 .km-f div{min-width:0}.km-f span{color:var(--muted)}
 .km-f small,.km-f em{display:block;font-style:normal;font-size:12.5px;color:var(--muted)}
 .km-f.warn small{color:var(--text)}
@@ -5773,7 +5773,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '3a93c37602';
+const VERSION_TABLERO = '37e3398d89';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -6763,7 +6763,7 @@ montarKC();
  *   2. Si el viaje no tiene reporte con ubicación: sobre el trayecto, según el paso del conductor o la etapa del viaje. Punto
  *      con borde punteado ("aproximado"). No hay GPS continuo: no se inventa una posición exacta.
  * En ruta ahora = con vehículo y ya arrancó (en tránsito o devolviendo el vacío), sin importar el periodo elegido arriba; sí
- * respeta la operación elegida. Los vehículos que caen juntos en el mapa se agrupan en un solo punto con el número.
+ * respeta la operación elegida. Cada vehículo es un punto con su número (el mismo de su fila en la lista); el que cae encima de otro se corre un poco.
  * El mapa es un dibujo propio (contorno simplificado de Colombia, sin librerías ni mapas de terceros): sirve en modo oscuro
  * y no manda la ubicación a nadie.
  * Colores: verde = en movimiento, ámbar = con novedad o en espera. Prefijo CSS: km-. */
@@ -6781,8 +6781,9 @@ const KM_LUGARES = [[/\bbun\b|buenaventura/, 'Buenaventura', 3.88, -77.03], [/\b
   [/\bcali\b/, 'Cali', 3.45, -76.53], [/bogot|funza|mosquera|siberia|solistica/, 'Bogotá', 4.71, -74.1], [/barranquilla|\bbaq\b/, 'Barranquilla', 10.98, -74.8],
   [/santa marta|\bsmr\b/, 'Santa Marta', 11.24, -74.2], [/medell|itagu|rionegro/, 'Medellín', 6.25, -75.57]];
 // dónde va el nombre de cada lugar respecto a su punto (los que quedan pegados al borde o a otro lugar)
-const KM_ROTULO = {Buenaventura: [-2, 20, 'middle'], Yumbo: [9, -6, 'start'], Cali: [9, 15, 'start'], Cartagena: [-8, 4, 'end'], Barranquilla: [0, -9, 'middle']};
-const KM = {W: 380, H: 510, O: -79.3, E: -66.5, N: 12.8, S: -4.5};
+const KM_ROTULO = {Buenaventura: [-9, 4, 'end'], Yumbo: [10, -5, 'start'], Cali: [9, 15, 'start'], Cartagena: [-8, 4, 'end'], Barranquilla: [0, -9, 'middle']};
+const KM_SEP = 14;   // separación entre dos puntos del mapa (cada punto mide 12)
+const KM = {W: 380, H: 510, O: -80.1, E: -66.5, N: 12.8, S: -4.5};
 const kmXY = (lat, lng) => [(lng - KM.O) / (KM.E - KM.O) * KM.W, (KM.N - lat) / (KM.N - KM.S) * KM.H];
 const kmLugar = t => { const s = sinTilde(String(t || '')).toLowerCase(); return s ? KM_LUGARES.find(l => l[0].test(s)) || null : null; };
 const kmLugarDe = (...T) => T.map(kmLugar).find(Boolean) || null;
@@ -6809,30 +6810,41 @@ function calcKM(conNovedad){
     return {v, a, b, real, x: xy[0], y: xy[1], warn: !!nov, nov, c, fecha: c && (real ? c.ubiFecha || c.fecha : c.fecha) || '',
       tramo: kmDevolviendo(v) ? `${b[1]} · devolviendo el vacío` : a[1] === b[1] ? a[1] : `${a[1]} → ${b[1]}`};
   }).sort((p, q) => q.warn - p.warn || String(q.fecha).localeCompare(String(p.fecha)));
-  // los que caen juntos se agrupan en un punto
-  const G = [];
-  L.forEach(p => { const g = G.find(g => Math.hypot(g.x - p.x, g.y - p.y) < 17); if (g) { g.L.push(p); g.x = g.L.reduce((s, q) => s + q.x, 0) / g.L.length; g.y = g.L.reduce((s, q) => s + q.y, 0) / g.L.length; } else G.push({x: p.x, y: p.y, L: [p]}); });
+  // cada vehículo es un punto (10-nov: "ver todos los vehículos como puntos en el mapa"). El que cae encima de otro se corre:
+  // el aproximado, a lo largo de su trayecto; el que tiene ubicación real, apenas alrededor de su sitio
+  const puestos = [], libre = (x, y) => puestos.every(q => Math.hypot(q.x - x, q.y - y) >= KM_SEP - .01);
+  [...L].sort((p, q) => q.real - p.real).forEach(p => {
+    const A = kmXY(p.a[2], p.a[3]), B = kmXY(p.b[2], p.b[3]), d = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1, ux = (B[0] - A[0]) / d, uy = (B[1] - A[1]) / d;
+    const C = [[0, 0]];
+    for (let k = 1; k <= 12; k++) {
+      if (!p.real && d > 1) [k, -k].forEach(s => C.push([ux * s * KM_SEP, uy * s * KM_SEP]));
+      for (let i = 0; i < 6 * k; i++) { const t = i / (6 * k) * 2 * Math.PI; C.push([Math.cos(t) * k * KM_SEP, Math.sin(t) * k * KM_SEP]); }
+    }
+    const c = C.find(([dx, dy]) => libre(p.x + dx, p.y + dy)) || [0, 0];
+    p.x += c[0]; p.y += c[1]; puestos.push(p);
+  });
   const tramos = new Map(); L.forEach(p => { const k = p.a[1] + '|' + p.b[1]; if (!tramos.has(k)) tramos.set(k, [p.a, p.b]); });
   const sitios = new Map(); tramos.forEach(([a, b]) => { sitios.set(a[1], a); sitios.set(b[1], b); });
-  return {L, G, tramos: [...tramos.values()], sitios: [...sitios.values()]};
+  return {L, tramos: [...tramos.values()], sitios: [...sitios.values()]};
 }
 
 function htmlKM(N){
   const M = calcKM(new Map(N.filter(x => x.tag !== 'falta documento').map(x => [x.v.id, x])));
   const nWarn = M.L.filter(p => p.warn).length, nReal = M.L.filter(p => p.real).length;
   const pt = (lat, lng) => kmXY(lat, lng).map(n => Math.round(n * 10) / 10).join(',');
+  // el número de cada punto es el de su fila en la lista de al lado
+  const porTramo = new Map(); M.L.forEach(p => { if (!porTramo.has(p.tramo)) porTramo.set(p.tramo, []); porTramo.get(p.tramo).push(p); });
+  let num = 0; porTramo.forEach(L => L.forEach(p => { p.num = ++num; }));
   const mapa = `<svg viewBox="0 0 ${KM.W} ${KM.H}" role="img" aria-label="Mapa de Colombia con ${klPl(M.L.length, 'vehículo')} en ruta">
     <polygon class="km-pais" points="${KM_BORDE.map(([lng, lat]) => pt(lat, lng)).join(' ')}"/>
     ${M.tramos.map(([a, b]) => `<line class="km-tramo" x1="${pt(a[2], a[3]).replace(',', '" y1="')}" x2="${pt(b[2], b[3]).replace(',', '" y2="')}"/>`).join('')}
     ${M.sitios.map(s => { const [x, y] = kmXY(s[2], s[3]), e = KM_ROTULO[s[1]] || [8, 4, 'start']; return `<circle class="km-sitio" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5"/><text class="km-nom" x="${(x + e[0]).toFixed(1)}" y="${(y + e[1]).toFixed(1)}" text-anchor="${e[2]}">${esc(s[1])}</text>`; }).join('')}
-    ${M.G.map(g => { const w = g.L.some(p => p.warn), aprox = g.L.every(p => !p.real), n = g.L.length;
-      return `<g class="km-v${w ? ' warn' : ''}${aprox ? ' aprox' : ''}"><title>${esc(g.L.map(p => `${p.v.placa} · ${p.tramo}`).join('\n'))}</title><circle cx="${g.x.toFixed(1)}" cy="${g.y.toFixed(1)}" r="${n > 1 ? 11 : 7}"/>${n > 1 ? `<text x="${g.x.toFixed(1)}" y="${(g.y + 4).toFixed(1)}" text-anchor="middle">${n}</text>` : ''}</g>`; }).join('')}
+    ${M.L.map(p => `<g class="km-v${p.warn ? ' warn' : ''}${p.real ? '' : ' aprox'}"><title>${esc(`${p.v.placa} · ${p.tramo}`)}</title><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="6"/><text x="${p.x.toFixed(1)}" y="${(p.y + 3).toFixed(1)}" text-anchor="middle">${p.num}</text></g>`).join('')}
   </svg>`;
-  const porTramo = new Map(); M.L.forEach(p => { if (!porTramo.has(p.tramo)) porTramo.set(p.tramo, []); porTramo.get(p.tramo).push(p); });
-  const fila = p => `<div class="km-f${p.warn ? ' warn' : ''}"><i class="${p.real ? '' : 'aprox'}"></i><div><b>${esc(p.v.placa)}</b> <span>${esc(kcRef(p.v))}</span>
+  const fila = p => `<div class="km-f${p.warn ? ' warn' : ''}"><i class="${p.real ? '' : 'aprox'}">${p.num}</i><div><b>${esc(p.v.placa)}</b> <span>${esc(kcRef(p.v))}</span>
       <small>${esc(p.warn ? `${p.nov.tag}${p.nov.dias ? ' · ' + klPl(p.nov.dias, 'día') : ''}` : String(p.v.estado || '').toLowerCase())}${p.c && p.c.n ? ` · ${esc(String(p.c.paso).toLowerCase())}` : ''}</small>
       <em>${p.real ? `Reportó ${haceTxt(p.fecha) || 'sin hora'}` : p.c && p.c.n && p.fecha ? `Reportó ${haceTxt(p.fecha)}, sin ubicación` : 'Sin reporte del conductor'}</em></div></div>`;
-  const lista = [...porTramo.entries()].map(([t, L]) => `<div class="km-t"><h4>${esc(t)}<span>${klPl(L.length, 'vehículo')}</span></h4>${L.slice(0, 6).map(fila).join('')}${L.length > 6 ? `<div class="kl-vacio">y ${klPl(L.length - 6, 'vehículo')} más</div>` : ''}</div>`).join('');
+  const lista = [...porTramo.entries()].map(([t, L]) => `<div class="km-t"><h4>${esc(t)}<span>${klPl(L.length, 'vehículo')}</span></h4>${L.map(fila).join('')}</div>`).join('');
   return `<h3 class="kl-h">Vehículos en ruta <span class="km-cta ok">${miles(M.L.length - nWarn)} en movimiento</span>${nWarn ? `<span class="km-cta warn">${miles(nWarn)} con novedad</span>` : ''}</h3>
     ${M.L.length ? `<div class="km"><div class="km-mapa">${mapa}<div class="kl-ley"><span><i class="ok km-r"></i>en movimiento</span><span><i class="rep km-r"></i>con novedad o en espera</span><span><i class="km-r km-ap"></i>ubicación aproximada</span></div></div>
       <div class="km-lista">${lista}<p class="km-nota">${nReal ? `${klPl(nReal, 'vehículo')} de ${miles(M.L.length)} con la ubicación de su último reporte.` : 'Ningún vehículo ha reportado su ubicación todavía.'} Los demás se muestran sobre su trayecto, según la etapa: es una ubicación aproximada.</p></div></div>`
