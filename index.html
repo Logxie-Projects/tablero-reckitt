@@ -864,6 +864,23 @@ body.lv-abierta{overflow:hidden}
 .err-urg.u2{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
 .err-urg.u3{background:color-mix(in srgb,var(--muted) 16%,transparent);color:var(--muted)}
 
+/* ---------- 10-nov · Datos por completar: una tarjeta por viaje con su lista de chequeo ---------- */
+.err-cards{display:flex;flex-direction:column;gap:10px}
+.err-card{border:1px solid var(--border);border-left:4px solid var(--muted);border-radius:10px;background:var(--surface);overflow:hidden}
+.err-card.u1{border-left-color:var(--bad)} .err-card.u2{border-left-color:var(--warn)}
+.err-h{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;padding:8px 12px;background:var(--surface-2,transparent);border-bottom:1px solid var(--border);font-size:14px}
+.err-h .link{margin-left:auto}
+.err-lista{display:flex;flex-direction:column}
+.err-item{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:8px;align-items:start;width:100%;text-align:left;font:inherit;font-size:13px;color:var(--text);background:none;border:0;border-top:1px solid var(--border);padding:8px 12px;cursor:pointer}
+.err-item:first-child{border-top:0}
+.err-item:hover{background:var(--accent-soft)}
+.err-caja{font-size:16px;line-height:1.2;color:var(--muted)}
+.err-cuerpo{display:flex;flex-direction:column;gap:1px;min-width:0}
+.err-ir{align-self:center;white-space:nowrap;font-size:12px;font-weight:700;color:#fff;background:var(--accent);border-radius:6px;padding:3px 10px}
+.err-buscar{padding:6px 12px 8px;border-top:1px dashed var(--border)}
+@media (max-width:700px){.err-item{grid-template-columns:22px minmax(0,1fr)}.err-ir{grid-column:2;justify-self:start}.err-h .link{margin-left:0}}
+/* en Datos por completar solo sirve la pestaña de operación: los demás filtros de la barra no aplican y se ocultan */
+body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 </style>
 </head>
 <body>
@@ -967,7 +984,7 @@ body.lv-abierta{overflow:hidden}
       </div>
       <div class="chips" id="errFiltros" style="margin:8px 0 12px"></div>
       <textarea id="repTexto" class="hidden" readonly style="width:100%;min-height:220px;font:12px/1.5 ui-monospace,Consolas,monospace;border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--surface-2);margin-bottom:12px"></textarea>
-      <div class="tbl-wrap" style="border:0"><table id="tblErr"></table></div>
+      <div id="tblErr" class="err-cards"></div>
       <p class="sub" style="margin-top:8px">Se revisan los viajes que no están cerrados ni cancelados. Cada fila se quita sola cuando el dato queda en el viaje. El mismo listado sale por correo 3 veces al día.</p>
     </div>
   </section>
@@ -2712,27 +2729,38 @@ Por favor corregir en la hoja "OPERACION DIARIA RECKIT 2026" y actualizar el sta
 ${L.map(x=>`   - [${x.tipo==='Alerta'?'ALERTA':'ERROR'} · ${x.sev.toUpperCase()}] ${x.campo}: ${x.msg}\n     Por qué ahora: ${x.porque}`).join('\n')}
    Buscar en el correo: ${clavesBusqueda(L[0].v).map(([k, x]) => `${k} ${x}`).join(' · ') || '—'}`).join('\n\n');
 }
+// 10-nov ("hagamos que errores también sea más intuitivo"): una tarjeta por VIAJE (antes una fila por dato, el mismo viaje repetido),
+// con su lista de lo que falta como lista de chequeo. Tocar un renglón abre el viaje con el cursor en esa casilla. La pestaña de
+// operación de arriba (Exportaciones, Importaciones…) también filtra aquí; el número de la pestaña Errores sigue siendo el total.
+let errVerTodas = false;
 function renderErrores(){
-  const E = errores(), altas = E.filter(x=>x.sev==='Alta').length, nViajes = new Set(E.map(x=>x.v.id)).size;
-  const nErr = E.filter(x=>x.tipo!=='Alerta').length, nAl = E.length - nErr;
-  $('#nErr').textContent = E.length || '';
+  const Etodos = errores(), op = G.op && !errVerTodas ? G.op : '', E = op ? Etodos.filter(x => x.v.operacion === op) : Etodos;
+  const altas = E.filter(x=>x.sev==='Alta').length, nViajes = new Set(E.map(x=>x.v.id)).size;
+  const nErr = E.filter(x=>x.tipo!=='Alerta').length, nAl = E.length - nErr, pl = (n, s, p) => `${n} ${n === 1 ? s : p}`;
+  $('#nErr').textContent = Etodos.length || '';
   // lo de viajes lejanos no sale hasta entrar en su ventana (VENTANAS, en el dominio)
-  // 10-nov: en palabras del trabajo, no de la regla. Error = el dato ya debía estar; Alerta = se necesita en los próximos días
-  $('#errResumen').textContent = `${nErr} dato${nErr === 1 ? '' : 's'} que ya debía${nErr === 1 ? '' : 'n'} estar · ${nAl} que se necesita${nAl === 1 ? '' : 'n'} pronto · en ${nViajes} viaje${nViajes === 1 ? '' : 's'}` + (G.op ? ` · incluye IMPO y EXPO (el filtro ${G.op} no aplica aquí)` : '');
-  $('#errFiltros').innerHTML = [['','Todos',E.length],['Error','Ya debían estar',nErr],['Alerta','Se necesitan pronto',nAl],['Alta','Lo más urgente',altas]]
+  const nomOp = {EXPO: 'exportaciones', IMPO: 'importaciones', NACIONAL: 'operación nacional'};
+  $('#errResumen').innerHTML = (E.length ? `<b>${pl(nViajes, 'viaje', 'viajes')}</b> con datos por completar · ${pl(nErr, 'dato ya debía estar', 'datos ya debían estar')} · ${pl(nAl, 'se necesita pronto', 'se necesitan pronto')}` : 'No falta ningún dato')
+    + (op ? ` · solo ${nomOp[op] || op} <button type="button" class="link" data-err-todas="1">ver todas (${Etodos.length})</button>`
+      : G.op ? ` · todas las operaciones <button type="button" class="link" data-err-todas="0">ver solo ${nomOp[G.op] || G.op}</button>` : '');
+  $('#errFiltros').innerHTML = [['','Todo',E.length],['Error','Ya debían estar',nErr],['Alerta','Se necesitan pronto',nAl],['Alta','Lo más urgente',altas]]
     .map(([k,l,c])=>`<button class="chip ${errSev===k?'on':''}" data-sev="${k}">${l} · ${c}</button>`).join('');
   const vis = E.filter(x=>!errSev || (errSev==='Alta' ? x.sev==='Alta' : (x.tipo||'Error')===errSev));
-  // una fila = una instrucción: qué tan urgente, en qué viaje (por su referencia, no "Sin placa"), qué hacer y el botón que abre el
-  // viaje en esa casilla
-  const urg = x => x.tipo !== 'Alerta' ? ['u1', 'Ya debía estar'] : x.sev === 'Alta' ? ['u2', 'Urgente'] : ['u3', 'Se necesita pronto'];
+  // urgencia en palabras: 1 = el dato ya debía estar · 2 = se necesita ya (alerta alta) · 3 = se necesita en los próximos días
+  const urg = x => x.tipo !== 'Alerta' ? 1 : x.sev === 'Alta' ? 2 : 3, URG = {1: 'Ya debía estar', 2: 'Urgente', 3: 'Se necesita pronto'};
   const hacer = x => String(x.msg).replace(/^Sin veh[ií]culo asignado/i, 'Asigne vehículo').replace(/^Sin cita de ingreso a puerto/i, 'Pida la cita de ingreso a puerto')
     .replace(/^Sin /i, 'Falta: ').replace(/\(faltan (\d+) d\)/, '(arranca en $1 d)');
-  $('#tblErr').innerHTML = vis.length ? `<tr><th>Urgencia</th><th>Viaje</th><th>Qué hacer</th><th></th></tr>` +
-    vis.map(x=>`<tr><td><span class="err-urg ${urg(x)[0]}">${urg(x)[1]}</span></td>
-      <td><b>${esc(refCorta(x.v) || x.v.id)}</b> ${x.v.placa?`<span class="placa">${esc(x.v.placa)}</span>`:'<span class="missing">sin vehículo</span>'}<br><span class="sub">${esc(x.v.operacion)} ${esc(x.v.pais||x.v.destino||'')}${primerEvento(x.v) ? ' · arranca ' + fd(primerEvento(x.v)) : ''}</span><br><span class="sub">${enlacesBusqueda(x.v)}</span></td>
-      <td class="obs" style="color:var(--text)"><span class="err-que">${esc(hacer(x))}</span>${x.porque ? `<br><span class="sub">Por qué: ${esc(x.porque)}</span>` : ''}</td>
-      <td class="err-acc"><button class="link" onclick="abrirEnCampo('${x.v.id}', '${esc(x.campo).replace(/'/g, '')}')">Completar en el viaje</button></td></tr>`).join('')
-    : `<tr><td class="sub" style="padding:20px">${errSev==='Alerta' ? 'Nada se necesita pronto' : 'No falta ningún dato'} 🎉</td></tr>`;
+  const porViaje = new Map(); vis.forEach(x => { if (!porViaje.has(x.v.id)) porViaje.set(x.v.id, []); porViaje.get(x.v.id).push(x); });
+  const grupos = [...porViaje.values()].map(L => ({v: L[0].v, L: L.sort((a, b) => urg(a) - urg(b)), u: Math.min(...L.map(urg))}))
+    .sort((a, b) => a.u - b.u || (primerEvento(a.v) || '9').localeCompare(primerEvento(b.v) || '9'));
+  $('#tblErr').innerHTML = grupos.length ? grupos.map(({v, L, u}) => `<div class="err-card u${u}">
+      <div class="err-h"><span class="err-urg u${u}">${URG[u]}</span> <b>${esc(refCorta(v) || v.id)}</b>
+        <span class="sub">${esc(v.operacion)}${v.pais || v.destino ? ' ' + esc(v.pais || v.destino) : ''} · ${v.placa ? `<span class="placa">${esc(v.placa)}</span>` : '<span class="missing">sin vehículo</span>'}${primerEvento(v) ? ' · arranca ' + fd(primerEvento(v)) : ''}</span>
+        <button type="button" class="link" onclick="abrir('${v.id}')">Abrir viaje</button></div>
+      <div class="err-lista">${L.map(x => `<button type="button" class="err-item" onclick="abrirEnCampo('${v.id}', '${esc(x.campo).replace(/'/g, '')}')" title="Abre el viaje en esta casilla">
+        <span class="err-caja">☐</span><span class="err-cuerpo"><span class="err-que">${esc(hacer(x))}</span>${x.porque ? `<span class="sub">${esc(x.porque)}</span>` : ''}</span><span class="err-ir">Completar ›</span></button>`).join('')}</div>
+      ${clavesBusqueda(v).length ? `<div class="err-buscar sub">¿No tiene el dato? Búsquelo en el correo: ${enlacesBusqueda(v)}</div>` : ''}</div>`).join('')
+    : `<div class="sub" style="padding:20px">${errSev==='Alerta' ? 'Nada se necesita pronto' : 'No falta ningún dato'} 🎉</div>`;
   if (!$('#repTexto').classList.contains('hidden')) $('#repTexto').value = textoReporte();
 }
 // abre el viaje y deja el cursor en la casilla que falta (por el nombre de la casilla; si no la encuentra, queda en el viaje)
@@ -2741,6 +2769,7 @@ function abrirEnCampo(id, campo){
   setTimeout(() => { const c = minus(campo), l = [...document.querySelectorAll('#mForm label')].find(l => minus(l.textContent).includes(c)) || (c.includes('placa') || c.includes('vehiculo') ? document.querySelector('#mForm [data-k=placa]')?.closest('div')?.querySelector('label') : null);
     const i = l && l.parentElement.querySelector('input:not([type=hidden]),select,textarea'); if (i) { i.scrollIntoView({block: 'center'}); i.focus(); } }, 200);
 }
+$('#errResumen').onclick = e => { const b = e.target.closest('[data-err-todas]'); if (!b) return; errVerTodas = b.dataset.errTodas === '1'; renderErrores(); };
 $('#errFiltros').onclick = e => { const b=e.target.closest('[data-sev]'); if(!b) return; errSev=b.dataset.sev; renderErrores(); };
 $('#btnVerRep').onclick = () => { const t=$('#repTexto'); t.classList.toggle('hidden'); t.value = textoReporte(); };
 $('#btnCopiarRep').onclick = async () => {
@@ -5810,7 +5839,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '326956cce2';
+const VERSION_TABLERO = 'e616a6b8c4';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -7041,7 +7070,8 @@ montarKL();
 /* ---------- navegación y eventos ---------- */
 $('#nav').onclick = e => { const b=e.target.closest('button'); if(!b) return;
   document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on', x===b));
-  document.body.classList.toggle('en-turno', b.dataset.v === 'bandeja');   // la Bandeja no usa la barra de filtros global
+  document.body.classList.toggle('en-turno', b.dataset.v === 'bandeja');
+  document.body.classList.toggle('en-errores', b.dataset.v === 'errores');   // 10-nov: en Errores solo aplica la pestaña de operación, no los demás filtros   // la Bandeja no usa la barra de filtros global
   ['bandeja','tablero','viajes','motonaves','errores','acciones'].forEach(v=>$('#v-'+v).classList.toggle('hidden', v!==b.dataset.v));
   if (b.dataset.v === 'acciones') renderAcciones(); };   // acciones.js: se pinta al abrirla
 $('#proximos').onclick = e => { const b = e.target.closest('[data-ag]'); if (!b) return;
