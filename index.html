@@ -1257,8 +1257,8 @@ const minus = s => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLower
 // aparecía como "Cargue", "Movimiento de contenedor"…). El concepto se ELIGE de esta lista; lo que no esté va como "Otro" con su
 // descripción: "Otro (qué es)". "Costo de terceros" lo escribe el sistema en una reprogramación que no es del cliente.
 // Retorno NO está: es parte del flete y va en su casilla.
-const CONCEPTOS_EXTRA = ['Descargue de contenedor', 'Vaciado de contenedor', 'Llenado de contenedor', 'Almacenaje', 'Urbano', 'Standby',
-  'Cita', 'Parqueadero', 'Pernocta', 'Escolta', 'Reprogramación', 'Otro'];
+const CONCEPTOS_EXTRA = ['Descargue de contenedor', 'Cargue de contenedor', 'Vaciado de contenedor', 'Llenado de contenedor', 'Almacenaje', 'Urbano', 'Standby',
+  'Cita', 'Parqueadero', 'Pernocta', 'Escolta', 'Candado satelital', 'Reprogramación', 'Otro'];   // Cargue de contenedor y Candado satelital: agregados el 10-nov
 const CONCEPTOS_SISTEMA = ['Costo de terceros'];
 // "Otro (descripción)" → la descripción; '' si no es un Otro bien escrito
 const descripcionOtro = c => { const m = String(c || '').trim().match(/^otro\s*\((.{3,})\)$/i); return m ? m[1].trim() : ''; };
@@ -5948,7 +5948,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '31d6645446';
+const VERSION_TABLERO = '5cb8dba3c9';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
