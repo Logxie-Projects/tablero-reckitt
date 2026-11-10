@@ -3634,7 +3634,7 @@ function tarjetaHijo(s, padre){
   </div>`;
 }
 // pie del subviaje: su etapa (dominio etapaSubviaje), la marca Novedad si la tiene y su última novedad con hora y autor, como el viaje
-// principal; "+ Novedad" abre el subviaje en la caja de novedades (las novedades del subviaje también suman en el padre)
+// principal; "+ Novedad" abre el subviaje en la caja de novedades (sus novedades son suyas: en el viaje principal solo salen en la línea de tiempo, marcadas)
 function pieHijo(s){
   const {txt, tono, pend} = etapaSubviaje(s), col = {cerrado: 'var(--ok)', gris: 'var(--muted)', curso: 'var(--accent)', confirmar: 'var(--warn)'}[tono], n = ultimaNovedad(s);
   const tg = (t, c) => `<span class="tg" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${esc(t)}</span>`;
@@ -3790,7 +3790,11 @@ const CAMBIO_OPERATIVO = /fecha|cita|retir|entrega|cargue|llenado|devoluci|desca
 const soloOperacion = t => sinObservacion(t).split(/ · (?=[A-ZÁÉÍÓÚÑ][^:·]{1,40}: )/).filter(s => CAMBIO_OPERATIVO.test(s.split(':')[0])).join(' · ');
 // una nota Interna (solo para el equipo) o una prueba del sistema tampoco: no son el status del viaje
 const notaDelViaje = n => n.tipo !== 'Interna' && !/prueba/i.test(n.usuario || '');
-const ultimaNovedadEscrita = v => novedadesDe(v).filter(notaDelViaje).find(n => !delSistema(n));
+// 10-nov ("el comentario del subviaje se ve también en el viaje"): cada frente muestra SUS novedades. La línea de la tarjeta, el
+// último comentario de la ronda y el contador usan solo las del propio viaje o subviaje (novedadesPropias). La línea de tiempo de
+// la ventana del viaje sigue juntando las dos (novedadesDe), y las del subviaje van marcadas como tales.
+const novedadesPropias = v => (window.NOVEDADES || []).filter(n => String(n.viaje) === v.id).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+const ultimaNovedadEscrita = v => novedadesPropias(v).filter(notaDelViaje).find(n => !delSistema(n));
 // la nota o el último paso confirmado si es más nuevo (dominio comentarioViaje; la misma regla del correo al cliente)
 const ultimaNovedad = v => comentarioViaje(v, ultimaNovedadEscrita(v), window.NOVEDADES);
 // cualquier fecha (ISO con zona del Historial o local de las novedades) como "AAAA-MM-DDTHH:mm" de Bogotá, para ordenar y mostrar
@@ -3821,15 +3825,15 @@ const textoNovedad = n => n.tipo === 'Cambio' ? soloOperacion(n.texto) : n.texto
 // la línea de la tarjeta: la última novedad con hora y autor; sin novedades, la observación como antes
 function lineaNovedad(v){
   const n = ultimaNovedad(v), estilo = 'style="margin:-4px 0 10px"';
-  if (n) return `<div class="sub nov-ult" ${estilo} title="${esc(fechaNovedad(n))}">🕑 <b>${esc(haceCuanto(n.fecha))}</b> · ${esc(n.usuario)} · ${n.origen === 'Conductor' ? '🚛 Conductor' : iconoNovedad(n.tipo) + ' ' + esc(n.tipo)}: ${esc(textoNovedad(n))}${novedadesDe(v).length > 1 ? ` <span class="sub">(+${novedadesDe(v).length - 1})</span>` : ''}</div>`;
+  if (n) return `<div class="sub nov-ult" ${estilo} title="${esc(fechaNovedad(n))}">🕑 <b>${esc(haceCuanto(n.fecha))}</b> · ${esc(n.usuario)} · ${n.origen === 'Conductor' ? '🚛 Conductor' : iconoNovedad(n.tipo) + ' ' + esc(n.tipo)}: ${esc(textoNovedad(n))}${novedadesPropias(v).length > 1 ? ` <span class="sub">(+${novedadesPropias(v).length - 1})</span>` : ''}</div>`;
   return v.observacion ? `<div class="sub" ${estilo}>💬 ${esc(v.observacion)}</div>` : '';
 }
 const fechaNovedad = n => { const f = fechaLocal(n.fecha); return f ? `${fd(f)}${f.length > 10 ? ' ' + f.slice(11, 16) : ''}` : 'sin hora'; };
 // el último comentario del viaje (Bandeja, ¿Dónde va? y Sin actualizar): lo más nuevo entre la última novedad de la operación y la última vez que alguien editó
 // la Observación (Historial). La observación es acumulada ("…- DESCARGA 4 NOV- VEHICULOS EN SOLISTICA"): se muestra el final, que
-// es lo más reciente. En un subviaje, los comentarios son los del viaje padre.
+// es lo más reciente. Cada uno con lo suyo: el subviaje muestra sus propios comentarios, no los del viaje principal (10-nov).
 function ultimoComentario(v){
-  const base = (v.padre && viajes.find(x => x.id === v.padre)) || v, n = ultimaNovedad(base);
+  const base = v, n = ultimaNovedad(base);
   const h = historial.filter(x => x.id === base.id && /Observaci[oó]n:/.test(x.observacion || '')).sort((a, b) => fechaLocal(b.fecha).localeCompare(fechaLocal(a.fecha)))[0];
   const obs = String(base.observacion || '').trim(), cola = obs.length > 160 ? '…' + obs.slice(-160) : obs;
   if (n && (!h || fechaLocal(n.fecha) >= fechaLocal(h.fecha))) return `🕑 ${esc(haceCuanto(fechaLocal(n.fecha)))} · ${esc(n.usuario)}: ${esc(textoNovedad(n))}`;
@@ -3957,8 +3961,10 @@ function eventosDe(v){
   const fechaHist = f => String(f||'');
   // novedades (novedades.js): las del equipo y los cambios que el sistema anota solo desde la fase 2
   const novs = novedadesDe(v);
-  novs.forEach(n => E.push(delSistema(n) ? {fecha: fechaLocal(n.fecha), tipo: 'Cambio', quien: n.usuario, texto: sinObservacion(n.texto)}
-    : {fecha: fechaLocal(n.fecha), tipo: n.origen === 'Conductor' ? 'Conductor' : 'Novedad', sub: n.tipo, quien: n.usuario, texto: n.texto, n}));
+  // las del subviaje dicen de quién son: "Subviaje a (destino): …"
+  const deQuien = n => { const s = String(n.viaje) !== v.id && hijos.find(x => x.id === String(n.viaje)); return s ? nombreSub(s) + ': ' : ''; };
+  novs.forEach(n => E.push(delSistema(n) ? {fecha: fechaLocal(n.fecha), tipo: 'Cambio', quien: n.usuario, texto: deQuien(n) + sinObservacion(n.texto)}
+    : {fecha: fechaLocal(n.fecha), tipo: n.origen === 'Conductor' ? 'Conductor' : 'Novedad', sub: n.tipo, quien: n.usuario, texto: deQuien(n) + n.texto, n}));
   // un cambio del Historial que ya tiene su novedad automática (misma hora ±3 min) no se repite
   const minutos = f => { const s = fechaLocal(f); return s.length > 10 ? Date.parse(s + ':00Z') / 6e4 : NaN; };
   const cambios = novs.filter(delSistema).map(n => minutos(n.fecha));
@@ -5914,7 +5920,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'aa48ee8f7e';
+const VERSION_TABLERO = '6fda098a49';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
