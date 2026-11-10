@@ -5016,8 +5016,40 @@ function textoProgramacion(v, antes, despues){
   return `Programado para ${nombreMes(d)}` + (/^\d{4}-\d{2}$/.test(a) && a !== d ? ` · venía de la programación de ${nombreMes(a)}` : '');
 }
 
+// 10-nov ("Viajes por crear y Viajes con cambios de fecha"): el botón de la tarjeta de programación dice cuántos viajes hay por
+// crear y cuántos con cambios de fecha. Para eso el tablero pide los cuadros al servidor por detrás (consulta liviana, v197) y los
+// guarda 10 minutos; con ellos a la mano, el cuadro además abre al instante.
+let CUADROS_PROG = null, cuadrosProgPidiendo = false;   // {correos, t}
+const CUADROS_PROG_MIN = 10;
+const cuadroDeAccion = (correos, b) => { const nMes = MESES_LARGO.findIndex(m => minus(b.asunto + ' ' + b.accion).includes(m));
+  return correos.find(p => Number(p.programacion[0].fechaCargue.slice(5, 7)) === nMes + 1) || correos[0]; };
+async function pedirCuadrosProg(){
+  if (cuadrosProgPidiendo || window.MODO_CLIENTE || !claveActual()) return;
+  cuadrosProgPidiendo = true;
+  try { const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=programacion&clave=' + encodeURIComponent(claveActual()))).json();
+    if (j && j.ok && Array.isArray(j.correos) && j.correos.every(x => x.programacion && x.programacion.length)) { CUADROS_PROG = {correos: j.correos, t: Date.now()};
+      if (!document.querySelector('.ov.open') && typeof renderBandeja === 'function') renderBandeja(); } } catch(x) {}
+  setTimeout(() => { cuadrosProgPidiendo = false; }, CUADROS_PROG_MIN * 60e3);   // no más de una consulta cada 10 minutos
+}
+// cuántos viajes por crear y cuántos con cambios (de fecha y de otro dato) trae el cuadro de esa acción; null si aún no se sabe
+function resumenProgramacion(b){
+  if (!CUADROS_PROG || Date.now() - CUADROS_PROG.t > CUADROS_PROG_MIN * 60e3) { pedirCuadrosProg(); if (!CUADROS_PROG) return null; }
+  const c = cuadroDeAccion(CUADROS_PROG.correos, b); if (!c) return null;
+  try { const F = compararProgramacion(c).filas, cam = F.filter(f => ['cambiar', 'reusar'].includes(f.accion)),
+      esFecha = f => Object.keys(f.cambios || {}).some(k => /^fecha|^cierre|^etd|^eta|^mesProg/.test(k));
+    return {crear: F.filter(f => f.accion === 'crear').length, fechas: cam.filter(esFecha).length, otros: cam.filter(f => !esFecha(f)).length}; } catch(x) { return null; }
+}
+function textoBotonProgramacion(b){
+  const r = resumenProgramacion(b); if (!r) return '📋 Revisar programación';
+  const p = [r.crear ? `${r.crear} ${r.crear === 1 ? 'viaje' : 'viajes'} por crear` : '', r.fechas ? `${r.fechas} ${r.fechas === 1 ? 'viaje' : 'viajes'} con cambios de fecha` : '',
+    r.otros ? `${r.otros} con otros cambios` : ''].filter(Boolean);
+  return '📋 ' + (p.length ? p.join(' · ') : 'Programación ya aplicada: nada por crear ni cambiar');
+}
+
 // programación mensual: busca el cuadro del mes en los correos; si ya está aplicado, ofrece cerrar la acción
 async function atajoProgramacion(b){
+  // si el tablero ya trajo los cuadros hace poco (para el texto del botón), abre con esos, sin esperar al servidor
+  if (CUADROS_PROG && Date.now() - CUADROS_PROG.t < CUADROS_PROG_MIN * 60e3) { const c = cuadroDeAccion(CUADROS_PROG.correos, b); if (c) return abrirCuadroProgramacion(c); }
   toast('Buscando el cuadro de programación en los correos…');
   try {
     // 10-nov ("tarda mucho en cargar el cuadro"): antes barría SIEMPRE los últimos 20 días del buzón. Ahora solo desde el día del
@@ -5034,15 +5066,18 @@ async function atajoProgramacion(b){
     if (!liviana) c = await buscar(dias);
     if (!c && !liviana && dias < 20) { toast('No está en los correos recientes: busco en los últimos 20 días, tarda más…'); c = await buscar(20); }
     if (!c) { accionEnCurso = null; return toast('No encontré el cuadro de programación en los correos de los últimos 20 días'); }
-    const R = compararProgramacion(c), mes = nombreMes(c.programacion[0].fechaCargue.slice(0, 7));
-    if (R.filas.every(f => ['igual', 'documento'].includes(f.accion)) &&!(R.fuera||[]).length) {
-      if (confirm(`La programación de ${mes} ya está aplicada en el tablero (${R.filas.length} de ${R.filas.length} iguales).\n\n¿Marcar la acción como hecha?`))
-        cerrarAccionEnCurso('programacion', `programación de ${mes} ya aplicada en el tablero`);
-      else accionEnCurso = null;
-      return;
-    }
-    abrirProgramacion(c);
+    abrirCuadroProgramacion(c);
   } catch(e) { accionEnCurso = null; toast('No se pudo leer el buzón: ' + e.message); }
+}
+function abrirCuadroProgramacion(c){
+  const R = compararProgramacion(c), mes = nombreMes(c.programacion[0].fechaCargue.slice(0, 7));
+  if (R.filas.every(f => ['igual', 'documento'].includes(f.accion)) &&!(R.fuera||[]).length) {
+    if (confirm(`La programación de ${mes} ya está aplicada en el tablero (${R.filas.length} de ${R.filas.length} iguales).\n\n¿Marcar la acción como hecha?`))
+      cerrarAccionEnCurso('programacion', `programación de ${mes} ya aplicada en el tablero`);
+    else accionEnCurso = null;
+    return;
+  }
+  abrirProgramacion(c);
 }
 
 let PROG = null;
@@ -5960,7 +5995,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '6514dfca09';
+const VERSION_TABLERO = '11d30fb8b9';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -7839,7 +7874,7 @@ function armarBandeja(){
     if (areaDe(b) === 'Operaciones' && !pareceHecha(b) && (esProgramacionNueva(b) || esReprogramacion(b))) {
       add(null, {b: 'programacion', k: 'a' + b.id, area: 'Operaciones', prog: true,
         html: `${desdeCuando(b.fechaCorreo || b.registrado)}<b>${esProgramacionNueva(b) ? 'Programación nueva' : 'Cambio de fecha'}</b>${v ? ' · ' + esc(nombreTurno(v)) : ''}<br>${esc(String(b.accion).replace(/^Operaciones:\s*/i, ''))}${b.resumen ? `<br><span class="sub">${esc(b.resumen)}</span>` : ''}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>`,
-        acc: botonAtajo(b) + (v ? btnT('Abrir el viaje', `data-b-abrir="${v.id}"`) : '') + verCorreo(b) + accHecha(b)}, TITULO_PROGRAMACION, b);
+        acc: (esProgramacionNueva(b) ? `<button type="button" class="link" onclick="hacerAqui('${b.id}')" title="Abre el cuadro de Reckitt comparado con el tablero; usted marca qué se crea y qué se cambia">${esc(textoBotonProgramacion(b))}</button>` : botonAtajo(b)) + (v ? btnT('Abrir el viaje', `data-b-abrir="${v.id}"`) : '') + verCorreo(b) + accHecha(b)}, TITULO_PROGRAMACION, b);
       tarjetas.get(TITULO_PROGRAMACION).prog = true; usadas.add(b.id); return; }
     add(v && vivos.includes(v) ? v : null, {b: 'pedido', k: 'a' + b.id, area: areaDe(b),
       html: `${desdeCuando(b.fechaCorreo || b.registrado)}${areaDe(b) !== 'Operaciones' ? `<span class="tg">${esc(areaDe(b))}</span> ` : ''}${esc(b.accion)}${pista(b)}${queHacer(b)}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>`,
