@@ -2292,6 +2292,7 @@ function aplicarDatos(j, clave, guardadoEn){
     if (j.interno) $('#lnkDespacho').href = 'despacho.html?clave=' + encodeURIComponent(clave);   // Despacho entra con la misma clave del equipo
     if (j.propuestas && typeof PROP !== 'undefined') PROP = j.propuestas;   // 9-nov: vienen en la misma carga (propuestas.js ya no las pide aparte)
     window.PROP_EN_CARGA = !!j.propuestas;
+    window.VERSION_DATOS = j.version || '';   // con qué versión de la base se armó esta carga (revisarCambios)
     if (guardadoEn) {   // lo guardado: no cierra acciones solo (podría estar viejo) y avisa que se está actualizando
       const min = Math.max(1, Math.round((Date.now() - guardadoEn) / 6e4));
       $('#connDot').classList.remove('live'); $('#connTxt').textContent = `Lo último guardado (hace ${min < 90 ? min + ' min' : Math.round(min / 60) + ' h'}) · actualizando…`;
@@ -2311,6 +2312,24 @@ setInterval(async () => {
   if (!window.MODO_CLIENTE && !window.PROP_EN_CARGA) await cargarPropuestas(1);   // propuestas.js (si la carga no las trajo)
   render();
 }, REFRESCO_MIN * 60e3);
+
+// 9-nov ("necesitamos que otros vean los cambios rápidamente"): cada REVISAR_SEG segundos el tablero pregunta al servidor si la base
+// cambió (?que=version, una respuesta de pocos bytes); solo si cambió vuelve a cargar y repinta. Con una ventana abierta espera a que
+// se cierre, para no perder lo que alguien está escribiendo, y mientras tanto avisa arriba. Sin esto, lo de otros llegaba cada 5 min.
+const REVISAR_SEG = 30;
+let revisandoCambios = false;
+async function revisarCambios(){
+  if (document.hidden || !window.VERSION_DATOS || revisandoCambios || !claveActual()) return;
+  revisandoCambios = true;
+  try {
+    const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=version&clave=' + encodeURIComponent(claveActual()))).json();
+    if (!j.ok || !j.v || j.v === window.VERSION_DATOS) return;
+    if (document.querySelector('.ov.open, #chat.open')) { $('#connTxt').textContent = 'Hay cambios nuevos · se cargan al cerrar esta ventana'; return; }
+    if (await cargar() !== false) render();
+  } catch(e) { /* sin red: se intenta en la próxima */ } finally { revisandoCambios = false; }
+}
+setInterval(revisarCambios, REVISAR_SEG * 1000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) revisarCambios(); });   // al volver a la pestaña, de una vez
 
 // todo, también el estado (Asignado, En tránsito…), se escribe en la pestaña Seguimiento EXPO / IMPO de la base
 // opciones.confirma = false: las fechas son planes (citas que trae un correo, lo que propone el chat): no confirman ningún paso
@@ -5536,7 +5555,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'd707627975';
+const VERSION_TABLERO = '80f04c6ce7';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
