@@ -860,7 +860,7 @@ body.lv-abierta{overflow:hidden}
 @media (max-width:700px){.bj-item{grid-template-columns:minmax(0,1fr)}.bj-item .tr-acc{grid-column:1;max-width:none;justify-content:flex-start}}
 .bj-item .tr-acc .link,.err-acc .link{display:inline-block;border:1px solid var(--border);border-radius:6px;padding:3px 10px;background:var(--surface);font-size:12px;font-weight:600;text-decoration:none;line-height:1.5}
 .bj-item .tr-acc .link:hover,.err-acc .link:hover{border-color:var(--accent)}
-.bj-item .tr-acc [data-b-hecha],.bj-item .tr-acc [data-b-aprobar]:not([data-solo="choque"]),.bj-item .tr-acc>[data-b-abrir]:first-child,.bj-item .tr-acc>[data-b-crear]:first-child,.err-acc .link{background:var(--accent);border-color:var(--accent);color:#fff}
+.bj-item .tr-acc [data-b-hecha],.bj-item .tr-acc [data-b-aprobar]:not([data-solo="choque"]),.bj-item .tr-acc>[data-b-abrir]:first-child,.bj-item .tr-acc [data-b-campo],.bj-item .tr-acc>[data-b-crear]:first-child,.err-acc .link{background:var(--accent);border-color:var(--accent);color:#fff}
 .bj-item .tr-acc .conf-btn{margin:0;background:var(--accent);border-color:var(--accent);color:#fff}
 /* pedir una excepción no es una acción más: queda como enlace discreto */
 .bj-item .tr-acc [data-t-exc]{border:0;background:none;padding:0;font-weight:400;font-size:12px;color:var(--bad)}
@@ -888,6 +888,20 @@ body.lv-abierta{overflow:hidden}
 @media (max-width:700px){.err-item{grid-template-columns:22px minmax(0,1fr)}.err-ir{grid-column:2;justify-self:start}.err-h .link{margin-left:0}}
 /* en Datos por completar solo sirve la pestaña de operación: los demás filtros de la barra no aplican y se ocultan */
 body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
+
+/* ---------- 10-nov · Acciones para hoy: tramos ---------- */
+.bj-sec{display:flex;align-items:baseline;gap:8px;margin:14px 0 6px;padding-bottom:4px;border-bottom:2px solid var(--border);font-size:15px}
+.bj-secn{font-size:12px;font-weight:700;background:var(--accent-soft);color:var(--accent);border-radius:99px;padding:1px 8px}
+
+
+/* ---------- 10-nov · aviso grande de la ronda (ronda-alerta.js) ---------- */
+#ovRonda{background:rgba(10,20,40,.72)}
+.ronda-modal{max-width:520px;text-align:center;padding:28px 26px;border-top:8px solid var(--warn)}
+.ronda-modal.vencida{border-top-color:var(--bad)}
+.ronda-ico{font-size:54px;line-height:1}
+.ronda-modal h2{margin:8px 0 4px;font-size:26px}
+.ronda-num{font-size:19px;font-weight:700;margin:6px 0 10px}
+.ronda-modal.vencida .ronda-num{color:var(--bad)}
 </style>
 </head>
 <body>
@@ -895,12 +909,12 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
   <div class="bar">
     <div class="brand"><div class="logo">▲</div><div>LogxView · Reckitt<small>Operación nacional · IMPO · EXPO</small></div></div>
     <nav id="nav">
-      <button data-v="bandeja" title="Todo lo que pide trabajo, una tarjeta por viaje: de arriba hacia abajo, lo rojo primero. Al final del día, el cierre y la nota de entrega de turno">Bandeja de Pendientes <span class="badge" id="nBandeja"></span></button>
+      <button data-v="bandeja" title="Todo lo que pide trabajo, una tarjeta por viaje: de arriba hacia abajo, lo rojo primero. Al final del día, el cierre y la nota de entrega de turno">Acciones para hoy <span class="badge" id="nBandeja"></span></button>
       <!-- 7-nov: Acciones sale del menú (su trabajo está en la Bandeja); se abre como bitácora desde el pie de la Bandeja -->
       <button data-v="tablero" class="on">Torre de Control</button>
       <button data-v="viajes">Viajes</button>
       <button data-v="motonaves">Motonaves</button>
-      <button data-v="errores">Errores <span class="badge" id="nErr"></span></button>
+      <button data-v="errores" title="Reporte de calidad de los datos: lo mismo de Acciones para hoy, visto dato por dato. Para Gerencia y Calidad">Calidad de datos <span class="badge" id="nErr"></span></button>
       <button data-v="acciones" class="hidden">Acciones <span class="badge" id="nAcc"></span></button>
     </nav>
     <div class="spacer"></div>
@@ -923,8 +937,8 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
   <!-- TABLERO -->
   <section id="v-bandeja" class="hidden">
     <div class="card">
-      <h2 style="margin:0">Bandeja de Pendientes</h2>
-      <div class="sub bj-como"><b>Cómo se usa:</b> 1 · Empiece por lo rojo, de arriba hacia abajo. 2 · Cada renglón dice <b>qué hacer</b> y trae su botón. 3 · Al terminar el día, el cierre con la nota de entrega de turno.</div>
+      <h2 style="margin:0">Acciones para hoy</h2>
+      <div class="sub bj-como"><b>Cómo se usa:</b> 1 · Arriba está lo de hoy; lo atrasado también se hace hoy. 2 · Cada renglón dice <b>qué hacer</b> y trae su botón. 3 · Abajo, lo de los próximos días, para ir adelantando. Al terminar, el cierre con la nota de entrega de turno.</div>
       <div id="bandeja" style="margin-top:10px"></div>
     </div>
   </section>
@@ -986,7 +1000,7 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
   <section id="v-errores" class="hidden">
     <div class="card">
       <div class="toolbar" style="justify-content:space-between">
-        <div><h2 style="margin:0">Datos por completar</h2><div class="sub" id="errResumen"></div></div>
+        <div><h2 style="margin:0">Calidad de datos</h2><div class="sub" id="errResumen"></div></div>
         <div class="chips"><button class="btn solo-interno" id="btnBarrido" title="Herramienta de Calidad y Gerencia: lee ya mismo el buzón de calidad@ (últimos 2 días), sin esperar la lectura de cada hora; sirve para algo urgente o si LogxIA se atrasó">⟳ Buscar correos ahora</button><button class="btn" id="btnCopiarRep">Copiar reporte para correo</button><button class="btn" id="btnVerRep">Ver texto del reporte</button></div>
       </div>
       <div class="chips" id="errFiltros" style="margin:8px 0 12px"></div>
@@ -2739,6 +2753,9 @@ ${L.map(x=>`   - [${x.tipo==='Alerta'?'ALERTA':'ERROR'} · ${x.sev.toUpperCase()
 // 10-nov ("hagamos que errores también sea más intuitivo"): una tarjeta por VIAJE (antes una fila por dato, el mismo viaje repetido),
 // con su lista de lo que falta como lista de chequeo. Tocar un renglón abre el viaje con el cursor en esa casilla. La pestaña de
 // operación de arriba (Exportaciones, Importaciones…) también filtra aquí; el número de la pestaña Errores sigue siendo el total.
+// lo que pide una regla, dicho como acción (lo usan esta pantalla y Acciones para hoy)
+const textoHacer = x => String(x.msg).replace(/^Sin veh[ií]culo asignado/i, 'Asigne vehículo').replace(/^Sin cita de ingreso a puerto/i, 'Pida la cita de ingreso a puerto')
+  .replace(/^Sin /i, 'Falta: ').replace(/\(faltan (\d+) d\)/, '(arranca en $1 d)');
 let errVerTodas = false;
 function renderErrores(){
   const Etodos = errores(), op = G.op && !errVerTodas ? G.op : '', E = op ? Etodos.filter(x => x.v.operacion === op) : Etodos;
@@ -2755,8 +2772,7 @@ function renderErrores(){
   const vis = E.filter(x=>!errSev || (errSev==='Alta' ? x.sev==='Alta' : (x.tipo||'Error')===errSev));
   // urgencia en palabras: 1 = el dato ya debía estar · 2 = se necesita ya (alerta alta) · 3 = se necesita en los próximos días
   const urg = x => x.tipo !== 'Alerta' ? 1 : x.sev === 'Alta' ? 2 : 3, URG = {1: 'Ya debía estar', 2: 'Urgente', 3: 'Se necesita pronto'};
-  const hacer = x => String(x.msg).replace(/^Sin veh[ií]culo asignado/i, 'Asigne vehículo').replace(/^Sin cita de ingreso a puerto/i, 'Pida la cita de ingreso a puerto')
-    .replace(/^Sin /i, 'Falta: ').replace(/\(faltan (\d+) d\)/, '(arranca en $1 d)');
+  const hacer = textoHacer;
   const porViaje = new Map(); vis.forEach(x => { if (!porViaje.has(x.v.id)) porViaje.set(x.v.id, []); porViaje.get(x.v.id).push(x); });
   const grupos = [...porViaje.values()].map(L => ({v: L[0].v, L: L.sort((a, b) => urg(a) - urg(b)), u: Math.min(...L.map(urg))}))
     .sort((a, b) => a.u - b.u || (primerEvento(a.v) || '9').localeCompare(primerEvento(b.v) || '9'));
@@ -2896,7 +2912,7 @@ function renderAcciones(){
   // antes se rehacía en cada repintado del tablero aunque estuviera oculta
   if ($('#v-acciones').classList.contains('hidden')) return;
   const cuenta = f => B.filter(f).length, esHecha = b => b.estadoAccion === 'Hecha' && !noEsEtp(b);
-  $('#accResumen').textContent = `${B.length} acciones registradas · ${pend.length} pendientes (se trabajan en la Bandeja) · ${cuenta(esHecha)} hechas · ${cuenta(noEsEtp)} no eran para ETP`;
+  $('#accResumen').textContent = `${B.length} acciones registradas · ${pend.length} pendientes (se trabajan en Acciones para hoy) · ${cuenta(esHecha)} hechas · ${cuenta(noEsEtp)} no eran para ETP`;
   $('#accFiltros').innerHTML = [['todas', 'Todas', B.length], ['pend', 'Pendientes', pend.length], ['hecha', 'Hechas', cuenta(esHecha)], ['noetp', 'No es para ETP', cuenta(noEsEtp)]]
     .map(([k, l, c]) => `<button class="chip ${accFiltro === k ? 'on' : ''}" data-acc="${k}">${l} · ${c}</button>`).join('')
     + '<span class="sub" style="margin:0 4px 0 10px">Área:</span>' + [['', 'Todas'], ...AREAS.map(a => [a, a])]
@@ -2910,7 +2926,7 @@ function renderAcciones(){
     vis.slice(0, 300).map(b => { const v = viajeDeAccion(b), f = fechaLocal(b.fechaCorreo || b.registrado);
       const estado = b.estadoAccion === 'Hecha'
         ? `<span class="${noEsEtp(b) ? 'sub' : 'ok-txt'}">${estadoCerrada(b)}</span><br><span class="sub">${esc(String(b.resueltoPor || '').replace(/^No es para ETP\s*·?\s*/, ''))}${b.resueltoEn ? ' · ' + esc(fd(String(fechaLocal(b.resueltoEn)).slice(0, 10))) : ''}</span>`
-        : `<b style="color:var(--warn)">Pendiente</b><br><span class="sub">está en la Bandeja</span>`;
+        : `<b style="color:var(--warn)">Pendiente</b><br><span class="sub">está en Acciones para hoy</span>`;
       return `<tr><td style="white-space:nowrap"><b>${esc(b.id)}</b><br><span class="sub">${f ? esc(fd(f.slice(0, 10)) + (f.length > 10 ? ' ' + f.slice(11, 16) : '')) : ''}</span></td>
       <td class="obs" style="color:var(--text);min-width:260px">${tagArea(b)} ${esc(b.accion)}<br><span class="sub">📧 ${esc(b.resumen || '')} · ${esc(b.remitente || '')}</span></td>
       <td>${v ? esc(nombreTurno(v)) : `<span class="sub">${esc([b.placa, b.booking && 'BK ' + b.booking].filter(Boolean).join(' · ') || operacionDe(b))}</span>`}</td>
@@ -5846,7 +5862,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '849e2dfc46';
+const VERSION_TABLERO = '11ddb93609';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -6126,7 +6142,7 @@ function lineasLV(){
   S.innerHTML = src.join('') + ags.join('');
 }
 // 8-nov: el botón nombra la pestaña a la que se vuelve (la que estaba abierta): "Volver a la Torre de Control", "…a la Bandeja…"
-const PESTANAS_VOLVER = {bandeja: 'la Bandeja de Pendientes', tablero: 'la Torre de Control', viajes: 'Viajes', motonaves: 'Motonaves', errores: 'Errores', acciones: 'Acciones'};
+const PESTANAS_VOLVER = {bandeja: 'Acciones para hoy', tablero: 'la Torre de Control', viajes: 'Viajes', motonaves: 'Motonaves', errores: 'Errores', acciones: 'Acciones'};
 const textoVolver = () => '← Volver a ' + (PESTANAS_VOLVER[(document.querySelector('#nav button.on') || {}).dataset?.v] || 'la Torre de Control');
 function abrirLV(){
   if (window.MODO_CLIENTE) return;
@@ -7504,6 +7520,7 @@ const BLOQUES = [
   ['sinact', '⚠ Sin actualizar', 'p-bad', 'La fecha del paso ya pasó y el viaje no registra que se hizo (la misma alerta de la Torre de Control)'],
   ['paso', '¿Pasó?', 'p-warn', 'La fecha llegó y nadie confirmó si se hizo'],
   ['donde', '¿Dónde va?', 'p-acc', 'Vehículo en movimiento: confirmar en cada ronda dónde va (o "Sigue igual")'],
+  ['hacer', 'Por hacer', 'p-warn', 'Algo que hay que pedir o conseguir antes de una fecha (la cita antes del cierre documental, el vehículo antes del retiro…)'],
   ['nocoincide', '⚠ No coincide', 'p-bad', 'La base dice una cosa y un correo o documento dice otra: alguien decide cuál vale'],
   ['datos', 'Datos de correos', 'p-warn', 'Valores nuevos de los correos para aprobar'],
   ['pedido', 'Pedido', 'p-warn', 'Lo que pide un correo y solo una persona puede hacer'],
@@ -7671,6 +7688,15 @@ function armarBandeja(){
         acc: btnT('Completar en el viaje', `data-b-abrir="${v.id}"`) + clavesBusqueda(v).slice(0, 1).map(([k, c]) => lnkT(`🔎 ${esc(k)} ${esc(c)}`, urlBusqueda(c))).join('')});
     }
   });
+  // 10-nov · Por hacer ("pida la cita no es un error: es algo muy importante por hacer"): las alertas de lo que viene (pedir la cita
+  // antes del cierre documental, asignar vehículo, conseguir booking o motonave) salían solo en la pantalla Errores. Ahora son acciones
+  // de esta lista, cada una con su fecha: hay que hacerla, a más tardar, el día anterior (hoy = el límite es hoy o mañana).
+  vivos.forEach(v => { const todos = [v, ...hijosDe(v)];
+    todos.flatMap(x => validar(x).map(e => ({...e, x}))).filter(e => e.tipo === 'Alerta' && e.campo !== 'Seguimiento'
+      && !(sinCobertura(v) && e.x === v && /veh[ií]culo/i.test(e.msg))).forEach(e => {
+        const limite = String((/cita de ingreso/i.test(e.campo) ? e.x.cierreDoc : primerEvento(e.x)) || '').slice(0, 10);
+        add(v, {b: 'hacer', hoy: !limite || diffDias(limite) <= 1, html: `${e.x.padre ? `${esc(nombreSub(e.x))} · ` : ''}<b>${esc(textoHacer(e))}</b>${e.porque ? `<br><span class="sub">${esc(e.porque)}</span>` : ''}`,
+          acc: btnT('Completar en el viaje', `data-b-campo="${e.x.id}" data-campo="${esc(e.campo)}"`, 'Abre el viaje en esa casilla') + clavesBusqueda(v).slice(0, 1).map(([k, c]) => lnkT(`🔎 ${esc(k)} ${esc(c)}`, urlBusqueda(c))).join('')}); }); });
   // datos de correos de viajes que no están abiertos (ej. la aprobación de extracostos de un viaje ya cerrado, que es de Facturación)
   [...new Set(PROP.filter(p => !propUsadas.has(p.clave)).map(p => p.viajeId))].forEach(id => {
     const v = viajes.find(x => x.id === id), P = PROP.filter(p => p.viajeId === id && !propUsadas.has(p.clave));
@@ -7736,8 +7762,12 @@ function armarBandeja(){
       .concat(t.items.some(i => i.b === 'sinact') ? sinActualizar(t.v).map(s => String(s.fecha || '').slice(0, 10)).filter(Boolean) : []).sort();
     return F[0] || String(primerEvento(t.v) || '').slice(0, 10);
   };
-  const L = [...tarjetas.values()].map(t => ({...t, rango: rango(t), roja: t.items.some(i => i.roja), fecha: fechaAccion(t)}))
-    .sort((a, b) => b.roja - a.roja || (a.fecha || '9').localeCompare(b.fecha || '9') || a.rango - b.rango);
+  // 10-nov · Acciones para hoy: una acción es de hoy salvo que su fecha límite sea de pasado mañana en adelante ("Por hacer" con
+  // i.hoy = false) o sea del registro de conductores sin línea roja. Lo atrasado también es de hoy. Una tarjeta es de hoy si
+  // cualquiera de sus acciones lo es; primero las de hoy, luego las de los próximos días.
+  const deHoy = i => i.roja || (i.b === 'hacer' ? !!i.hoy : i.b !== 'registro');
+  const L = [...tarjetas.values()].map(t => ({...t, rango: rango(t), roja: t.items.some(i => i.roja), fecha: fechaAccion(t), hoy: t.items.some(deHoy)}))
+    .sort((a, b) => b.hoy - a.hoy || b.roja - a.roja || (a.fecha || '9').localeCompare(b.fecha || '9') || a.rango - b.rango);
   return {L, usadas, propUsadas, hoyViajes, B, vivos, T};
 }
 
@@ -7759,17 +7789,19 @@ function renderBandeja(){
   // filtro por área: cada tarjeta muestra solo las tareas de esa área (y desaparece si no le queda ninguna)
   const enArea = i => !bandejaArea || i.area === bandejaArea;
   const L0 = R.L, porArea = a => L0.filter(t => t.items.some(i => !a || i.area === a)).length;
-  R.L = R.L.map(t => ({...t, items: t.items.filter(enArea)})).filter(t => t.items.length).map(t => ({...t, roja: t.items.some(i => i.roja)}));
+  const esDeHoy = i => i.roja || (i.b === 'hacer' ? !!i.hoy : i.b !== 'registro');   // igual que en armarBandeja: se recalcula al filtrar
+  R.L = R.L.map(t => ({...t, items: t.items.filter(enArea)})).filter(t => t.items.length).map(t => ({...t, roja: t.items.some(i => i.roja), hoy: t.items.some(esDeHoy)}));
   // barra IMPO / EXPO / Nacional: cuenta tarjetas del área elegida; ⛔ si esa operación tiene líneas rojas (para no perderlas de vista)
   const deOp = (t, o) => t.items.filter(i => !o || i.b === 'registro' || (i.b === 'cierre' ? !i.opViaje || i.opViaje === o : i.op === o));
   const opN = o => R.L.filter(t => deOp(t, o).length).length, opRoja = o => R.L.some(t => deOp(t, o).some(i => i.roja));
   if (bandejaOp && !opN(bandejaOp) && !OPS_BANDEJA.some(([o]) => o === bandejaOp)) bandejaOp = '';
   const barraOp = barraOperaciones(opN, opRoja);
   const nTotal = opN('');
-  R.L = R.L.map(t => ({...t, items: deOp(t, bandejaOp)})).filter(t => t.items.length).map(t => ({...t, roja: t.items.some(i => i.roja)}));
+  const paraHoyTotal = R.L.filter(t => t.hoy).length;
+  R.L = R.L.map(t => ({...t, items: deOp(t, bandejaOp)})).filter(t => t.items.length).map(t => ({...t, roja: t.items.some(i => i.roja), hoy: t.items.some(esDeHoy)}));
   const cuenta = k => R.L.filter(t => t.items.some(i => i.b === k)).length;
   const nViajes = R.L.filter(t => t.v).length;
-  $('#nBandeja').textContent = nTotal || '';   // el número de la pestaña: todo el trabajo del área, no solo la operación a la vista
+  $('#nBandeja').textContent = paraHoyTotal || '';   // el número de la pestaña: lo de HOY de toda el área (no solo la operación a la vista)
   const errLejos = R.vivos.filter(v => primerEvento(v) && diffDias(primerEvento(v)) > HORIZONTE_FALTA && validar(v).some(e => e.tipo !== 'Alerta')).length;
   const ver = R.L.filter(t => !bandejaFiltro || t.items.some(i => i.b === bandejaFiltro));
   const T = R.T, r = T.r, nRojas = T.rojas.reduce((a, b) => a + b, 0);
@@ -7794,18 +7826,22 @@ function renderBandeja(){
   const C = cerradasPorSistema();
   const avisoAuto = !C.length ? '' : `<details class="bj-auto"><summary>✔ El sistema cerró ${C.length} acci${C.length === 1 ? 'ón' : 'ones'} que el viaje ya muestra hecha${C.length === 1 ? '' : 's'} <span class="sub">· ver</span></summary>`
     + C.map(b => `<div class="bj-auto-l"><div><b>${esc(b.id)}</b> ${esc(String(b.accion || '').slice(0, 120))}<br><span class="sub">✔ ${esc(String(b.resueltoPor).slice(POR_SISTEMA.length))}</span></div>${btnT('Deshacer', `data-b-deshacer="${b.id}"`, 'Vuelve a pendientes y no se cierra sola otra vez')}</div>`).join('') + '</details>';
+  // 10-nov · dos tramos: Para hoy (con lo atrasado) y Próximos días (plegado hasta que se pida, salvo con un filtro puesto)
+  const hoyL = ver.filter(t => t.hoy), proxL = ver.filter(t => !t.hoy);
+  const seccion = (titulo, n, nota) => `<div class="bj-sec"><b>${titulo}</b> <span class="bj-secn">${n}</span> <span class="sub">${nota}</span></div>`;
+  const pintarTarjeta = t => `<div class="bj-card${t.roja ? ' roja' : ''}"><div class="bj-h">${fechaTarjeta(t)}<b>${esc(t.titulo)}</b>${t.v ? ` <span class="sub">${esc([t.v.contenedor, t.v.estado].filter(Boolean).join(' · '))}</span> ${btnT('Abrir viaje', `data-b-abrir="${t.v.id}"`)}` : ''}</div>`
+      + BLOQUES.flatMap(([k, nombre, cls]) => t.items.filter(i => i.b === k && (!bandejaFiltro || bandejaFiltro === k)).map(i => plegar(i, `<div class="bj-item${i.roja ? ' roja' : ''}"><span class="pill ${cls}">${nombre}</span><div class="bj-txt">${QUE_HACER[k] ? `<div class="bj-hacer">${QUE_HACER[k]}</div>` : ''}${i.html}${extra(i)}</div><div class="tr-acc">${i.acc || ''}${accExc(i)}</div></div>`))).join('')
+      + '</div>';
   cont.innerHTML = `<div class="bj-ronda sub">${ronda}${bloqueo}${llave}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}</div>` + bloqueGerencia(T) + bloqueCalifGerencia() + avisoAuto + barraOp
-    + `<div class="bj-resumen"><div><b>${nViajes} viaje${nViajes === 1 ? '' : 's'} necesita${nViajes === 1 ? '' : 'n'} algo</b>${R.L.length > nViajes ? ` · ${R.L.length - nViajes} grupo${R.L.length - nViajes === 1 ? '' : 's'} sin viaje` : ''}
+    + `<div class="bj-resumen"><div><b>Para hoy: ${R.L.filter(t => t.hoy).length}</b>${(n => n ? ` · <span style="color:var(--bad)">${n} atrasado${n === 1 ? '' : 's'}</span>` : '')(R.L.filter(t => t.hoy && t.fecha && diffDias(t.fecha) < 0).length)} · próximos días: ${R.L.filter(t => !t.hoy).length}
       · <label class="sub">Área <select class="bj-area" data-b-areasel="1">${[['', 'Todas'], ...AREAS.map(a => [a, a])].map(([a, t]) => `<option value="${a}" ${bandejaArea === a ? 'selected' : ''}>${t} (${porArea(a)})</option>`).join('')}</select></label></div>
       <div class="chips">${`<button type="button" class="chip ${!bandejaFiltro ? 'on' : ''}" data-b-filtro="">Todo · ${R.L.length}</button>`}${BLOQUES.map(([k, t]) => cuenta(k) ? `<button type="button" class="chip ${bandejaFiltro === k ? 'on' : ''}" data-b-filtro="${k}" title="${esc(BLOQUES.find(x => x[0] === k)[3])}">${t} · ${cuenta(k)}</button>` : '').join('')}</div></div>`
-    + (ver.filter((t, ix) => bandejaTodo || ix < BANDEJA_PRIMERAS || t.roja || t.fija).map(t => `<div class="bj-card${t.roja ? ' roja' : ''}"><div class="bj-h">${fechaTarjeta(t)}<b>${esc(t.titulo)}</b>${t.v ? ` <span class="sub">${esc([t.v.contenedor, t.v.estado].filter(Boolean).join(' · '))}</span> ${btnT('Abrir viaje', `data-b-abrir="${t.v.id}"`)}` : ''}</div>`
-      + BLOQUES.flatMap(([k, nombre, cls]) => t.items.filter(i => i.b === k && (!bandejaFiltro || bandejaFiltro === k)).map(i => plegar(i, `<div class="bj-item${i.roja ? ' roja' : ''}"><span class="pill ${cls}">${nombre}</span><div class="bj-txt">${QUE_HACER[k] ? `<div class="bj-hacer">${QUE_HACER[k]}</div>` : ''}${i.html}${extra(i)}</div><div class="tr-acc">${i.acc || ''}${accExc(i)}</div></div>`))).join('')
-      + '</div>').join('') || '<div class="tr-vacio">✓ Nada pendiente en este filtro</div>')
-    + (!bandejaTodo && ver.length > ver.filter((t, ix) => ix < BANDEJA_PRIMERAS || t.roja || t.fija).length
-      ? `<button type="button" class="bj-mas" data-b-todo="1">Ver los otros ${ver.length - ver.filter((t, ix) => ix < BANDEJA_PRIMERAS || t.roja || t.fija).length} viajes (menos urgentes)</button>` : '')
-    + `<div class="bj-pie"><div><b>${F.length ? `⚠ ${F.length} cosa${F.length === 1 ? '' : 's'} solo en otra pantalla` : '✓ Nada queda solo en otra pantalla'}</b> <span class="sub">(control: lo que piden las reglas de turno y no sale en la Bandeja; debe quedar en 0)</span> · ${btnT('📒 Bitácora de acciones', 'data-b-bitacora="1"', 'Historial: qué pidió quién y quién lo cerró (la antigua pestaña Acciones)')}</div>
+    + (hoyL.length ? seccion('Para hoy', hoyL.length, 'lo atrasado también se hace hoy') + hoyL.map(pintarTarjeta).join('') : `<div class="tr-vacio">✓ Nada pendiente para hoy${bandejaFiltro ? ' en este filtro' : ''}</div>`)
+    + (proxL.length ? seccion('Próximos días', proxL.length, 'para ir adelantando; todavía no vencen') + (bandejaTodo || bandejaFiltro ? proxL.map(pintarTarjeta).join('')
+      : `<button type="button" class="bj-mas" data-b-todo="1">Ver las ${proxL.length} de los próximos días</button>`) : '')
+    + `<div class="bj-pie"><div><b>${F.length ? `⚠ ${F.length} cosa${F.length === 1 ? '' : 's'} solo en otra pantalla` : '✓ Nada queda solo en otra pantalla'}</b> <span class="sub">(control: lo que piden las reglas de turno y no sale en esta lista; debe quedar en 0)</span> · ${btnT('📒 Bitácora de acciones', 'data-b-bitacora="1"', 'Historial: qué pidió quién y quién lo cerró (la antigua pestaña Acciones)')}</div>
       ${F.length ? `<details><summary class="sub">Ver cuáles</summary>${F.map(([p, t]) => `<div class="sub">• <b>${esc(p)}</b>: ${esc(t)}</div>`).join('')}</details>` : ''}
-      ${errLejos ? `<div class="sub">${errLejos} viaje${errLejos === 1 ? '' : 's'} que arranca${errLejos === 1 ? '' : 'n'} en más de ${HORIZONTE_FALTA} días con datos por completar: quedan en Errores, no en la bandeja del día.</div>` : ''}</div>`;
+      ${errLejos ? `<div class="sub">${errLejos} viaje${errLejos === 1 ? '' : 's'} que arranca${errLejos === 1 ? '' : 'n'} en más de ${HORIZONTE_FALTA} días con datos por completar: quedan en Calidad de datos, no en la lista del día.</div>` : ''}</div>`;
 }
 
 // aprobar o rechazar los datos de los correos de un viaje (los mismos de "Llenar datos"); la acción que los trajo se cierra si ya no le quedan
@@ -7845,6 +7881,7 @@ $('#bandeja').onclick = e => {
   else if (d.bDeshacer) deshacerCierre(d.bDeshacer);
   else if (d.bTodo) { bandejaTodo = true; renderBandeja(); }
   else if (d.bOp !== undefined) elegirOperacion(d.bOp);
+  else if (d.bCampo) abrirEnCampo(d.bCampo, d.campo);   // calidad.js: abre el viaje con el cursor en esa casilla
   else if (d.bAbrir) abrir(d.bAbrir);
   else if (d.bHecha) marcarHecha(d.bHecha);
   else if (d.bNoetp) marcarHecha(d.bNoetp, true);
@@ -7858,6 +7895,70 @@ $('#bandeja').onclick = e => {
   else if (d.bReg) { const x = filasRegistro(viajes.filter(v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre)).find(y => y.k === d.bReg);
     if (x) abrirRegistro(x.clase === 'P' ? x.nombre : x.v.placa, x.v.conductor); }
 };
+/* ---------- ronda-alerta.js · aviso grande de la ronda (10-nov-2026) ----------
+ * Capa: pantalla. Pedido del usuario: "que cada cierto tiempo salga una alerta grande si no se han cerrado acciones para hoy". No
+ * obliga a quedarse un tiempo fijo (eso mide presencia, no trabajo): mientras la ronda de seguimiento (turno.js: 8, 12 y 16 h, dos
+ * horas cada una) no esté hecha, sale un aviso que ocupa la pantalla con lo que hay para hoy y un botón "Revisar ahora". Se puede
+ * aplazar ALERTA_RONDA.aplazaMin minutos, hasta ALERTA_RONDA.maxAplazos veces; después solo queda revisar. Tras "Revisar ahora"
+ * vuelve cada ALERTA_RONDA.repiteMin minutos mientras la ronda siga sin hacerse. La ronda se cumple como siempre (turno.js
+ * estadoTurno): cada vehículo en movimiento con su "Sigue igual", su actualización o su excepción. Con la pestaña en segundo plano
+ * avisa con una notificación del navegador, si la persona le dio permiso. Solo a quien es de Operaciones (Ingresar como).
+ * Si nadie entra al tablero, quien avisa es el servidor por correo, a los coordinadores con Gerencia y Calidad en copia
+ * (Reportes.gs avisarRondaSinAtender_). */
+const ALERTA_RONDA = {aplazaMin: 10, maxAplazos: 2, repiteMin: 15};
+const estadoAlertaRonda = k => { try { const e = JSON.parse(sessionStorage.getItem('rkt-ronda') || 'null'); return e && e.k === k ? e : {k, aplazos: 0, hasta: 0, notificada: false}; } catch(x) { return {k, aplazos: 0, hasta: 0, notificada: false}; } };
+const guardarAlertaRonda = e => { try { sessionStorage.setItem('rkt-ronda', JSON.stringify(e)); } catch(x) {} };
+const tituloOriginal = document.title;
+function cerrarAlertaRonda(){ const o = document.getElementById('ovRonda'); if (o) o.remove(); document.title = tituloOriginal; }
+
+function revisarAlertaRonda(){
+  if (window.MODO_CLIENTE || !claveActual() || !window.BITACORA || typeof estadoTurno !== 'function') return;
+  // las rondas son de los coordinadores: a quien entró como Operaciones, y a quien no ha dicho quién es (para que no se pierda)
+  if (typeof areaInicial === 'function' && !['Operaciones', ''].includes(areaInicial())) return cerrarAlertaRonda();
+  let T; try { T = estadoTurno(); } catch(x) { return; }
+  const r = T.r; if (!r || T.rondaHecha) return cerrarAlertaRonda();
+  const e = estadoAlertaRonda(HOY + '|' + r.n);
+  if (document.getElementById('ovRonda') || Date.now() < e.hasta) return;
+  // qué hay para hoy (las mismas tarjetas de Acciones para hoy, del área de Operaciones)
+  let hoyN = 0, atras = 0; try { const deHoy = i => i.roja || (i.b === 'hacer' ? !!i.hoy : i.b !== 'registro');   // igual que en bandeja.js
+    const L = armarBandeja().L.filter(t => t.items.some(i => i.area === 'Operaciones' && deHoy(i)));
+    hoyN = L.length; atras = L.filter(t => t.fecha && diffDias(t.fecha) < 0).length; } catch(x) {}
+  const seg = T.M[0].filas.filter(x => !x.hecha && x.tipo === 'seg').length, vencida = T.rondaVencida, hora = RONDAS[r.n - 1] + ':00';
+  const resumen = `${hoyN} ${hoyN === 1 ? 'viaje con acciones' : 'viajes con acciones'} para hoy${atras ? `, ${atras} ${atras === 1 ? 'atrasado' : 'atrasados'}` : ''}`;
+  // en segundo plano o con otra ventana abierta (alguien está escribiendo): no se interrumpe; se avisa por el navegador, una vez
+  if (document.hidden || document.querySelector('.ov.open, #chat.open')) {
+    if (document.hidden && !e.notificada && 'Notification' in window && Notification.permission === 'granted') {
+      try { new Notification(`LogxView · Ronda de las ${hora}${vencida ? ' vencida' : ''}`, {body: resumen, tag: 'ronda-' + e.k}); } catch(x) {}
+      e.notificada = true; guardarAlertaRonda(e);
+    }
+    return;
+  }
+  const puedeAplazar = e.aplazos < ALERTA_RONDA.maxAplazos;
+  const permiso = 'Notification' in window && Notification.permission === 'default'
+    ? `<button type="button" class="link" id="rondaPermiso" style="margin-top:14px">🔔 Avisarme también cuando esté en otra pestaña</button>` : '';
+  document.body.insertAdjacentHTML('beforeend', `<div class="ov open" id="ovRonda" style="z-index:80"><div class="modal ronda-modal${vencida ? ' vencida' : ''}">
+    <div class="ronda-ico">${vencida ? '⛔' : '⏱'}</div>
+    <h2>Ronda de las ${hora}${vencida ? ' · vencida' : ''}</h2>
+    <p class="ronda-num">${resumen}</p>
+    <p class="sub">${seg ? `Falta confirmar dónde va${seg === 1 ? '' : 'n'} <b>${seg}</b> vehículo${seg === 1 ? '' : 's'}. ` : ''}${vencida ? `La ronda vencía a las ${hhmm(r.vence)}.` : `Tiene hasta las ${hhmm(r.vence)}.`}
+      Se cierra revisando cada acción en rojo: hecha, nueva fecha, "sigue igual" o "no se puede".</p>
+    <div class="mfoot" style="flex-direction:column;gap:8px">
+      <button type="button" class="btn primary" id="rondaRevisar" style="width:100%;font-size:16px;padding:12px">Revisar ahora</button>
+      ${puedeAplazar ? `<button type="button" class="btn" id="rondaAplazar" style="width:100%">Aplazar ${ALERTA_RONDA.aplazaMin} minutos (${ALERTA_RONDA.maxAplazos - e.aplazos} ${ALERTA_RONDA.maxAplazos - e.aplazos === 1 ? 'vez' : 'veces'} más)</button>`
+        : '<div class="sub" style="text-align:center">Ya la aplazó dos veces: toca revisarla.</div>'}
+    </div>${permiso}</div></div>`);
+  document.title = `${vencida ? '⛔' : '⏱'} Ronda de las ${hora} · LogxView`;
+  document.getElementById('rondaRevisar').onclick = () => { e.hasta = Date.now() + ALERTA_RONDA.repiteMin * 60e3; e.notificada = false; guardarAlertaRonda(e); cerrarAlertaRonda();
+    document.querySelector('#nav [data-v="bandeja"]')?.click(); if (typeof bandejaFiltro !== 'undefined') { bandejaFiltro = ''; renderBandeja(); } scrollTo(0, 0); };
+  const a = document.getElementById('rondaAplazar');
+  if (a) a.onclick = () => { e.aplazos++; e.hasta = Date.now() + ALERTA_RONDA.aplazaMin * 60e3; e.notificada = false; guardarAlertaRonda(e); cerrarAlertaRonda(); };
+  const p = document.getElementById('rondaPermiso');
+  if (p) p.onclick = async () => { try { const x = await Notification.requestPermission(); p.textContent = x === 'granted' ? '🔔 Listo: le avisaré aunque esté en otra pestaña' : 'El navegador no dio permiso para avisos'; p.disabled = true; } catch(x) {} };
+}
+// cada minuto, al volver a la pestaña y poco después de cargar
+setInterval(revisarAlertaRonda, 60e3);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) revisarAlertaRonda(); });
+setTimeout(revisarAlertaRonda, 12e3);
 /* ---------- inicio.js · arranque del tablero ---------- */
 // Capa: pantalla. render() repinta todas las vistas; carga los datos (datos.js), pide "Ingresar como" al equipo (base.js) y atiende
 // los enlaces de los correos (?viaje=, ?vista=, ?area=, ?usuario=). Se carga de último.
