@@ -1670,6 +1670,8 @@ function datosEquivocados(v, ch){
   return out;
 }
 // lo dudoso: textos para que la persona confirme antes de guardar (puede ser cierto: la naviera extendió el cierre)
+// un zarpe que se corre más de estos días frente al estimado que había no es un ajuste normal de la naviera: se pregunta
+const DIAS_ZARPE_RARO = 10;
 function avisosAntesDeGuardar(v, ch){
   const out = [], queda = k => (k in ch ? ch[k] : v[k]) || '', toca = (...ks) => ks.some(k => k in ch && ch[k]);
   const f = k => /^\d{4}-\d{2}-\d{2}/.test(String(queda(k))) ? String(queda(k)).slice(0, 10) : '';
@@ -1679,6 +1681,15 @@ function avisosAntesDeGuardar(v, ch){
       out.push(`La cita de ingreso (${fd(f('citaIngreso'))}) queda después del cierre documental (${fd(f('cierreDoc'))})`);
     antes('fechaEntregaPuerto', 'fechaCargue', 'La entrega en puerto queda antes del llenado');
     antes('fechaCargue', 'fechaRetiro', 'El llenado queda antes del retiro del vacío');
+    // 10-nov · el zarpe (ETD) llega por correo del cliente o de la naviera: debe cuadrar con lo que ya se sabe del viaje
+    antes('etd', 'fechaEntregaPuerto', 'El zarpe queda antes de la entrega en puerto: el contenedor no pudo irse en esa motonave');
+    antes('etd', 'fechaCargue', 'El zarpe queda antes del llenado');
+    antes('etd', 'cierreDoc', 'El zarpe queda antes del cierre documental');
+    antes('eta', 'etd', 'La llegada a destino queda antes del zarpe');
+    if (toca('etd') && f('etd') && /^\d{4}-\d{2}-\d{2}/.test(String(v.etd || '')) && f('etd') !== String(v.etd).slice(0, 10)) {
+      const dias = Math.abs(Math.round((new Date(f('etd') + 'T12:00') - new Date(String(v.etd).slice(0, 10) + 'T12:00')) / 864e5));
+      if (dias > DIAS_ZARPE_RARO) out.push(`El zarpe se mueve ${dias} días frente a la fecha estimada que había (${fd(String(v.etd).slice(0, 10))} → ${fd(f('etd'))}): confirme que es la misma motonave`);
+    }
   } else if (v.operacion === 'IMPO') {
     antes('fechaCargue', 'fechaRetiro', 'La entrega en bodega queda antes del retiro en puerto');
     antes('fechaDevolucion', 'fechaCargue', 'La devolución del vacío queda antes de la entrega en bodega');
@@ -1798,6 +1809,8 @@ function validar(v){
   if (v.fechaRetiro && v.fechaCargue && v.fechaRetiro > v.fechaCargue) add('Alta','Fechas',`Retiro (${fd(v.fechaRetiro)}) después del ${impo?'descargue':'llenado'} (${fd(v.fechaCargue)})`, 'Error', choque);
   if (v.etd && v.fechaCargue && v.fechaCargue >= v.etd) add('Alta','ETD',`Llenado (${fd(v.fechaCargue)}) igual o posterior al ETD (${fd(v.etd)})`, 'Error', choque);
   if (v.cierreDoc && v.etd && v.cierreDoc > v.etd) add('Media',C.cierre,'Cierre documental después del ETD', 'Error', choque);
+  // 10-nov: se entregó en puerto después del zarpe estimado → esa fecha ya no puede ser la del zarpe (cambió la motonave o la fecha)
+  if (expo && v.etd && v.fechaEntregaPuerto && v.fechaEntregaPuerto > v.etd) add('Media','ETD',`El zarpe estimado (${fd(v.etd)}) quedó antes de la entrega en puerto (${fd(v.fechaEntregaPuerto)}): pida la fecha nueva de zarpe`, 'Error', 'El contenedor no pudo irse en esa motonave: la naviera cambió la fecha o la motonave');
   if (v.eta && v.etd && v.eta < v.etd) add('Alta','ETA',`ETA (${fd(v.eta)}) antes del ETD (${fd(v.etd)})`, 'Error', choque);
   // viaje sin actualizar: se reporta una vez; las reglas que dirían lo mismo (sin cita con el cierre vencido, ETD vencido) se omiten
   const sa = sinActualizar(v);
@@ -5867,7 +5880,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '79bd26d6fd';
+const VERSION_TABLERO = '437ce2472a';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -7566,6 +7579,10 @@ let bandejaOp =(() => { try { return localStorage.getItem('bandejaOp') || ''; } 
 // "Aprobar" en Facturación, como si Facturación aprobara los costos): se dice "Reckitt aprobó los extracostos"
 const fxDato = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
 const quienDato = p => esc(String(p.evidencia || '').split(' · ')[0].slice(0, 60));
+// 10-nov ("que tenga sentido la salida con respecto a la entrega en puerto y fechas estimadas enviadas por el cliente"): un dato de
+// correo que no cuadra con lo que el viaje ya tiene lo dice antes de aprobarlo (dominio.js avisosAntesDeGuardar)
+const avisoDato = p => { const x = viajes.find(y => y.id === p.viajeId); let A = []; try { A = x ? avisosAntesDeGuardar(x, {[p.campo]: p.valor}) : []; } catch(e) {}
+  return A.length ? `<br><span style="color:var(--bad);font-weight:600">⚠ No cuadra: ${esc(A.join(' · '))}</span>` : ''; };
 const lineaDato = p => p.campo === 'aprobacionExtra'
   ? `<b>Reckitt ${p.valor === 'Aprobado' ? 'aprobó' : p.valor === 'Rechazado' ? 'rechazó' : 'marcó «' + esc(p.valor) + '» en'} los extracostos</b> <span class="sub">· lo dice ${quienDato(p)}; se anota en "Aprobación extracostos"</span>`
   : `${esc(p.etiqueta)}: ${p.actual ? `<s class="sub">${esc(fxDato(p.actual))}</s> → ` : ''}<b>${esc(fxDato(p.valor))}</b> <span class="sub">${esc(String(p.evidencia || '').slice(0, 90))}</span>`;
@@ -7687,9 +7704,9 @@ function armarBandeja(){
       deAcc.forEach(id => usadas.add(id));
       // 10-nov: lo que choca con un valor que el viaje ya tiene va aparte, en rojo (No coincide); lo demás, como siempre
       const choques = P.filter(noCoincide), nuevos = P.filter(p => !noCoincide(p)), vienen = deAcc.length ? `<br><span class="sub">Vienen de ${deAcc.map(esc).join(', ')}: al decidir todos, se cierran</span>` : '';
-      if (choques.length) add(v, {b: 'nocoincide', area, ks: nuevos.length ? [] : deAcc.map(id => 'a' + id), html: choques.map(lineaChoque).join('<br>') + (nuevos.length ? '' : vienen),
+      if (choques.length) add(v, {b: 'nocoincide', area, ks: nuevos.length ? [] : deAcc.map(id => 'a' + id), html: choques.map(p => lineaChoque(p) + avisoDato(p)).join('<br>') + (nuevos.length ? '' : vienen),
         acc: botonesChoque(v.id, choques.length, area) + btnT('Ver uno por uno', 'data-b-prop="1"')});
-      if (nuevos.length) add(v, {b: 'datos', area, ks: deAcc.map(id => 'a' + id), html: nuevos.map(lineaDato).join('<br>') + vienen,
+      if (nuevos.length) add(v, {b: 'datos', area, ks: deAcc.map(id => 'a' + id), html: nuevos.map(p => lineaDato(p) + avisoDato(p)).join('<br>') + vienen,
         acc: botonesDato(v.id, nuevos.length, area, choques.length ? 'nuevo' : '') + btnT('Ver uno por uno', 'data-b-prop="1"')});
     });
     // 7 · Falta (errores del viaje y de sus subviajes; sin los que ya salen arriba), solo si arranca en ≤ HORIZONTE_FALTA días o ya arrancó
