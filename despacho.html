@@ -162,6 +162,12 @@ function ultimaGuardada() {
     const d = JSON.parse(localStorage.getItem(ULTIMA + '-d') || 'null'); return d && d.ok ? d : null;
   } catch (e) { return null; }
 }
+// 10-nov ("¿quién recarga?"): si no hay conexión, arriba queda fijo y en rojo "Sin conexión · datos de tal hora" mientras dure;
+// Despacho sigue intentando solo (cada 20 s en ese estado) y el aviso se quita al volver a conectar. Nadie tiene que recargar.
+let sinConexion = false;
+const textoHora = () => sinConexion ? `<b style="color:var(--bad)">⚠ Sin conexión · datos de ${esc(D.hora)} · se actualiza solo al volver</b> · ${esc(USUARIO)}`
+  : `datos de ${esc(D.hora)}${D.guardado ? ' · actualizando…' : ''} · ${esc(USUARIO)}`;
+function marcarConexion(falla) { if (sinConexion === falla) return; sinConexion = falla; const h = $('.hora'); if (h && D) h.innerHTML = textoHora(); }
 async function cargar(silencioso, fresco) {
   if (!CLAVE) return login();
   let deGuardado = false;
@@ -177,12 +183,13 @@ async function cargar(silencioso, fresco) {
     if (!d.ok) { if (d.error === 'clave') { CLAVE = ''; ls.set('despacho_clave', ''); borrarUltima(); D = null; return login(true); } throw new Error(d.error); }
     ls.set('despacho_clave', CLAVE);
     if (!USUARIO) return login();   // falta el nombre: se pide en el formulario (prompt() no funciona en todos los navegadores)
-    guardarUltima(d);
+    guardarUltima(d); sinConexion = false;
     D = d; D.turnos = turnosHora ? TURNOS : null;
     if (!deGuardado || !$('#velo')) pintar();   // si ya se pintó lo guardado y hay una ventana abierta, no se le repinta debajo
     cargarTurnos();
     if (pestana === 'conductores' || !CONDS) cargarConductores();   // por si entró con el formulario (sin nombre al abrir)
-  } catch (e) { if (!silencioso) toast(deGuardado ? 'No se pudo actualizar: se muestra lo último guardado. Recargue antes de asignar.' : 'No se pudo cargar: ' + e.message); }
+  } catch (e) { if (D) marcarConexion(true);   // con datos en pantalla (guardados o de hace un rato): aviso fijo arriba
+    if (!silencioso) toast(D ? 'Sin conexión: se muestran los datos de ' + D.hora + '. Se actualiza solo al volver.' : 'No se pudo cargar: ' + e.message); }
 }
 // conductores enturnados y disponibles en la app Viajes ETP (turnos.html): vienen con los datos del tablero
 // (turnosConductores, Conductores.gs resumenTurnos_: últimos 10 días, sin los retirados); se piden aparte para no demorar Despacho
@@ -245,7 +252,7 @@ function pintar() {
   $('#app').innerHTML = `
   <header>
     <h1>🚛 Despacho de conductores · <b>Reckitt</b></h1>
-    <span class="hora">datos de ${esc(D.hora)}${D.guardado ? ' · actualizando…' : ''} · ${esc(USUARIO)}</span>
+    <span class="hora">${textoHora()}</span>
     <div class="der">
       <input type="search" placeholder="Buscar booking, placa, conductor" value="${esc(filtro)}" oninput="filtro=this.value;pintar();this.focus();this.setSelectionRange(this.value.length,this.value.length)">
       <button class="b" onclick="cargar(false, true);cargarTurnos(true)">🔄</button>
@@ -1036,6 +1043,7 @@ function toast(m) { let t = $('#toast'); if (!t) { t = document.createElement('d
 
 cargar();
 setInterval(() => { if (!document.hidden && !$('#velo') && document.activeElement.type !== 'search') cargar(true); }, 60000);
+setInterval(() => { if (sinConexion && !document.hidden) cargar(true); }, 20000);   // sin conexión: reintenta más seguido
 </script>
 </body>
 </html>
