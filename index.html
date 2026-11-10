@@ -1164,8 +1164,14 @@ function itemsExtra(v){
   if (!L.length && Number(v.extracostos)) L.push(['Extracostos', Number(v.extracostos)]);
   return L;
 }
+// Retorno (devolver el contenedor vacío) es parte del flete, solo que desglosado (el usuario, 9 y 10-nov): no es extracosto, no pide
+// aprobación de Reckitt y suma al valor del servicio. Va en su casilla (retorno, al lado de la tarifa). Lo que quedó anotado antes
+// como concepto de extracosto "Retorno: N" se cuenta igual, como flete, hasta que se pase a la casilla.
+const ES_RETORNO = /^retorno$/i;
 function cobro(v){
-  const tarifa = Number(v.tarifa) || 0, extra = Number(v.extracostos) || itemsExtra(v).reduce((s,x)=>s+x[1],0);
+  const items = itemsExtra(v), retViejo = items.filter(x => ES_RETORNO.test(x[0])).reduce((s,x)=>s+x[1],0);
+  const tarifa = Number(v.tarifa) || 0, retorno = (Number(v.retorno) || 0) + retViejo, flete = tarifa + retorno;
+  const extra = Math.max(0, (Number(v.extracostos) || items.reduce((s,x)=>s+x[1],0)) - retViejo);
   const aprob = extra ? (v.aprobacionExtra || 'Pendiente') : '';
   // etapa de facturación (igual en filtro, indicador, chat y tarjeta):
   //  Aún no facturable → el transporte no ha terminado · Pendiente por facturar → terminó y facturación no ha hecho nada ·
@@ -1176,7 +1182,8 @@ function cobro(v){
   const fact = ['Facturado','Aprobado por Reckitt','En aprobación Reckitt'].includes(marcada) ? marcada
     : (situacion(v)==='Cancelado' || v.estado==='Cancelado') ? '' : transporteFinalizado(v) ? 'Pendiente por facturar'
     : situacion(v)==='Cerrado' ? 'Sin servicio' : 'Aún no facturable';
-  return {tarifa, extra, aprob, fact, total: tarifa + (aprob==='Aprobado' ? extra : 0)};
+  // flete = tarifa + retorno: lo que se cobra por el servicio sin aprobación; total = flete + extracostos aprobados
+  return {tarifa, retorno, flete, extra, aprob, fact, total: flete + (aprob==='Aprobado' ? extra : 0)};
 }
 // solo con dos fechas ISO; con otro valor (p. ej. 'sí' de una parada cumplida por tirilla sin fecha) no hay días: null, no NaN
 const dDias = (a, b) => /^\d{4}-\d{2}-\d{2}/.test(a || '') && /^\d{4}-\d{2}-\d{2}/.test(b || '') ? diffDias(b) - diffDias(a) : null;
@@ -3275,11 +3282,11 @@ const COLOR_COBRO = {'Aprobado':'var(--ok)', 'Facturado':'var(--ok)', 'Rechazado
 const tagCobro = (s, pre='') => s ? `<span class="tg" style="background:color-mix(in srgb, ${COLOR_COBRO[s]||'var(--muted)'} 15%, transparent);color:${COLOR_COBRO[s]||'var(--muted)'}">${esc(pre+s)}</span>` : '';
 function celdaCobro(v){
   const c = cobro(v);
-  return `${c.tarifa ? `<b>${pesos(c.tarifa)}</b>` : '<span class="sub">Sin tarifa</span>'}${c.extra ? `<br><span class="sub">+ ${pesos(c.extra)} extra${v.conceptoExtra?' · '+esc(v.conceptoExtra):''}</span> ${tagCobro(c.aprob)}` : ''}${c.fact ? '<br>'+tagCobro(c.fact)+(v.numFactura?` <span class="sub">${esc(v.numFactura)}</span>`:'') : ''}`;
+  return `${c.tarifa ? `<b>${pesos(c.flete)}</b>${c.retorno ? `<br><span class="sub">flete ${pesos(c.tarifa)} + retorno ${pesos(c.retorno)}</span>` : ''}` : '<span class="sub">Sin tarifa</span>'}${c.extra ? `<br><span class="sub">+ ${pesos(c.extra)} extra${v.conceptoExtra?' · '+esc(v.conceptoExtra):''}</span> ${tagCobro(c.aprob)}` : ''}${c.fact ? '<br>'+tagCobro(c.fact)+(v.numFactura?` <span class="sub">${esc(v.numFactura)}</span>`:'') : ''}`;
 }
 function resumenCobro(v){
   const c = cobro(v);
-  return `<div class="sub" style="margin-top:8px">💲 Tarifa <b>${pesos(c.tarifa)}</b>${c.extra ? ` · Extracostos <b>${pesos(c.extra)}</b> ${tagCobro(c.aprob)}` : ''} · Total a facturar <b>${pesos(c.total)}</b> ${tagCobro(c.fact)}${v.numFactura?` · Factura ${esc(v.numFactura)}`:''}</div>`;
+  return `<div class="sub" style="margin-top:8px">💲 Tarifa <b>${pesos(c.tarifa)}</b>${c.retorno ? ` · Retorno <b>${pesos(c.retorno)}</b>` : ''}${c.extra ? ` · Extracostos <b>${pesos(c.extra)}</b> ${tagCobro(c.aprob)}` : ''} · Total a facturar <b>${pesos(c.total)}</b> ${tagCobro(c.fact)}${v.numFactura?` · Factura ${esc(v.numFactura)}`:''}</div>`;
 }
 /* ---------- reprogramaciones: cambios de una fecha ya programada, con su causa y responsable ---------- */
 const htmlCausas = (nombre) => `<select class="${nombre}"><option value="">Causa del cambio…</option>${CAUSAS_ELEGIR.map(([c, r]) => `<option value="${esc(c)}">${esc(c)}${r ? ' · responde '+r : ''}</option>`).join('')}</select>`;
@@ -3434,7 +3441,7 @@ function leadFactura(v){
   return v.fechaFactura ? {dias: dDias(fin, v.fechaFactura), hecho: true} : {dias: dDias(fin, HOY), hecho: false};
 }
 
-const costoViaje = v => { const c = cobro(v); return c.tarifa + (c.aprob==='Rechazado' ? 0 : c.extra); };
+const costoViaje = v => { const c = cobro(v); return c.flete + (c.aprob==='Rechazado' ? 0 : c.extra); };
 
 function tarjetaHijo(s, padre){
   // el subviaje guarda su destino final en Bodega; si no lo tiene, el del viaje padre
@@ -3495,13 +3502,13 @@ function panelFactura(v, P, n){
   const c = cobro(v);
   // total del viaje sin extracostos rechazados; lo aprobado para facturar aparte mientras Reckitt no aprueba los extras
   const hijos = hijosDe(v), costoHijos = hijos.reduce((a, s) => a + costoViaje(s), 0);
-  const totalViaje = c.tarifa + (c.aprob==='Rechazado' ? 0 : c.extra) + costoHijos;
+  const totalViaje = c.flete + (c.aprob==='Rechazado' ? 0 : c.extra) + costoHijos;
   // siempre las mismas líneas: Fletes, Citas, Standby y Otros (los demás conceptos de extracostos sumados)
   const grupo = k => /^cita/i.test(k) ? 'cita' : /stand\s*-?by/i.test(k) ? 'standby' : /^retorno/i.test(k) ? 'retorno' : /^cargue/i.test(k) ? 'cargue' : 'otros';
   const sum = {cita:0, standby:0, retorno:0, cargue:0, otros:0}, otros = [];
   itemsExtra(v).forEach(([k, x]) => { sum[grupo(k)] += x; if (grupo(k)==='otros' && x) otros.push(k); });
   const gastos = lnR('Fletes', pesos(c.tarifa)) + lnR('Citas', pesos(sum.cita)) + lnR('Standby', pesos(sum.standby))
-    + (sum.retorno ? lnR('Retorno', pesos(sum.retorno)) : '') + (sum.cargue ? lnR('Cargue', pesos(sum.cargue)) : '')
+    + (c.retorno ? lnR('Retorno (flete)', pesos(c.retorno)) : '') + (sum.cargue ? lnR('Cargue', pesos(sum.cargue)) : '')
     + lnR(otros.length ? `<span title="${esc(otros.join(', '))}">Otros</span>` : 'Otros', pesos(sum.otros))
     + (hijos.length ? lnR(`<span title="${esc(hijos.flatMap(s => itemsExtra(s).map(([k, x]) => k+' '+pesos(x))).join(', '))}">Subviaje${hijos.length>1?'s':''}</span>`, pesos(costoHijos)) : '')
     + granR('Total', pesos(totalViaje))
@@ -3988,7 +3995,7 @@ const CAMPOS_ETAPA = {
     ['Puerto', [['puerto','Puerto'],['mn','Motonave'],['cierreDoc','Cierre documental','fecha'],['citaIngreso','Cita de ingreso','fecha'],['estadoCita','Estado de la cita','lista',['Solicitada','Confirmada','Entregado']]]],
     ['Cierre', [['fechaEntregaPuerto','Fecha de entrega en puerto','fecha'],['tirillaEntrega','Tirilla de entrega']]],
     ['Destino', [['pais','País'],['etd','ETD','fecha'],['eta','ETA','fecha']]],
-    ['Costos y facturación', [['tarifa','Flete (tarifa)','num'],['conceptoExtra','Extracostos','extras'],
+    ['Costos y facturación', [['tarifa','Flete (tarifa)','num'],['retorno','Retorno del vacío (parte del flete)','num'],['conceptoExtra','Extracostos','extras'],
       ['aprobacionExtra','Aprobación extracostos','lista',['Pendiente','Aprobado','Rechazado']],['facturacion','Facturación','lista',FACTURACION],['numFactura','N° factura'],['fechaFactura','Fecha factura','fecha'],['rbhy','RBHY (factura Reckitt)'],['obd','OBD (Delivery Number)'],['obsFactura','Observaciones facturación']]]],
   // NACIONAL (Base.gs SEGUIMIENTO.NACIONAL): recogida en el origen y entrega en el destino
   NACIONAL: [['Solicitud', [['carga','Qué se lleva'],['origen','Origen (dónde se recoge)'],['destino','Ciudad de destino'],['bodega','Lugar de entrega']]],
@@ -4001,7 +4008,7 @@ const CAMPOS_ETAPA = {
     ['Entrega en bodega', [['fechaCargue','Fecha entrega en bodega','fecha'],['destino','Destino'],['bodega','Bodega']]],
     ['Devolución del vacío', [['ciudadDevolucion','Ciudad de devolución','lista',['Buenaventura','Cartagena','Cali']],['citaDevolucion','Cita de devolución','fecha'],
       ['patio','Patio de devolución','dl','dlPatio'],['fechaDevolucion','Fecha de devolución','fecha'],['tirillaDevolucion','Tirilla de devolución']]],
-    ['Costos y facturación', [['tarifa','Flete (tarifa)','num'],['conceptoExtra','Extracostos','extras'],
+    ['Costos y facturación', [['tarifa','Flete (tarifa)','num'],['retorno','Retorno del vacío (parte del flete)','num'],['conceptoExtra','Extracostos','extras'],
       ['aprobacionExtra','Aprobación extracostos','lista',['Pendiente','Aprobado','Rechazado']],['facturacion','Facturación','lista',FACTURACION],['numFactura','N° factura'],['fechaFactura','Fecha factura','fecha'],['obsFactura','Observaciones facturación']]]]
 };
 // valor de un campo tal como lo muestra el formulario (placa y conductor en mayúsculas)
@@ -4034,11 +4041,12 @@ function pintarForm(v){
     (v.padre ? CAMPOS_SUB.map(([t, cs]) => grupo(t, v.operacion === 'IMPO' ? cs : cs.filter(c => c[0] !== 'contenedorSub'))).join('') : grupo('Viaje', esNacional(v) ? CAMPOS_VIAJE.filter(c => !['booking','do','contenedor','unidad','fwd'].includes(c[0])) : CAMPOS_VIAJE) + CAMPOS_ETAPA[v.operacion].map(([t, cs]) => grupo(t, cs)).join('') + calc) +
     `<div class="full" style="margin-top:12px"><label>Observación (nota fija del viaje) <span class="sub">· lo que pasa día a día va en Novedades, arriba</span></label><textarea data-k="observacion" placeholder="Ej: Programación nov · cargue en DHL">${esc(v.observacion||'')}</textarea></div>`;
   const lista = (id, k) => { $('#'+id).innerHTML = [...new Set(viajes.map(x=>x[k]).filter(Boolean))].sort().map(x=>`<option value="${esc(x)}">`).join(''); };
-  $('#dlExtra').innerHTML = [...new Set([...CONCEPTOS_EXTRA, ...viajes.flatMap(x=>itemsExtra(x).map(i=>i[0]))])].map(x=>`<option value="${esc(x)}">`).join('');
+  $('#dlExtra').innerHTML = [...new Set([...CONCEPTOS_EXTRA, ...viajes.flatMap(x=>itemsExtra(x).map(i=>i[0]))])].filter(x => !ES_RETORNO.test(x)).map(x=>`<option value="${esc(x)}">`).join('');
   lista('dlPatio','patio'); lista('dlFwd','fwd');
   marcarCambios();
 }
-const CONCEPTOS_EXTRA = ['Cita','Standby','Retorno','Cargue','Descargue','Urbano','Parqueadero','Pernocta','Escolta','Almacenaje','Movimiento de contenedor'];
+// 10-nov: Retorno ya no es extracosto (es parte del flete: casilla Retorno, al lado de la tarifa; dominio.js cobro)
+const CONCEPTOS_EXTRA = ['Cita','Standby','Cargue','Descargue','Urbano','Parqueadero','Pernocta','Escolta','Almacenaje','Movimiento de contenedor'];
 // subviaje (viaje hijo): descargue en un patio intermedio y urbano al destino final; mismos costos de siempre
 const MOTIVOS_SUBVIAJE = ['Paro','Demora en cita','Cierre de vía','Instrucción del cliente','Otro'];
 const CONCEPTOS_SUB = ['Descargue','Cargue','Urbano','Parqueadero'];
@@ -4645,7 +4653,7 @@ async function crearNacional(b){
 /* ---------- llenar datos desde correos (con revisión y aprobación) ---------- */
 let PROP = [];
 // cada área revisa lo suyo: los datos de cobro (relación de Pedro y aprobación de Reckitt) son de Facturación; el resto, de Operaciones
-const CAMPOS_FACTURA = ['tarifa', 'extracostos', 'conceptoExtra', 'aprobacionExtra', 'facturacion', 'rbhy', 'obd', 'numFactura', 'fechaFactura'];
+const CAMPOS_FACTURA = ['tarifa', 'retorno', 'extracostos', 'conceptoExtra', 'aprobacionExtra', 'facturacion', 'rbhy', 'obd', 'numFactura', 'fechaFactura'];
 const areaProp = p => CAMPOS_FACTURA.includes(p.campo) ? 'Facturación' : 'Operaciones';
 let propArea = '';
 // los datos por aprobar se traen en un solo lugar (al cargar el tablero y al abrir la ventana); si Apps Script está ocupado
@@ -5729,7 +5737,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '763728ba27';
+const VERSION_TABLERO = '9448bae5d9';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -6437,7 +6445,7 @@ montarKV();
 const KC = {sel: 'ped', tick: null, tarea: 0, tareas: []};
 // cobro en totales: el cliente lo recibe en kc = [flete, extracostos aprobados, etapa de facturación]; el equipo lo calcula
 const kcCobro = v => v.kc ? {flete: Number(v.kc[0]) || 0, extra: Number(v.kc[1]) || 0, fact: v.kc[2] || ''}
-  : (c => ({flete: c.tarifa, extra: c.aprob === 'Aprobado' ? c.extra : 0, fact: c.fact}))(cobro(v));
+  : (c => ({flete: c.flete, extra: c.aprob === 'Aprobado' ? c.extra : 0, fact: c.fact}))(cobro(v));
 // referencia que usa Reckitt (booking en EXPO, pedido o DO en IMPO) y país
 const kcRef = v => { const c = clavesBusqueda(v).filter(([k]) => k !== 'Placa')[0]; return `${v.operacion || ''} ${c ? c[1] : v.id}${v.pais ? ' · ' + String(v.pais).toLowerCase().replace(/(^|\s)\S/g, x => x.toUpperCase()) : ''}`; };
 const kcMillones = n => n >= 1e6 ? '$' + String(Math.round(n / 1e5) / 10).replace('.', ',') + ' M' : n ? pesos(n) : '$0';
@@ -6725,9 +6733,8 @@ montarKC();
  * Prefijo CSS: kl-. */
 const KL = {tick: null, tarea: 0, tareas: []};
 const KL_TRABAJOS = ['Pedidos', 'Vehículos', 'Monitoreo', 'Demoras', 'Costos'];
-// Retorno (devolver el contenedor vacío) es flete desglosado, no extracosto (el usuario, 9-nov): aquí se suma con los fletes.
-// En el resto del tablero sigue anotado como concepto de extracosto hasta que se mueva junto al flete (viaje.js CONCEPTOS_EXTRA, dominio cobro).
-const KL_FLETE = /^retorno$/i;
+// Retorno (devolver el contenedor vacío) es flete desglosado, no extracosto: desde el 10-nov lo resuelve el dominio (cobro: flete =
+// tarifa + retorno, y los extracostos ya vienen sin él), así que aquí no hay nada especial.
 const klPl = (n, s, p) => `${miles(n)} ${n === 1 ? s : p || s + 's'}`;
 const klMotivo = c => /^reprogramaci/i.test(c) ? 'Reprogramación' : /^costo de terceros/i.test(c) ? 'Costo de terceros' : EXTRA_DEMORA.test(c) ? 'Esperas y stand by' : c.charAt(0).toUpperCase() + c.slice(1).toLowerCase();
 
@@ -6738,13 +6745,13 @@ function calcKL(){
   // plata, solo totales del periodo
   let flete = 0, nFlete = 0, aprob = 0, porAprob = 0, nPorAprob = 0, fact = 0, nFact = 0, sinDetalle = false; const motivos = {};
   Vig.forEach(v => {
-    const c = kcCobro(v), ret = v.kc ? 0 : itemsExtra(v).filter(([con]) => KL_FLETE.test(con)).reduce((t, x) => t + x[1], 0);
-    flete += c.flete + ret; if (c.flete + ret) nFlete++; aprob += c.extra ? Math.max(0, c.extra - ret) : 0;
+    const c = kcCobro(v);
+    flete += c.flete; if (c.flete) nFlete++; aprob += c.extra;
     if (c.fact === 'Facturado') { fact += c.flete + c.extra; nFact++; }
     if (v.kc) { sinDetalle = true; return; }   // al cliente no le llega el detalle de extracostos
-    const t = cobro(v), ext = t.extra - ret; if (ext <= 0 || /rechaz|negad/i.test(t.aprob)) return;
+    const t = cobro(v), ext = t.extra; if (ext <= 0 || /rechaz|negad/i.test(t.aprob)) return;
     if (t.aprob !== 'Aprobado') { porAprob += ext; nPorAprob++; }
-    itemsExtra(v).forEach(([con, x]) => { if (x && !KL_FLETE.test(con)) { const m = klMotivo(con); motivos[m] = (motivos[m] || 0) + x; } });
+    itemsExtra(v).forEach(([con, x]) => { if (x && !ES_RETORNO.test(con)) { const m = klMotivo(con); motivos[m] = (motivos[m] || 0) + x; } });
   });
   // pedidos con novedad hoy: lo que sigue abierto con la fecha corrida, sin vehículo cuando ya le toca, o terminado sin el dato para facturar
   const N = [], enCurso = v => !transporteFinalizado(v) && situacion(v) !== 'Cerrado';
