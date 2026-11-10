@@ -5948,7 +5948,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'eb8d8452d6';
+const VERSION_TABLERO = '31d6645446';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -8002,7 +8002,8 @@ $('#bandeja').onclick = e => {
  * aplazar ALERTA_RONDA.aplazaMin minutos, hasta ALERTA_RONDA.maxAplazos veces; después solo queda revisar. Tras "Revisar ahora"
  * vuelve cada ALERTA_RONDA.repiteMin minutos mientras la ronda siga sin hacerse. La ronda se cumple como siempre (turno.js
  * estadoTurno): cada vehículo en movimiento con su "Sigue igual", su actualización o su excepción. Con la pestaña en segundo plano
- * avisa con una notificación del navegador, si la persona le dio permiso. Solo a quien es de Operaciones (Ingresar como).
+ * avisa con una notificación del navegador, si la persona le dio permiso. Le sale a todo el equipo (Operaciones, Facturación,
+ * Gerencia, Calidad); al cliente no.
  * Si nadie entra al tablero, quien avisa es el servidor por correo, a los coordinadores con Gerencia y Calidad en copia
  * (Reportes.gs avisarRondaSinAtender_). */
 const ALERTA_RONDA = {aplazaMin: 10, maxAplazos: 2, repiteMin: 15};
@@ -8013,8 +8014,8 @@ function cerrarAlertaRonda(){ const o = document.getElementById('ovRonda'); if (
 
 function revisarAlertaRonda(){
   if (window.MODO_CLIENTE || !claveActual() || !window.BITACORA || typeof estadoTurno !== 'function') return;
-  // las rondas son de los coordinadores: a quien entró como Operaciones, y a quien no ha dicho quién es (para que no se pierda)
-  if (typeof areaInicial === 'function' && !['Operaciones', ''].includes(areaInicial())) return cerrarAlertaRonda();
+  // 10-nov ("no lo he visto en la pantalla de gerencia... esto debe salirle a todos"): le sale a todo el equipo, sea cual sea su
+  // área (antes solo a Operaciones). Al cliente no (MODO_CLIENTE, arriba). Lo que cuenta sigue siendo lo de Operaciones.
   let T; try { T = estadoTurno(); } catch(x) { return; }
   const r = T.r; if (!r || T.rondaHecha) return cerrarAlertaRonda();
   const e = estadoAlertaRonda(HOY + '|' + r.n);
@@ -8048,7 +8049,8 @@ function revisarAlertaRonda(){
     </div>${permiso}</div></div>`);
   document.title = `${vencida ? '⛔' : '⏱'} Ronda de las ${hora} · LogxView`;
   document.getElementById('rondaRevisar').onclick = () => { e.hasta = Date.now() + ALERTA_RONDA.repiteMin * 60e3; e.notificada = false; guardarAlertaRonda(e); cerrarAlertaRonda();
-    document.querySelector('#nav [data-v="bandeja"]')?.click(); if (typeof bandejaFiltro !== 'undefined') { bandejaFiltro = ''; renderBandeja(); } scrollTo(0, 0); };
+    document.querySelector('#nav [data-v="bandeja"]')?.click(); if (typeof bandejaFiltro !== 'undefined') { bandejaFiltro = ''; if (bandejaArea && bandejaArea !== 'Operaciones') bandejaArea = 'Operaciones';   // quien es de otra área llega a lo de la ronda
+      renderBandeja(); } scrollTo(0, 0); };
   const a = document.getElementById('rondaAplazar');
   if (a) a.onclick = () => { e.aplazos++; e.hasta = Date.now() + ALERTA_RONDA.aplazaMin * 60e3; e.notificada = false; guardarAlertaRonda(e); cerrarAlertaRonda(); };
   const p = document.getElementById('rondaPermiso');
