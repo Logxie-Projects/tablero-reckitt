@@ -5862,7 +5862,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '11ddb93609';
+const VERSION_TABLERO = 'ad07cbb4ce';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -6874,7 +6874,7 @@ const KM_BORDE = [[-75.37,-0.15],[-75.8,0.08],[-76.29,0.42],[-76.58,0.26],[-77.4
   [-69.8,1.09],[-69.22,0.99],[-69.25,0.6],[-69.45,0.71],[-70.02,0.54],[-70.02,-0.19],[-69.58,-0.55],[-69.42,-1.12],[-69.44,-1.56],[-69.89,-4.3],[-70.39,-3.77],
   [-70.69,-3.74],[-70.05,-2.73],[-70.81,-2.26],[-71.41,-2.34],[-71.77,-2.17],[-72.33,-2.43],[-73.07,-2.31],[-73.66,-1.26],[-74.12,-1],[-74.44,-0.53],[-75.11,-0.06]];
 // lugares de la operación: [cómo se escribe en la hoja, nombre, latitud, longitud]
-const KM_LUGARES = [[/\bbun\b|buenaventura/, 'Buenaventura', 3.88, -77.03], [/\bctg\b|cartagena/, 'Cartagena', 10.39, -75.51], [/yumbo|cortijo|agecolda|reckitt|ercol/, 'Yumbo', 3.58, -76.49],
+const KM_LUGARES = [[/\bbun\b|buenaventura/, 'Buenaventura', 3.88, -77.03], [/\bctg\b|cartagena/, 'Cartagena', 10.39, -75.51], [/yumbo|cortijo|agecold|reckitt|ercol/, 'Yumbo', 3.58, -76.49],
   [/\bcali\b/, 'Cali', 3.45, -76.53], [/bogot|funza|mosquera|siberia|solistica/, 'Bogotá', 4.71, -74.1], [/barranquilla|\bbaq\b/, 'Barranquilla', 10.98, -74.8],
   [/santa marta|\bsmr\b/, 'Santa Marta', 11.24, -74.2], [/medell|itagu|rionegro/, 'Medellín', 6.25, -75.57]];
 // dónde va el nombre de cada lugar respecto a su punto (los que quedan pegados al borde o a otro lugar)
@@ -6908,7 +6908,9 @@ function calcKM(conNovedad){
     // sin reporte con ubicación: sobre el trayecto, por los pasos que lleva el conductor o por la etapa
     // quieto = todavía no viaja: EXPO con el vacío retirado (falta cargar) o carga en la bodega de paso (falta el urbano)
     const porCargar = v.operacion === 'EXPO' && v.estado === 'Vacío retirado', dePaso = v.estado === 'En bodega de paso';
-    const sitioPaso = dePaso ? kmLugar((hijosDe(v)[0] || {}).patioSub) : null;
+    // la bodega de paso es la del subviaje que falta por entregar (la misma elección de etapaAhora); si todos cumplieron, el primero
+    const subPaso = dePaso ? hijosDe(v).find(s => !cumplido(s, 'fechaUrbano')) || hijosDe(v)[0] : null;
+    const sitioPaso = subPaso ? kmLugar(subPaso.patioSub) : null;
     const f = porCargar ? 0 : dePaso ? (v.operacion === 'EXPO' ? .08 : .92) : kmDevolviendo(v) ? .9 : c && c.total && c.n ? Math.min(.95, Math.max(.08, c.n / c.total)) : .5;
     const p = real ? [lat, lng] : sitioPaso ? [sitioPaso[2], sitioPaso[3]] : [a[2] + (b[2] - a[2]) * f, a[3] + (b[3] - a[3]) * f];
     const nov = conNovedad.get(v.id);
