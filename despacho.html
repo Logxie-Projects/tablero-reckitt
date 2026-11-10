@@ -149,33 +149,57 @@ function entrar(e) {
 }
 
 // fresco (10-nov): el botón 🔄 pide los datos sin el caché del servidor
+// 10-nov (velocidad, "despachos tarda demasiado en cargar"): Despacho abre al instante con lo último que este navegador cargó
+// (misma clave, menos de 12 h; igual que el tablero, datos.js) y pide los datos nuevos por detrás. Arriba dice de qué hora son
+// los datos. Lo guardado se borra si la clave deja de servir. Los turnos y el registro de conductores se piden al mismo tiempo que
+// las asignaciones, no después (antes eran dos esperas seguidas).
+const ULTIMA = 'despacho_ultima' + (CON_PRUEBA ? '_p' : ''), ULTIMA_HORAS = 12;
+function guardarUltima(d) { try { localStorage.setItem(ULTIMA + '-d', JSON.stringify(d)); localStorage.setItem(ULTIMA, JSON.stringify({ c: CLAVE, t: Date.now() })); } catch (e) { borrarUltima(); } }
+function borrarUltima() { try { localStorage.removeItem(ULTIMA); localStorage.removeItem(ULTIMA + '-d'); } catch (e) { } }
+function ultimaGuardada() {
+  try { const m = JSON.parse(localStorage.getItem(ULTIMA) || 'null');
+    if (!m || m.c !== CLAVE || Date.now() - m.t > ULTIMA_HORAS * 36e5) return null;
+    const d = JSON.parse(localStorage.getItem(ULTIMA + '-d') || 'null'); return d && d.ok ? d : null;
+  } catch (e) { return null; }
+}
 async function cargar(silencioso, fresco) {
   if (!CLAVE) return login();
+  let deGuardado = false;
+  if (!D && !silencioso && USUARIO) {
+    const u = ultimaGuardada();
+    if (u) try { D = u; D.turnos = null; D.guardado = true; pintar(); deGuardado = true; } catch (e) { D = null; borrarUltima(); }
+  }
   if (!D && !silencioso) $('#app').innerHTML = '<div class="vacio">Cargando…</div>';
+  // los turnos (carga del equipo) y el registro salen a la vez que las asignaciones; si la clave no sirve, fallan solos
+  if (USUARIO) { cargarTurnos(); if (pestana === 'conductores' || !CONDS) cargarConductores(); }
   try {
     const d = await pedir(fresco ? { fresco: '1' } : {});
-    if (!d.ok) { if (d.error === 'clave') { CLAVE = ''; ls.set('despacho_clave', ''); return login(true); } throw new Error(d.error); }
+    if (!d.ok) { if (d.error === 'clave') { CLAVE = ''; ls.set('despacho_clave', ''); borrarUltima(); D = null; return login(true); } throw new Error(d.error); }
     ls.set('despacho_clave', CLAVE);
     if (!USUARIO) return login();   // falta el nombre: se pide en el formulario (prompt() no funciona en todos los navegadores)
-    D = d; D.turnos = turnosHora ? TURNOS : null; pintar();
+    guardarUltima(d);
+    D = d; D.turnos = turnosHora ? TURNOS : null;
+    if (!deGuardado || !$('#velo')) pintar();   // si ya se pintó lo guardado y hay una ventana abierta, no se le repinta debajo
     cargarTurnos();
-    if (pestana === 'conductores' || !CONDS) cargarConductores();   // 10-nov: el registro se pide de una vez, así la pestaña abre sin esperar
-  } catch (e) { if (!silencioso) toast('No se pudo cargar: ' + e.message); }
+    if (pestana === 'conductores' || !CONDS) cargarConductores();   // por si entró con el formulario (sin nombre al abrir)
+  } catch (e) { if (!silencioso) toast(deGuardado ? 'No se pudo actualizar: se muestra lo último guardado. Recargue antes de asignar.' : 'No se pudo cargar: ' + e.message); }
 }
 // conductores enturnados y disponibles en la app Viajes ETP (turnos.html): vienen con los datos del tablero
 // (turnosConductores, Conductores.gs resumenTurnos_: últimos 10 días, sin los retirados); se piden aparte para no demorar Despacho
 let TURNOS = [], turnosHora = 0, DESTINOS = {}, VIAJES = [], REGISTRO = null, CALC = {};   // CALC: lo que el tablero calcula de cada viaje (etapa y qué pasa hoy)   // REGISTRO: vehículos y conductores (cédula para la orden de cargue)   // DESTINOS: id del viaje -> país o bodega (Despacho no los trae)
 async function cargarTurnos(forzar) {
-  if (!forzar && Date.now() - turnosHora < 5 * 60e3) return;
+  if (!forzar && (cargarTurnos.enCurso || Date.now() - turnosHora < 5 * 60e3)) return;
+  cargarTurnos.enCurso = true;
   try {
     const j = await (await fetch(API + '?' + new URLSearchParams({ formato: 'json', clave: CLAVE }))).json();
-    if (!j.ok) return;
+    if (!j.ok) { cargarTurnos.enCurso = false; return; }
     TURNOS = j.turnosConductores || []; turnosHora = Date.now();
     VIAJES = (j.viajes || []).filter(v => CON_PRUEBA || String(v.empresa || '').trim().toUpperCase() !== 'PRUEBA ETP'); REGISTRO = j.registro || null;   // también para 📧 Orden de cargue (destino, motonave, puerto, fechas)
     VIAJES.forEach(v => { DESTINOS[v.id] = v.operacion === 'EXPO' ? v.pais : (v.bodega || v.destino); });
     CALC = j.calc || {};
     if (D) { D.turnos = TURNOS; if (!$('#velo')) pintar(); }
   } catch (e) { /* sin turnos: Despacho sigue igual */ }
+  cargarTurnos.enCurso = false;
 }
 const enturnadosDe = v => (D.turnos || []).filter(t => t.tipo === 'Turno' && t.viajeId === v.id);
 
@@ -221,7 +245,7 @@ function pintar() {
   $('#app').innerHTML = `
   <header>
     <h1>🚛 Despacho de conductores · <b>Reckitt</b></h1>
-    <span class="hora">datos de ${esc(D.hora)} · ${esc(USUARIO)}</span>
+    <span class="hora">datos de ${esc(D.hora)}${D.guardado ? ' · actualizando…' : ''} · ${esc(USUARIO)}</span>
     <div class="der">
       <input type="search" placeholder="Buscar booking, placa, conductor" value="${esc(filtro)}" oninput="filtro=this.value;pintar();this.focus();this.setSelectionRange(this.value.length,this.value.length)">
       <button class="b" onclick="cargar(false, true);cargarTurnos(true)">🔄</button>
@@ -763,13 +787,15 @@ const condVigentes = () => (CONDS || []).filter(c => !/^archivad/i.test(c.estado
 const condConProblema = () => condVigentes().filter(c => c.problemas.length);
 const vehConProblema = () => (VEHS || []).filter(v => !/^archivad/i.test(v.estado || '') && v.problemas.length).length;
 async function cargarConductores(forzar) {
-  if (!forzar && CONDS && Date.now() - condHora < 2 * 60e3) return;
+  if (!forzar && (cargarConductores.enCurso || (CONDS && Date.now() - condHora < 2 * 60e3))) return;
+  cargarConductores.enCurso = true;
   try {
     const j = await (await fetch(API + '?' + new URLSearchParams(Object.assign({ formato: 'json', que: 'conductores', clave: CLAVE }, forzar ? { fresco: '1' } : {})))).json();
     if (!j.ok) throw new Error(j.error || 'sin datos');
     CONDS = j.conductores || []; VEHS = j.vehiculos || []; condHora = Date.now(); condError = '';
   } catch (e) { condError = e.message; }
-  if (pestana === 'conductores' && !$('#velo')) pintar();
+  cargarConductores.enCurso = false;
+  if (D && pestana === 'conductores' && !$('#velo')) pintar();
 }
 const FILTROS_COND = [['todos', 'Todos'], ['problemas', '⚠ Por revisar'], ['Duplicado', 'Duplicados'], ['Cédula', 'Cédula'], ['Celular', 'Celular'],
   ['Nombre', 'Nombre'], ['Placa', 'Placa'], ['archivados', '🗄 Archivados']];
