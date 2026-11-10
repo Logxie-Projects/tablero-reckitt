@@ -1527,6 +1527,12 @@ function datoMalEscrito(campo, valor){
   return '';
 }
 
+// "No coincide" (10-nov): un dato que trae un correo o un documento para una casilla que YA tiene otro valor en la base. No es un
+// dato nuevo por aprobar: son dos fuentes que dicen cosas distintas y una persona decide cuál vale (casos: la placa del viaje y otra
+// en el correo; el retiro el 7 en la base y el 11 en el correo). La etapa de facturación y la aprobación de extracostos avanzan
+// (Pendiente → Aprobado → Facturado): que cambien no es una contradicción. p = un dato propuesto {campo, actual, valor}.
+const noCoincide = p => !!p && !!String(p.actual || '').trim() && !['facturacion', 'aprobacionExtra'].includes(p.campo);
+
 /* ---------- datos en la casilla equivocada, avisos antes de guardar y contenedores hermanos (10-nov) ----------
  * Errores reales del equipo (8 y 9-nov) que el sistema no veía porque solo revisaba lo que FALTA: el booking escrito en la casilla
  * de Pedido y en la de la tirilla, el DO escrito con la palabra DO adelante, el OBD puesto en un contenedor del booking
@@ -5737,7 +5743,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '9448bae5d9';
+const VERSION_TABLERO = '1aa1bded8a';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -7259,6 +7265,7 @@ const BLOQUES = [
   ['sinact', '⚠ Sin actualizar', 'p-bad', 'La fecha del paso ya pasó y el viaje no registra que se hizo (la misma alerta de la Torre de Control)'],
   ['paso', '¿Pasó?', 'p-warn', 'La fecha llegó y nadie confirmó si se hizo'],
   ['donde', '¿Dónde va?', 'p-acc', 'Vehículo en movimiento: confirmar en cada ronda dónde va (o "Sigue igual")'],
+  ['nocoincide', '⚠ No coincide', 'p-bad', 'La base dice una cosa y un correo o documento dice otra: alguien decide cuál vale'],
   ['datos', 'Datos de correos', 'p-warn', 'Valores nuevos de los correos para aprobar'],
   ['pedido', 'Pedido', 'p-warn', 'Lo que pide un correo y solo una persona puede hacer'],
   ['falta', 'Falta', 'p-ok', 'Datos que faltan para el próximo paso'],
@@ -7293,8 +7300,14 @@ const quienDato = p => esc(String(p.evidencia || '').split(' · ')[0].slice(0, 6
 const lineaDato = p => p.campo === 'aprobacionExtra'
   ? `<b>Reckitt ${p.valor === 'Aprobado' ? 'aprobó' : p.valor === 'Rechazado' ? 'rechazó' : 'marcó «' + esc(p.valor) + '» en'} los extracostos</b> <span class="sub">· lo dice ${quienDato(p)}; se anota en "Aprobación extracostos"</span>`
   : `${esc(p.etiqueta)}: ${p.actual ? `<s class="sub">${esc(fxDato(p.actual))}</s> → ` : ''}<b>${esc(fxDato(p.valor))}</b> <span class="sub">${esc(String(p.evidencia || '').slice(0, 90))}</span>`;
-const botonesDato = (id, n, area) => btnT(`✔ Guardar en el viaje${n > 1 ? ' (' + n + ')' : ''}`, `data-b-aprobar="${id}"${area ? ` data-area="${area}"` : ''}`, 'Lo que dice el correo pasa al viaje, a su nombre')
-  + btnT('Descartar', `data-b-rechazar="${id}"${area ? ` data-area="${area}"` : ''}`, 'No se guarda y no vuelve a aparecer');
+// 10-nov · No coincide (dominio.js noCoincide): la casilla ya tenía otro valor. Se muestran los dos, con quién lo dice y cuándo
+const fuenteChoque = p => /conductor/i.test(p.origen || '') ? 'el conductor' : /document|archivo|adjunto/i.test(p.origen || '') ? 'el documento' : 'el correo';
+const lineaChoque = p => `${esc(p.etiqueta)}: la base dice <b>${esc(fxDato(p.actual))}</b> · ${fuenteChoque(p)} dice <b style="color:var(--bad)">${esc(fxDato(p.valor))}</b> <span class="sub">${esc(String(p.evidencia || '').slice(0, 90))}${p.fecha ? ' · ' + esc(fxDato(String(p.fecha).slice(0, 10))) : ''}</span>`;
+const botonesChoque = (id, n, area) => btnT(`Vale lo que llegó${n > 1 ? ' (' + n + ')' : ''}`, `data-b-aprobar="${id}" data-solo="choque"${area ? ` data-area="${area}"` : ''}`, 'Cambia el viaje a lo que dice el correo, el documento o el conductor, a su nombre')
+  + btnT('La base está bien', `data-b-rechazar="${id}" data-solo="choque"${area ? ` data-area="${area}"` : ''}`, 'Se deja el viaje como está; lo que llegó se descarta y no vuelve a aparecer')
+  + btnT('Abrir el viaje', `data-b-abrir="${id}"`, 'Si las dos cosas son ciertas porque algo cambió (otro vehículo, otra fecha), se cambia en el viaje con su causa');
+const botonesDato = (id, n, area, solo) => btnT(`✔ Guardar en el viaje${n > 1 ? ' (' + n + ')' : ''}`, `data-b-aprobar="${id}"${solo ? ` data-solo="${solo}"` : ''}${area ? ` data-area="${area}"` : ''}`, 'Lo que dice el correo pasa al viaje, a su nombre')
+  + btnT('Descartar', `data-b-rechazar="${id}"${solo ? ` data-solo="${solo}"` : ''}${area ? ` data-area="${area}"` : ''}`, 'No se guarda y no vuelve a aparecer');
 const areaInicial = () => { const p = EQUIPO.find(x => x.nombre === usuarioGuardado()); return p && AREAS.includes(p.area) ? p.area : ''; };
 
 // los 3 separadores (los usan la Bandeja y Mi turno, con la misma operación elegida): opN(o) = cuántos, opRoja(o) = tiene líneas rojas
@@ -7397,9 +7410,12 @@ function armarBandeja(){
       const deAcc = [...new Set([...P.map(p => (String(p.origen || '').match(/^Correo (LX-\d+)/) || [])[1]),
         ...(area === 'Operaciones' ? B.filter(b => /llenar datos desde correos/i.test(b.accion) && todos.some(x => x.id === viajeDeAccion(b)?.id)).map(b => b.id) : [])].filter(Boolean))];
       deAcc.forEach(id => usadas.add(id));
-      add(v, {b: 'datos', area, ks: deAcc.map(id => 'a' + id), html: P.map(lineaDato).join('<br>')
-        + (deAcc.length ? `<br><span class="sub">Vienen de ${deAcc.map(esc).join(', ')}: al guardar o descartar, se cierran</span>` : ''),
-        acc: botonesDato(v.id, P.length, area) + btnT('Ver uno por uno', 'data-b-prop="1"')});
+      // 10-nov: lo que choca con un valor que el viaje ya tiene va aparte, en rojo (No coincide); lo demás, como siempre
+      const choques = P.filter(noCoincide), nuevos = P.filter(p => !noCoincide(p)), vienen = deAcc.length ? `<br><span class="sub">Vienen de ${deAcc.map(esc).join(', ')}: al decidir todos, se cierran</span>` : '';
+      if (choques.length) add(v, {b: 'nocoincide', area, ks: nuevos.length ? [] : deAcc.map(id => 'a' + id), html: choques.map(lineaChoque).join('<br>') + (nuevos.length ? '' : vienen),
+        acc: botonesChoque(v.id, choques.length, area) + btnT('Ver uno por uno', 'data-b-prop="1"')});
+      if (nuevos.length) add(v, {b: 'datos', area, ks: deAcc.map(id => 'a' + id), html: nuevos.map(lineaDato).join('<br>') + vienen,
+        acc: botonesDato(v.id, nuevos.length, area, choques.length ? 'nuevo' : '') + btnT('Ver uno por uno', 'data-b-prop="1"')});
     });
     // 7 · Falta (errores del viaje y de sus subviajes; sin los que ya salen arriba), solo si arranca en ≤ HORIZONTE_FALTA días o ya arrancó
     const pe = primerEvento(v), cerca = !pe || diffDias(pe) <= HORIZONTE_FALTA;
@@ -7548,10 +7564,11 @@ function renderBandeja(){
 }
 
 // aprobar o rechazar los datos de los correos de un viaje (los mismos de "Llenar datos"); la acción que los trajo se cierra si ya no le quedan
-async function decidirBandeja(id, aprobar, area){
+// solo (10-nov): 'choque' = solo los que no coinciden con la base; 'nuevo' = solo los datos nuevos; vacío = todos los de la línea
+async function decidirBandeja(id, aprobar, area, solo){
   const v = viajes.find(x => x.id === id); if (!v) return;
   // solo los datos de esa línea: los del área (Operaciones o Facturación) si la línea es de un área
-  const todos = [v, ...hijosDe(v)], P = PROP.filter(p => todos.some(x => x.id === p.viajeId) && (!area || areaProp(p) === area)); if (!P.length) return;
+  const todos = [v, ...hijosDe(v)], P = PROP.filter(p => todos.some(x => x.id === p.viajeId) && (!area || areaProp(p) === area) && (!solo || (solo === 'choque') === noCoincide(p))); if (!P.length) return;
   const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
   if (!await preguntarSiNo(`¿${aprobar ? 'Guardar en el viaje' : 'Descartar'} lo que dice el correo en ${id}?${aprobar ? '' : ' (no se guarda y no vuelve a aparecer)'}\n\n${P.map(p => p.campo === 'aprobacionExtra' ? `• Reckitt ${p.valor === 'Aprobado' ? 'aprobó' : p.valor === 'Rechazado' ? 'rechazó' : 'marcó ' + p.valor + ' en'} los extracostos (lo dice ${String(p.evidencia || '').split(' · ')[0]})` : `• ${p.etiqueta}: ${p.actual ? fx(p.actual) : 'vacío'} → ${fx(p.valor)}`).join('\n')}`, aprobar ? 'Sí, guardar' : 'Sí, descartar')) return;
   const usuario = pedirUsuario(); if (!usuario) return;
@@ -7586,8 +7603,8 @@ $('#bandeja').onclick = e => {
   else if (d.bAbrir) abrir(d.bAbrir);
   else if (d.bHecha) marcarHecha(d.bHecha);
   else if (d.bNoetp) marcarHecha(d.bNoetp, true);
-  else if (d.bAprobar) decidirBandeja(d.bAprobar, true, d.area);
-  else if (d.bRechazar) decidirBandeja(d.bRechazar, false, d.area);
+  else if (d.bAprobar) decidirBandeja(d.bAprobar, true, d.area, d.solo);
+  else if (d.bRechazar) decidirBandeja(d.bRechazar, false, d.area, d.solo);
   else if (d.bProp) abrirPropuestas();
   else if (d.bBitacora) document.querySelector('#nav [data-v="acciones"]')?.click();
   else if (d.bInvitar) { if (!sinVehiculoGrupo().length) return toast('No hay viajes sin vehículo para invitar'); window.open(waLink('', mensajeGrupo()), '_blank', 'noopener'); }
