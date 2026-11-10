@@ -5995,7 +5995,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '11d30fb8b9';
+const VERSION_TABLERO = '66cb10a7b1';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -7954,7 +7954,7 @@ function renderBandeja(){
   const L0 = R.L, porArea = a => L0.filter(t => t.items.some(i => !a || i.area === a)).length;
   R.L = R.L.map(t => ({...t, items: t.items.filter(enArea)})).filter(t => t.items.length).map(t => ({...t, roja: t.items.some(i => i.roja), hoy: t.items.some(accionDeHoy)}));
   // barra IMPO / EXPO / Nacional: cuenta tarjetas del área elegida; ⛔ si esa operación tiene líneas rojas (para no perderlas de vista)
-  const deOp = (t, o) => t.items.filter(i => !o || i.b === 'registro' || i.b === 'programacion' || (i.b === 'cierre' ? !i.opViaje || i.opViaje === o : i.op === o));
+  const deOp = (t, o) => t.items.filter(i => !o || i.b === 'registro' || (i.b === 'programacion' && !i.op) || (i.b === 'cierre' ? !i.opViaje || i.opViaje === o : i.op === o));
   const opN = o => R.L.filter(t => deOp(t, o).length).length, opRoja = o => R.L.some(t => deOp(t, o).some(i => i.roja));
   if (bandejaOp && !opN(bandejaOp) && !OPS_BANDEJA.some(([o]) => o === bandejaOp)) bandejaOp = '';
   const barraOp = barraOperaciones(opN, opRoja);
