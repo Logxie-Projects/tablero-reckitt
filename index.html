@@ -809,6 +809,36 @@ body.lv-abierta{overflow:hidden}
   .kl-e{display:grid;grid-template-columns:18px 34px 1fr;align-items:center;gap:0 10px;text-align:left}.kl-e::before{top:-50%;left:8px;width:2px;height:100%}
   .kl-e i{margin:0;grid-row:1/3}.kl-e b{grid-row:1/3;font-size:20px;text-align:right}.kl-e span{margin:0}
   .kl-n{flex-wrap:wrap}.kl-n-t{flex-basis:calc(100% - 40px)}.kl-tag{margin-left:36px}.kl-n-d{margin-left:auto}}
+
+/* Vehículos en ruta: el mapa de Indicadores (nuevo) (kpis-mapa.js) */
+.km{display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr);gap:12px;align-items:start}
+.km-mapa,.km-t{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}
+.km-mapa svg{display:block;width:100%;height:auto}
+.km-pais{fill:var(--surface-2);stroke:var(--border);stroke-width:1.2;stroke-linejoin:round}
+.km-tramo{stroke:var(--muted);stroke-width:1.3;stroke-dasharray:4 4;opacity:.7}
+.km-sitio{fill:var(--surface);stroke:var(--muted);stroke-width:1.5}
+.km-nom{font-size:11.5px;fill:var(--muted)}
+.km-v circle{fill:var(--ok);stroke:var(--surface);stroke-width:2}
+.km-v.warn circle{fill:var(--warn)}
+.km-v.aprox circle{fill:color-mix(in srgb,var(--ok) 30%,var(--surface));stroke:var(--ok);stroke-dasharray:3 2;stroke-width:1.6}
+.km-v.warn.aprox circle{fill:color-mix(in srgb,var(--warn) 30%,var(--surface));stroke:var(--warn)}
+.km-v text{font-size:11.5px;font-weight:600;fill:#fff;pointer-events:none}
+.km-v.aprox text{fill:var(--text)}
+.km-cta{font-size:12px;font-weight:400;border-radius:999px;padding:3px 10px;margin-left:8px;vertical-align:middle}
+.km-cta.ok{background:var(--kl-ok);color:var(--ok)}.km-cta.warn{background:var(--kl-warn);color:var(--text)}
+.km-r{border-radius:50%!important}.km-ap{background:transparent!important;border:1.5px dashed var(--muted)}
+.km-lista{display:grid;gap:8px}
+.km-t h4{margin:0 0 6px;font-size:13.5px;font-weight:600;display:flex;justify-content:space-between;gap:10px}
+.km-t h4 span{font-weight:400;color:var(--muted);font-size:12.5px;white-space:nowrap}
+.km-f{display:flex;gap:10px;padding:7px 0;border-top:1px solid var(--border);font-size:13px}
+.km-f>i{flex:none;width:10px;height:10px;border-radius:50%;background:var(--ok);margin-top:4px}
+.km-f.warn>i{background:var(--warn)}
+.km-f>i.aprox{background:transparent;border:1.5px dashed var(--ok)}.km-f.warn>i.aprox{border-color:var(--warn)}
+.km-f div{min-width:0}.km-f span{color:var(--muted)}
+.km-f small,.km-f em{display:block;font-style:normal;font-size:12.5px;color:var(--muted)}
+.km-f.warn small{color:var(--text)}
+.km-nota{margin:2px 2px 0;font-size:12px;color:var(--muted);line-height:1.5}
+@media (max-width:760px){.km{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -5743,7 +5773,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '1aa1bded8a';
+const VERSION_TABLERO = '3a93c37602';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -6724,13 +6754,97 @@ function svgFlujoRetrasos(F, sel, attr){
 }
 
 montarKC();
+/* ---------- kpis-mapa.js · Vehículos en ruta: el mapa de 📊 Indicadores (nuevo) (9-nov-2026) ----------
+ * Capa: pantalla. Sección al pie de kpis-lean.js: el mapa de Colombia con los vehículos que están en ruta ahora y, al lado, la
+ * lista por trayecto (placa, pedido, etapa, hace cuánto reportó). Solo informa. Sin plata y sin datos del conductor.
+ * De dónde sale el punto (decisión del usuario, 9-nov: "Último reporte"):
+ *   1. Donde el conductor hizo su último reporte en la app (lat / lng de su último paso: Conductores.gs resumenConductores_,
+ *      solo para el equipo). Punto relleno.
+ *   2. Si el viaje no tiene reporte con ubicación: sobre el trayecto, según el paso del conductor o la etapa del viaje. Punto
+ *      con borde punteado ("aproximado"). No hay GPS continuo: no se inventa una posición exacta.
+ * En ruta ahora = con vehículo y ya arrancó (en tránsito o devolviendo el vacío), sin importar el periodo elegido arriba; sí
+ * respeta la operación elegida. Los vehículos que caen juntos en el mapa se agrupan en un solo punto con el número.
+ * El mapa es un dibujo propio (contorno simplificado de Colombia, sin librerías ni mapas de terceros): sirve en modo oscuro
+ * y no manda la ubicación a nadie.
+ * Colores: verde = en movimiento, ámbar = con novedad o en espera. Prefijo CSS: km-. */
+const KM_BORDE = [[-75.37,-0.15],[-75.8,0.08],[-76.29,0.42],[-76.58,0.26],[-77.42,0.4],[-77.67,0.83],[-77.86,0.81],[-78.86,1.38],[-78.99,1.69],[-78.62,1.77],[-78.66,2.27],
+  [-78.43,2.63],[-77.93,2.7],[-77.51,3.33],[-77.13,3.85],[-77.5,4.09],[-77.31,4.67],[-77.53,5.58],[-77.32,5.85],[-77.48,6.69],[-77.88,7.22],[-77.75,7.71],
+  [-77.43,7.64],[-77.24,7.94],[-77.47,8.52],[-77.35,8.67],[-76.84,8.64],[-76.09,9.34],[-75.67,9.44],[-75.66,9.77],[-75.48,10.62],[-74.91,11.08],[-74.28,11.1],
+  [-74.2,11.31],[-73.41,11.23],[-72.63,11.73],[-72.24,11.96],[-71.75,12.44],[-71.4,12.38],[-71.14,12.11],[-71.33,11.78],[-71.97,11.61],[-72.23,11.11],[-72.61,10.82],
+  [-72.91,10.45],[-73.03,9.74],[-73.3,9.15],[-72.79,9.09],[-72.66,8.63],[-72.44,8.41],[-72.36,8],[-72.48,7.63],[-72.44,7.42],[-72.2,7.34],[-71.96,6.99],
+  [-70.67,7.09],[-70.09,6.96],[-69.39,6.1],[-68.99,6.21],[-68.27,6.15],[-67.7,6.27],[-67.34,6.1],[-67.52,5.56],[-67.74,5.22],[-67.82,4.5],[-67.62,3.84],
+  [-67.34,3.54],[-67.3,3.32],[-67.81,2.82],[-67.45,2.6],[-67.18,2.25],[-66.88,1.25],[-67.07,1.13],[-67.26,1.72],[-67.54,2.04],[-67.87,1.69],[-69.82,1.71],
+  [-69.8,1.09],[-69.22,0.99],[-69.25,0.6],[-69.45,0.71],[-70.02,0.54],[-70.02,-0.19],[-69.58,-0.55],[-69.42,-1.12],[-69.44,-1.56],[-69.89,-4.3],[-70.39,-3.77],
+  [-70.69,-3.74],[-70.05,-2.73],[-70.81,-2.26],[-71.41,-2.34],[-71.77,-2.17],[-72.33,-2.43],[-73.07,-2.31],[-73.66,-1.26],[-74.12,-1],[-74.44,-0.53],[-75.11,-0.06]];
+// lugares de la operación: [cómo se escribe en la hoja, nombre, latitud, longitud]
+const KM_LUGARES = [[/\bbun\b|buenaventura/, 'Buenaventura', 3.88, -77.03], [/\bctg\b|cartagena/, 'Cartagena', 10.39, -75.51], [/yumbo|cortijo|agecolda|reckitt|ercol/, 'Yumbo', 3.58, -76.49],
+  [/\bcali\b/, 'Cali', 3.45, -76.53], [/bogot|funza|mosquera|siberia|solistica/, 'Bogotá', 4.71, -74.1], [/barranquilla|\bbaq\b/, 'Barranquilla', 10.98, -74.8],
+  [/santa marta|\bsmr\b/, 'Santa Marta', 11.24, -74.2], [/medell|itagu|rionegro/, 'Medellín', 6.25, -75.57]];
+// dónde va el nombre de cada lugar respecto a su punto (los que quedan pegados al borde o a otro lugar)
+const KM_ROTULO = {Buenaventura: [-2, 20, 'middle'], Yumbo: [9, -6, 'start'], Cali: [9, 15, 'start'], Cartagena: [-8, 4, 'end'], Barranquilla: [0, -9, 'middle']};
+const KM = {W: 380, H: 510, O: -79.3, E: -66.5, N: 12.8, S: -4.5};
+const kmXY = (lat, lng) => [(lng - KM.O) / (KM.E - KM.O) * KM.W, (KM.N - lat) / (KM.N - KM.S) * KM.H];
+const kmLugar = t => { const s = sinTilde(String(t || '')).toLowerCase(); return s ? KM_LUGARES.find(l => l[0].test(s)) || null : null; };
+const kmLugarDe = (...T) => T.map(kmLugar).find(Boolean) || null;
+const KM_YUMBO = KM_LUGARES[2], KM_BUN = KM_LUGARES[0];
+// de dónde a dónde va el vehículo (EXPO: planta → puerto; IMPO: puerto → bodega; Nacional: origen → destino)
+function kmTrayecto(v){
+  if (v.operacion === 'EXPO') return [kmLugarDe(v.origen, v.bodega) || KM_YUMBO, kmLugarDe(v.puerto) || KM_BUN];
+  if (v.operacion === 'IMPO') return [kmLugarDe(v.puerto) || KM_BUN, kmLugarDe(v.bodega, v.destino) || (v.sede === 'Bogotá' ? KM_LUGARES[4] : KM_YUMBO)];
+  return [kmLugarDe(v.origen) || KM_YUMBO, kmLugarDe(v.bodega, v.destino) || KM_YUMBO];
+}
+// en ruta ahora: ya arrancó y el transporte no ha terminado (la misma regla de las estaciones "En tránsito" y "Devolución del vacío")
+const kmDevolviendo = v => v.operacion === 'IMPO' && !esLCL(v) && v.estado === 'Entregado en bodega';
+const kmEnRuta = v => !v.padre && !esPrueba(v) && (!KV.op || v.operacion === KV.op) && !kvCancel(v) && situacion(v) !== 'Cerrado' && !fueraDeRuta(v) && !transporteFinalizado(v)
+  && !!v.placa && (kmDevolviendo(v) || (tieneVehiculo(v) && !['Sin asignar', 'Asignado'].includes(v.estado)));
+
+function calcKM(conNovedad){
+  const L = viajes.filter(kmEnRuta).map(v => {
+    const [a, b] = kmTrayecto(v), c = conductorDe(v), lat = c && Number(c.lat), lng = c && Number(c.lng);
+    const real = !!c && isFinite(lat) && isFinite(lng) && lat > KM.S && lat < KM.N && lng > KM.O && lng < KM.E && (lat || lng);
+    // sin reporte con ubicación: sobre el trayecto, por los pasos que lleva el conductor o por la etapa
+    const f = kmDevolviendo(v) ? .9 : c && c.total && c.n ? Math.min(.95, Math.max(.08, c.n / c.total)) : .5;
+    const p = real ? [lat, lng] : [a[2] + (b[2] - a[2]) * f, a[3] + (b[3] - a[3]) * f], xy = kmXY(p[0], p[1]);
+    const nov = conNovedad.get(v.id);
+    return {v, a, b, real, x: xy[0], y: xy[1], warn: !!nov, nov, c, fecha: c && (real ? c.ubiFecha || c.fecha : c.fecha) || '',
+      tramo: kmDevolviendo(v) ? `${b[1]} · devolviendo el vacío` : a[1] === b[1] ? a[1] : `${a[1]} → ${b[1]}`};
+  }).sort((p, q) => q.warn - p.warn || String(q.fecha).localeCompare(String(p.fecha)));
+  // los que caen juntos se agrupan en un punto
+  const G = [];
+  L.forEach(p => { const g = G.find(g => Math.hypot(g.x - p.x, g.y - p.y) < 17); if (g) { g.L.push(p); g.x = g.L.reduce((s, q) => s + q.x, 0) / g.L.length; g.y = g.L.reduce((s, q) => s + q.y, 0) / g.L.length; } else G.push({x: p.x, y: p.y, L: [p]}); });
+  const tramos = new Map(); L.forEach(p => { const k = p.a[1] + '|' + p.b[1]; if (!tramos.has(k)) tramos.set(k, [p.a, p.b]); });
+  const sitios = new Map(); tramos.forEach(([a, b]) => { sitios.set(a[1], a); sitios.set(b[1], b); });
+  return {L, G, tramos: [...tramos.values()], sitios: [...sitios.values()]};
+}
+
+function htmlKM(N){
+  const M = calcKM(new Map(N.filter(x => x.tag !== 'falta documento').map(x => [x.v.id, x])));
+  const nWarn = M.L.filter(p => p.warn).length, nReal = M.L.filter(p => p.real).length;
+  const pt = (lat, lng) => kmXY(lat, lng).map(n => Math.round(n * 10) / 10).join(',');
+  const mapa = `<svg viewBox="0 0 ${KM.W} ${KM.H}" role="img" aria-label="Mapa de Colombia con ${klPl(M.L.length, 'vehículo')} en ruta">
+    <polygon class="km-pais" points="${KM_BORDE.map(([lng, lat]) => pt(lat, lng)).join(' ')}"/>
+    ${M.tramos.map(([a, b]) => `<line class="km-tramo" x1="${pt(a[2], a[3]).replace(',', '" y1="')}" x2="${pt(b[2], b[3]).replace(',', '" y2="')}"/>`).join('')}
+    ${M.sitios.map(s => { const [x, y] = kmXY(s[2], s[3]), e = KM_ROTULO[s[1]] || [8, 4, 'start']; return `<circle class="km-sitio" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5"/><text class="km-nom" x="${(x + e[0]).toFixed(1)}" y="${(y + e[1]).toFixed(1)}" text-anchor="${e[2]}">${esc(s[1])}</text>`; }).join('')}
+    ${M.G.map(g => { const w = g.L.some(p => p.warn), aprox = g.L.every(p => !p.real), n = g.L.length;
+      return `<g class="km-v${w ? ' warn' : ''}${aprox ? ' aprox' : ''}"><title>${esc(g.L.map(p => `${p.v.placa} · ${p.tramo}`).join('\n'))}</title><circle cx="${g.x.toFixed(1)}" cy="${g.y.toFixed(1)}" r="${n > 1 ? 11 : 7}"/>${n > 1 ? `<text x="${g.x.toFixed(1)}" y="${(g.y + 4).toFixed(1)}" text-anchor="middle">${n}</text>` : ''}</g>`; }).join('')}
+  </svg>`;
+  const porTramo = new Map(); M.L.forEach(p => { if (!porTramo.has(p.tramo)) porTramo.set(p.tramo, []); porTramo.get(p.tramo).push(p); });
+  const fila = p => `<div class="km-f${p.warn ? ' warn' : ''}"><i class="${p.real ? '' : 'aprox'}"></i><div><b>${esc(p.v.placa)}</b> <span>${esc(kcRef(p.v))}</span>
+      <small>${esc(p.warn ? `${p.nov.tag}${p.nov.dias ? ' · ' + klPl(p.nov.dias, 'día') : ''}` : String(p.v.estado || '').toLowerCase())}${p.c && p.c.n ? ` · ${esc(String(p.c.paso).toLowerCase())}` : ''}</small>
+      <em>${p.real ? `Reportó ${haceTxt(p.fecha) || 'sin hora'}` : p.c && p.c.n && p.fecha ? `Reportó ${haceTxt(p.fecha)}, sin ubicación` : 'Sin reporte del conductor'}</em></div></div>`;
+  const lista = [...porTramo.entries()].map(([t, L]) => `<div class="km-t"><h4>${esc(t)}<span>${klPl(L.length, 'vehículo')}</span></h4>${L.slice(0, 6).map(fila).join('')}${L.length > 6 ? `<div class="kl-vacio">y ${klPl(L.length - 6, 'vehículo')} más</div>` : ''}</div>`).join('');
+  return `<h3 class="kl-h">Vehículos en ruta <span class="km-cta ok">${miles(M.L.length - nWarn)} en movimiento</span>${nWarn ? `<span class="km-cta warn">${miles(nWarn)} con novedad</span>` : ''}</h3>
+    ${M.L.length ? `<div class="km"><div class="km-mapa">${mapa}<div class="kl-ley"><span><i class="ok km-r"></i>en movimiento</span><span><i class="rep km-r"></i>con novedad o en espera</span><span><i class="km-r km-ap"></i>ubicación aproximada</span></div></div>
+      <div class="km-lista">${lista}<p class="km-nota">${nReal ? `${klPl(nReal, 'vehículo')} de ${miles(M.L.length)} con la ubicación de su último reporte.` : 'Ningún vehículo ha reportado su ubicación todavía.'} Los demás se muestran sobre su trayecto, según la etapa: es una ubicación aproximada.</p></div></div>`
+      : '<div class="kl-vacio">Ningún vehículo en ruta en este momento.</div>'}`;
+}
 /* ---------- kpis-lean.js · 📊 Indicadores (nuevo): la versión corta para Reckitt (9-nov-2026) ----------
  * Capa: pantalla. Segunda ventana, al lado de 📊 Indicadores (kpis-cliente.js), que NO se toca: el usuario quiere comparar antes
  * de decidir cuál queda. Por ahora la ve solo el equipo (el botón no sale en el tablero del cliente).
  * Diseño aprobado con el usuario (9-nov): solo informa, sin botones ni aprobaciones. De arriba abajo: tres cifras (a la fecha
  * original, con novedad hoy, costo del periodo) → el recorrido de los pedidos en seis estaciones → los pedidos con novedad,
  * ordenados por días → lo que cuesta el periodo (fletes, extracostos aprobados y por aprobar, facturado) → extracostos por
- * motivo y días corridos por quién → lo que hace LogxIA.
+ * motivo y días corridos por quién → vehículos en ruta, con el mapa (kpis-mapa.js) → lo que hace LogxIA.
  * Reglas: las mismas de 📊 Indicadores (calcKC: periodo, pedido = fecha original del primer paso). Plata solo en totales del
  * periodo, nunca por pedido. Colores del tablero: verde = va bien, ámbar = novedad o espera, gris = cancelado o secundario,
  * fucsia solo LogxIA; sin rojo.
@@ -6806,7 +6920,7 @@ function montarKL(){
     <div class="kl-cab"><h2>Indicadores · Reckitt</h2><span class="kl-vivo"><i></i>en vivo</span><span class="kl-sub" id="klSub"></span></div>
     <div id="klCuerpo"></div>
     <div class="kl-logxia"><span class="kl-lx-n">LogxIA</span><div class="kl-lx-t" id="klTrab"></div><span class="kl-lx-h" id="klTarea"></span></div>
-    <div class="kl-pie">Pedidos del periodo por la fecha original de su primer paso. A la fecha original = sin ningún cambio de fecha. Con novedad = pedidos en curso con la fecha corrida o sin vehículo cuando ya les toca, y terminados a los que les falta un dato para facturar. Costos = totales del periodo: fletes (con el retorno del vacío) y extracostos de los pedidos vigentes. Datos desde el 23 oct. Versión en revisión: por ahora solo la ve el equipo.</div>
+    <div class="kl-pie">Pedidos del periodo por la fecha original de su primer paso. A la fecha original = sin ningún cambio de fecha. Con novedad = pedidos en curso con la fecha corrida o sin vehículo cuando ya les toca, y terminados a los que les falta un dato para facturar. Costos = totales del periodo: fletes (con el retorno del vacío) y extracostos de los pedidos vigentes. Vehículos en ruta = los que ya arrancaron y no han terminado, hoy, sin importar el periodo. Datos desde el 23 oct. Versión en revisión: por ahora solo la ve el equipo.</div>
   </div></section>`);
   $('#btnKL').onclick = abrirKL; $('#klVolver').onclick = salirKL;
   window.addEventListener('popstate', () => { if (location.hash !== '#indicadores-nuevo' && !$('#v-kl').classList.contains('hidden')) cerrarKL(); });
@@ -6870,7 +6984,8 @@ function pintarKL(){
     <div class="kl-dos">
       <div class="kl-p"><h4>Extracostos por motivo</h4>${barras(D.motivos, maxM, kcMillones) || `<div class="kl-vacio">${D.sinDetalle ? 'El detalle llega con la próxima actualización.' : 'Sin extracostos en el periodo.'}</div>`}</div>
       <div class="kl-p"><h4>Días corridos, por quién</h4>${barras(D.dias.map(x => [x.l, x.n]), maxD, n => n + ' d') || '<div class="kl-vacio">Ninguna fecha se corrió en el periodo.</div>'}${D.frase ? `<p class="kl-frase">${esc(D.frase)}</p>` : ''}</div>
-    </div>`;
+    </div>
+    ${htmlKM(D.N)}`;
   pintarTareaKL();
 }
 montarKL();
