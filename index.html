@@ -5027,8 +5027,12 @@ async function atajoProgramacion(b){
     const buscar = async d => { const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=correos&dias=' + d + '&clave=' + encodeURIComponent(claveActual()))).json();
       const progs = (j.correos||[]).filter(c => c.programacion && c.programacion.length);
       return progs.find(p => Number(p.programacion[0].fechaCargue.slice(5, 7)) === nMes + 1) || progs[0]; };
-    let c = await buscar(dias);
-    if (!c && dias < 20) { toast('No está en los correos recientes: busco en los últimos 20 días, tarda más…'); c = await buscar(20); }
+    // primero la consulta liviana del servidor (solo los cuadros de programación, v197); si el servidor aún no la tiene, la de antes
+    let c = null, liviana = false;
+    try { const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=programacion&clave=' + encodeURIComponent(claveActual()))).json();
+      if (j && j.ok && Array.isArray(j.correos) && j.correos.every(x => x.programacion)) { liviana = true; c = j.correos.find(p => Number(p.programacion[0].fechaCargue.slice(5, 7)) === nMes + 1) || j.correos[0]; } } catch(x) {}
+    if (!liviana) c = await buscar(dias);
+    if (!c && !liviana && dias < 20) { toast('No está en los correos recientes: busco en los últimos 20 días, tarda más…'); c = await buscar(20); }
     if (!c) { accionEnCurso = null; return toast('No encontré el cuadro de programación en los correos de los últimos 20 días'); }
     const R = compararProgramacion(c), mes = nombreMes(c.programacion[0].fechaCargue.slice(0, 7));
     if (R.filas.every(f => ['igual', 'documento'].includes(f.accion)) &&!(R.fuera||[]).length) {
@@ -5956,7 +5960,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '5250042b36';
+const VERSION_TABLERO = '6514dfca09';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
