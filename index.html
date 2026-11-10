@@ -845,9 +845,15 @@ body.lv-abierta{overflow:hidden}
 .bj-como{margin-top:2px}
 /* todas las acciones de un renglón son botones; la principal va rellena */
 .bj-item .tr-acc{gap:6px 6px;align-items:center}
+/* el texto siempre conserva su espacio: con muchos botones (ej. los vehículos sugeridos de "Sin vehículo") la columna de botones
+   se quedaba con todo el ancho y el texto bajaba palabra por palabra. Los botones ocupan como mucho 2/5 y se acomodan en filas */
+@media (min-width:1101px){.bj-item{grid-template-columns:118px minmax(0,3fr) minmax(0,2fr)}.bj-item .tr-acc{max-width:none}}
+/* en el celular todo va en una columna: etiqueta, texto y debajo los botones a lo ancho (antes los botones caían en la columna
+   angosta de la etiqueta) */
+@media (max-width:700px){.bj-item{grid-template-columns:minmax(0,1fr)}.bj-item .tr-acc{grid-column:1;max-width:none;justify-content:flex-start}}
 .bj-item .tr-acc .link,.err-acc .link{display:inline-block;border:1px solid var(--border);border-radius:6px;padding:3px 10px;background:var(--surface);font-size:12px;font-weight:600;text-decoration:none;line-height:1.5}
 .bj-item .tr-acc .link:hover,.err-acc .link:hover{border-color:var(--accent)}
-.bj-item .tr-acc [data-b-hecha],.bj-item .tr-acc [data-b-aprobar]:not([data-solo="choque"]),.bj-item .tr-acc [data-b-asignar],.bj-item .tr-acc>[data-b-abrir]:first-child,.bj-item .tr-acc>[data-b-crear]:first-child,.err-acc .link{background:var(--accent);border-color:var(--accent);color:#fff}
+.bj-item .tr-acc [data-b-hecha],.bj-item .tr-acc [data-b-aprobar]:not([data-solo="choque"]),.bj-item .tr-acc>[data-b-abrir]:first-child,.bj-item .tr-acc>[data-b-crear]:first-child,.err-acc .link{background:var(--accent);border-color:var(--accent);color:#fff}
 .bj-item .tr-acc .conf-btn{margin:0;background:var(--accent);border-color:var(--accent);color:#fff}
 /* pedir una excepción no es una acción más: queda como enlace discreto */
 .bj-item .tr-acc [data-t-exc]{border:0;background:none;padding:0;font-weight:400;font-size:12px;color:var(--bad)}
@@ -5804,7 +5810,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '6db438644f';
+const VERSION_TABLERO = '326956cce2';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
