@@ -741,6 +741,74 @@ body.lv-abierta{overflow:hidden}
 .kc-st-c.activo{background:color-mix(in srgb,var(--c) 9%,#fff);border-color:var(--c)}
 @media (prefers-reduced-motion: reduce){.kc-pulpo::after,.kc-tarea{animation:none}}
 @media (max-width:700px){.kc-res{grid-template-columns:1fr 1fr}.kc-nombre{font-size:20px}.kc-mapa{grid-template-columns:1fr}}
+
+/* ---------- 📊 Indicadores (nuevo) · kpis-lean.js: versión corta para Reckitt, con la paleta del tablero (claro y oscuro) ---------- */
+.kl-capa{position:fixed;inset:0;z-index:48;overflow:auto;background:var(--bg);padding:16px}
+.kl{max-width:1040px;margin:0 auto;color:var(--text);--kl-ok:color-mix(in srgb,var(--ok) 12%,var(--surface));--kl-warn:color-mix(in srgb,var(--warn) 14%,var(--surface))}
+.kl-top{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px}
+.kl-volver{border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:8px;padding:7px 12px;font:inherit;cursor:pointer;margin-right:auto}
+.kl-chips{display:inline-flex;background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:2px}
+.kl-chips button{background:transparent;border:0;border-radius:999px;padding:5px 12px;font:inherit;font-size:12.5px;color:var(--muted);cursor:pointer}
+.kl-chips button.on{background:var(--text);color:var(--surface)}
+.kl-cab{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;margin-bottom:12px}
+.kl-cab h2{margin:0;font-size:22px;font-weight:600}
+.kl-vivo{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ok);background:var(--kl-ok);border-radius:999px;padding:3px 10px}
+.kl-vivo i{width:7px;height:7px;border-radius:50%;background:var(--ok);animation:lvLatido 1.8s infinite}
+.kl-sub{font-size:13px;color:var(--muted);margin-left:auto}
+.kl-cifras{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.kl-c,.kl-k,.kl-p{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px}
+.kl-c span,.kl-k span{display:block;font-size:13px;color:var(--muted)}
+.kl-c b{display:block;font-size:34px;font-weight:600;line-height:1.15;margin:4px 0 2px}
+.kl-c b small{font-size:16px;font-weight:400;color:var(--muted)}
+.kl-c em,.kl-k em{display:block;font-style:normal;font-size:12.5px;color:var(--muted)}
+.kl-c.ok b{color:var(--ok)}.kl-c.warn b{color:var(--warn)}
+.kl-c,.kl-k{border-top:3px solid var(--border)}.kl-c.ok{border-top-color:var(--ok)}.kl-c.warn,.kl-k.warn{border-top-color:var(--warn)}
+.kl-barra{display:flex;gap:2px;height:8px;border-radius:4px;overflow:hidden;margin-top:14px}
+.kl-barra i,.kl-ley i{display:block;background:var(--muted)}
+.kl-barra i.ok,.kl-ley i.ok{background:var(--ok)}.kl-barra i.rep,.kl-ley i.rep{background:var(--warn)}.kl-barra i.canc,.kl-ley i.canc{opacity:.45}
+.kl-ley{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--muted);margin-top:6px}
+.kl-ley span{display:inline-flex;align-items:center;gap:6px}.kl-ley i{width:9px;height:9px;border-radius:2px}
+.kl-h{font-size:15px;font-weight:600;margin:26px 0 10px}
+.kl-viaje{display:flex;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 8px 14px}
+.kl-e{flex:1;min-width:0;position:relative;text-align:center;padding:0 4px}
+.kl-e::before{content:"";position:absolute;top:8px;left:-50%;width:100%;height:2px;background:var(--border)}
+.kl-e:first-child::before{display:none}
+.kl-e i{position:relative;display:block;width:18px;height:18px;border-radius:50%;margin:0 auto 8px;background:var(--ok);border:3px solid var(--surface);box-shadow:0 0 0 2px var(--ok)}
+.kl-e.warn i{background:var(--warn);box-shadow:0 0 0 2px var(--warn)}
+.kl-e.cero i{background:var(--surface);box-shadow:0 0 0 2px var(--border)}
+.kl-e b{display:block;font-size:24px;font-weight:600;line-height:1.1}.kl-e.cero b{color:var(--muted)}
+.kl-e span{display:block;font-size:13px;margin-top:2px}
+.kl-e small{display:block;font-size:11.5px;color:var(--muted)}.kl-e.warn small{color:var(--text);font-weight:600}
+.kl-nov{display:grid;gap:8px}
+.kl-n{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--warn);border-radius:var(--radius);padding:10px 14px}
+.kl-n-i{flex:none;width:24px;height:24px;border-radius:50%;background:var(--kl-warn);color:var(--text);font-size:12.5px;font-weight:600;display:grid;place-items:center}
+.kl-n-t{flex:1;min-width:0}.kl-n-t b{display:block;font-size:14px;font-weight:600}.kl-n-t small{display:block;font-size:12.5px;color:var(--muted)}
+.kl-tag{flex:none;font-size:12px;background:var(--kl-warn);border-radius:999px;padding:3px 10px;white-space:nowrap}
+.kl-n-d{flex:none;min-width:54px;text-align:right;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.kl-vacio{font-size:13px;color:var(--muted);padding:6px 2px}
+.kl-costos{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.kl-k b{display:block;font-size:22px;font-weight:600;margin:4px 0 2px}
+
+.kl-dos{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.kl-p h4{margin:0 0 10px;font-size:13.5px;font-weight:600}
+.kl-b{display:grid;grid-template-columns:minmax(90px,38%) 1fr auto;align-items:center;gap:10px;font-size:13px;padding:4px 0}
+.kl-b-l{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kl-b-p{height:8px;border-radius:4px;background:var(--surface-2);overflow:hidden}.kl-b-p i{display:block;height:100%;border-radius:4px;background:var(--warn)}
+.kl-b b{font-weight:600;font-variant-numeric:tabular-nums;min-width:52px;text-align:right}
+.kl-frase{margin:12px 0 0;font-size:13px;color:var(--muted);border-top:1px solid var(--border);padding-top:10px}
+.kl-logxia{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:26px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px}
+.kl-lx-n{font-weight:600;color:var(--accent)}
+.kl-lx-t{display:flex;flex-wrap:wrap;gap:6px}
+.kl-lx-t span{font-size:12.5px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:3px 10px;transition:background .3s,color .3s}
+.kl-lx-t span.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:600}
+.kl-lx-h{font-size:12.5px;color:var(--muted);margin-left:auto}
+.kl-pie{font-size:12px;color:var(--muted);margin:14px 2px 24px;line-height:1.5}
+@media (prefers-reduced-motion: reduce){.kl-vivo i{animation:none}.kl-lx-t span{transition:none}}
+@media (max-width:760px){.kl-capa{padding:10px}.kl-cifras{grid-template-columns:1fr}.kl-costos{grid-template-columns:1fr 1fr}.kl-dos{grid-template-columns:1fr}
+  .kl-sub,.kl-lx-h{margin-left:0;width:100%}.kl-viaje{flex-direction:column;gap:10px;padding:14px 16px}
+  .kl-e{display:grid;grid-template-columns:18px 34px 1fr;align-items:center;gap:0 10px;text-align:left}.kl-e::before{top:-50%;left:8px;width:2px;height:100%}
+  .kl-e i{margin:0;grid-row:1/3}.kl-e b{grid-row:1/3;font-size:20px;text-align:right}.kl-e span{margin:0}
+  .kl-n{flex-wrap:wrap}.kl-n-t{flex-basis:calc(100% - 40px)}.kl-tag{margin-left:36px}.kl-n-d{margin-left:auto}}
 </style>
 </head>
 <body>
@@ -2285,7 +2353,7 @@ function aplicarDatos(j, clave, guardadoEn){
     window.REGISTRO = j.registro || null;   // vehículos y conductores con sus datos, solo el equipo (registro.js)   // calificación de conductores, solo el equipo (calificacion.js)
     window.SEG_INICIO = j.seguimiento || '';
     window.INSUMOS = j.insumos || null;   // lo que entra a LogxIA, solo día y viaje (📊 Indicadores: kpis-cliente.js)
-    if (typeof etiquetaKC === 'function') etiquetaKC();
+    if (typeof etiquetaKC === 'function') etiquetaKC(); if (typeof etiquetaKL === 'function') etiquetaKL();
     window.CLAVE = clave;
     try { localStorage.setItem('rkt-clave', clave); } catch(e) {}
     if (new URLSearchParams(location.search).has('clave')) { const u = new URL(location.href); u.searchParams.delete('clave'); history.replaceState(null, '', u); }
@@ -5555,7 +5623,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'd529716b00';
+const VERSION_TABLERO = '6b0459de18';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -6536,6 +6604,153 @@ function svgFlujoRetrasos(F, sel, attr){
 }
 
 montarKC();
+/* ---------- kpis-lean.js · 📊 Indicadores (nuevo): la versión corta para Reckitt (9-nov-2026) ----------
+ * Capa: pantalla. Segunda ventana, al lado de 📊 Indicadores (kpis-cliente.js), que NO se toca: el usuario quiere comparar antes
+ * de decidir cuál queda. Por ahora la ve solo el equipo (el botón no sale en el tablero del cliente).
+ * Diseño aprobado con el usuario (9-nov): solo informa, sin botones ni aprobaciones. De arriba abajo: tres cifras (a la fecha
+ * original, con novedad hoy, costo del periodo) → el recorrido de los pedidos en seis estaciones → los pedidos con novedad,
+ * ordenados por días → lo que cuesta el periodo (fletes, extracostos aprobados y por aprobar, facturado) → extracostos por
+ * motivo y días corridos por quién → lo que hace LogxIA.
+ * Reglas: las mismas de 📊 Indicadores (calcKC: periodo, pedido = fecha original del primer paso). Plata solo en totales del
+ * periodo, nunca por pedido. Colores del tablero: verde = va bien, ámbar = novedad o espera, gris = cancelado o secundario,
+ * fucsia solo LogxIA; sin rojo.
+ * Pendiente si se le abre al cliente: el servidor hoy solo le manda flete, extracosto aprobado y etapa de facturación (kc), así
+ * que "por aprobar" y "por motivo" le saldrían vacíos hasta que Código.gs paraCliente_ los mande en totales.
+ * Prefijo CSS: kl-. */
+const KL = {tick: null, tarea: 0, tareas: []};
+const KL_TRABAJOS = ['Pedidos', 'Vehículos', 'Monitoreo', 'Demoras', 'Costos'];
+const klPl = (n, s, p) => `${miles(n)} ${n === 1 ? s : p || s + 's'}`;
+const klMotivo = c => /^reprogramaci/i.test(c) ? 'Reprogramación' : /^costo de terceros/i.test(c) ? 'Costo de terceros' : EXTRA_DEMORA.test(c) ? 'Esperas y stand by' : c.charAt(0).toUpperCase() + c.slice(1).toLowerCase();
+
+function calcKL(){
+  const K = calcKC(), Vig = K.Vig, F = K.flujo;
+  const est = Object.fromEntries(K.estados.map(x => [x.id.slice(3), x])), donde = {};
+  K.estados.forEach(x => x.L.forEach(r => { donde[r.v.id] = x.id.slice(3); }));
+  // plata, solo totales del periodo
+  let flete = 0, nFlete = 0, aprob = 0, porAprob = 0, nPorAprob = 0, fact = 0, nFact = 0, sinDetalle = false; const motivos = {};
+  Vig.forEach(v => {
+    const c = kcCobro(v); flete += c.flete; if (c.flete) nFlete++; aprob += c.extra;
+    if (c.fact === 'Facturado') { fact += c.flete + c.extra; nFact++; }
+    if (v.kc) { sinDetalle = true; return; }   // al cliente no le llega el detalle de extracostos
+    const t = cobro(v); if (!t.extra || /rechaz|negad/i.test(t.aprob)) return;
+    if (t.aprob !== 'Aprobado') { porAprob += t.extra; nPorAprob++; }
+    itemsExtra(v).forEach(([con, x]) => { if (x) { const m = klMotivo(con); motivos[m] = (motivos[m] || 0) + x; } });
+  });
+  // pedidos con novedad hoy: lo que sigue abierto con la fecha corrida, sin vehículo cuando ya le toca, o terminado sin el dato para facturar
+  const N = [], enCurso = v => !transporteFinalizado(v) && situacion(v) !== 'Cerrado';
+  Vig.forEach(v => {
+    if (enCurso(v) && kvLeToca(v) && !kvAtendido(v)) { const d = diffDias(primerEvento(v) || kvFechaPedido(v));
+      N.push({v, tag: 'falta vehículo', txt: d < 0 ? 'la fecha ya pasó' : d === 0 ? 'arranca hoy' : `arranca en ${d} d`, dias: null, peso: 100 - d}); return; }
+    const r = enCurso(v) && retrasosViaje(v);
+    if (r && r.total.dias) { const q = Object.entries(r.dias).sort((a, b) => b[1] - a[1])[0][0], terc = q === 'Terceros';
+      N.push({v, tag: terc ? (r.lugar ? 'espera en patio o puerto' : 'espera de terceros') : 'fecha movida', txt: terc ? r.lugar || 'patio, puerto, naviera o externo' : q === 'Sin causa' ? 'causa por registrar' : 'por ' + q, dias: r.total.dias, peso: r.total.dias}); return; }
+    const falta = !enCurso(v) && !v.kc ? pendientesFact(v).filter(x => x !== 'tarifa') : [];
+    if (falta.length) { const d = Math.max(0, -diffDias(fechaFinTransporte(v) || HOY)) || 0;
+      N.push({v, tag: 'falta documento', txt: `${falta.join(', ')} para facturar`, dias: d || null, peso: d}); }
+  });
+  N.sort((a, b) => b.peso - a.peso);
+  const conNov = {}; N.forEach(x => { const k = donde[x.v.id]; if (k) conNov[k] = (conNov[k] || 0) + 1; });
+  const estaciones = [['prog', 'Programado', 'aún sin vehículo'], ['listo', 'Con vehículo', 'listo para arrancar'], ['tra', 'En tránsito', 'retiro, llenado o camino'],
+    ['dev', 'Devolución del vacío', 'solo IMPO'], ['enf', 'Entregado', 'transporte terminado'], ['fac', 'Facturado', 'con factura']]
+    .filter(([k]) => est[k]).map(([k, l, s]) => ({k, l, s, n: est[k].v, nov: conNov[k] || 0}));
+  // días corridos por quién, con el lugar de lo de terceros
+  const lugares = Object.entries(K.lug).sort((a, b) => b[1] - a[1]);
+  const dias = [['Reckitt', 'Reckitt'], ['Terceros', lugares.length ? lugares.map(([l]) => l).slice(0, 2).join(', ') : 'Patio, puerto o naviera'], ['Entrapetrol', 'Entrapetrol'], ['Sin causa', 'Causa por registrar']]
+    .map(([k, l]) => ({l, n: K.diasR[k] || 0})).filter(x => x.n);
+  const totDias = dias.reduce((s, x) => s + x.n, 0);
+  const frase = !totDias ? '' : lugares.length && lugares[0][1] * 3 >= totDias ? `${lugares[0][0]} explica ${lugares[0][1]} de los ${klPl(totDias, 'día')} que se corrieron las fechas en el periodo.`
+    : (m => `${m.l} explica ${m.n} de los ${klPl(totDias, 'día')} que se corrieron las fechas en el periodo.`)(dias.slice().sort((a, b) => b.n - a.n)[0]);
+  const ref = (L, n) => L.slice(0, n).map(kcRef);
+  const tareas = [
+    ...ref(Vig, 2).map(r => ['Pedidos', `cruzando ${r} con los correos`]),
+    ...ref(Vig.filter(v => kvLeToca(v) && !kvAtendido(v)), 2).map(r => ['Vehículos', `buscando vehículo para ${r}`]),
+    ...Vig.filter(v => donde[v.id] === 'tra').slice(0, 3).map(v => ['Monitoreo', `siguiendo ${kcRef(v)} · ${String(v.estado || '').toLowerCase()}`]),
+    ...N.filter(x => x.dias).slice(0, 2).map(x => ['Demoras', `midiendo los días de ${kcRef(x.v)}`]),
+    ['Costos', 'sumando fletes y extracostos del periodo']];
+  return {K, total: K.Ped.length, vig: Vig.length, ok: F.ok.L.length, rep: F.rep.L.length, canc: F.canc.L.length, N, estaciones, flete, nFlete, aprob, porAprob, nPorAprob, fact, nFact, sinDetalle,
+    motivos: (M => M.length > 6 ? [...M.slice(0, 5), ['Otros', M.slice(5).reduce((t, x) => t + x[1], 0)]] : M)(Object.entries(motivos).sort((a, b) => b[1] - a[1])), dias, totDias, frase, tareas};
+}
+
+/* ---------- pantalla ---------- */
+function montarKL(){
+  const ref = $('#btnCsv'); if (!ref || $('#v-kl')) return;
+  ref.insertAdjacentHTML('beforebegin', `<button class="btn hidden" id="btnKL" title="Versión corta de los indicadores para Reckitt, en revisión: por ahora solo la ve el equipo">📊 Indicadores (nuevo)</button>`);
+  document.body.insertAdjacentHTML('beforeend', `<section id="v-kl" class="kl-capa hidden" role="dialog" aria-modal="true" aria-label="Indicadores, versión nueva">
+  <div class="kl" id="kl">
+    <div class="kl-top"><button class="kl-volver" id="klVolver">← Volver al tablero</button>
+      <div class="kl-chips" id="klOp" role="group" aria-label="Operación">${[['', 'Todas'], ['EXPO', 'EXPO'], ['IMPO', 'IMPO'], ['NACIONAL', 'Nacional']].map(([k, l]) => `<button data-op="${k}">${l}</button>`).join('')}</div>
+      <div class="kl-chips" id="klPer" role="group" aria-label="Periodo">${Object.entries(KV_PER).map(([k, [l]]) => `<button data-per="${k}">${l}</button>`).join('')}</div></div>
+    <div class="kl-cab"><h2>Indicadores · Reckitt</h2><span class="kl-vivo"><i></i>en vivo</span><span class="kl-sub" id="klSub"></span></div>
+    <div id="klCuerpo"></div>
+    <div class="kl-logxia"><span class="kl-lx-n">LogxIA</span><div class="kl-lx-t" id="klTrab"></div><span class="kl-lx-h" id="klTarea"></span></div>
+    <div class="kl-pie">Pedidos del periodo por la fecha original de su primer paso. A la fecha original = sin ningún cambio de fecha. Con novedad = pedidos en curso con la fecha corrida o sin vehículo cuando ya les toca, y terminados a los que les falta un dato para facturar. Costos = totales del periodo: fletes y extracostos de los pedidos vigentes. Datos desde el 23 oct. Versión en revisión: por ahora solo la ve el equipo.</div>
+  </div></section>`);
+  $('#btnKL').onclick = abrirKL; $('#klVolver').onclick = salirKL;
+  window.addEventListener('popstate', () => { if (location.hash !== '#indicadores-nuevo' && !$('#v-kl').classList.contains('hidden')) cerrarKL(); });
+  if (location.hash === '#indicadores-nuevo') history.replaceState(null, '', location.pathname + location.search);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#v-kl').classList.contains('hidden') && !document.querySelector('.ov.open')) salirKL(); });
+  $('#kl').addEventListener('click', e => {
+    const op = e.target.closest('[data-op]'), per = e.target.closest('[data-per]');
+    if (op) { KV.op = op.dataset.op; pintarKL(); } else if (per) { KV.per = per.dataset.per; pintarKL(); }
+  });
+}
+// solo el equipo, mientras se revisa (se llama al cargar los datos: datos.js)
+function etiquetaKL(){ $('#btnKL')?.classList.toggle('hidden', !!window.MODO_CLIENTE); }
+function salirKL(){ if (location.hash === '#indicadores-nuevo') history.back(); else cerrarKL(); }
+function cerrarKL(){ $('#v-kl')?.classList.add('hidden'); document.body.classList.remove('lv-abierta'); clearInterval(KL.tick); KL.tick = null; }
+function abrirKL(){
+  $('#v-kl').classList.remove('hidden'); document.body.classList.add('lv-abierta'); $('#v-kl').scrollTop = 0;
+  if (location.hash !== '#indicadores-nuevo') history.pushState(null, '', '#indicadores-nuevo');
+  pintarKL();
+  clearInterval(KL.tick); let n = 0;
+  KL.tick = setInterval(() => { if (document.hidden) return; KL.tarea = (KL.tarea + 1) % KL.tareas.length; pintarTareaKL(); if (++n % 23 === 0) pintarKL(); }, 2600);
+}
+function pintarTareaKL(){
+  const [trab, txt] = KL.tareas[KL.tarea] || ['Pedidos', 'leyendo los correos de la operación'];
+  $('#klTrab').innerHTML = KL_TRABAJOS.map(t => `<span${t === trab ? ' class="on"' : ''}>${t}</span>`).join('');
+  $('#klTarea').textContent = txt;
+}
+function pintarKL(){
+  if (!$('#kl')) return;
+  KV.viaje = '';
+  const D = calcKL(), [a, b] = kvRango(), pct = (n, t) => t ? Math.max(0, Math.min(100, n / t * 100)) : 0;
+  KL.tareas = D.tareas; if (KL.tarea >= D.tareas.length) KL.tarea = 0;
+  $('#klOp').querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.op === KV.op));
+  $('#klPer').querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.per === KV.per));
+  $('#klSub').textContent = `${klPl(D.total, 'pedido')} · ${fd(a)} → ${fd(b)} · actualizado ${new Date().toLocaleTimeString('es-CO', {hour: '2-digit', minute: '2-digit', hour12: false})}`;
+  const nNov = new Set(D.N.map(x => x.v.id)).size, costo = D.flete + D.aprob;
+  const barras = (L, max, val) => L.map(([l, n]) => `<div class="kl-b"><span class="kl-b-l">${esc(l)}</span><span class="kl-b-p"><i style="width:${pct(n, max)}%"></i></span><b>${val(n)}</b></div>`).join('');
+  const maxM = Math.max(1, ...D.motivos.map(x => x[1])), maxD = Math.max(1, ...D.dias.map(x => x.n));
+  $('#klCuerpo').innerHTML = `
+    <div class="kl-cifras">
+      <div class="kl-c ok"><span>A la fecha original</span><b>${miles(D.ok)}<small> de ${miles(D.vig)}</small></b><em>${klPl(D.rep, 'reprogramado')}</em></div>
+      <div class="kl-c ${nNov ? 'warn' : 'ok'}"><span>Con novedad hoy</span><b>${miles(nNov)}</b><em>${nNov ? 'ordenados por impacto, abajo' : 'ningún pedido con novedad'}</em></div>
+      <div class="kl-c"><span>Costo del periodo</span><b>${kcMillones(costo)}</b><em>fletes más extracostos aprobados</em></div>
+    </div>
+    <div class="kl-barra" role="img" aria-label="${D.ok} a la fecha original, ${D.rep} reprogramados, ${D.canc} cancelados">${[['ok', D.ok], ['rep', D.rep], ['canc', D.canc]].filter(x => x[1]).map(([k, n]) => `<i class="${k}" style="flex:${n}"></i>`).join('') || '<i class="canc" style="flex:1"></i>'}</div>
+    <div class="kl-ley"><span><i class="ok"></i>a la fecha ${miles(D.ok)}</span><span><i class="rep"></i>reprogramados ${miles(D.rep)}</span><span><i class="canc"></i>cancelados ${miles(D.canc)}</span></div>
+
+    <h3 class="kl-h">Dónde están tus pedidos</h3>
+    <div class="kl-viaje">${D.estaciones.map(x => `<div class="kl-e${x.nov ? ' warn' : ''}${x.n ? '' : ' cero'}"><i></i><b>${miles(x.n)}</b><span>${x.l}</span><small>${x.nov ? klPl(x.nov, 'con novedad', 'con novedad') : x.s}</small></div>`).join('')}</div>
+
+    <h3 class="kl-h">Pedidos con novedad, por impacto</h3>
+    <div class="kl-nov">${D.N.slice(0, 8).map((x, i) => `<div class="kl-n"><span class="kl-n-i">${i + 1}</span><div class="kl-n-t"><b>${esc(kcRef(x.v))}</b><small>${esc(x.txt)}</small></div><span class="kl-tag">${esc(x.tag)}</span><span class="kl-n-d">${x.dias ? klPl(x.dias, 'día') : ''}</span></div>`).join('')
+      || '<div class="kl-vacio">Ningún pedido con novedad en este periodo.</div>'}${D.N.length > 8 ? `<div class="kl-vacio">y ${klPl(D.N.length - 8, 'pedido')} más con novedad</div>` : ''}</div>
+
+    <h3 class="kl-h">Lo que cuesta el periodo</h3>
+    <div class="kl-costos">
+      <div class="kl-k"><span>Fletes</span><b>${kcMillones(D.flete)}</b><em>${klPl(D.nFlete, 'pedido')}</em></div>
+      <div class="kl-k"><span>Extracostos aprobados</span><b>${kcMillones(D.aprob)}</b><em>${D.flete ? String(Math.round(D.aprob / D.flete * 1000) / 10).replace('.', ',') + ' % sobre fletes' : '—'}</em></div>
+      <div class="kl-k${D.porAprob ? ' warn' : ''}"><span>Extracostos por aprobar</span><b>${D.sinDetalle ? '—' : kcMillones(D.porAprob)}</b><em>${D.sinDetalle ? 'llega con la próxima actualización' : D.nPorAprob ? klPl(D.nPorAprob, 'pedido') : 'nada pendiente'}</em></div>
+      <div class="kl-k"><span>Facturado</span><b>${kcMillones(D.fact)}</b><em>${klPl(D.nFact, 'pedido')}</em></div>
+    </div>
+    <div class="kl-dos">
+      <div class="kl-p"><h4>Extracostos por motivo</h4>${barras(D.motivos, maxM, kcMillones) || `<div class="kl-vacio">${D.sinDetalle ? 'El detalle llega con la próxima actualización.' : 'Sin extracostos en el periodo.'}</div>`}</div>
+      <div class="kl-p"><h4>Días corridos, por quién</h4>${barras(D.dias.map(x => [x.l, x.n]), maxD, n => n + ' d') || '<div class="kl-vacio">Ninguna fecha se corrió en el periodo.</div>'}${D.frase ? `<p class="kl-frase">${esc(D.frase)}</p>` : ''}</div>
+    </div>`;
+  pintarTareaKL();
+}
+montarKL();
 /* ---------- navegación y eventos ---------- */
 $('#nav').onclick = e => { const b=e.target.closest('button'); if(!b) return;
   document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on', x===b));
