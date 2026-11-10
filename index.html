@@ -2141,7 +2141,7 @@ window.addEventListener('unhandledrejection', e => { try { toast('⚠ No se comp
 const claveGuardada = () => { try { return localStorage.getItem('rkt-clave') || ''; } catch(e) { return ''; } };
 const claveActual = () => window.CLAVE || new URLSearchParams(location.search).get('clave') || claveGuardada();
 function salirTablero(){ if (!confirm('¿Salir del tablero en este equipo? La próxima vez le pedirá la clave.')) return;
-  try { localStorage.removeItem('rkt-clave'); sessionStorage.removeItem('rkt-quien'); } catch(e) {}
+  try { localStorage.removeItem('rkt-clave'); localStorage.removeItem('rkt-ultima'); localStorage.removeItem('rkt-ultima-d'); sessionStorage.removeItem('rkt-quien'); } catch(e) {}
   const u = new URL(location.href); u.searchParams.delete('clave'); location.replace(u); }
 // POST al Apps Script con la clave del equipo; devuelve la respuesta (JSON)
 async function api(action, datos = {}){
@@ -2225,10 +2225,51 @@ async function cargar(){
   // la clave llega en el enlace (?clave=...), está guardada en este celular (base.js claveGuardada) o se pide en pantalla
   const clave = new URLSearchParams(location.search).get('clave') || claveGuardada();
   if (!clave) { pedirClave(false); return false; }
+  // 9-nov (velocidad): abrir al instante. La primera carga pinta lo último que este equipo guardó de una carga anterior (menos de
+  // 12 h, misma clave) y pide los datos nuevos por detrás (refrescarFondo); cada llamada al servidor cuesta de 3 a 11 s y antes
+  // la pantalla esperaba en blanco. Lo guardado se borra al Salir (base.js salirTablero) o si la clave deja de servir.
+  if (!cargar.hecha) { cargar.hecha = true;
+    const u = ultimaCarga(clave);
+    if (u) { try { aplicarDatos(u.j, clave, u.t); refrescarFondo(clave); return; } catch(e) { console.warn('Última carga guardada: ' + e); borrarUltimaCarga(); } }
+  }
   try{
     const r = await fetch(CFG.SHEETS_API_URL + '?formato=json&clave=' + encodeURIComponent(clave));
-    const j = await r.json();
-    if (!j.ok) { try { localStorage.removeItem('rkt-clave'); } catch(e) {} pedirClave(true); return false; }   // la clave cambió: se pide de nuevo
+    const texto = await r.text(), j = JSON.parse(texto);
+    if (!j.ok) { try { localStorage.removeItem('rkt-clave'); } catch(e) {} borrarUltimaCarga(); pedirClave(true); return false; }   // la clave cambió: se pide de nuevo
+    guardarUltimaCarga(clave, texto);
+    aplicarDatos(j, clave);
+    return;
+  }catch(e){ console.error(e); toast('No se pudo conectar con la hoja, intente recargar'); return false; }
+}
+// lo último que cargó este equipo (texto de la respuesta), para abrir al instante la próxima vez
+const ULTIMA = 'rkt-ultima', ULTIMA_HORAS = 12;
+function guardarUltimaCarga(clave, texto){ try { localStorage.setItem(ULTIMA + '-d', texto); localStorage.setItem(ULTIMA, JSON.stringify({c: clave, t: Date.now()})); } catch(e) { borrarUltimaCarga(); } }
+function borrarUltimaCarga(){ try { localStorage.removeItem(ULTIMA); localStorage.removeItem(ULTIMA + '-d'); } catch(e) {} }
+function ultimaCarga(clave){
+  try { const m = JSON.parse(localStorage.getItem(ULTIMA) || 'null');
+    if (!m || m.c !== clave || Date.now() - m.t > ULTIMA_HORAS * 36e5) return null;
+    const j = JSON.parse(localStorage.getItem(ULTIMA + '-d') || 'null'); return j && j.ok ? {j, t: m.t} : null;
+  } catch(e) { return null; }
+}
+// los datos nuevos, por detrás de lo que ya se pintó: al llegar se aplican y se repinta (sin cerrar la ventana que esté abierta)
+async function refrescarFondo(clave){
+  for (let i = 0; i < 3; i++) {
+    try {
+      const r = await fetch(CFG.SHEETS_API_URL + '?formato=json&clave=' + encodeURIComponent(clave));
+      const texto = await r.text(), j = JSON.parse(texto);
+      if (!j.ok) { try { localStorage.removeItem('rkt-clave'); } catch(e) {} borrarUltimaCarga(); pedirClave(true); return; }
+      guardarUltimaCarga(clave, texto);
+      aplicarDatos(j, clave);
+      if (typeof render === 'function') render();
+      return;
+    } catch(e) { console.warn('Actualizar por detrás: ' + e); await new Promise(r => setTimeout(r, 4000 * (i + 1))); }
+  }
+  $('#connDot').classList.remove('live'); $('#connTxt').textContent = 'Sin conexión con la hoja · se muestra lo último guardado';
+  toast('No se pudo actualizar: se muestra lo último guardado. Recargue antes de editar.', 9000);
+}
+// pone en pantalla los datos de una carga (j); guardadoEn = cuándo se guardó, si viene de este equipo y no del servidor
+function aplicarDatos(j, clave, guardadoEn){
+  {
     // los viajes de prueba (empresa PRUEBA ETP) son para probar el sistema: el equipo no los ve; solo con ?prueba=1 (6-nov)
     const conPrueba = new URLSearchParams(location.search).get('prueba') === '1';
     viajes = j.viajes.map(normalizar).filter(v => conPrueba || !esPrueba(v)); etapasViajes();
@@ -2249,10 +2290,16 @@ async function cargar(){
     try { localStorage.setItem('rkt-clave', clave); } catch(e) {}
     if (new URLSearchParams(location.search).has('clave')) { const u = new URL(location.href); u.searchParams.delete('clave'); history.replaceState(null, '', u); }
     if (j.interno) $('#lnkDespacho').href = 'despacho.html?clave=' + encodeURIComponent(clave);   // Despacho entra con la misma clave del equipo
+    if (j.propuestas && typeof PROP !== 'undefined') PROP = j.propuestas;   // 9-nov: vienen en la misma carga (propuestas.js ya no las pide aparte)
+    window.PROP_EN_CARGA = !!j.propuestas;
+    if (guardadoEn) {   // lo guardado: no cierra acciones solo (podría estar viejo) y avisa que se está actualizando
+      const min = Math.max(1, Math.round((Date.now() - guardadoEn) / 6e4));
+      $('#connDot').classList.remove('live'); $('#connTxt').textContent = `Lo último guardado (hace ${min < 90 ? min + ' min' : Math.round(min / 60) + ' h'}) · actualizando…`;
+      return;
+    }
     if (j.interno) setTimeout(autocerrarHechas, 0);   // acciones que el viaje ya muestra hechas: se cierran solas (acciones.js)
     $('#connDot').classList.add('live'); $('#connTxt').textContent = `Hoja de Drive · ${j.hora || 'en línea'}`;
-    return;
-  }catch(e){ console.error(e); toast('No se pudo conectar con la hoja, intente recargar'); return false; }
+  }
 }
 
 // el tablero se actualiza solo cada REFRESCO_MIN minutos (acciones nuevas de LogxIA, lo que guardan otros): solo con la pestaña a la
@@ -2261,7 +2308,7 @@ const REFRESCO_MIN = 5;
 setInterval(async () => {
   if (document.hidden || document.querySelector('.ov.open, #chat.open')) return;
   if (await cargar() === false) return;
-  if (!window.MODO_CLIENTE) await cargarPropuestas(1);   // propuestas.js
+  if (!window.MODO_CLIENTE && !window.PROP_EN_CARGA) await cargarPropuestas(1);   // propuestas.js (si la carga no las trajo)
   render();
 }, REFRESCO_MIN * 60e3);
 
@@ -2550,6 +2597,9 @@ let accFiltro = 'todas', accArea = '', accBusca = '';
 function renderAcciones(){
   const B = window.BITACORA || [], pend = B.filter(b => b.estadoAccion !== 'Hecha');
   $('#nAcc').textContent = pend.length || '';
+  // 9-nov (velocidad): la tabla de hasta 300 acciones solo se arma con esta pantalla a la vista (eventos.js la pinta al abrirla);
+  // antes se rehacía en cada repintado del tablero aunque estuviera oculta
+  if ($('#v-acciones').classList.contains('hidden')) return;
   const cuenta = f => B.filter(f).length, esHecha = b => b.estadoAccion === 'Hecha' && !noEsEtp(b);
   $('#accResumen').textContent = `${B.length} acciones registradas · ${pend.length} pendientes (se trabajan en la Bandeja) · ${cuenta(esHecha)} hechas · ${cuenta(noEsEtp)} no eran para ETP`;
   $('#accFiltros').innerHTML = [['todas', 'Todas', B.length], ['pend', 'Pendientes', pend.length], ['hecha', 'Hechas', cuenta(esHecha)], ['noetp', 'No es para ETP', cuenta(noEsEtp)]]
@@ -5486,7 +5536,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'c95e391fc1';
+const VERSION_TABLERO = 'd707627975';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -6471,7 +6521,8 @@ montarKC();
 $('#nav').onclick = e => { const b=e.target.closest('button'); if(!b) return;
   document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on', x===b));
   document.body.classList.toggle('en-turno', b.dataset.v === 'bandeja');   // la Bandeja no usa la barra de filtros global
-  ['bandeja','tablero','viajes','motonaves','errores','acciones'].forEach(v=>$('#v-'+v).classList.toggle('hidden', v!==b.dataset.v)); };
+  ['bandeja','tablero','viajes','motonaves','errores','acciones'].forEach(v=>$('#v-'+v).classList.toggle('hidden', v!==b.dataset.v));
+  if (b.dataset.v === 'acciones') renderAcciones(); };   // acciones.js: se pinta al abrirla
 $('#proximos').onclick = e => { const b = e.target.closest('[data-ag]'); if (!b) return;
   if (b.dataset.ag==='act') agAct = b.dataset.val; else agDia = b.dataset.val;
   renderProximos(); };
@@ -7209,7 +7260,7 @@ function pedirClave(errada){
 // la página publicada para el cliente (Reckitt) es de solo lectura
 cargar().then(ok => { if (ok === false) return; if (window.MODO_CLIENTE) document.body.classList.add('cliente'); render();
   // datos de LogxIA por aprobar (propuestas.js): número del botón "Llenar datos desde correos" y botones "Aplicar" de las acciones
-  if (!window.MODO_CLIENTE && claveActual()) cargarPropuestas().then(ok => { if (ok) render(); });
+  if (!window.MODO_CLIENTE && claveActual() && !window.PROP_EN_CARGA) cargarPropuestas().then(ok => { if (ok) render(); });   // 9-nov: ya vienen en la carga (datos.js)
   // enlace "Abrir viaje" de un correo (?viaje=FILA-9): el equipo ve la ventana del viaje; el cliente (solo lectura) ve la lista
   // Viajes filtrada por ese viaje. Se usa una sola vez: se quita de la dirección para que recargar o guardar el enlace no lo reabra
   const vid = new URLSearchParams(location.search).get('viaje'), vv = vid && viajes.find(x => x.id === vid);
