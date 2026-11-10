@@ -5555,7 +5555,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '80f04c6ce7';
+const VERSION_TABLERO = 'd529716b00';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -7298,6 +7298,9 @@ cargar().then(ok => { if (ok === false) return; if (window.MODO_CLIENTE) documen
   const vista = ({turno: 'bandeja', acciones: 'bandeja'})[qp.get('vista')] || qp.get('vista') || 'bandeja';
   if (vista && !window.MODO_CLIENTE && !vid) document.querySelector('#nav [data-v="'+vista.replace(/[^a-z]/g,'')+'"]')?.click();
   if (!vid && !qp.get('vista')) restaurarEstado();
+  // 9-nov ("cuando se refresca cae en la pestaña Errores"): el enlace del correo (?vista=errores, ?area=, ?usuario=) vale una sola vez;
+  // se quita de la dirección, como ?viaje= y ?clave=, para que recargar o la actualización automática no vuelvan siempre a esa vista
+  if (qp.has('vista') || qp.has('area') || qp.has('usuario')) { const u = new URL(location.href); ['vista', 'area', 'usuario'].forEach(k => u.searchParams.delete(k)); history.replaceState(null, '', u); }
 });
 // después de una actualización del tablero (version.js guardarEstado): la misma vista, modo, filtros y punto de la página.
 // Solo si se guardó hace menos de 30 min (un reinicio de verdad, otro día, arranca en Mi turno)
