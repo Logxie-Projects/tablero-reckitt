@@ -5729,7 +5729,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'cc433a2c5f';
+const VERSION_TABLERO = '763728ba27';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -6725,6 +6725,9 @@ montarKC();
  * Prefijo CSS: kl-. */
 const KL = {tick: null, tarea: 0, tareas: []};
 const KL_TRABAJOS = ['Pedidos', 'Vehículos', 'Monitoreo', 'Demoras', 'Costos'];
+// Retorno (devolver el contenedor vacío) es flete desglosado, no extracosto (el usuario, 9-nov): aquí se suma con los fletes.
+// En el resto del tablero sigue anotado como concepto de extracosto hasta que se mueva junto al flete (viaje.js CONCEPTOS_EXTRA, dominio cobro).
+const KL_FLETE = /^retorno$/i;
 const klPl = (n, s, p) => `${miles(n)} ${n === 1 ? s : p || s + 's'}`;
 const klMotivo = c => /^reprogramaci/i.test(c) ? 'Reprogramación' : /^costo de terceros/i.test(c) ? 'Costo de terceros' : EXTRA_DEMORA.test(c) ? 'Esperas y stand by' : c.charAt(0).toUpperCase() + c.slice(1).toLowerCase();
 
@@ -6735,12 +6738,13 @@ function calcKL(){
   // plata, solo totales del periodo
   let flete = 0, nFlete = 0, aprob = 0, porAprob = 0, nPorAprob = 0, fact = 0, nFact = 0, sinDetalle = false; const motivos = {};
   Vig.forEach(v => {
-    const c = kcCobro(v); flete += c.flete; if (c.flete) nFlete++; aprob += c.extra;
+    const c = kcCobro(v), ret = v.kc ? 0 : itemsExtra(v).filter(([con]) => KL_FLETE.test(con)).reduce((t, x) => t + x[1], 0);
+    flete += c.flete + ret; if (c.flete + ret) nFlete++; aprob += c.extra ? Math.max(0, c.extra - ret) : 0;
     if (c.fact === 'Facturado') { fact += c.flete + c.extra; nFact++; }
     if (v.kc) { sinDetalle = true; return; }   // al cliente no le llega el detalle de extracostos
-    const t = cobro(v); if (!t.extra || /rechaz|negad/i.test(t.aprob)) return;
-    if (t.aprob !== 'Aprobado') { porAprob += t.extra; nPorAprob++; }
-    itemsExtra(v).forEach(([con, x]) => { if (x) { const m = klMotivo(con); motivos[m] = (motivos[m] || 0) + x; } });
+    const t = cobro(v), ext = t.extra - ret; if (ext <= 0 || /rechaz|negad/i.test(t.aprob)) return;
+    if (t.aprob !== 'Aprobado') { porAprob += ext; nPorAprob++; }
+    itemsExtra(v).forEach(([con, x]) => { if (x && !KL_FLETE.test(con)) { const m = klMotivo(con); motivos[m] = (motivos[m] || 0) + x; } });
   });
   // pedidos con novedad hoy: lo que sigue abierto con la fecha corrida, sin vehículo cuando ya le toca, o terminado sin el dato para facturar
   const N = [], enCurso = v => !transporteFinalizado(v) && situacion(v) !== 'Cerrado';
@@ -6789,7 +6793,7 @@ function montarKL(){
     <div class="kl-cab"><h2>Indicadores · Reckitt</h2><span class="kl-vivo"><i></i>en vivo</span><span class="kl-sub" id="klSub"></span></div>
     <div id="klCuerpo"></div>
     <div class="kl-logxia"><span class="kl-lx-n">LogxIA</span><div class="kl-lx-t" id="klTrab"></div><span class="kl-lx-h" id="klTarea"></span></div>
-    <div class="kl-pie">Pedidos del periodo por la fecha original de su primer paso. A la fecha original = sin ningún cambio de fecha. Con novedad = pedidos en curso con la fecha corrida o sin vehículo cuando ya les toca, y terminados a los que les falta un dato para facturar. Costos = totales del periodo: fletes y extracostos de los pedidos vigentes. Datos desde el 23 oct. Versión en revisión: por ahora solo la ve el equipo.</div>
+    <div class="kl-pie">Pedidos del periodo por la fecha original de su primer paso. A la fecha original = sin ningún cambio de fecha. Con novedad = pedidos en curso con la fecha corrida o sin vehículo cuando ya les toca, y terminados a los que les falta un dato para facturar. Costos = totales del periodo: fletes (con el retorno del vacío) y extracostos de los pedidos vigentes. Datos desde el 23 oct. Versión en revisión: por ahora solo la ve el equipo.</div>
   </div></section>`);
   $('#btnKL').onclick = abrirKL; $('#klVolver').onclick = salirKL;
   window.addEventListener('popstate', () => { if (location.hash !== '#indicadores-nuevo' && !$('#v-kl').classList.contains('hidden')) cerrarKL(); });
