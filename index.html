@@ -2212,13 +2212,38 @@ const iconoEtapa = (v, et) => et === 'Motonave' ? 'barco'
   : (v.operacion === 'EXPO' && et === 'Destino') || (v.operacion === 'IMPO' && et === 'Origen') ? 'grua' : 'camion';
 // la etapa de la operación como se ve en la tarjeta: "En camino a puerto · cita de ingreso jue 5 nov", "Zarpó ✔"…
 // cliente = la ve Reckitt (tablero de solo lectura o resumen por correo): la tirilla es un documento interno, no se menciona
+/* ---------- Dos frentes en paralelo (10-nov) ----------
+ * IMPO con el contenedor VACIADO en la bodega de paso (vaciadoSub): desde ese descargue hay dos vehículos trabajando a la vez y
+ * ninguno espera al otro. El del viaje vuelve con el VACÍO a devolverlo; el del subviaje lleva el PRODUCTO en el urbano. Antes el
+ * viaje mostraba una sola etapa ("En bodega de paso… urbano tal día") y no se veía que el vacío ya iba de regreso (pedido del
+ * usuario: "uno se queda quieto y el otro se mueve"). La etapa del viaje (v.estado) no cambia: esto es cómo se cuenta lo que pasa.
+ * frentesDe(v) → null si no aplica (sin subviaje, contenedor guardado lleno, LCL, o aún no descarga en la bodega de paso). Si aplica:
+ *   contenedor: {placa, hecho, txt}   el vacío: en devolución o devuelto
+ *   producto:   {sub, placa, hecho, txt}   el producto: en la bodega de paso con su urbano, o entregado
+ * El transporte termina cuando los dos terminaron (transporteFinalizado ya lo pide: vacío devuelto y sin urbano pendiente). */
+function frentesDe(v){
+  if (!v || v.operacion !== 'IMPO' || v.padre || esLCL(v)) return null;
+  const S = hijosDe(v).filter(s => vaciadoSub(s) && cumplido(s, 'fechaDescargueSub')); if (!S.length) return null;
+  const sub = S.find(s => !cumplido(s, 'fechaUrbano')) || S[S.length - 1];
+  const devuelto = !!cumplido(v, 'fechaDevolucion') || !!v.tirillaDevolucion, entregado = !!cumplido(sub, 'fechaUrbano');
+  const destino = sub.bodega && sub.bodega !== sub.patioSub ? sub.bodega : 'el destino';
+  return {
+    contenedor: {placa: v.placa || '', hecho: devuelto,
+      txt: devuelto ? 'Vacío devuelto' : `Vacío en devolución${v.patio ? ' a ' + v.patio : ''}${v.citaDevolucion ? ' · cita ' + fd(v.citaDevolucion) : ''}`},
+    producto: {sub, placa: sub.placa || '', hecho: entregado,
+      txt: entregado ? `Producto entregado en ${destino}` : `Producto en ${sub.patioSub || 'bodega de paso'} · urbano a ${destino} ${sub.fechaUrbano ? fd(sub.fechaUrbano) + (porConfirmar(sub, 'fechaUrbano') ? ', por confirmar' : '') : 'sin fecha'}`}};
+}
+// los dos frentes en una frase, con la placa de cada vehículo
+const textoFrentes = F => [F.contenedor, F.producto].map(x => x.txt + (x.placa && !x.hecho ? ` (${x.placa})` : '')).join(' · ');
 function etapaAhora(v, P, n, cliente){
   const hacia = {Recogida:'Por recoger', Entrega:'En camino al destino', Puerto:'En camino a puerto', Bodega:'En camino a bodega', Vacío:'Vacío por devolver', 'Retiro lleno':'Por retirar en puerto', Llenado:'En llenado', Patio:'Por retirar el vacío'};
   const sinTirilla = !cliente && (v.operacion==='EXPO' ? !v.tirillaEntrega : esNacional(v) ? !v.soporteEntrega : !esLCL(v) && !v.tirillaDevolucion);
   const subP = hijosDe(v).find(s => !cumplido(s, 'fechaUrbano'));
   // la etapa de la operación (sale de las fechas) con su detalle
   const proxHito = hitosDe(v).filter(h => h.f > HOY && h.que !== 'Cierre documental').sort((a, b) => a.f.localeCompare(b.f))[0];
-  const sit = situacion(v), et = v.estado, ahora = et==='En bodega de paso' && subP ? `En bodega de paso ${subP.patioSub || ''} · urbano ${subP.fechaUrbano ? fd(subP.fechaUrbano) : 'sin fecha'}`
+  const F = frentesDe(v);   // dos frentes en paralelo: el vacío que vuelve y el producto del urbano
+  const sit = situacion(v), et = v.estado, ahora = F && (et==='En bodega de paso' || (et==='Vacío devuelto' && !F.producto.hecho)) ? textoFrentes(F)
+    : et==='En bodega de paso' && subP ? `En bodega de paso ${subP.patioSub || ''} · urbano ${subP.fechaUrbano ? fd(subP.fechaUrbano) : 'sin fecha'}`
     : et==='Vacío devuelto' ? (sinTirilla ? 'Vacío devuelto · falta tirilla' : 'Vacío devuelto ✔')
     // 8-nov (usuario: "la transportadora cumple cuando entrega su contenedor en puerto... de allí en adelante es informativo"): ya no
     // dice "esperando zarpe" (sonaba a algo pendiente); el zarpe queda como dato de la motonave
@@ -3018,7 +3043,9 @@ const UBICACION = {
   EXPO: {'Asignado': v => [`Por retirar el vacío en ${v.patio || 'patio'}`, ''], 'Vacío retirado': v => [`Con el vacío, hacia el llenado en Reckitt`, v.fechaRetiro],
     'Llenado': v => [`Lleno, en camino a puerto ${v.puerto || ''}`, v.fechaCargue], 'En bodega de paso': v => [`En bodega de paso ${(hijosDe(v)[0] || {}).patioSub || ''}`, (hijosDe(v)[0] || {}).fechaDescargueSub]},
   IMPO: {'Asignado': v => [`Por retirar en puerto ${v.puerto || ''}`, ''], 'Retirado de puerto': v => [`Lleno, en camino a bodega ${v.bodega || ''}`, v.fechaRetiro],
-    'Entregado en bodega': v => [`Vacío por devolver en ${v.patio || 'patio'}`, v.fechaCargue], 'En bodega de paso': v => [`En bodega de paso ${(hijosDe(v)[0] || {}).patioSub || ''}`, (hijosDe(v)[0] || {}).fechaDescargueSub]},
+    'Entregado en bodega': v => [`Vacío por devolver en ${v.patio || 'patio'}`, v.fechaCargue],
+    // 10-nov · dos frentes (dominio frentesDe): con el contenedor vaciado, el vehículo del viaje ya va devolviendo el vacío
+    'En bodega de paso': v => { const F = frentesDe(v), s = F ? F.producto.sub : hijosDe(v)[0] || {}; return [F ? F.contenedor.txt : `En bodega de paso ${s.patioSub || ''}`, s.fechaDescargueSub]; }},
 };
 function pulsoViaje(v){
   const [donde, f] = ((UBICACION[v.operacion] || {})[v.estado] || (() => [v.estado, '']))(v);
@@ -3033,6 +3060,12 @@ function pulsoViaje(v){
     porque: sin ? sin.porque : ''};
 }
 const enSeguimiento = V => V.filter(v => v.placa && !fueraDeRuta(v) && primerEvento(v) && diffDias(primerEvento(v)) <= 1);
+// 10-nov · dos frentes: el vehículo del subviaje también se sigue en la ronda, por su cuenta, cuando su urbano es mañana (el de
+// hoy o de antes ya sale como "¿Pasó?"). Antes solo se preguntaba por el vehículo del viaje principal.
+const urbanoEnSeguimiento = s => !!s.padre && !!s.placa && !!cumplido(s, 'fechaDescargueSub') && !cumplido(s, 'fechaUrbano') && !!s.fechaUrbano && diffDias(s.fechaUrbano) === 1;
+function pulsoSubviaje(s){ const c = conductorDe(s), destino = s.bodega && s.bodega !== s.patioSub ? s.bodega : 'el destino';
+  return {hace: 0, alerta: false, donde: `Producto en ${s.patioSub || 'bodega de paso'}, urbano a ${destino} mañana ${fd(s.fechaUrbano)}`, quieto: '', espera: '', porque: '',
+    app: c ? `📱 Conductor: ${c.paso}${c.fecha ? ' · ' + haceTxt(c.fecha) : ''}` : ''}; }
 
 // motivos de excepción por paso (los revisa Gerencia)
 const MOTIVOS = {
@@ -3063,7 +3096,8 @@ function menusTurno(r){
   return [
     // primero los datos del registro que faltan (registro.js), los pasos con fecha pasada sin confirmar (confirmar.js) y dónde va
     // cada vehículo; el primero de la lista es el seguimiento de la ronda
-    {id: 'seg', filas: [...filasRegistro(V), ...filasConfirmar(V), ...V.filter(v => enSeguimiento([v]).length || sinActualizar(v).length).map(v => ({k: `seg${r ? r.n : 0}|${v.id}`, tipo: 'seg', v, p: pulsoViaje(v), roja: !!sinActualizar(v).length}))
+    {id: 'seg', filas: [...filasRegistro(V), ...filasConfirmar(V), ...[...V.filter(v => enSeguimiento([v]).length || sinActualizar(v).length).map(v => ({k: `seg${r ? r.n : 0}|${v.id}`, tipo: 'seg', v, p: pulsoViaje(v), roja: !!sinActualizar(v).length})),
+       ...V.flatMap(hijosDe).filter(s => !esPrueba(s) && urbanoEnSeguimiento(s)).map(s => ({k: `seg${r ? r.n : 0}|${s.id}`, tipo: 'seg', v: s, p: pulsoSubviaje(s), roja: false}))]
        .sort((a, b) => b.roja - a.roja || b.p.hace - a.p.hace)]},
     {id: 'cob', filas: cob.map(v => ({k: 'cob|' + v.id, tipo: 'cob', v, roja: true}))},
     {id: 'cli', filas: (window.BITACORA || []).filter(b => b.estadoAccion !== 'Hecha' && areaDe(b) === 'Operaciones')
@@ -5880,7 +5914,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '437ce2472a';
+const VERSION_TABLERO = 'aa48ee8f7e';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -7688,10 +7722,16 @@ function armarBandeja(){
     if (!pasosPorConfirmar(v).some(p => !p.naviera)) sinActualizar(v).forEach(s => add(v, {b: 'sinact', k: kSeg(v), html: `${esc(s.msg)}<br><span class="sub">${esc(s.porque || '')}</span>`,
       acc: btnT('Actualizar el viaje', `data-b-abrir="${v.id}"`) + (v.placa ? lnkT(ICONO_WA + 'Preguntar dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas')) : '')}));
     // ¿Dónde va? (seguimiento de la ronda): vehículos en movimiento sin nada atrasado; "Sigue igual" lo marca revisado en esta ronda
-    else if (!sinActualizar(v).length && enSeguimiento([v]).length && !T.R.has(kSeg(v))) { const p = pulsoViaje(v);
+    // 10-nov (corrección): antes esta fila solo salía si el viaje además tenía un paso por confirmar (un "else" de más); los vehículos
+    // en movimiento sin nada pendiente contaban en la ronda pero no tenían dónde marcarse, y la ronda no se podía cerrar desde aquí
+    if (!sinActualizar(v).length && enSeguimiento([v]).length && !T.R.has(kSeg(v))) { const p = pulsoViaje(v);
       add(v, {b: 'donde', k: kSeg(v), html: `📍 <b>${esc(p.donde)}</b>${p.quieto ? ' · ' + esc(p.quieto) : ''}${p.espera ? '<br>' + esc(p.espera) : ''}${p.app ? '<br>' + esc(p.app) : ''}${ultimoComentario(v) ? '<br><span class="sub">' + ultimoComentario(v) + '</span>' : ''}`,
         acc: btnT('✏️ Actualizar', `data-b-abrir="${v.id}"`) + (v.placa ? lnkT(ICONO_WA + 'Preguntar dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas')) : '')
           + btnT('📍 Sigue igual', `data-t-rev="${kSeg(v)}"`, 'Lo marca revisado en esta ronda para todo el equipo')}); }
+    // 10-nov · dos frentes: el vehículo del subviaje, con su propia pregunta (turno.js urbanoEnSeguimiento)
+    hijosDe(v).filter(s => urbanoEnSeguimiento(s) && !T.R.has(kSeg(s))).forEach(s => { const p = pulsoSubviaje(s);
+      add(v, {b: 'donde', k: kSeg(s), html: `${esc(nombreSub(s))}${s.placa ? ' · <span class="placa">' + esc(s.placa) + '</span>' : ''}<br>📍 <b>${esc(p.donde)}</b>${p.app ? '<br>' + esc(p.app) : ''}${ultimoComentario(s) ? '<br><span class="sub">' + ultimoComentario(s) + '</span>' : ''}`,
+        acc: btnT('✏️ Actualizar', `data-b-abrir="${s.id}"`) + lnkT(ICONO_WA + 'Preguntar si está listo', waConductor(s, '¿todo listo para el urbano de mañana? Confírmame')) + btnT('📍 Sigue igual', `data-t-rev="${kSeg(s)}"`, 'Lo marca revisado en esta ronda para todo el equipo')}); });
     // 5 · Datos de correos (Llenar datos + los datos de cada acción): se aprueban o rechazan aquí; la acción que los trajo se cierra
     // una línea por área: los datos de cobro (extracostos, RBHY, factura…) son de Facturación, el resto de Operaciones
     ['Operaciones', 'Facturación'].forEach(area => {
