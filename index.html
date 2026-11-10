@@ -839,6 +839,25 @@ body.lv-abierta{overflow:hidden}
 .km-f.warn small{color:var(--text)}
 .km-nota{margin:2px 2px 0;font-size:12px;color:var(--muted);line-height:1.5}
 @media (max-width:760px){.km{grid-template-columns:1fr}}
+
+/* ---------- 10-nov · Bandeja y Errores: qué hacer, y botones que se ven como botones ---------- */
+.bj-hacer{font-weight:700;color:var(--text);margin-bottom:2px}
+.bj-como{margin-top:2px}
+/* todas las acciones de un renglón son botones; la principal va rellena */
+.bj-item .tr-acc{gap:6px 6px;align-items:center}
+.bj-item .tr-acc .link,.err-acc .link{display:inline-block;border:1px solid var(--border);border-radius:6px;padding:3px 10px;background:var(--surface);font-size:12px;font-weight:600;text-decoration:none;line-height:1.5}
+.bj-item .tr-acc .link:hover,.err-acc .link:hover{border-color:var(--accent)}
+.bj-item .tr-acc [data-b-hecha],.bj-item .tr-acc [data-b-aprobar]:not([data-solo="choque"]),.bj-item .tr-acc [data-b-asignar],.bj-item .tr-acc>[data-b-abrir]:first-child,.bj-item .tr-acc>[data-b-crear]:first-child,.err-acc .link{background:var(--accent);border-color:var(--accent);color:#fff}
+.bj-item .tr-acc .conf-btn{margin:0;background:var(--accent);border-color:var(--accent);color:#fff}
+/* pedir una excepción no es una acción más: queda como enlace discreto */
+.bj-item .tr-acc [data-t-exc]{border:0;background:none;padding:0;font-weight:400;font-size:12px;color:var(--bad)}
+/* Errores: una instrucción por fila */
+.err-que{font-weight:700;color:var(--text)}
+.err-urg{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.err-urg.u1{background:color-mix(in srgb,var(--bad) 16%,transparent);color:var(--bad)}
+.err-urg.u2{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+.err-urg.u3{background:color-mix(in srgb,var(--muted) 16%,transparent);color:var(--muted)}
+
 </style>
 </head>
 <body>
@@ -875,7 +894,7 @@ body.lv-abierta{overflow:hidden}
   <section id="v-bandeja" class="hidden">
     <div class="card">
       <h2 style="margin:0">Bandeja de Pendientes</h2>
-      <div class="sub">Todo lo que pide trabajo, una tarjeta por viaje: por crear, por tomar, sin vehículo, sin actualizar, ¿pasó?, datos de correos, pedidos y lo que falta. Trabaje de arriba hacia abajo, lo rojo primero; en la última ronda sale el cierre del día con la nota de entrega de turno.</div>
+      <div class="sub bj-como"><b>Cómo se usa:</b> 1 · Empiece por lo rojo, de arriba hacia abajo. 2 · Cada renglón dice <b>qué hacer</b> y trae su botón. 3 · Al terminar el día, el cierre con la nota de entrega de turno.</div>
       <div id="bandeja" style="margin-top:10px"></div>
     </div>
   </section>
@@ -937,13 +956,13 @@ body.lv-abierta{overflow:hidden}
   <section id="v-errores" class="hidden">
     <div class="card">
       <div class="toolbar" style="justify-content:space-between">
-        <div><h2 style="margin:0">Control de calidad de datos</h2><div class="sub" id="errResumen"></div></div>
+        <div><h2 style="margin:0">Datos por completar</h2><div class="sub" id="errResumen"></div></div>
         <div class="chips"><button class="btn solo-interno" id="btnBarrido" title="Herramienta de Calidad y Gerencia: lee ya mismo el buzón de calidad@ (últimos 2 días), sin esperar la lectura de cada hora; sirve para algo urgente o si LogxIA se atrasó">⟳ Buscar correos ahora</button><button class="btn" id="btnCopiarRep">Copiar reporte para correo</button><button class="btn" id="btnVerRep">Ver texto del reporte</button></div>
       </div>
       <div class="chips" id="errFiltros" style="margin:8px 0 12px"></div>
       <textarea id="repTexto" class="hidden" readonly style="width:100%;min-height:220px;font:12px/1.5 ui-monospace,Consolas,monospace;border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--surface-2);margin-bottom:12px"></textarea>
       <div class="tbl-wrap" style="border:0"><table id="tblErr"></table></div>
-      <p class="sub" style="margin-top:8px">Se revisan los viajes que no están cerrados ni cancelados. El reporte se enviará por correo 3 veces al día al equipo para que corrijan la hoja.</p>
+      <p class="sub" style="margin-top:8px">Se revisan los viajes que no están cerrados ni cancelados. Cada fila se quita sola cuando el dato queda en el viaje. El mismo listado sale por correo 3 veces al día.</p>
     </div>
   </section>
 
@@ -2692,17 +2711,29 @@ function renderErrores(){
   const nErr = E.filter(x=>x.tipo!=='Alerta').length, nAl = E.length - nErr;
   $('#nErr').textContent = E.length || '';
   // lo de viajes lejanos no sale hasta entrar en su ventana (VENTANAS, en el dominio)
-  $('#errResumen').textContent = `${nErr} errores para corregir · ${nAl} alertas de los próximos días · ${nViajes} viajes · ${altas} prioridad alta` + (G.op ? ` · incluye IMPO y EXPO (el filtro ${G.op} no aplica aquí)` : '');
-  $('#errFiltros').innerHTML = [['','Todos',E.length],['Error','Errores',nErr],['Alerta','Alertas',nAl],['Alta','Prioridad alta',altas]]
+  // 10-nov: en palabras del trabajo, no de la regla. Error = el dato ya debía estar; Alerta = se necesita en los próximos días
+  $('#errResumen').textContent = `${nErr} dato${nErr === 1 ? '' : 's'} que ya debía${nErr === 1 ? '' : 'n'} estar · ${nAl} que se necesita${nAl === 1 ? '' : 'n'} pronto · en ${nViajes} viaje${nViajes === 1 ? '' : 's'}` + (G.op ? ` · incluye IMPO y EXPO (el filtro ${G.op} no aplica aquí)` : '');
+  $('#errFiltros').innerHTML = [['','Todos',E.length],['Error','Ya debían estar',nErr],['Alerta','Se necesitan pronto',nAl],['Alta','Lo más urgente',altas]]
     .map(([k,l,c])=>`<button class="chip ${errSev===k?'on':''}" data-sev="${k}">${l} · ${c}</button>`).join('');
   const vis = E.filter(x=>!errSev || (errSev==='Alta' ? x.sev==='Alta' : (x.tipo||'Error')===errSev));
-  $('#tblErr').innerHTML = vis.length ? `<tr><th class="num">#</th><th>Tipo</th><th>Viaje</th><th>Campo</th><th>Detalle</th><th></th></tr>` +
-    vis.map((x,i)=>`<tr><td class="num">${i+1}</td><td><span class="sev sev-${x.sev}">${x.tipo==='Alerta'?'ALERTA':'ERROR'}</span><br><span class="sub">${esc(x.sev)}</span></td>
-      <td>${x.v.placa?`<span class="placa">${esc(x.v.placa)}</span>`:'<span class="missing">Sin placa</span>'} <span class="sub">${esc(x.v.operacion)} ${esc(x.v.pais||'')} · llenado ${fd(x.v.fechaCargue)}</span><br><span class="sub">${enlacesBusqueda(x.v)}</span></td>
-      <td>${esc(x.campo)}</td><td class="obs" style="color:var(--text)">${esc(x.msg)}${x.porque ? `<br><span class="sub">Por qué ahora: ${esc(x.porque)}</span>` : ''}</td>
-      <td><button class="link" onclick="abrir('${x.v.id}')">Corregir</button></td></tr>`).join('')
-    : `<tr><td class="sub" style="padding:20px">${errSev==='Alerta' ? 'Sin alertas para los próximos días' : 'Sin errores'} 🎉</td></tr>`;
+  // una fila = una instrucción: qué tan urgente, en qué viaje (por su referencia, no "Sin placa"), qué hacer y el botón que abre el
+  // viaje en esa casilla
+  const urg = x => x.tipo !== 'Alerta' ? ['u1', 'Ya debía estar'] : x.sev === 'Alta' ? ['u2', 'Urgente'] : ['u3', 'Se necesita pronto'];
+  const hacer = x => String(x.msg).replace(/^Sin veh[ií]culo asignado/i, 'Asigne vehículo').replace(/^Sin cita de ingreso a puerto/i, 'Pida la cita de ingreso a puerto')
+    .replace(/^Sin /i, 'Falta: ').replace(/\(faltan (\d+) d\)/, '(arranca en $1 d)');
+  $('#tblErr').innerHTML = vis.length ? `<tr><th>Urgencia</th><th>Viaje</th><th>Qué hacer</th><th></th></tr>` +
+    vis.map(x=>`<tr><td><span class="err-urg ${urg(x)[0]}">${urg(x)[1]}</span></td>
+      <td><b>${esc(refCorta(x.v) || x.v.id)}</b> ${x.v.placa?`<span class="placa">${esc(x.v.placa)}</span>`:'<span class="missing">sin vehículo</span>'}<br><span class="sub">${esc(x.v.operacion)} ${esc(x.v.pais||x.v.destino||'')}${primerEvento(x.v) ? ' · arranca ' + fd(primerEvento(x.v)) : ''}</span><br><span class="sub">${enlacesBusqueda(x.v)}</span></td>
+      <td class="obs" style="color:var(--text)"><span class="err-que">${esc(hacer(x))}</span>${x.porque ? `<br><span class="sub">Por qué: ${esc(x.porque)}</span>` : ''}</td>
+      <td class="err-acc"><button class="link" onclick="abrirEnCampo('${x.v.id}', '${esc(x.campo).replace(/'/g, '')}')">Completar en el viaje</button></td></tr>`).join('')
+    : `<tr><td class="sub" style="padding:20px">${errSev==='Alerta' ? 'Nada se necesita pronto' : 'No falta ningún dato'} 🎉</td></tr>`;
   if (!$('#repTexto').classList.contains('hidden')) $('#repTexto').value = textoReporte();
+}
+// abre el viaje y deja el cursor en la casilla que falta (por el nombre de la casilla; si no la encuentra, queda en el viaje)
+function abrirEnCampo(id, campo){
+  abrir(id);
+  setTimeout(() => { const c = minus(campo), l = [...document.querySelectorAll('#mForm label')].find(l => minus(l.textContent).includes(c)) || (c.includes('placa') || c.includes('vehiculo') ? document.querySelector('#mForm [data-k=placa]')?.closest('div')?.querySelector('label') : null);
+    const i = l && l.parentElement.querySelector('input:not([type=hidden]),select,textarea'); if (i) { i.scrollIntoView({block: 'center'}); i.focus(); } }, 200);
 }
 $('#errFiltros').onclick = e => { const b=e.target.closest('[data-sev]'); if(!b) return; errSev=b.dataset.sev; renderErrores(); };
 $('#btnVerRep').onclick = () => { const t=$('#repTexto'); t.classList.toggle('hidden'); t.value = textoReporte(); };
@@ -5773,7 +5804,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '37e3398d89';
+const VERSION_TABLERO = '6db438644f';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -7399,6 +7430,12 @@ const BLOQUES = [
   ['registro', 'Base de conductores', 'p-warn', 'Conductores y vehículos del registro con datos por corregir (las mismas reglas de Despacho → Conductores)'],
   ['cierre', 'Cierre del día', 'p-acc', 'Última ronda: lo de mañana listo y la nota de entrega de turno (antes en Mi turno)'],
 ];
+// 10-nov ("que el equipo entienda qué debe hacer"): cada renglón empieza con la instrucción, en una frase con verbo. El nombre del
+// bloque (la etiqueta de color) dice de qué tipo es; esto dice qué hacer.
+const QUE_HACER = {crear: 'Cree el viaje que pide el correo', tomar: 'Tome este viaje nuevo: ábralo y revise sus datos', vehiculo: 'Asigne vehículo y conductor',
+  sinact: 'Actualice el viaje: ¿se hizo o cambió la fecha?', paso: 'Confirme si este paso ya se hizo', donde: 'Confirme dónde va el vehículo',
+  nocoincide: 'Decida cuál dato vale', datos: 'Revise y guarde lo que llegó por correo', pedido: 'Haga lo que pide el correo y márquelo hecho',
+  falta: 'Complete estos datos en el viaje', registro: 'Corrija los datos del conductor o del vehículo', cierre: 'Cierre el día y deje la nota de entrega de turno'};
 const HORIZONTE_FALTA = 5;   // días: los faltantes de viajes que arrancan después quedan en Errores (revisión, no del día)
 const RE_ASIGNAR = /asignar vehiculo|programar vehiculo|placa y conductor|conductor y vehiculo|vehiculo planchon|programar (el )?vehiculo/;
 let bandejaFiltro = '';
@@ -7681,7 +7718,7 @@ function renderBandeja(){
       · <label class="sub">Área <select class="bj-area" data-b-areasel="1">${[['', 'Todas'], ...AREAS.map(a => [a, a])].map(([a, t]) => `<option value="${a}" ${bandejaArea === a ? 'selected' : ''}>${t} (${porArea(a)})</option>`).join('')}</select></label></div>
       <div class="chips">${`<button type="button" class="chip ${!bandejaFiltro ? 'on' : ''}" data-b-filtro="">Todo · ${R.L.length}</button>`}${BLOQUES.map(([k, t]) => cuenta(k) ? `<button type="button" class="chip ${bandejaFiltro === k ? 'on' : ''}" data-b-filtro="${k}" title="${esc(BLOQUES.find(x => x[0] === k)[3])}">${t} · ${cuenta(k)}</button>` : '').join('')}</div></div>`
     + (ver.filter((t, ix) => bandejaTodo || ix < BANDEJA_PRIMERAS || t.roja || t.fija).map(t => `<div class="bj-card${t.roja ? ' roja' : ''}"><div class="bj-h">${fechaTarjeta(t)}<b>${esc(t.titulo)}</b>${t.v ? ` <span class="sub">${esc([t.v.contenedor, t.v.estado].filter(Boolean).join(' · '))}</span> ${btnT('Abrir viaje', `data-b-abrir="${t.v.id}"`)}` : ''}</div>`
-      + BLOQUES.flatMap(([k, nombre, cls]) => t.items.filter(i => i.b === k && (!bandejaFiltro || bandejaFiltro === k)).map(i => plegar(i, `<div class="bj-item${i.roja ? ' roja' : ''}"><span class="pill ${cls}">${nombre}</span><div class="bj-txt">${i.html}${extra(i)}</div><div class="tr-acc">${i.acc || ''}${accExc(i)}</div></div>`))).join('')
+      + BLOQUES.flatMap(([k, nombre, cls]) => t.items.filter(i => i.b === k && (!bandejaFiltro || bandejaFiltro === k)).map(i => plegar(i, `<div class="bj-item${i.roja ? ' roja' : ''}"><span class="pill ${cls}">${nombre}</span><div class="bj-txt">${QUE_HACER[k] ? `<div class="bj-hacer">${QUE_HACER[k]}</div>` : ''}${i.html}${extra(i)}</div><div class="tr-acc">${i.acc || ''}${accExc(i)}</div></div>`))).join('')
       + '</div>').join('') || '<div class="tr-vacio">✓ Nada pendiente en este filtro</div>')
     + (!bandejaTodo && ver.length > ver.filter((t, ix) => ix < BANDEJA_PRIMERAS || t.roja || t.fija).length
       ? `<button type="button" class="bj-mas" data-b-todo="1">Ver los otros ${ver.length - ver.filter((t, ix) => ix < BANDEJA_PRIMERAS || t.roja || t.fija).length} viajes (menos urgentes)</button>` : '')
