@@ -1185,10 +1185,14 @@ const pedidoReal = p => /^\d[\d\s\-\/]*$/.test(String(p || '').trim());
 const refCorta = v => v.operacion === 'IMPO' ? (pedidoReal(v.pedido) ? 'Pedido ' + v.pedido
     : [v.do && 'DO ' + v.do, v.booking && 'BL ' + v.booking].filter(Boolean).join(' · ') || (v.pedido ? 'Pedido ' + v.pedido : '')) : esNacional(v) ? (v.carga || (v.pedido ? 'Pedido ' + v.pedido : ''))
   : (v.booking ? 'Booking ' + v.booking : '');
-const terminoTransporte = v => v.operacion==='EXPO' ? ['Entregado en puerto','Zarpó'].includes(v.estado)
-  : esNacional(v) ? v.estado==='Entregado' : esLCL(v) ? v.estado==='Entregado en bodega' : v.estado==='Vacío devuelto';
-// fuera de ruta: el transporte terminó o el viaje se canceló; ya no hay vehículo al que hacerle seguimiento
-const fueraDeRuta = v => terminoTransporte(v) || v.estado === 'Cancelado';
+// 10-nov ("se entregó el contenedor pero aún no se terminó el subviaje... se pierde visibilidad porque ya lo pasó a facturar"): con
+// un urbano pendiente el transporte NO ha terminado, aunque el vacío ya esté devuelto (dos frentes: falta entregar el producto)
+const urbanoPendiente = v => !v.padre && hijosDe(v).some(s => !cumplido(s, 'fechaUrbano'));
+const terminoTransporte = v => !urbanoPendiente(v) && (v.operacion==='EXPO' ? ['Entregado en puerto','Zarpó'].includes(v.estado)
+  : esNacional(v) ? v.estado==='Entregado' : esLCL(v) ? v.estado==='Entregado en bodega' : v.estado==='Vacío devuelto');
+// fuera de ruta: el transporte terminó o el viaje se canceló; ya no hay vehículo al que hacerle seguimiento. El vehículo de una
+// importación que ya devolvió el vacío tampoco se sigue, aunque el viaje continúe por el urbano (ese es el vehículo del subviaje)
+const fueraDeRuta = v => terminoTransporte(v) || v.estado === 'Cancelado' || (v.operacion === 'IMPO' && v.estado === 'Vacío devuelto');
 // lo que operaciones le debe a un viaje (en cualquier etapa): cierre del transporte, subviaje, causa de reprogramación y los errores de la hoja
 function pendientesOps(v){
   if (situacion(v)==='Cancelado' || v.estado==='Cancelado' || cobro(v).fact==='Sin servicio') return [];
@@ -1226,7 +1230,7 @@ function focoDe(v){
   // primero la operación (6-nov: IMPO-002 / pedido 11673 salía "En facturación" porque Facturación ya lo marcó "Aprobado por
   // Reckitt", pero faltaba devolver el vacío): mientras el transporte no termine, el foco es de Operaciones aunque la
   // facturación vaya adelantada; la etapa de facturación (cobro) sigue siendo la que marcó Facturación
-  if (!terminoTransporte(v)) return v.estado==='En bodega de paso' ? 'En bodega de paso' : v.estado==='Sin asignar' ? 'Por asignar vehículo' : v.estado==='Asignado' ? 'Por iniciar' : 'En tránsito';
+  if (!terminoTransporte(v)) return v.estado==='En bodega de paso' || urbanoPendiente(v) ? 'En bodega de paso' : v.estado==='Sin asignar' ? 'Por asignar vehículo' : v.estado==='Asignado' ? 'Por iniciar' : 'En tránsito';
   if (['En aprobación Reckitt','Aprobado por Reckitt','Facturado'].includes(fact)) return 'En facturación';
   return pendientesDe(v).length ? 'Terminado · faltan datos' : 'Listo para facturar';
 }
@@ -1517,7 +1521,7 @@ const vaciadoSub = s => !!s && /^vaciad/i.test(String(s.contenedorSub || '').tri
 // transporte finalizado = tiene la fecha de fin (EXPO entrega en puerto, IMPO devolución del vacío) y no queda un urbano pendiente.
 // Basta esa fecha aunque falten fechas anteriores (esas salen como pendientes de operaciones); el Estado escrito a mano no cuenta.
 function transporteFinalizado(v){
-  return v.estado!=='Cancelado' && !!fechaFinTransporte(v) && v.estado!=='En bodega de paso';
+  return v.estado!=='Cancelado' && !!fechaFinTransporte(v) && v.estado!=='En bodega de paso' && !urbanoPendiente(v);
 }
 // lo que facturación marca en el viaje ("En aprobación Reckitt": envió la relación y Reckitt debe aprobar); el resto lo calcula cobro()
 const FACTURACION = ['Pendiente por facturar','En aprobación Reckitt','Aprobado por Reckitt','Facturado'];
@@ -5920,7 +5924,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '6fda098a49';
+const VERSION_TABLERO = '50ca879eea';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
