@@ -1150,6 +1150,9 @@ const MARCAS = [{k:'Novedad', c:'var(--s-nov)'}, {k:'Cancelado', c:'var(--s-can)
 // la carga ya llegó a su destino (puerto o bodega): para alertas e indicadores de entrega. El fin del TRANSPORTE es otra cosa:
 // terminoTransporte (por etapa), transporteFinalizado (con la fecha) y fueraDeRuta (terminó o se canceló)
 const ETAPAS_FIN = ['Entregado en puerto','Zarpó','Entregado en bodega','Vacío devuelto','Entregado'];
+// Rondas de seguimiento (10-nov, al dominio: estaban en turno.js y repetidas en la configuración del correo): hora en que empieza
+// cada una y cuántas horas dura. Las usan el tablero (turno.js, el aviso de ronda) y el correo de ronda sin atender (Reportes.gs).
+const RONDAS = [8, 12, 16], HORAS_RONDA = 2;
 const diffDias = iso => Math.round((new Date(iso.slice(0,10)+'T12:00') - new Date(HOY+'T12:00'))/864e5);
 const tieneVehiculo = v => !!(v.placa && v.placa.trim());
 const addDias = (iso, n) => { const d = new Date(iso.slice(0,10)+'T12:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
@@ -2949,7 +2952,7 @@ $('#accFiltros').oninput = e => { if (e.target.id !== 'accBusca') return; accBus
  * modo Gerencia. Las marcas son del día y las ve todo el equipo: se guardan en la base (pestaña Turno revisado) con quién y a qué
  * hora; no cambian el viaje. Desde el 7-nov el tablero NO se bloquea: las líneas rojas solo se señalan y van primero.
  * Toda EXCEPCIÓN (no se puede cumplir una línea roja) pide un motivo y espera a Gerencia; la aprobación vale HORAS_EXCEPCION. */
-const RONDAS = [8, 12, 16], HORAS_RONDA = 2;
+// RONDAS y HORAS_RONDA (a qué hora empieza cada ronda y cuánto dura) están en el dominio
 let excAbierta = '';   // fila con el selector de motivo de la excepción abierto
 const esGerencia = () => { try { return sessionStorage.getItem('rkt-gerencia') === '1'; } catch(e){ return false; } };
 const revisados = () => new Map((window.TURNO || []).map(x => [x.clave, x]));
@@ -5862,7 +5865,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'ad07cbb4ce';
+const VERSION_TABLERO = '34ca49f9da';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -7611,6 +7614,10 @@ function queHacer(b){
 }
 
 // arma las tarjetas: {v (o null), titulo, items:[{b: bloque, html, acc, roja}], orden}
+// 10-nov · Acciones para hoy: una acción es de hoy salvo que su fecha límite sea de pasado mañana en adelante ("Por hacer" con
+// i.hoy = false) o sea del registro de conductores sin línea roja. Lo atrasado también es de hoy. La usan armarBandeja, los filtros
+// de renderBandeja (se recalcula al filtrar) y el aviso de la ronda (ronda-alerta.js).
+const accionDeHoy = i => i.roja || (i.b === 'hacer' ? !!i.hoy : i.b !== 'registro');
 function armarBandeja(){
   // rondas, líneas rojas y excepciones (turno.js estadoTurno), con las mismas claves ("cob|ID", "conf|ID",
   // "seg2|ID", "aLX-…", registro), así que una excepción o un "Sigue igual" vale en las dos pantallas
@@ -7764,11 +7771,8 @@ function armarBandeja(){
       .concat(t.items.some(i => i.b === 'sinact') ? sinActualizar(t.v).map(s => String(s.fecha || '').slice(0, 10)).filter(Boolean) : []).sort();
     return F[0] || String(primerEvento(t.v) || '').slice(0, 10);
   };
-  // 10-nov · Acciones para hoy: una acción es de hoy salvo que su fecha límite sea de pasado mañana en adelante ("Por hacer" con
-  // i.hoy = false) o sea del registro de conductores sin línea roja. Lo atrasado también es de hoy. Una tarjeta es de hoy si
-  // cualquiera de sus acciones lo es; primero las de hoy, luego las de los próximos días.
-  const deHoy = i => i.roja || (i.b === 'hacer' ? !!i.hoy : i.b !== 'registro');
-  const L = [...tarjetas.values()].map(t => ({...t, rango: rango(t), roja: t.items.some(i => i.roja), fecha: fechaAccion(t), hoy: t.items.some(deHoy)}))
+  // una tarjeta es de hoy si cualquiera de sus acciones lo es (accionDeHoy); primero las de hoy, luego las de los próximos días
+  const L = [...tarjetas.values()].map(t => ({...t, rango: rango(t), roja: t.items.some(i => i.roja), fecha: fechaAccion(t), hoy: t.items.some(accionDeHoy)}))
     .sort((a, b) => b.hoy - a.hoy || b.roja - a.roja || (a.fecha || '9').localeCompare(b.fecha || '9') || a.rango - b.rango);
   return {L, usadas, propUsadas, hoyViajes, B, vivos, T};
 }
@@ -7791,8 +7795,7 @@ function renderBandeja(){
   // filtro por área: cada tarjeta muestra solo las tareas de esa área (y desaparece si no le queda ninguna)
   const enArea = i => !bandejaArea || i.area === bandejaArea;
   const L0 = R.L, porArea = a => L0.filter(t => t.items.some(i => !a || i.area === a)).length;
-  const esDeHoy = i => i.roja || (i.b === 'hacer' ? !!i.hoy : i.b !== 'registro');   // igual que en armarBandeja: se recalcula al filtrar
-  R.L = R.L.map(t => ({...t, items: t.items.filter(enArea)})).filter(t => t.items.length).map(t => ({...t, roja: t.items.some(i => i.roja), hoy: t.items.some(esDeHoy)}));
+  R.L = R.L.map(t => ({...t, items: t.items.filter(enArea)})).filter(t => t.items.length).map(t => ({...t, roja: t.items.some(i => i.roja), hoy: t.items.some(accionDeHoy)}));
   // barra IMPO / EXPO / Nacional: cuenta tarjetas del área elegida; ⛔ si esa operación tiene líneas rojas (para no perderlas de vista)
   const deOp = (t, o) => t.items.filter(i => !o || i.b === 'registro' || (i.b === 'cierre' ? !i.opViaje || i.opViaje === o : i.op === o));
   const opN = o => R.L.filter(t => deOp(t, o).length).length, opRoja = o => R.L.some(t => deOp(t, o).some(i => i.roja));
@@ -7800,7 +7803,7 @@ function renderBandeja(){
   const barraOp = barraOperaciones(opN, opRoja);
   const nTotal = opN('');
   const paraHoyTotal = R.L.filter(t => t.hoy).length;
-  R.L = R.L.map(t => ({...t, items: deOp(t, bandejaOp)})).filter(t => t.items.length).map(t => ({...t, roja: t.items.some(i => i.roja), hoy: t.items.some(esDeHoy)}));
+  R.L = R.L.map(t => ({...t, items: deOp(t, bandejaOp)})).filter(t => t.items.length).map(t => ({...t, roja: t.items.some(i => i.roja), hoy: t.items.some(accionDeHoy)}));
   const cuenta = k => R.L.filter(t => t.items.some(i => i.b === k)).length;
   const nViajes = R.L.filter(t => t.v).length;
   $('#nBandeja').textContent = paraHoyTotal || '';   // el número de la pestaña: lo de HOY de toda el área (no solo la operación a la vista)
@@ -7922,8 +7925,7 @@ function revisarAlertaRonda(){
   const e = estadoAlertaRonda(HOY + '|' + r.n);
   if (document.getElementById('ovRonda') || Date.now() < e.hasta) return;
   // qué hay para hoy (las mismas tarjetas de Acciones para hoy, del área de Operaciones)
-  let hoyN = 0, atras = 0; try { const deHoy = i => i.roja || (i.b === 'hacer' ? !!i.hoy : i.b !== 'registro');   // igual que en bandeja.js
-    const L = armarBandeja().L.filter(t => t.items.some(i => i.area === 'Operaciones' && deHoy(i)));
+  let hoyN = 0, atras = 0; try { const L = armarBandeja().L.filter(t => t.items.some(i => i.area === 'Operaciones' && accionDeHoy(i)));   // bandeja.js
     hoyN = L.length; atras = L.filter(t => t.fecha && diffDias(t.fecha) < 0).length; } catch(x) {}
   const seg = T.M[0].filas.filter(x => !x.hecha && x.tipo === 'seg').length, vencida = T.rondaVencida, hora = RONDAS[r.n - 1] + ':00';
   const resumen = `${hoyN} ${hoyN === 1 ? 'viaje con acciones' : 'viajes con acciones'} para hoy${atras ? `, ${atras} ${atras === 1 ? 'atrasado' : 'atrasados'}` : ''}`;
