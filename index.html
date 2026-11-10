@@ -1253,6 +1253,18 @@ function normSituacion(s){
 }
 const primerEvento = v => v.fechaRetiro || v.fechaCargue;
 const minus = s => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
+// Lista estándar de extracostos (10-nov, definida por el usuario: "revisemos cómo tener estandarizado extracostos"; un mismo cobro
+// aparecía como "Cargue", "Movimiento de contenedor"…). El concepto se ELIGE de esta lista; lo que no esté va como "Otro" con su
+// descripción: "Otro (qué es)". "Costo de terceros" lo escribe el sistema en una reprogramación que no es del cliente.
+// Retorno NO está: es parte del flete y va en su casilla.
+const CONCEPTOS_EXTRA = ['Descargue de contenedor', 'Vaciado de contenedor', 'Llenado de contenedor', 'Almacenaje', 'Urbano', 'Standby',
+  'Cita', 'Parqueadero', 'Pernocta', 'Escolta', 'Reprogramación', 'Otro'];
+const CONCEPTOS_SISTEMA = ['Costo de terceros'];
+// "Otro (descripción)" → la descripción; '' si no es un Otro bien escrito
+const descripcionOtro = c => { const m = String(c || '').trim().match(/^otro\s*\((.{3,})\)$/i); return m ? m[1].trim() : ''; };
+const conceptoEnLista = c => { const x = minus(c); return !!descripcionOtro(c) || CONCEPTOS_EXTRA.concat(CONCEPTOS_SISTEMA).some(k => k !== 'Otro' && minus(k) === x); };
+// los conceptos de un viaje que no están en la lista (datos de antes o escritos a mano en la hoja)
+const conceptosFueraDeLista = v => itemsExtra(v).filter(([c, x]) => x && !ES_RETORNO.test(c) && !conceptoEnLista(c)).map(([c]) => c);
 // "Concepto extracostos" guarda cada extracosto como "Cita: 60000; Standby: 560000"
 function itemsExtra(v){
   const L = String(v.conceptoExtra||'').split(';').map(s=>s.trim()).filter(Boolean).map(s=>{
@@ -1656,6 +1668,10 @@ function datosEquivocados(v, ch){
   const out = [], val = k => String(ch[k] === null || ch[k] === undefined ? '' : ch[k]).trim(), toca = k => k in ch && !!val(k);
   const queda = k => (k in ch ? val(k) : v[k]) || '';   // el valor que tendrá el viaje después de guardar
   const add = (campo, msg) => out.push({campo, msg});
+  // extracostos: lo nuevo debe ser de la lista (lo que el viaje ya traía de antes no frena el guardado; sale en Calidad de datos)
+  if (toca('conceptoExtra')) { const antes = itemsExtra(v).map(([c]) => minus(c));
+    itemsExtra({conceptoExtra: val('conceptoExtra')}).filter(([c, x]) => x && !ES_RETORNO.test(c) && !conceptoEnLista(c) && !antes.includes(minus(c))).forEach(([c]) =>
+      add('conceptoExtra', /^otro\b/i.test(c) ? 'Un extracosto "Otro" necesita su descripción: escriba qué es' : `"${c}" no está en la lista de extracostos: elija uno de la lista o "Otro" con su descripción`)); }
   if (toca('obd')) { const x = val('obd').replace(/[\s.\-]/g, '');
     if (!/^\d{8,12}$/.test(x)) add('obd', `"${val('obd')}" no es un OBD: el Delivery Number son solo números (ej. 8200000000)${/^RBHY/i.test(x) ? '. Eso es un RBHY' : ''}`); }
   if (toca('rbhy')) { const x = val('rbhy');
@@ -1744,6 +1760,9 @@ function patioPareceBodega(patio, v, evidencia){
 // cada hallazgo dice "por qué": qué fecha o qué hecho hace que haya que llenarlo ya
 function validar(v){
   const e = [], add = (sev, campo, msg, tipo = 'Error', porque = '') => e.push({v, sev, campo, msg, tipo, porque});
+  // extracostos con un nombre que no es de la lista estándar (10-nov): se cambian por el de la lista
+  if (!['Cerrado', 'Cancelado'].includes(situacion(v))) { const F = [...new Set(conceptosFueraDeLista(v))];
+    if (F.length) add('Media', 'Extracostos', `Extracosto con un nombre fuera de la lista: ${F.map(c => '"' + c + '"').join(', ')}. Cámbielo por el de la lista`, 'Error', 'Con nombres distintos para el mismo cobro no se puede comparar ni sumar por concepto'); }
   // contenedor o placa escritos en el campo equivocado (pasó en EXPO-009: la placa SYL424 en Contenedor)
   [['contenedor', 'Contenedor'], ['placa', 'Placa']].forEach(([k, nombre]) => { const m = datoMalEscrito(k, v[k]);
     if (m && !['Cancelado'].includes(situacion(v))) add('Alta', nombre, m, 'Error', 'Con el dato equivocado no se cruzan los correos ni las asignaciones del viaje'); });
@@ -3683,11 +3702,11 @@ function panelFactura(v, P, n){
   const hijos = hijosDe(v), costoHijos = hijos.reduce((a, s) => a + costoViaje(s), 0);
   const totalViaje = c.flete + (c.aprob==='Rechazado' ? 0 : c.extra) + costoHijos;
   // siempre las mismas líneas: Fletes, Citas, Standby y Otros (los demás conceptos de extracostos sumados)
-  const grupo = k => /^cita/i.test(k) ? 'cita' : /stand\s*-?by/i.test(k) ? 'standby' : /^retorno/i.test(k) ? 'retorno' : /^cargue/i.test(k) ? 'cargue' : 'otros';
+  const grupo = k => /^cita/i.test(k) ? 'cita' : /stand\s*-?by/i.test(k) ? 'standby' : /^retorno/i.test(k) ? 'retorno' : /^(cargue|llenado)/i.test(k) ? 'cargue' : 'otros';
   const sum = {cita:0, standby:0, retorno:0, cargue:0, otros:0}, otros = [];
   itemsExtra(v).forEach(([k, x]) => { sum[grupo(k)] += x; if (grupo(k)==='otros' && x) otros.push(k); });
   const gastos = lnR('Fletes', pesos(c.tarifa)) + lnR('Citas', pesos(sum.cita)) + lnR('Standby', pesos(sum.standby))
-    + (c.retorno ? lnR('Retorno (flete)', pesos(c.retorno)) : '') + (sum.cargue ? lnR('Cargue', pesos(sum.cargue)) : '')
+    + (c.retorno ? lnR('Retorno (flete)', pesos(c.retorno)) : '') + (sum.cargue ? lnR('Llenado', pesos(sum.cargue)) : '')
     + lnR(otros.length ? `<span title="${esc(otros.join(', '))}">Otros</span>` : 'Otros', pesos(sum.otros))
     + (hijos.length ? lnR(`<span title="${esc(hijos.flatMap(s => itemsExtra(s).map(([k, x]) => k+' '+pesos(x))).join(', '))}">Subviaje${hijos.length>1?'s':''}</span>`, pesos(costoHijos)) : '')
     + granR('Total', pesos(totalViaje))
@@ -4226,15 +4245,13 @@ function pintarForm(v){
     (v.padre ? CAMPOS_SUB.map(([t, cs]) => grupo(t, v.operacion === 'IMPO' ? cs : cs.filter(c => c[0] !== 'contenedorSub'))).join('') : grupo('Viaje', esNacional(v) ? CAMPOS_VIAJE.filter(c => !['booking','do','contenedor','unidad','fwd'].includes(c[0])) : CAMPOS_VIAJE) + CAMPOS_ETAPA[v.operacion].map(([t, cs]) => grupo(t, cs)).join('') + calc) +
     `<div class="full" style="margin-top:12px"><label>Observación (nota fija del viaje) <span class="sub">· lo que pasa día a día va en Novedades, arriba</span></label><textarea data-k="observacion" placeholder="Ej: Programación nov · cargue en DHL">${esc(v.observacion||'')}</textarea></div>`;
   const lista = (id, k) => { $('#'+id).innerHTML = [...new Set(viajes.map(x=>x[k]).filter(Boolean))].sort().map(x=>`<option value="${esc(x)}">`).join(''); };
-  $('#dlExtra').innerHTML = [...new Set([...CONCEPTOS_EXTRA, ...viajes.flatMap(x=>itemsExtra(x).map(i=>i[0]))])].filter(x => !ES_RETORNO.test(x)).map(x=>`<option value="${esc(x)}">`).join('');
   lista('dlPatio','patio'); lista('dlFwd','fwd');
   marcarCambios();
 }
-// 10-nov: Retorno ya no es extracosto (es parte del flete: casilla Retorno, al lado de la tarifa; dominio.js cobro)
-const CONCEPTOS_EXTRA = ['Cita','Standby','Cargue','Descargue','Urbano','Parqueadero','Pernocta','Escolta','Almacenaje','Movimiento de contenedor'];
+// 10-nov: la lista de extracostos (CONCEPTOS_EXTRA) está en el dominio; Retorno no es extracosto (es parte del flete: casilla Retorno)
 // subviaje (viaje hijo): descargue en un patio intermedio y urbano al destino final; mismos costos de siempre
 const MOTIVOS_SUBVIAJE = ['Paro','Demora en cita','Cierre de vía','Instrucción del cliente','Otro'];
-const CONCEPTOS_SUB = ['Descargue','Cargue','Urbano','Parqueadero'];
+const CONCEPTOS_SUB = ['Vaciado de contenedor','Almacenaje','Urbano','Parqueadero'];   // de la lista estándar (dominio CONCEPTOS_EXTRA)
 // IMPO: qué pasa con el contenedor en la bodega de paso (dominio vaciadoSub); vacío = Lleno
 const CONTENEDOR_SUB = ['Lleno', 'Vaciado'];
 const CAMPOS_SUB = [
@@ -4243,10 +4260,16 @@ const CAMPOS_SUB = [
   ['Vehículo del urbano', [['situacion','STATUS','sit'],['conductor','Conductor'],['placa','Placa']]],
   ['Costos y facturación', [['conceptoExtra','Costos del subviaje','extras'],['aprobacionExtra','Aprobación','lista',['Pendiente','Aprobado','Rechazado']],
     ['facturacion','Facturación','lista',FACTURACION],['numFactura','N° factura'],['fechaFactura','Fecha factura','fecha']]]];
-const filaExtra = ([k, x] = ['', 0]) => `<div class="exrow"><input class="exc" list="dlExtra" placeholder="Concepto" value="${esc(k)}"><input class="exv" inputmode="numeric" placeholder="$" value="${x||''}"><button type="button" class="link" data-del title="Quitar">✕</button></div>`;
+// 10-nov · el concepto se elige de la lista estándar (dominio CONCEPTOS_EXTRA). "Otro" pide su descripción. Un nombre de antes que no
+// es de la lista se conserva marcado con ⚠ hasta que alguien lo cambie por el de la lista.
+const filaExtra = ([k, x] = ['', 0]) => { const otro = descripcionOtro(k), enLista = !k || !!otro || CONCEPTOS_EXTRA.some(c => minus(c) === minus(k)), sel = otro ? 'Otro' : (CONCEPTOS_EXTRA.find(c => minus(c) === minus(k)) || k);
+  return `<div class="exrow"><select class="exc"${enLista ? '' : ' style="border-color:var(--warn)" title="Este nombre no es de la lista: cámbielo por el de la lista"'}><option value="">Concepto…</option>${enLista ? '' : `<option value="${esc(k)}" selected>⚠ ${esc(k)} (fuera de la lista)</option>`}${CONCEPTOS_EXTRA.map(c => `<option value="${esc(c)}"${c === sel ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select><input class="exv" inputmode="numeric" placeholder="$" value="${x||''}"><button type="button" class="link" data-del title="Quitar">✕</button>
+    <input class="exd" placeholder="¿Qué es? (obligatorio)" value="${esc(otro)}" style="grid-column:1/-1${sel === 'Otro' ? '' : ';display:none'}"></div>`; };
 // lo que se escribe en las filas pasa a "Concepto extracostos" (Cita: 60000; …) y la suma a Extracostos
 function syncExtras(){
-  const filas = [...document.querySelectorAll('#mExtras .exrow')].map(r => [r.querySelector('.exc').value.trim(), r.querySelector('.exv').value.replace(/[^\d]/g,'')]).filter(([, x]) => x);
+  const filas = [...document.querySelectorAll('#mExtras .exrow')].map(r => { const c = r.querySelector('.exc').value.trim(), d = r.querySelector('.exd'), desc = d ? d.value.replace(/[;:()]/g, ' ').trim() : '';
+    if (d) d.style.display = c === 'Otro' ? '' : 'none';
+    return [c === 'Otro' && desc ? `Otro (${desc})` : c, r.querySelector('.exv').value.replace(/[^\d]/g,'')]; }).filter(([, x]) => x);
   const c = document.querySelector('#mForm [data-k=conceptoExtra]'), t = document.querySelector('#mForm [data-k=extracostos]');
   if (!c) return;
   c.value = filas.map(([k, x]) => `${k || 'Extracosto'}: ${x || 0}`).join('; ');
@@ -4328,6 +4351,7 @@ $('#mSave').onclick = () => {
   if (Object.keys(cambios).length) guardarCambio(editId, cambios, usuario, {revisado: true}).then(ok => { if (ok !== false && causaSel && causaSel.texto) enviarCambio(v, mov, causaSel, usuario); });
   cerrar();
 };
+$('#mForm').addEventListener('change', e => { if (e.target.closest('#mExtras')) { syncExtras(); marcarCambios(); } });
 $('#mForm').addEventListener('input', e => { if (e.target.closest('#mExtras')) syncExtras();
   const ff = $('#mForm [data-k=fechaFactura]');
   // marcar Facturado propone la fecha de factura; cerrar el viaje (STATUS) lo hace facturación a mano
@@ -5924,7 +5948,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '50ca879eea';
+const VERSION_TABLERO = 'eb8d8452d6';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
