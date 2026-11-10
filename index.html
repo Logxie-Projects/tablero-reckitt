@@ -4650,7 +4650,9 @@ function estadoPaso(v, k){
   const f = fechaPaso(v, k), dev = typeof botonDevolucion === 'function' ? botonDevolucion(v, k) : '';   // 📎 tirilla y aviso (devolucion.js)
   if (!f) return dev;
   if (f > HOY) return `<div data-paso="${k}" class="sub paso-est">Plan (aún no pasa)</div>` + dev;
-  if (porConfirmar(v, k)) { const txt = (pasosDe(v).find(p => p[0] === k) || [])[1] || k;
+  if (porConfirmar(v, k)) { const paso = pasosDe(v).find(p => p[0] === k) || [], txt = paso[1] || k;
+    // fecha del buque (zarpe, llegada): es la estimada de la naviera; no se pide confirmarla, pero quien la sepa puede hacerlo
+    if (paso[2]) return `<div data-paso="${k}" class="sub paso-est">Fecha estimada de la naviera · ${botonConfirmar({v, campo: k, fecha: f, txt})}</div>` + dev;
     return `<div data-paso="${k}" class="sub paso-est conf">⚠ Sin confirmar · ${botonConfirmar({v, campo: k, fecha: f, txt})}</div>` + dev; }
   return `<div data-paso="${k}" class="sub paso-est ok">✓ ${esc(textoConfirmacion(confirmacion(v, k)))}</div>` + dev;
 }
@@ -4658,7 +4660,7 @@ function estadoPaso(v, k){
 // Mi turno → Seguimiento: un viaje (o subviaje) con pasos por confirmar. Roja si alguno, que no sea del buque, lleva más de 1 día
 function filasConfirmar(V){
   const lista = V.flatMap(v => [v, ...hijosDe(v)]).filter(x => !esPrueba(x));
-  return lista.map(x => ({x, P: pasosPorConfirmar(x)})).filter(y => y.P.length)
+  return lista.map(x => ({x, P: pasosPorConfirmar(x).filter(p => !p.naviera)})).filter(y => y.P.length)   // 10-nov: zarpe y llegada (naviera) no se preguntan
     .map(({x, P}) => ({k: 'conf|' + x.id, tipo: 'conf', v: x, P, roja: P.some(p => !p.naviera && p.dias > 1)}))
     .sort((a, b) => b.roja - a.roja || Math.max(...b.P.map(p => p.dias)) - Math.max(...a.P.map(p => p.dias)));
 }
@@ -5865,7 +5867,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '34ca49f9da';
+const VERSION_TABLERO = '79bd26d6fd';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -7661,10 +7663,12 @@ function armarBandeja(){
           + btnT(ICONO_WA + 'Invitar al grupo de conductores', 'data-b-invitar="1"', 'WhatsApp al grupo de conductores con todos los viajes sin vehículo (el mismo mensaje del botón 🚛 Invitar conductores)')});
     }
     // 4 · ¿Pasó? (por confirmar + sin actualizar de la misma fecha: una pregunta)
-    todos.forEach(x => pasosPorConfirmar(x).forEach(p => add(v, {b: 'paso', k: 'conf|' + x.id,
+    // 10-nov ("estos zarpes dependen de la naviera... usemos el estimado"): el zarpe y la llegada a destino no se le preguntan al
+    // equipo; no los hace la transportadora. Queda la fecha estimada (ETD / ETA) como dato en el viaje.
+    todos.forEach(x => pasosPorConfirmar(x).filter(p => !p.naviera).forEach(p => add(v, {b: 'paso', k: 'conf|' + x.id,
       html: `${x.padre ? `${esc(nombreSub(x))} · ` : ''}<b>${esc(p.txt)}</b> ${esc(fd(p.fecha))}${p.dias ? ` · hace ${p.dias} d` : ' · hoy'}`,
       acc: botonConfirmar({v: x, ...p}, 'Sí, se hizo') + btnT('No: nueva fecha', `data-b-abrir="${x.id}"`, 'Abre el viaje para poner la fecha nueva con su causa')})));
-    if (!pasosPorConfirmar(v).length) sinActualizar(v).forEach(s => add(v, {b: 'sinact', k: kSeg(v), html: `${esc(s.msg)}<br><span class="sub">${esc(s.porque || '')}</span>`,
+    if (!pasosPorConfirmar(v).some(p => !p.naviera)) sinActualizar(v).forEach(s => add(v, {b: 'sinact', k: kSeg(v), html: `${esc(s.msg)}<br><span class="sub">${esc(s.porque || '')}</span>`,
       acc: btnT('Actualizar el viaje', `data-b-abrir="${v.id}"`) + (v.placa ? lnkT(ICONO_WA + 'Preguntar dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas')) : '')}));
     // ¿Dónde va? (seguimiento de la ronda): vehículos en movimiento sin nada atrasado; "Sigue igual" lo marca revisado en esta ronda
     else if (!sinActualizar(v).length && enSeguimiento([v]).length && !T.R.has(kSeg(v))) { const p = pulsoViaje(v);
