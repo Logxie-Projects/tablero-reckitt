@@ -824,6 +824,10 @@ body.lv-abierta{overflow:hidden}
 .km-v.warn.aprox circle{fill:color-mix(in srgb,var(--warn) 30%,var(--surface));stroke:var(--warn)}
 .km-v text{font-size:8px;font-weight:600;fill:#fff;pointer-events:none}
 .km-v.aprox text{fill:var(--text)}
+.km-zona{fill:color-mix(in srgb,var(--ok) 25%,var(--surface));stroke:var(--ok);stroke-width:1.3}.km-zona.warn{fill:color-mix(in srgb,var(--warn) 25%,var(--surface));stroke:var(--warn)}
+.km-zt{margin:10px 0 5px;font-size:12.5px;color:var(--muted)}
+.km-z{background:var(--surface-2);border:1.3px solid var(--ok);border-radius:8px;box-sizing:border-box}.km-z.warn{border-color:var(--warn)}
+.km-z .km-v text{font-size:11px}.km-z .km-nom{font-size:12px}
 .km-cta{font-size:12px;font-weight:400;border-radius:999px;padding:3px 10px;margin-left:8px;vertical-align:middle}
 .km-cta.ok{background:var(--kl-ok);color:var(--ok)}.km-cta.warn{background:var(--kl-warn);color:var(--text)}
 .km-r{border-radius:50%!important}.km-ap{background:transparent!important;border:1.5px dashed var(--muted)}
@@ -5839,7 +5843,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'e616a6b8c4';
+const VERSION_TABLERO = 'f23f4181df';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -6832,6 +6836,9 @@ montarKC();
  * respeta la operación elegida. Cada vehículo es un punto con su número (el mismo de su fila en la lista); el que cae encima de otro se corre un poco.
  * El mapa es un dibujo propio (contorno simplificado de Colombia, sin librerías ni mapas de terceros): sirve en modo oscuro
  * y no manda la ubicación a nadie.
+ * Valle ampliado (10-nov): Buenaventura, Yumbo y Cali quedan a pocos píxeles en el mapa del país y los puntos se amontonan. Los
+ * vehículos de esa zona se pintan en un recuadro ampliado debajo del mapa; en el país la zona queda marcada con la cantidad.
+ * El recuadro solo aparece cuando hay vehículos en la zona.
  * Colores: verde = en movimiento, ámbar = con novedad o en espera. Prefijo CSS: km-. */
 const KM_BORDE = [[-75.37,-0.15],[-75.8,0.08],[-76.29,0.42],[-76.58,0.26],[-77.42,0.4],[-77.67,0.83],[-77.86,0.81],[-78.86,1.38],[-78.99,1.69],[-78.62,1.77],[-78.66,2.27],
   [-78.43,2.63],[-77.93,2.7],[-77.51,3.33],[-77.13,3.85],[-77.5,4.09],[-77.31,4.67],[-77.53,5.58],[-77.32,5.85],[-77.48,6.69],[-77.88,7.22],[-77.75,7.71],
@@ -6850,6 +6857,11 @@ const KM_LUGARES = [[/\bbun\b|buenaventura/, 'Buenaventura', 3.88, -77.03], [/\b
 const KM_ROTULO = {Buenaventura: [-9, 4, 'end'], Yumbo: [10, -5, 'start'], Cali: [9, 15, 'start'], Cartagena: [-8, 4, 'end'], Barranquilla: [0, -9, 'middle']};
 const KM_SEP = 14;   // separación entre dos puntos del mapa (cada punto mide 12)
 const KM = {W: 380, H: 510, O: -80.1, E: -66.5, N: 12.8, S: -4.5};
+// la zona del Valle que se amplía (misma anchura del mapa del país; se estira a lo ancho para que el trayecto quede largo)
+const KM_Z = {W: 380, H: 190, O: -77.3, E: -76.2, N: 4.15, S: 3.3, SEP: 20};
+const KM_Z_ROTULO = {Buenaventura: [0, -12, 'middle'], Yumbo: [11, -4, 'start'], Cali: [11, 6, 'start']};
+const kmZXY = (lat, lng) => [(lng - KM_Z.O) / (KM_Z.E - KM_Z.O) * KM_Z.W, (KM_Z.N - lat) / (KM_Z.N - KM_Z.S) * KM_Z.H];
+const kmEnValle = (lat, lng) => lat > KM_Z.S && lat < KM_Z.N && lng > KM_Z.O && lng < KM_Z.E;
 const kmXY = (lat, lng) => [(lng - KM.O) / (KM.E - KM.O) * KM.W, (KM.N - lat) / (KM.N - KM.S) * KM.H];
 const kmLugar = t => { const s = sinTilde(String(t || '')).toLowerCase(); return s ? KM_LUGARES.find(l => l[0].test(s)) || null : null; };
 const kmLugarDe = (...T) => T.map(kmLugar).find(Boolean) || null;
@@ -6871,42 +6883,61 @@ function calcKM(conNovedad){
     const real = !!c && isFinite(lat) && isFinite(lng) && lat > KM.S && lat < KM.N && lng > KM.O && lng < KM.E && (lat || lng);
     // sin reporte con ubicación: sobre el trayecto, por los pasos que lleva el conductor o por la etapa
     const f = kmDevolviendo(v) ? .9 : c && c.total && c.n ? Math.min(.95, Math.max(.08, c.n / c.total)) : .5;
-    const p = real ? [lat, lng] : [a[2] + (b[2] - a[2]) * f, a[3] + (b[3] - a[3]) * f], xy = kmXY(p[0], p[1]);
+    const p = real ? [lat, lng] : [a[2] + (b[2] - a[2]) * f, a[3] + (b[3] - a[3]) * f];
     const nov = conNovedad.get(v.id);
-    return {v, a, b, real, x: xy[0], y: xy[1], warn: !!nov, nov, c, fecha: c && (real ? c.ubiFecha || c.fecha : c.fecha) || '',
+    return {v, a, b, real, lat: p[0], lng: p[1], valle: kmEnValle(p[0], p[1]), warn: !!nov, nov, c, fecha: c && (real ? c.ubiFecha || c.fecha : c.fecha) || '',
       tramo: kmDevolviendo(v) ? `${b[1]} · devolviendo el vacío` : a[1] === b[1] ? a[1] : `${a[1]} → ${b[1]}`};
   }).sort((p, q) => q.warn - p.warn || String(q.fecha).localeCompare(String(p.fecha)));
   // cada vehículo es un punto (10-nov: "ver todos los vehículos como puntos en el mapa"). El que cae encima de otro se corre:
   // el aproximado, a lo largo de su trayecto; el que tiene ubicación real, apenas alrededor de su sitio
-  const puestos = [], libre = (x, y) => puestos.every(q => Math.hypot(q.x - x, q.y - y) >= KM_SEP - .01);
+  // los del Valle se acomodan en su recuadro ampliado y los demás en el mapa del país
+  const valle = L.filter(p => p.valle);
+  kmSeparar(L.filter(p => !p.valle), kmXY, KM_SEP); kmSeparar(valle, kmZXY, KM_Z.SEP);
+  const tramos = new Map(); L.forEach(p => { const k = p.a[1] + '|' + p.b[1]; if (!tramos.has(k)) tramos.set(k, [p.a, p.b]); });
+  const sitios = new Map(); tramos.forEach(([a, b]) => { sitios.set(a[1], a); sitios.set(b[1], b); });
+  return {L, valle, tramos: [...tramos.values()], sitios: [...sitios.values()]};
+}
+// pone cada punto en su mapa (xy = la proyección de ese mapa) y corre el que cae encima de otro
+function kmSeparar(L, xy, sep){
+  const puestos = [], libre = (x, y) => puestos.every(q => Math.hypot(q.x - x, q.y - y) >= sep - .01);
   [...L].sort((p, q) => q.real - p.real).forEach(p => {
-    const A = kmXY(p.a[2], p.a[3]), B = kmXY(p.b[2], p.b[3]), d = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1, ux = (B[0] - A[0]) / d, uy = (B[1] - A[1]) / d;
+    const o = xy(p.lat, p.lng); p.x = o[0]; p.y = o[1];
+    const A = xy(p.a[2], p.a[3]), B = xy(p.b[2], p.b[3]), d = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1, ux = (B[0] - A[0]) / d, uy = (B[1] - A[1]) / d;
     const C = [[0, 0]];
+    // primero a lo largo de su trayecto (sin salirse de él); si no cabe, alrededor
+    if (!p.real && d > 1) for (let k = 1; k <= 12; k++) [k, -k].forEach(s => { const t = ((p.x - A[0]) * ux + (p.y - A[1]) * uy + s * sep) / d; if (t > .04 && t < .96) C.push([ux * s * sep, uy * s * sep]); });
     for (let k = 1; k <= 12; k++) {
-      if (!p.real && d > 1) [k, -k].forEach(s => C.push([ux * s * KM_SEP, uy * s * KM_SEP]));
-      for (let i = 0; i < 6 * k; i++) { const t = i / (6 * k) * 2 * Math.PI; C.push([Math.cos(t) * k * KM_SEP, Math.sin(t) * k * KM_SEP]); }
+      for (let i = 0; i < 6 * k; i++) { const t = i / (6 * k) * 2 * Math.PI; C.push([Math.cos(t) * k * sep, Math.sin(t) * k * sep]); }
     }
     const c = C.find(([dx, dy]) => libre(p.x + dx, p.y + dy)) || [0, 0];
     p.x += c[0]; p.y += c[1]; puestos.push(p);
   });
-  const tramos = new Map(); L.forEach(p => { const k = p.a[1] + '|' + p.b[1]; if (!tramos.has(k)) tramos.set(k, [p.a, p.b]); });
-  const sitios = new Map(); tramos.forEach(([a, b]) => { sitios.set(a[1], a); sitios.set(b[1], b); });
-  return {L, tramos: [...tramos.values()], sitios: [...sitios.values()]};
 }
 
 function htmlKM(N){
   const M = calcKM(new Map(N.filter(x => x.tag !== 'falta documento').map(x => [x.v.id, x])));
   const nWarn = M.L.filter(p => p.warn).length, nReal = M.L.filter(p => p.real).length;
+  // un mapa = sus trayectos, sus sitios con nombre y sus vehículos, con la proyección xy de ese mapa
+  const capas = (xy, tramos, sitios, rotulo, L, r) => { const pt = (lat, lng) => xy(lat, lng).map(n => Math.round(n * 10) / 10).join(',');
+    return `${tramos.map(([a, b]) => `<line class="km-tramo" x1="${pt(a[2], a[3]).replace(',', '" y1="')}" x2="${pt(b[2], b[3]).replace(',', '" y2="')}"/>`).join('')}
+    ${sitios.map(s => { const [x, y] = xy(s[2], s[3]), e = rotulo[s[1]] || [8, 4, 'start']; return `<circle class="km-sitio" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5"/><text class="km-nom" x="${(x + e[0]).toFixed(1)}" y="${(y + e[1]).toFixed(1)}" text-anchor="${e[2]}">${esc(s[1])}</text>`; }).join('')}
+    ${L.map(p => `<g class="km-v${p.warn ? ' warn' : ''}${p.real ? '' : ' aprox'}"><title>${esc(`${p.v.placa} · ${p.tramo}`)}</title><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r}"/><text x="${p.x.toFixed(1)}" y="${(p.y + r / 2).toFixed(1)}" text-anchor="middle">${p.num}</text></g>`).join('')}`; };
   const pt = (lat, lng) => kmXY(lat, lng).map(n => Math.round(n * 10) / 10).join(',');
+  const nV = M.valle.length, wV = M.valle.some(p => p.warn) ? ' warn' : '', enV = s => kmEnValle(s[2], s[3]);
+  const z0 = kmXY(KM_Z.N, KM_Z.O), z1 = kmXY(KM_Z.S, KM_Z.E);
   // el número de cada punto es el de su fila en la lista de al lado
   const porTramo = new Map(); M.L.forEach(p => { if (!porTramo.has(p.tramo)) porTramo.set(p.tramo, []); porTramo.get(p.tramo).push(p); });
   let num = 0; porTramo.forEach(L => L.forEach(p => { p.num = ++num; }));
   const mapa = `<svg viewBox="0 0 ${KM.W} ${KM.H}" role="img" aria-label="Mapa de Colombia con ${klPl(M.L.length, 'vehículo')} en ruta">
     <polygon class="km-pais" points="${KM_BORDE.map(([lng, lat]) => pt(lat, lng)).join(' ')}"/>
-    ${M.tramos.map(([a, b]) => `<line class="km-tramo" x1="${pt(a[2], a[3]).replace(',', '" y1="')}" x2="${pt(b[2], b[3]).replace(',', '" y2="')}"/>`).join('')}
-    ${M.sitios.map(s => { const [x, y] = kmXY(s[2], s[3]), e = KM_ROTULO[s[1]] || [8, 4, 'start']; return `<circle class="km-sitio" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5"/><text class="km-nom" x="${(x + e[0]).toFixed(1)}" y="${(y + e[1]).toFixed(1)}" text-anchor="${e[2]}">${esc(s[1])}</text>`; }).join('')}
-    ${M.L.map(p => `<g class="km-v${p.warn ? ' warn' : ''}${p.real ? '' : ' aprox'}"><title>${esc(`${p.v.placa} · ${p.tramo}`)}</title><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="6"/><text x="${p.x.toFixed(1)}" y="${(p.y + 3).toFixed(1)}" text-anchor="middle">${p.num}</text></g>`).join('')}
-  </svg>`;
+    ${nV ? `${capas(kmXY, M.tramos.filter(([a, b]) => !enV(a) || !enV(b)), [], KM_ROTULO, [], 6)}
+      <rect class="km-zona${wV}" x="${z0[0].toFixed(1)}" y="${z0[1].toFixed(1)}" width="${(z1[0] - z0[0]).toFixed(1)}" height="${(z1[1] - z0[1]).toFixed(1)}" rx="3"><title>Valle del Cauca: ${klPl(nV, 'vehículo')}, en el recuadro ampliado</title></rect>
+      <text class="km-nom" x="${(z0[0] - 6).toFixed(1)}" y="${(z0[1] + 15).toFixed(1)}" text-anchor="end">Valle · ${nV}</text>` : ''}
+    ${capas(kmXY, nV ? [] : M.tramos, M.sitios.filter(s => !nV || !enV(s)), KM_ROTULO, M.L.filter(p => !p.valle), 6)}
+  </svg>${nV ? `<div class="km-zt">Valle del Cauca, ampliado · ${klPl(nV, 'vehículo')}</div>
+  <svg class="km-z${wV}" viewBox="0 0 ${KM_Z.W} ${KM_Z.H}" role="img" aria-label="Valle del Cauca ampliado con ${klPl(nV, 'vehículo')}">
+    ${capas(kmZXY, M.tramos.filter(([a, b]) => enV(a) || enV(b)), M.sitios.filter(enV), KM_Z_ROTULO, M.valle, 9)}
+  </svg>` : ''}`;
   const fila = p => `<div class="km-f${p.warn ? ' warn' : ''}"><i class="${p.real ? '' : 'aprox'}">${p.num}</i><div><b>${esc(p.v.placa)}</b> <span>${esc(kcRef(p.v))}</span>
       <small>${esc(p.warn ? `${p.nov.tag}${p.nov.dias ? ' · ' + klPl(p.nov.dias, 'día') : ''}` : String(p.v.estado || '').toLowerCase())}${p.c && p.c.n ? ` · ${esc(String(p.c.paso).toLowerCase())}` : ''}</small>
       <em>${p.real ? `Reportó ${haceTxt(p.fecha) || 'sin hora'}` : p.c && p.c.n && p.fecha ? `Reportó ${haceTxt(p.fecha)}, sin ubicación` : 'Sin reporte del conductor'}</em></div></div>`;
