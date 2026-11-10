@@ -5020,10 +5020,15 @@ function textoProgramacion(v, antes, despues){
 async function atajoProgramacion(b){
   toast('Buscando el cuadro de programación en los correos…');
   try {
-    const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=correos&dias=20&clave=' + encodeURIComponent(claveActual()))).json();
-    const progs = (j.correos||[]).filter(c => c.programacion && c.programacion.length);
+    // 10-nov ("tarda mucho en cargar el cuadro"): antes barría SIEMPRE los últimos 20 días del buzón. Ahora solo desde el día del
+    // correo de la acción (casi siempre hoy o ayer); si ahí no aparece el cuadro, entonces sí los 20 días.
+    const f = new Date(b.fechaCorreo || b.registrado || 0), dias = isNaN(f) || !f.getTime() ? 20 : Math.min(20, Math.max(2, Math.ceil((Date.now() - f) / 864e5) + 1));
     const nMes = MESES_LARGO.findIndex(m => minus(b.asunto + ' ' + b.accion).includes(m));
-    const c = progs.find(p => Number(p.programacion[0].fechaCargue.slice(5, 7)) === nMes + 1) || progs[0];
+    const buscar = async d => { const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=correos&dias=' + d + '&clave=' + encodeURIComponent(claveActual()))).json();
+      const progs = (j.correos||[]).filter(c => c.programacion && c.programacion.length);
+      return progs.find(p => Number(p.programacion[0].fechaCargue.slice(5, 7)) === nMes + 1) || progs[0]; };
+    let c = await buscar(dias);
+    if (!c && dias < 20) { toast('No está en los correos recientes: busco en los últimos 20 días, tarda más…'); c = await buscar(20); }
     if (!c) { accionEnCurso = null; return toast('No encontré el cuadro de programación en los correos de los últimos 20 días'); }
     const R = compararProgramacion(c), mes = nombreMes(c.programacion[0].fechaCargue.slice(0, 7));
     if (R.filas.every(f => ['igual', 'documento'].includes(f.accion)) &&!(R.fuera||[]).length) {
@@ -5951,7 +5956,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '657d66006a';
+const VERSION_TABLERO = '5250042b36';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
