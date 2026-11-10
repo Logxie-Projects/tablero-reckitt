@@ -1520,6 +1520,91 @@ function datoMalEscrito(campo, valor){
   return '';
 }
 
+/* ---------- datos en la casilla equivocada, avisos antes de guardar y contenedores hermanos (10-nov) ----------
+ * Errores reales del equipo (8 y 9-nov) que el sistema no veía porque solo revisaba lo que FALTA: el booking escrito en la casilla
+ * de Pedido y en la de la tirilla, el DO escrito con la palabra DO adelante, el OBD puesto en un contenedor del booking
+ * y no en el otro, la cita de ingreso después del cierre documental. Aquí se frena lo que es claramente un
+ * dato de otra casilla (datosEquivocados), se avisa lo dudoso para que la persona confirme (avisosAntesDeGuardar) y se muestran los
+ * otros contenedores de la misma referencia (hermanosDe). Solo miran lo que se va a guardar: lo ya guardado no cambia. */
+// el mismo código: igual sin espacios ni guiones, o (de 8 caracteres o más) del mismo largo con una sola letra distinta
+// (una O por un 0)
+function mismoCodigo(a, b){
+  const x = limpioId(a), y = limpioId(b);
+  if (x.length < 5 || y.length < 5) return false;
+  if (x === y) return true;
+  if (x.length !== y.length || x.length < 8) return false;
+  let d = 0; for (let i = 0; i < x.length; i++) if (x[i] !== y[i] && ++d > 1) return false;
+  return true;
+}
+// "DO 12X34567" → "12X34567": la casilla ya dice DO
+const limpiarDO = x => String(x || '').trim().replace(/^D\.?\s?O\.?[\s:#.\-]+(?=\w)/i, '');
+// lo que NO se guarda: [{campo, msg}]. v = el viaje como está; ch = los cambios que se van a guardar
+function datosEquivocados(v, ch){
+  const out = [], val = k => String(ch[k] === null || ch[k] === undefined ? '' : ch[k]).trim(), toca = k => k in ch && !!val(k);
+  const queda = k => (k in ch ? val(k) : v[k]) || '';   // el valor que tendrá el viaje después de guardar
+  const add = (campo, msg) => out.push({campo, msg});
+  if (toca('obd')) { const x = val('obd').replace(/[\s.\-]/g, '');
+    if (!/^\d{8,12}$/.test(x)) add('obd', `"${val('obd')}" no es un OBD: el Delivery Number son solo números (ej. 8200000000)${/^RBHY/i.test(x) ? '. Eso es un RBHY' : ''}`); }
+  if (toca('rbhy')) { const x = val('rbhy');
+    if (/^\d+$/.test(limpioId(x))) add('rbhy', `"${x}" es solo números: parece un OBD, no un RBHY (ej. RBHY12345)`);
+    else if (pareceContenedor(x)) add('rbhy', `"${x}" parece un contenedor, no un RBHY (ej. RBHY12345)`);
+    else if (mismoCodigo(x, queda('booking'))) add('rbhy', `"${x}" es el booking de este viaje, no el RBHY (ej. RBHY12345)`); }
+  if (toca('pedido')) { const x = val('pedido');
+    if (pareceContenedor(x)) add('pedido', `"${x}" parece un contenedor, no un pedido`);
+    else if (v.operacion === 'EXPO' && mismoCodigo(x, queda('booking'))) add('pedido', `"${x}" es el booking de este viaje, no el pedido: el booking va en su casilla`); }
+  if (toca('do')) { const x = limpiarDO(val('do'));
+    if (pareceContenedor(x)) add('do', `"${x}" parece un contenedor, no un DO`);
+    else if (v.operacion === 'EXPO' && mismoCodigo(x, queda('booking'))) add('do', `"${x}" es el booking de este viaje, no el DO`); }
+  ['tirillaEntrega', 'tirillaDevolucion'].forEach(k => { if (!toca(k)) return;
+    const r = [['booking', 'el booking'], ['contenedor', 'el contenedor'], ['do', 'el DO'], ['pedido', 'el pedido']].find(([c]) => mismoCodigo(val(k), queda(c)));
+    if (r) add(k, `"${val(k)}" es ${r[1]} de este viaje, no la tirilla: suba la tirilla con 📎 o escriba la remesa y la fecha`); });
+  return out;
+}
+// lo dudoso: textos para que la persona confirme antes de guardar (puede ser cierto: la naviera extendió el cierre)
+function avisosAntesDeGuardar(v, ch){
+  const out = [], queda = k => (k in ch ? ch[k] : v[k]) || '', toca = (...ks) => ks.some(k => k in ch && ch[k]);
+  const f = k => /^\d{4}-\d{2}-\d{2}/.test(String(queda(k))) ? String(queda(k)).slice(0, 10) : '';
+  const antes = (a, b, texto) => { if (toca(a, b) && f(a) && f(b) && f(a) < f(b)) out.push(texto + ` (${fd(f(a))} y ${fd(f(b))})`); };
+  if (v.operacion === 'EXPO') {
+    if (toca('citaIngreso', 'cierreDoc') && f('citaIngreso') && f('cierreDoc') && f('citaIngreso') > f('cierreDoc'))
+      out.push(`La cita de ingreso (${fd(f('citaIngreso'))}) queda después del cierre documental (${fd(f('cierreDoc'))})`);
+    antes('fechaEntregaPuerto', 'fechaCargue', 'La entrega en puerto queda antes del llenado');
+    antes('fechaCargue', 'fechaRetiro', 'El llenado queda antes del retiro del vacío');
+  } else if (v.operacion === 'IMPO') {
+    antes('fechaCargue', 'fechaRetiro', 'La entrega en bodega queda antes del retiro en puerto');
+    antes('fechaDevolucion', 'fechaCargue', 'La devolución del vacío queda antes de la entrega en bodega');
+  }
+  // el mismo dato en otro viaje (no cuenta su subviaje ni su viaje padre, que llevan el mismo contenedor)
+  [['contenedor', 'contenedor'], ['obd', 'OBD'], ['rbhy', 'RBHY'], ['sello', 'sello']].forEach(([k, nombre]) => {
+    if (!toca(k)) return; const x = limpioId(ch[k]); if (x.length < 5 || x === limpioId(v[k])) return;
+    const otro = viajes.find(o => o.id !== v.id && o.padre !== v.id && v.padre !== o.id && !(v.padre && o.padre === v.padre)
+      && situacion(o) !== 'Cancelado' && limpioId(o[k]) === x);
+    if (otro) out.push(`Ese ${nombre} (${String(ch[k]).trim()}) ya está en el viaje ${otro.id}${otro.contenedor && k !== 'contenedor' ? ' · ' + otro.contenedor : ''}`);
+  });
+  return out;
+}
+// los otros contenedores de la misma referencia: mismo booking (EXPO) o mismo pedido o DO (IMPO). Son viajes distintos, cada uno con
+// su RBHY, su OBD y su tirilla; no cuentan los subviajes ni los cancelados
+function hermanosDe(v){
+  if (!v || v.padre || situacion(v) === 'Cancelado') return [];
+  const claves = v.operacion === 'EXPO' ? ['booking'] : v.operacion === 'IMPO' ? ['pedido', 'do'] : [];
+  return viajes.filter(o => o.id !== v.id && o.operacion === v.operacion && !o.padre && situacion(o) !== 'Cancelado'
+    && claves.some(c => limpioId(v[c]).length >= 5 && limpioId(o[c]) === limpioId(v[c])));
+}
+// lo que un hermano ya tiene y a este viaje le falta: [{hermano, campo, nombre}]
+function faltaFrenteAHermanos(v){
+  const campos = v.operacion === 'EXPO' ? [['rbhy', 'RBHY'], ['obd', 'OBD'], ['tirillaEntrega', 'tirilla de entrega']] : [['tirillaDevolucion', 'tirilla de devolución']];
+  return hermanosDe(v).flatMap(h => campos.filter(([c]) => !v[c] && h[c]).map(([campo, nombre]) => ({hermano: h, campo, nombre})));
+}
+// en una línea, para la tarjeta de un viaje terminado: "ojo: EXPO-011 (EMCU8969553), del mismo booking, ya tiene OBD"
+function notaHermanos(v){
+  // solo mientras sirve: transporte terminado y el viaje aún sin facturar ni cerrar (un viaje viejo ya cerrado no avisa)
+  if (!terminoTransporte(v) || situacion(v) === 'Cerrado' || cobro(v).fact === 'Facturado') return '';
+  const F = faltaFrenteAHermanos(v); if (!F.length) return '';
+  const por = {}; F.forEach(x => (por[x.hermano.id] = por[x.hermano.id] || {h: x.hermano, n: []}).n.push(x.nombre));
+  return 'ojo: ' + Object.values(por).map(({h, n}) => `${h.id}${h.contenedor ? ' (' + h.contenedor + ')' : ''}, ${v.operacion === 'EXPO' ? 'del mismo booking' : 'del mismo pedido'}, ya tiene ${n.join(' y ')}`).join(' · ');
+}
+
 // IMPO: el patio de devolución (donde se entrega el contenedor VACÍO: patio de la naviera o del puerto) no es la bodega donde se
 // descarga la mercancía (confirmado por Entrapetrol el 4-nov: IMPO-006/007 quedaron con "AGV bodega 11", el sitio de descargue)
 const BODEGAS_CONOCIDAS = /\bbodega\b|solistica|suppla|cortijo|agecolda/i;
@@ -2406,6 +2491,13 @@ async function guardarCambio(id, cambios, usuario, opciones = {}){
   // contenedor o placa con el formato del otro (dominio.js datoMalEscrito): no se guarda, se avisa qué está mal
   const mal = ['contenedor', 'placa'].map(k => k in cambios ? datoMalEscrito(k, cambios[k]) : '').filter(Boolean);
   if (mal.length) { toast('No se guardó: ' + mal.join(' · ')); return false; }
+  // 10-nov (dominio.js datosEquivocados / avisosAntesDeGuardar): un dato de otra casilla no se guarda; lo dudoso se pregunta, salvo
+  // que quien llama ya lo haya preguntado (la ventana del viaje: opciones.revisado)
+  if (cambios.do) cambios.do = limpiarDO(cambios.do);
+  const eq = datosEquivocados(v, cambios);
+  if (eq.length) { toast('No se guardó: ' + eq.map(x => x.msg).join(' · '), 9000); return false; }
+  if (!opciones.revisado) { const avisos = avisosAntesDeGuardar(v, cambios);
+    if (avisos.length && !confirm('Revise antes de guardar:\n\n• ' + avisos.join('\n• ') + '\n\n¿Guardar de todas formas?')) return false; }
   if (cambios.contenedor) cambios.contenedor = limpioId(cambios.contenedor);
   const anterior = v.estado, previo = Object.fromEntries(Object.keys(cambios).map(k => [k, v[k]]));   // para deshacer si la base no lo acepta
   Object.assign(v, cambios, {actualizado: new Date().toISOString()});
@@ -3446,7 +3538,7 @@ function rutaPedido(v){
     <div class="cab"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
       ${tagNuevo(v)}<span class="op ${v.operacion}">${v.operacion}</span><b>${esc(v.empresa||'Empresa sin definir')} · ${esc(ref)}</b>
       <span class="sub">${esc([v.solicitante && 'Solicita '+v.solicitante, v.fwd].filter(Boolean).join(' · '))}</span></div>
-      <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span>${etiquetaSinActualizar(v)}${etiquetaPorConfirmar(pend)}${!window.MODO_CLIENTE && pendientesOps(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)" title="Lo que operaciones debe completar">Falta (operaciones): ${esc(pendientesOps(v).join(' · '))}</span>` : ''}${!window.MODO_CLIENTE && pendientesFact(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--muted) 15%, transparent);color:var(--muted)" title="Para poder facturarlo">Falta (facturación): ${esc(pendientesFact(v).join(' · '))}</span>` : ''}</div>
+      <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahora)}</span>${etiquetaSinActualizar(v)}${etiquetaPorConfirmar(pend)}${!window.MODO_CLIENTE && pendientesOps(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)" title="Lo que operaciones debe completar">Falta (operaciones): ${esc(pendientesOps(v).join(' · '))}</span>` : ''}${!window.MODO_CLIENTE && pendientesFact(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--muted) 15%, transparent);color:var(--muted)" title="Para poder facturarlo">Falta (facturación): ${esc(pendientesFact(v).join(' · '))}</span>` : ''}${!window.MODO_CLIENTE && notaHermanos(v) ? `<span class="tg" style="background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)" title="Otro contenedor de la misma referencia ya tiene este dato; cada contenedor lleva el suyo">${esc(notaHermanos(v))}</span>` : ''}</div>
     ${lineaNovedad(v)}
     <div class="cuerpo"><div>
       <div style="display:flex;align-items:flex-end;gap:2px"><div class="cont"><b style="font-size:12px">${esc(esNacional(v) ? (v.carga||'—') : (v.contenedor||'—'))}</b><div class="sub">${esc(esNacional(v) ? 'Nacional' : (v.unidad||''))}</div></div><div class="cabina"></div></div>
@@ -3831,6 +3923,13 @@ function abrir(id){
   $('#mCausa').classList.add('hidden'); $('#mCausaCaja').innerHTML = '';   // causa del cambio de fecha con su respaldo (causa.js)
   $('#mTitle').textContent = `${v.placa || 'Sin vehículo'} · ${v.operacion} ${v.pais||''}`;
   $('#mSub').textContent = `${v.id} · ${v.fechaRetiro?`Retiro en patio ${fd(v.fechaRetiro)} · Llenado planta ${fd(v.fechaCargue)}`:`Cargue ${fd(v.fechaCargue)}`} · Última actualización ${new Date(v.actualizado).toLocaleString('es-CO')}`;
+  // 10-nov: los otros contenedores de la misma referencia, con lo que cada uno ya tiene (dominio.js hermanosDe); solo el equipo
+  const hermanos = window.MODO_CLIENTE ? [] : hermanosDe(v);
+  if (hermanos.length) { const cs = v.operacion === 'EXPO' ? [['rbhy', 'RBHY'], ['obd', 'OBD'], ['tirillaEntrega', 'tirilla']] : [['tirillaDevolucion', 'tirilla']];
+    const falta = new Set(faltaFrenteAHermanos(v).map(x => x.campo));
+    $('#mSub').insertAdjacentHTML('beforeend', `<div style="margin-top:4px">🔗 ${v.operacion === 'EXPO' ? 'Mismo booking' : 'Mismo pedido'} · ${hermanos.length + 1} contenedores: ` +
+      hermanos.map(h => `<button type="button" class="link" onclick="abrir('${esc(h.id)}')">${esc(h.id)}${h.contenedor ? ' · ' + esc(h.contenedor) : ''}</button> <span class="sub">(${cs.map(([c, n]) => (h[c] ? '✔ ' : '— ') + n).join(' · ')})</span>`).join(' · ') +
+      (falta.size ? `<br><b style="color:var(--warn)">A este le falta ${cs.filter(([c]) => falta.has(c)).map(([, n]) => n).join(' y ')}, que el otro ya tiene</b>` : '') + '</div>'); }
   const fx = x => x ? fd(x) : '';
   const det = esNacional(v)
     ? [['Qué se lleva',v.carga],['Origen',v.origen],['Destino',v.destino],['Lugar de entrega',v.bodega],['Recogida',[fx(v.fechaRetiro),v.horaRecogida].filter(Boolean).join(' ')],
@@ -4023,10 +4122,17 @@ $('#mSave').onclick = () => {
   // contenedor o placa mal escritos (dominio.js datoMalEscrito): la ventana queda abierta en el campo para corregirlo
   const mal = ['contenedor', 'placa'].find(k => k in cambios && datoMalEscrito(k, cambios[k]));
   if (mal) { $(`#mForm [data-k=${mal}]`)?.focus(); return toast(datoMalEscrito(mal, cambios[mal])); }
+  // 10-nov: un dato de otra casilla (el booking en Pedido o en la tirilla, un OBD con letras…) no se guarda; lo dudoso (cita después
+  // del cierre, el mismo OBD en otro viaje) se pregunta. La ventana queda abierta para corregir (dominio.js datosEquivocados)
+  if (cambios.do) cambios.do = limpiarDO(cambios.do);
+  const eq = datosEquivocados(v, cambios)[0];
+  if (eq) { $(`#mForm [data-k=${eq.campo}]`)?.focus(); return toast('No se guardó: ' + eq.msg, 9000); }
+  const avisos = avisosAntesDeGuardar(v, cambios);
+  if (avisos.length && !confirm('Revise antes de guardar:\n\n• ' + avisos.join('\n• ') + '\n\n¿Guardar de todas formas?')) return;
   // placa o conductor nuevos: solo con sus datos completos en el registro (registro.js); al completarlos se vuelve a guardar
   if (!registroCompleto(cambios.placa, cambios.conductor, () => $('#mSave').click())) return;
   guardarUsuario(usuario);
-  if (Object.keys(cambios).length) guardarCambio(editId, cambios, usuario).then(ok => { if (ok !== false && causaSel && causaSel.texto) enviarCambio(v, mov, causaSel, usuario); });
+  if (Object.keys(cambios).length) guardarCambio(editId, cambios, usuario, {revisado: true}).then(ok => { if (ok !== false && causaSel && causaSel.texto) enviarCambio(v, mov, causaSel, usuario); });
   cerrar();
 };
 $('#mForm').addEventListener('input', e => { if (e.target.closest('#mExtras')) syncExtras();
@@ -5623,7 +5729,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '6b0459de18';
+const VERSION_TABLERO = 'cc433a2c5f';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
