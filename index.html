@@ -2258,7 +2258,7 @@ const GEOZONAS = [
   ['Simarítima Yumbo', 3.54148, -76.49664, /simaritima/],                // registro BIC; queda a 200 m de Intermodal
   ['Agecolda', 3.51774, -76.51057, /agecold/],                           // registro BIC · Cra 29B # 11A-51, Arroyohondo
   ['DHL Cortijo', 3.50074, -76.50385, /cortijo|\bdhl\b/],                // Cra 35A # 16-80, Acopi (dirección de avisos de empleo de DHL)
-  ['CEDI Reckitt Bogotá', 4.65004, -74.11648, /solistica|\bagv\b|bodega 11|reckitt.*bogot/],   // Cra 69 # 21-63/73, Montevideo (mismo complejo que Solistica)
+  ['CEDI Reckitt Bogotá', 4.65004, -74.11648, /solistica(?!.*yumbo)|\bagv\b|bodega 11|reckitt.*bogot/],   // Cra 69 # 21-63/73, Montevideo (mismo complejo que Solistica)
   ['Puerto de Buenaventura (SPRBUN)', 3.88872, -77.06936, /\bbun\b|buenaventura|sprbun/, 1.5],
   ['TCBUEN', 3.88429, -77.04400, /\bbun\b|buenaventura|tcbuen/, 0.6],
   ['Puerto Aguadulce (SPIA)', 3.90457, -77.08053, /\bbun\b|buenaventura|aguadulce|spia/, 1],
@@ -2272,9 +2272,19 @@ const geozonasDe = texto => { const s = minus(texto); return s ? GEOZONAS.filter
 const masCercana = (Z, lat, lng) => Z.map(z => { const km = distanciaKm(lat, lng, z[1], z[2]); return {z, km, dentro: km <= (z[4] || GEOZONA_KM)}; })
   .sort((a, b) => (b.dentro - a.dentro) || a.km - b.km)[0] || null;
 const PARADAS_SIN_VEHICULO = ['Origen', 'Motonave', 'Destino'];   // no las hace el vehículo (documentos, naviera)
+// 11-nov (auditoría): una placa puede estar en varios viajes abiertos a la vez (el de hoy y otro ya asignado para la otra semana al
+// mismo patio). El GPS habla de UNO solo: el viaje abierto, sin terminar, cuya fecha (retiro; si no, cargue) queda más cerca de hoy.
+// Antes los dos decían "Llegó a…", el camión se movía en las dos tarjetas y el correo podía salir con la referencia del otro viaje.
+function viajeActivoDePlaca(placa, lista){
+  const pl = placaNorm(placa), ref = v => fechaPaso(v, 'fechaRetiro') || fechaPaso(v, 'fechaCargue') || HOY;
+  return !pl ? null : (lista || []).filter(v => !v.padre && placaNorm(v.placa) === pl && !['Cerrado', 'Cancelado'].includes(situacion(v)) && !terminoTransporte(v))
+    .sort((a, b) => Math.abs(diffDias(ref(a))) - Math.abs(diffDias(ref(b))) || String(a.id).localeCompare(String(b.id)))[0] || null;
+}
 // g = {lat, lng, fecha} (window.GPS). → null | {tipo: 'llegada'|'cerca'|'en', lugar, km, parada, texto}
-function alertaGps(v, g, ahora){
-  if (!g || g.lat == null || g.lng == null || !g.fecha) return null;
+// lista (opcional) = todos los viajes: con ella el aviso sale solo en el viaje activo de la placa (viajeActivoDePlaca)
+function alertaGps(v, g, ahora, lista){
+  if (!g || g.lat == null || g.lng == null || !g.fecha || isNaN(new Date(g.fecha))) return null;
+  if (lista && !v.padre && viajeActivoDePlaca(v.placa, lista) !== v) return null;
   // solo el viaje que el vehículo está haciendo: la misma placa sale en viajes ya terminados o cerrados, y ahí el aviso confunde
   if (['Cerrado', 'Cancelado'].includes(situacion(v)) || (!v.padre && terminoTransporte(v))) return null;
   const min = ((ahora || Date.now()) - new Date(g.fecha)) / 60e3; if (!(min >= -5 && min <= GPS_ALERTA_MIN)) return null;
@@ -3308,7 +3318,10 @@ async function entrarGerencia(){
     toast('Modo Gerencia: puede aprobar excepciones y editar novedades en esta pestaña'); repintarTurno();
   } catch(e) { toast('No se pudo verificar la clave'); }
 }
-setInterval(() => { if (window.BITACORA) repintarTurno(); }, 60e3);   // el reloj de la ronda avanza solo
+// 11-nov (auditoría): no repinta con la pestaña oculta ni mientras alguien escribe o elige algo dentro de la Bandeja (se borraba la
+// nota de entrega de turno a medio escribir y se cerraban los desplegables)
+setInterval(() => { const b = document.getElementById('bandeja');
+  if (window.BITACORA && !document.hidden && !(b && b.contains(document.activeElement) && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName))) repintarTurno(); }, 60e3);   // el reloj de la ronda avanza solo
 // los botones data-t-* (marcas, excepciones, Gerencia, registro…) de la Bandeja: bandeja.js los manda aquí
 function manejarTurno(e){
   const b = e.target.closest('button'); if (!b || b.disabled) return;
@@ -3743,11 +3756,12 @@ function gpsDeViaje(v){
   if (window.MODO_CLIENTE) return null;
   const pl = String(v.placa || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), g = pl && (window.GPS || []).find(x => x.placa === pl);
   if (!g) return null;
+  if ((g.fecha && isNaN(new Date(g.fecha))) || (g.zonaDesde && isNaN(new Date(g.zonaDesde)))) return null;   // fecha rara del GPS: sin letrero, pero el tablero no se cae
   const punto = g.lat != null && g.lng != null && g.fecha && Date.now() - new Date(g.fecha) < GPS_PIN_HORAS * 36e5;
   const directa = g.enlace || (punto ? `https://www.google.com/maps?q=${g.lat},${g.lng}` : '');
   if (!/^https:\/\//.test(directa)) return null;
   const que = [g.municipio, punto ? (g.velocidad >= 3 ? Math.round(g.velocidad) + ' km/h' : 'detenido') : '', g.fecha ? haceCuanto(fechaLocal(g.fecha)) : ''].filter(Boolean).join(' · ');
-  const al = punto ? alertaGps(v, g) : null;
+  const al = punto ? alertaGps(v, g, undefined, viajes) : null;
   // hora de llegada al lugar (Gps.gs gpsMarcarZonas_: desde cuándo está la placa en esa geozona; precisión: lo que tarda cada lectura)
   if (al && al.tipo !== 'cerca' && g.zona === al.lugar && g.zonaDesde) { const f = fechaLocal(g.zonaDesde), H = Number(f.slice(11, 13));
     al.hora = (f.slice(0, 10) === HOY ? '' : fd(f.slice(0, 10)) + ' ') + `${H % 12 || 12}:${f.slice(14, 16)} ${H < 12 ? 'a. m.' : 'p. m.'}`;
@@ -3761,7 +3775,7 @@ function gpsDeViaje(v){
   const url = cod || punto ? `gps.html#${cod ? 'e=' + cod + '&' : ''}p=${pl}&d=${encodeURIComponent((al ? al.texto : donde) || '')}${pto}` : directa;
   return {url, al, donde, satrack: !!g.enlace, quieto: punto && g.velocidad < 3, titulo: `Ver en el GPS${g.enlace ? '' : ' (último punto, en el mapa)'}${que ? ' · ' + que : ''}`};
 }
-const pinGps = v => { const g = gpsDeViaje(v); return g ? `<a class="gps-pin${g.quieto ? ' quieto' : ''}${g.al ? ' ' + g.al.tipo : ''}" href="${esc(g.url)}" target="_blank" rel="noopener" title="${esc(g.titulo)}" aria-label="${esc(g.titulo)}" onclick="event.stopPropagation()"><i></i><span>${esc(g.al ? g.al.texto : (g.donde || 'Ver GPS'))}</span></a>` : ''; };   // pin con el texto al lado (opción C, elegida por el usuario)
+const pinGps = (v, ya) => { const g = ya || gpsDeViaje(v); return g ? `<a class="gps-pin${g.quieto ? ' quieto' : ''}${g.al ? ' ' + g.al.tipo : ''}" href="${esc(g.url)}" target="_blank" rel="noopener" title="${esc(g.titulo)}" aria-label="${esc(g.titulo)}" onclick="event.stopPropagation()"><i></i><span>${esc(g.al ? g.al.texto : (g.donde || 'Ver GPS'))}</span></a>` : ''; };   // pin con el texto al lado (opción C, elegida por el usuario)
 const iconoParada = (v, et) => { const k = iconoEtapa(v, et), h = ICONOS_RUTA[k]; return k === 'camion' ? h.replace(/<\/span>$/, pinGps(v) + '</span>') : h; };
 function leadFactura(v){
   const fin = fechaFinTransporte(v);
@@ -3891,7 +3905,7 @@ function rutaPedido(v){
       ${window.MODO_CLIENTE || esNacional(v) ? '' : `<button type="button" class="subv" onclick="event.stopPropagation();nuevoSubviaje('${v.id}')"><span>+</span> Subviaje</button>`}
     </div><div>
       <div class="linea"><div class="hecho" style="width:${P.length>1 ? Math.min(86, 86*Math.max(0,n-1)/(P.length-1)) : 0}%"></div>
-        ${P.map(([et, lugar, , det], i)=>`<div class="par ${i<n?'ok':i===n||i===nGps?'ya':''}${i>=n && P[i][4] && !window.MODO_CLIENTE ? ' conf' : ''}"><div class="pt"></div>${i!==nIcono ? '' : nGps >= 0 ? ICONOS_RUTA.camion.replace(/<\/span>$/, pinGps(v) + '</span>') : iconoParada(v, et)}
+        ${P.map(([et, lugar, , det], i)=>`<div class="par ${i<n?'ok':i===n||i===nGps?'ya':''}${i>=n && P[i][4] && !window.MODO_CLIENTE ? ' conf' : ''}"><div class="pt"></div>${i!==nIcono ? '' : nGps >= 0 ? ICONOS_RUTA.camion.replace(/<\/span>$/, pinGps(v, gG) + '</span>') : iconoParada(v, et)}
           <div class="caja">${et}<b>${esc(lugar)}</b>${det.filter(Boolean).map(esc).join('<br>')}</div></div>`).join('')}</div>
       <div class="esp"><span></span>${esperas.map(d=> `<span>${d===null?'':d+' d'}</span>`).join('')}</div>
       ${hijosDe(v).map(s => tarjetaHijo(s, v)).join('')}
@@ -5187,7 +5201,7 @@ function textoProgramacion(v, antes, despues){
 let CUADROS_PROG = null, cuadrosProgPidiendo = false;   // {correos, t}
 const CUADROS_PROG_MIN = 10;
 const cuadroDeAccion = (correos, b) => { const nMes = MESES_LARGO.findIndex(m => minus(b.asunto + ' ' + b.accion).includes(m));
-  return correos.find(p => Number(p.programacion[0].fechaCargue.slice(5, 7)) === nMes + 1) || correos[0]; };
+  return correos.find(p => Number(String(p.programacion[0].fechaCargue || '').slice(5, 7)) === nMes + 1) || correos[0]; };
 async function pedirCuadrosProg(){
   if (cuadrosProgPidiendo || window.MODO_CLIENTE || !claveActual()) return;
   cuadrosProgPidiendo = true;
@@ -5199,8 +5213,8 @@ async function pedirCuadrosProg(){
 // cuántos viajes por crear y cuántos con cambios (de fecha y de otro dato) trae el cuadro de esa acción; null si aún no se sabe
 function resumenProgramacion(b){
   if (!CUADROS_PROG || Date.now() - CUADROS_PROG.t > CUADROS_PROG_MIN * 60e3) { pedirCuadrosProg(); if (!CUADROS_PROG) return null; }
-  const c = cuadroDeAccion(CUADROS_PROG.correos, b); if (!c) return null;
-  try { const F = compararProgramacion(c).filas, cam = F.filter(f => ['cambiar', 'reusar'].includes(f.accion)),
+  try { const c = cuadroDeAccion(CUADROS_PROG.correos, b); if (!c) return null;
+    const F = compararProgramacion(c).filas, cam = F.filter(f => ['cambiar', 'reusar'].includes(f.accion)),
       esFecha = f => Object.keys(f.cambios || {}).some(k => /^fecha|^cierre|^etd|^eta|^mesProg/.test(k));
     return {crear: F.filter(f => f.accion === 'crear').length, fechas: cam.filter(esFecha).length, otros: cam.filter(f => !esFecha(f)).length}; } catch(x) { return null; }
 }
@@ -6160,7 +6174,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'd8ccd23e67';
+const VERSION_TABLERO = 'fefc75594d';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -7933,7 +7947,9 @@ function queHacer(b){
 // 10-nov · Acciones para hoy: una acción es de hoy salvo que su fecha límite sea de pasado mañana en adelante ("Por hacer" con
 // i.hoy = false) o sea del registro de conductores sin línea roja. Lo atrasado también es de hoy. La usan armarBandeja, los filtros
 // de renderBandeja (se recalcula al filtrar) y el aviso de la ronda (ronda-alerta.js).
-const accionDeHoy = i => i.roja || (i.b === 'hacer' ? !!i.hoy : i.b !== 'registro');
+// 11-nov (auditoría): del GPS solo la LLEGADA es acción de hoy; "cerca" y "en otro lugar" informan, y antes inflaban el número
+// de viajes con acciones (un vehículo parqueado salía en cada lectura)
+const accionDeHoy = i => i.roja || (i.b === 'hacer' ? !!i.hoy : i.b === 'gps' ? i.gpsTipo === 'llegada' : i.b !== 'registro');
 // 10-nov · qué acción es una programación nueva (la misma que abre el atajo "Aplicar programación", acciones.js) y cuál una
 // reprogramación: el cliente mueve la fecha de un paso de un viaje. Solo las de Operaciones.
 const TITULO_PROGRAMACION = 'Programación y cambios de fecha de Reckitt';
@@ -7985,7 +8001,7 @@ function armarBandeja(){
     // 10-nov · GPS: el vehículo llegó o está cerca de su siguiente parada (dominio.js alertaGps). Solo avisa; el paso lo confirma el equipo
     todos.filter(x => x.placa).forEach(x => { const g = gpsDeViaje(x), al = g && g.al;   // lean.js
       if (!al) return;   // 10-nov ("JYY043 está cerca a Sicopark, ¿por qué no ha emitido la alerta?"): también avisa cuando está en un lugar conocido que no es su siguiente parada
-      add(v, {b: 'gps', k: 'gps|' + x.id + '|' + al.tipo + '|' + al.lugar,
+      add(v, {b: 'gps', gpsTipo: al.tipo, k: 'gps|' + x.id + '|' + al.tipo + '|' + al.lugar,
         html: `${x.padre ? `${esc(nombreSub(x))} · ` : ''}<span class="placa">${esc(x.placa)}</span> · <b>${esc(al.texto)}</b>${g.quieto ? ' · detenido' : ''}<br><span class="sub">${al.parada ? `Siguiente paso del viaje: ${esc(al.parada)}. ` : ''}${al.tipo === 'llegada' ? 'Si ya se hizo, confírmelo en el viaje.' : al.tipo === 'cerca' ? 'Va llegando: avise a quien lo recibe.' : 'Ese lugar no es su siguiente parada: revise si está esperando o si hay novedad.'}</span>`,
         acc: `<a class="link" href="${esc(g.url)}" target="_blank" rel="noopener">📍 Ver en el GPS</a>` + btnT('Abrir el viaje', `data-b-abrir="${x.id}"`)}); });
     // 4 · ¿Pasó? (por confirmar + sin actualizar de la misma fecha: una pregunta)
@@ -8139,7 +8155,7 @@ function renderBandeja(){
   const L0 = R.L, porArea = a => L0.filter(t => t.items.some(i => !a || i.area === a)).length;
   R.L = R.L.map(t => ({...t, items: t.items.filter(enArea)})).filter(t => t.items.length).map(t => ({...t, roja: t.items.some(i => i.roja), hoy: t.items.some(accionDeHoy)}));
   // barra IMPO / EXPO / Nacional: cuenta tarjetas del área elegida; ⛔ si esa operación tiene líneas rojas (para no perderlas de vista)
-  const deOp = (t, o) => t.items.filter(i => !o || i.b === 'registro' || (i.b === 'programacion' && !i.op) || (i.b === 'cierre' ? !i.opViaje || i.opViaje === o : i.op === o));
+  const deOp = (t, o) => t.items.filter(i => !o || i.b === 'registro' || (i.b === 'programacion' && (!i.op || i.op === 'General')) || (i.b === 'cierre' ? !i.opViaje || i.opViaje === o : i.op === o));
   const opN = o => R.L.filter(t => deOp(t, o).length).length, opRoja = o => R.L.some(t => deOp(t, o).some(i => i.roja));
   if (bandejaOp && !opN(bandejaOp) && !OPS_BANDEJA.some(([o]) => o === bandejaOp)) bandejaOp = '';
   const barraOp = barraOperaciones(opN, opRoja);
@@ -8268,12 +8284,11 @@ function revisarAlertaRonda(){
   const e = estadoAlertaRonda(HOY + '|' + r.n);
   if (document.getElementById('ovRonda') || Date.now() < e.hasta) return;
   // qué hay para hoy (las mismas tarjetas de Acciones para hoy, del área de Operaciones)
-  let hoyN = 0, atras = 0; try { const L = armarBandeja().L.filter(t => t.items.some(i => i.area === 'Operaciones' && accionDeHoy(i)));   // bandeja.js
-    hoyN = L.length; atras = L.filter(t => t.fecha && diffDias(t.fecha) < 0).length; } catch(x) {}
+  let hoyN = 0, atras = 0, nProg = 0; try { const todas = armarBandeja().L, L = todas.filter(t => t.items.some(i => i.area === 'Operaciones' && accionDeHoy(i)));   // bandeja.js (una sola pasada)
+    hoyN = L.length; atras = L.filter(t => t.fecha && diffDias(t.fecha) < 0).length; nProg = todas.flatMap(t => t.items).filter(i => i.b === 'programacion').length; } catch(x) {}
   const seg = T.M[0].filas.filter(x => !x.hecha && x.tipo === 'seg').length, vencida = T.rondaVencida, hora = RONDAS[r.n - 1] + ':00';
   const resumen = `${hoyN} ${hoyN === 1 ? 'viaje con acciones' : 'viajes con acciones'} para hoy${atras ? `, ${atras} ${atras === 1 ? 'atrasado' : 'atrasados'}` : ''}`;
   // 10-nov · programación nueva o cambios de fecha de Reckitt sin aplicar: es lo que más mueve el día, se dice aparte
-  let nProg = 0; try { nProg = armarBandeja().L.flatMap(t => t.items).filter(i => i.b === 'programacion').length; } catch(x) {}
   const avisoProg = nProg ? `<p class="ronda-num" style="color:var(--bad)">📅 ${nProg === 1 ? 'Hay 1 programación o cambio de fecha de Reckitt sin aplicar' : `Hay ${nProg} programaciones o cambios de fecha de Reckitt sin aplicar`}</p>` : '';
   // en segundo plano o con otra ventana abierta (alguien está escribiendo): no se interrumpe; se avisa por el navegador, una vez
   if (document.hidden || document.querySelector('.ov.open, #chat.open')) {

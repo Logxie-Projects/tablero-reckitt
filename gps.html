@@ -81,7 +81,7 @@
   var hayCodigo = /^[A-Za-z0-9]{3,12}$/.test(codigo);
   if (!hayCodigo && !hayPunto) { $('titulo').textContent = 'Este enlace del GPS no es válido'; $('detalle').textContent = 'Ábralo de nuevo desde el tablero.'; document.querySelector('.via').style.display = 'none'; return; }
   var satrack = hayCodigo ? 'https://l.satrack.com/' + codigo : '', satelite = hayPunto ? 'https://www.google.com/maps/embed?origin=mfe&pb=!1m4!2m1!1s' + la.toFixed(6) + ',' + lo.toFixed(6) + '!5e1!6i21'   /* 5e1 = satélite, 6i21 = acercamiento, el máximo (escala de Google: 1 = el mundo, 21 = lo más cerca). Fue 17, luego 19; el usuario pidió más cerca ("el de Reckitt se ve muy lejos") */ : '';
-  var hora = ''; try { var fe = new Date(P.get('f') || ''); if (!isNaN(fe)) hora = fe.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' }); } catch (x) {}
+  var hora = ''; try { var fe = new Date(P.get('f') || ''); if (!isNaN(fe)) hora = fe.toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: 'numeric', minute: '2-digit' }); } catch (x) {}
   var f = $('mapa'), t0 = 0, lento = 0;
   if (hayCodigo) { $('abrir').href = satrack; $('abrir').hidden = false; }
   else { $('abrir').href = 'https://www.google.com/maps?q=' + la.toFixed(6) + ',' + lo.toFixed(6) + '&t=k'; $('abrir').textContent = 'Abrir en Google Maps ↗'; $('abrir').hidden = false; }
