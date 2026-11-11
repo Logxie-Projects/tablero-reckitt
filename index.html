@@ -908,6 +908,13 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 
 /* ---------- 10-nov · programación y cambios de fecha de Reckitt: el botón que lo aplica, relleno ---------- */
 .bj-item .tr-acc [onclick^="hacerAqui"]{background:var(--accent);border-color:var(--accent);color:#fff}
+
+/* ---------- 10-nov · pin del GPS sobre el camión de la tarjeta (lean.js pinGps): abre la ubicación del vehículo ---------- */
+.ruta .ico .gps-pin{position:absolute;left:10px;top:-19px;width:15px;height:15px;background:var(--bad);border:2px solid var(--surface);border-radius:50% 50% 50% 0;
+  transform:rotate(-45deg);box-shadow:0 1px 3px rgba(0,0,0,.35);cursor:pointer;z-index:2}
+.ruta .ico .gps-pin:after{content:'';position:absolute;left:3px;top:3px;width:5px;height:5px;border-radius:50%;background:var(--surface)}
+.ruta .ico .gps-pin.quieto{background:var(--muted)}
+.ruta .ico .gps-pin:hover{transform:rotate(-45deg) scale(1.25)}
 </style>
 </head>
 <body>
@@ -3644,7 +3651,22 @@ const ICONOS_RUTA = {
   grua: '<span class="ico grua" title="Arribo"><i class="brazo"></i><i class="torre"></i><i class="cable"></i><i class="cont"></i></span>',
   camion: '<span class="ico camion" title="En camino"><i class="carga"></i><i class="chasis"></i><i class="cabina"></i><i class="vent"></i>'
     + [3, 9, 15, 27, 33, 44].map(x => `<i class="ll" style="left:${x}px"></i>`).join('') + '</span>' };
-const iconoParada = (v, et) => ICONOS_RUTA[iconoEtapa(v, et)];
+// 10-nov ("en la tarjeta de viaje pon el link al GPS, puede ser un pin dibujado encima del camión"): si la placa del viaje tiene GPS
+// (window.GPS, datos.js; solo llega al equipo), sobre el camión sale un pin que abre la ubicación: el enlace de Satrack mientras
+// esté activo; si ya venció, el último punto leído (menos de GPS_PIN_HORAS) en Google Maps. Sin GPS no sale nada.
+const GPS_PIN_HORAS = 12;
+function gpsDeViaje(v){
+  if (window.MODO_CLIENTE) return null;
+  const pl = String(v.placa || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), g = pl && (window.GPS || []).find(x => x.placa === pl);
+  if (!g) return null;
+  const punto = g.lat != null && g.lng != null && g.fecha && Date.now() - new Date(g.fecha) < GPS_PIN_HORAS * 36e5;
+  const url = g.enlace || (punto ? `https://www.google.com/maps?q=${g.lat},${g.lng}` : '');
+  if (!/^https:\/\//.test(url)) return null;
+  const que = [g.municipio, punto ? (g.velocidad >= 3 ? Math.round(g.velocidad) + ' km/h' : 'detenido') : '', g.fecha ? haceCuanto(new Date(g.fecha)) : ''].filter(Boolean).join(' · ');
+  return {url, satrack: !!g.enlace, quieto: punto && g.velocidad < 3, titulo: `Ver en el GPS${g.enlace ? '' : ' (último punto, en el mapa)'}${que ? ' · ' + que : ''}`};
+}
+const pinGps = v => { const g = gpsDeViaje(v); return g ? `<a class="gps-pin${g.quieto ? ' quieto' : ''}" href="${esc(g.url)}" target="_blank" rel="noopener" title="${esc(g.titulo)}" aria-label="${esc(g.titulo)}" onclick="event.stopPropagation()"></a>` : ''; };
+const iconoParada = (v, et) => { const k = iconoEtapa(v, et), h = ICONOS_RUTA[k]; return k === 'camion' ? h.replace(/<\/span>$/, pinGps(v) + '</span>') : h; };
 function leadFactura(v){
   const fin = fechaFinTransporte(v);
   if (!fin) return null;
@@ -6004,7 +6026,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '60b540f690';
+const VERSION_TABLERO = 'b87cd7e617';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
