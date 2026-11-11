@@ -4182,7 +4182,10 @@ function vehiculosTrafico(){
     const pl = placaNorm(v.placa), activo = viajeActivoDePlaca(v.placa, viajes); if (activo !== v) return;
     const g = G.find(x => x.placa === pl) || null, enRuta = !['Sin asignar', 'Asignado'].includes(v.estado);
     if (!g && !enRuta) return;   // asignado para después y sin GPS: todavía no es tráfico
-    porPlaca.set(pl, {v, g, enRuta, est: estadoTrafico(v, g), plan: g && enRuta ? planDeRuta(v, g) : null, gv: gpsDeViaje(v)});
+    // el plan de ruta y la llegada estimada solo cuando el vehículo ya va por carretera hacia el destino de la ruta (EXPO: cargado,
+    // rumbo al puerto; IMPO: con el contenedor, rumbo a la bodega). Antes de eso el estimado no dice nada cierto.
+    const sig = paradas(v).find(p => !p[2] && !PARADAS_SIN_VEHICULO.includes(p[0])), enCarretera = !!sig && ['Puerto', 'Bodega'].includes(sig[0]);
+    porPlaca.set(pl, {v, g, enRuta, est: estadoTrafico(v, g), plan: g && enCarretera ? planDeRuta(v, g) : null, gv: gpsDeViaje(v)});
   });
   const peso = x => (x.est.alertas.some(a => a.nivel === 'alta') ? 0 : x.est.alertas.length ? 1 : 2);
   return [...porPlaca.values()].sort((a, b) => peso(a) - peso(b) || String(a.v.placa).localeCompare(String(b.v.placa)));
@@ -6471,7 +6474,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'ca27f8b1a1';
+const VERSION_TABLERO = '4084eb3acc';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
