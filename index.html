@@ -5602,8 +5602,12 @@ $('#ovBarrido').onclick = e => {
 // viaje y marca lo que falta. 8-nov: "📎 Subir documento" (arriba y en cada booking) para lo que llega por WhatsApp o a otro correo:
 // POST 'subirDocumento' (Documentos.gs subirDocumentoExpo_); queda como la versión más nueva y el ✔ se ve de una vez (marcas con
 // lo que hay en archivos, no solo con el resumen de cada hora).
+// 11-nov ("empecemos a guardar las tirillas en el área de documentos de contenedor"): las tirillas que se suben con el 📎 del viaje
+// ya quedaban en Drive, pero aquí no se veían. Exportaciones: columna "Tirilla de entrega" (✖ falta si el viaje ya entregó en
+// puerto). Importaciones: tabla por pedido con sus documentos (pestaña "Documentos IMPO") y la tirilla de devolución del vacío.
 let DOCS = null;
-const TIPOS_CLAVE = ['Confirmación de booking', 'Carta de retiro', 'Comodato', 'Order List'];
+const TIPOS_CLAVE = ['Confirmación de booking', 'Carta de retiro', 'Comodato', 'Order List', 'Tirilla de entrega'];   // tienen columna propia; lo demás va en "Otros"
+const mesImpo = v => String(v.fechaDevolucion || v.fechaCargue || v.fechaRetiro || v.fechaLevante || '').slice(0, 7);
 
 async function abrirDocumentos(){
   $('#ovDocs').classList.add('open');
@@ -5614,7 +5618,8 @@ async function abrirDocumentos(){
       if (!j.ok) throw new Error(j.error || 'error');
       DOCS = j;
     } catch(e) { $('#docsLista').innerHTML = `<p class="sub">No se pudieron leer los documentos: ${esc(e.message)}</p>`; return; }
-    const meses = [...new Set(DOCS.porBooking.map(r => r.mes).concat(DOCS.archivos.map(a => a.mes)))].filter(Boolean).sort().reverse();
+    DOCS.impo = DOCS.impo || [];   // el servidor de antes del 11-nov no lo manda
+    const meses = [...new Set(DOCS.porBooking.map(r => r.mes).concat(DOCS.archivos.map(a => a.mes), viajes.filter(v => v.operacion === 'IMPO' && !v.padre).map(mesImpo)))].filter(m => /^\d{4}-\d{2}$/.test(m)).sort().reverse();
     $('#docsMes').innerHTML = meses.map(m => `<option value="${esc(m)}">${esc(nombreMes(m))}</option>`).join('');
   }
   pintarDocumentos();
@@ -5639,16 +5644,38 @@ function pintarDocumentos(){
   const faltaDe = r => !r.booking || r.booking === 'PTE' ? r.falta : [!tiene(r, 'Confirmación de booking', r.confirmacion) && 'Confirmación del booking',
     !tiene(r, 'Carta de retiro', r.carta) && 'Carta de retiro', nav(r) && !tiene(r, nav(r), /✔$/.test(r.naviera) ? '✔' : '✖') && nav(r)].filter(Boolean).join(' · ');
   const otros = bk => deBooking(bk).filter(a => !TIPOS_CLAVE.includes(a.tipo)).map(a => `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.tipo)}</a>`).join(' · ');
+  // tirilla de entrega (EXPO): la del booking; "falta" solo si algún viaje de ese booking ya entregó en puerto
+  const entrego = r => String(r.viaje || '').split(', ').some(id => { const v = viajes.find(x => x.id === id); return !!v && ['Entregado en puerto', 'Zarpó'].includes(v.estado); });
+  const tirilla = r => !r.booking || r.booking === 'PTE' ? '<span class="sub">—</span>'
+    : deBooking(r.booking).some(a => a.tipo === 'Tirilla de entrega') ? `<span style="color:var(--ok)">✔</span> ${enlaces(r.booking, 'Tirilla de entrega')}`
+    : entrego(r) ? '<b style="color:var(--bad)">✖ falta</b>' : '<span class="sub">aún no entrega</span>';
+  // importaciones del mes: una fila por viaje, con los documentos de su pedido o su DO y la tirilla de devolución del vacío
+  const deImpo = v => DOCS.impo.filter(a => (v.pedido && String(a.pedido).split(/[,;\s]+/).includes(String(v.pedido))) || (v.do && a.do && String(a.do) === String(v.do)))
+    .filter((a, i, arr) => arr.findIndex(b => b.url === a.url) === i).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  const lnk = (a, txt) => `<a href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.nombre)}">${txt}</a>`;
+  const impos = viajes.filter(v => v.operacion === 'IMPO' && !v.padre && v.estado !== 'Cancelado' && mesImpo(v) === mes
+    && (!q || minus([v.pedido, v.do, v.contenedor, v.id, v.bodega, v.placa].join(' ')).includes(q)))
+    .map(v => { const A = deImpo(v), T = A.filter(a => a.tipo === 'Tirilla de devolución'), devuelto = v.estado === 'Vacío devuelto' || !!cumplido(v, 'fechaDevolucion');
+      return {v, T, otros: A.filter(a => a.tipo !== 'Tirilla de devolución'), falta: !esLCL(v) && devuelto && !T.length}; })
+    .filter(x => !soloFalta || x.falta).sort((a, b) => String(b.v.fechaCargue || '').localeCompare(String(a.v.fechaCargue || '')));
+  const tablaImpo = !impos.length ? '' : `<h3 style="margin:18px 0 6px">Importaciones · ${impos.length} ${impos.length === 1 ? 'viaje' : 'viajes'}${impos.some(x => x.falta) ? ` · <b style="color:var(--bad)">${impos.filter(x => x.falta).length} sin tirilla de devolución</b>` : ''}</h3>
+    <div class="tbl-wrap"><table class="prop"><tr><th>Entrega</th><th>Pedido</th><th>DO</th><th>Contenedor</th><th>Viaje</th><th>Documentos</th><th>Tirilla de devolución</th></tr>
+    ${impos.map(({v, T, otros, falta}) => `<tr><td style="white-space:nowrap">${v.fechaCargue ? fd(v.fechaCargue) : '—'}</td><td><b>${esc(v.pedido || '—')}</b></td><td>${esc(v.do || '—')}</td><td>${esc(v.contenedor || '—')}</td>
+      <td><button class="link" onclick="$('#ovDocs').classList.remove('open');abrir('${esc(v.id)}')">${esc(v.id)}</button></td>
+      <td class="sub">${otros.length ? otros.map(a => lnk(a, esc(a.tipo || a.nombre))).join(' · ') : '—'}</td>
+      <td>${T.length ? `<span style="color:var(--ok)">✔</span> ` + T.map((a, i) => lnk(a, i === 0 ? '📄' + (a.fecha ? ' <span class="sub">' + esc(fd(String(a.fecha).slice(0, 10))) + '</span>' : '') : '<span class="sub" style="font-size:11px">anterior</span>')).join(' ')
+        : esLCL(v) ? '<span class="sub">no aplica (carga suelta)</span>' : falta ? '<b style="color:var(--bad)">✖ falta</b> <span class="sub">súbala con el 📎 del viaje</span>' : '<span class="sub">aún no devuelve</span>'}</td></tr>`).join('')}</table></div>`;
   const sinBk = DOCS.archivos.filter(a => a.mes === mes && !a.booking);
   const faltan = DOCS.porBooking.filter(r => r.mes === mes && faltaDe(r)).length;
   const subir = r => r.booking && r.booking !== 'PTE' ? ` <button class="link" data-subir="${esc(r.booking)}" data-mes="${esc(r.mes)}" data-tipo="${esc((faltaDe(r).split(' · ')[0] || '').replace('Confirmación del booking', 'Confirmación de booking'))}" title="Subir un documento a este booking">📎</button>` : '';
-  $('#docsLista').innerHTML = `<p class="sub">${filas.length} contenedores · <b style="color:${faltan ? 'var(--bad)' : 'var(--ok)'}">${faltan} con documentos o booking pendientes</b></p>
-    <div class="tbl-wrap"><table class="prop"><tr><th>Cargue</th><th>Destino</th><th>Motonave</th><th>Booking</th><th>Viaje</th><th>Confirmación</th><th>Carta de retiro</th><th title="MAERSK pide Comodato; MSC pide Order List">Comodato / Order List</th><th>Otros</th><th>Falta</th></tr>
+  $('#docsLista').innerHTML = `<h3 style="margin:4px 0 6px">Exportaciones</h3><p class="sub">${filas.length} contenedores · <b style="color:${faltan ? 'var(--bad)' : 'var(--ok)'}">${faltan} con documentos o booking pendientes</b></p>
+    <div class="tbl-wrap"><table class="prop"><tr><th>Cargue</th><th>Destino</th><th>Motonave</th><th>Booking</th><th>Viaje</th><th>Confirmación</th><th>Carta de retiro</th><th title="MAERSK pide Comodato; MSC pide Order List">Comodato / Order List</th><th title="La que se sube con el 📎 del viaje al entregar en puerto">Tirilla de entrega</th><th>Otros</th><th>Falta</th></tr>
     ${filas.map(r => `<tr><td style="white-space:nowrap">${fd(r.fechaCargue)}</td><td>${esc(r.pais)}<br><span class="sub">${esc(r.unidad)}</span></td><td>${esc(r.mn || '—')}</td>
       <td><b>${esc(r.booking)}</b></td><td>${r.viaje ? r.viaje.split(', ').map(id => `<button class="link" onclick="$('#ovDocs').classList.remove('open');abrir('${esc(id)}')">${esc(id)}</button>`).join(' ') : '<span class="sub">—</span>'}</td>
       <td>${marca(r, 'Confirmación de booking', r.confirmacion)}</td><td>${marca(r, 'Carta de retiro', r.carta)}</td>
-      <td>${(r.naviera || '') ? `<span class="sub">${esc(nav(r))}</span> ${marca(r, nav(r), /✔$/.test(r.naviera) ? '✔' : '✖')}` : '<span class="sub">no aplica</span>'}</td><td class="sub">${otros(r.booking)}</td>
+      <td>${(r.naviera || '') ? `<span class="sub">${esc(nav(r))}</span> ${marca(r, nav(r), /✔$/.test(r.naviera) ? '✔' : '✖')}` : '<span class="sub">no aplica</span>'}</td><td>${tirilla(r)}</td><td class="sub">${otros(r.booking)}</td>
       <td>${faltaDe(r) ? `<span style="color:var(--bad)">${esc(faltaDe(r))}</span>` : '<span style="color:var(--ok)">Completo</span>'}${subir(r)}</td></tr>`).join('')}</table></div>
+    ${tablaImpo}
     ${sinBk.length ? `<p class="sub" style="margin-top:8px">Archivos sin booking en el nombre (revisarlos y renombrarlos en Drive): ${sinBk.map(a => `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.nombre)}</a>`).join(' · ')}</p>` : ''}`;
 }
 /* ---------- 📎 subir documento a un booking ---------- */
@@ -6174,7 +6201,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'fefc75594d';
+const VERSION_TABLERO = '6d8abe3985';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
