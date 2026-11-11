@@ -811,7 +811,7 @@ body.lv-abierta{overflow:hidden}
   .kl-n{flex-wrap:wrap}.kl-n-t{flex-basis:calc(100% - 40px)}.kl-tag{margin-left:36px}.kl-n-d{margin-left:auto}}
 
 /* Vehículos en ruta: el mapa de Indicadores (nuevo) (kpis-mapa.js) */
-.km{display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr);gap:12px;align-items:start}
+.km{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:start}
 .km-mapa,.km-t{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}
 .km-mapa svg{display:block;width:100%;height:auto}
 .km-pais{fill:var(--surface-2);stroke:var(--border);stroke-width:1.2;stroke-linejoin:round}
@@ -825,16 +825,19 @@ body.lv-abierta{overflow:hidden}
 .km-v text{font-size:8px;font-weight:600;fill:#fff;pointer-events:none}
 .km-v.aprox text{fill:var(--text)}
 .km-v.quieto circle{fill:var(--muted)}.km-v.quieto.aprox circle{fill:color-mix(in srgb,var(--muted) 25%,var(--surface));stroke:var(--muted)}
-.km-cta.q{background:var(--surface-2);color:var(--muted)}.km-q{background:var(--muted)!important}
+.km-cta.q{background:var(--surface-2);color:var(--muted)}.km-cta.gps{background:color-mix(in srgb,var(--accent) 14%,var(--surface));color:var(--accent)}.km-f em a{color:var(--accent);font-style:normal;font-weight:600}.km-q{background:var(--muted)!important}
 .km-f.quieto>i{background:var(--muted)}.km-f.quieto>i.aprox{background:transparent;border-color:var(--muted)}
-.km-zona{fill:color-mix(in srgb,var(--ok) 25%,var(--surface));stroke:var(--ok);stroke-width:1.3}.km-zona.warn{fill:color-mix(in srgb,var(--warn) 25%,var(--surface));stroke:var(--warn)}
-.km-zt{margin:10px 0 5px;font-size:12.5px;color:var(--muted)}
-.km-z{background:var(--surface-2);border:1.3px solid var(--ok);border-radius:8px;box-sizing:border-box}.km-z.warn{border-color:var(--warn)}
-.km-z .km-v text{font-size:11px}.km-z .km-nom{font-size:12px}
 .km-cta{font-size:12px;font-weight:400;border-radius:999px;padding:3px 10px;margin-left:8px;vertical-align:middle}
 .km-cta.ok{background:var(--kl-ok);color:var(--ok)}.km-cta.warn{background:var(--kl-warn);color:var(--text)}
 .km-r{border-radius:50%!important}.km-ap{background:transparent!important;border:1.5px dashed var(--muted)}
-.km-lista{display:grid;gap:8px}
+.km-lista{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:8px;align-items:start}.km-nota{grid-column:1/-1}
+.km-solo{display:none!important}
+.km-tj{box-sizing:border-box;height:100%;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--ok);border-radius:8px;padding:5px 8px;font-size:11px;line-height:1.38;overflow:hidden;color:var(--text)}
+.km-tj.aprox{border-style:dashed;border-left-style:solid}.km-tj.warn{border-left-color:var(--warn)}.km-tj.quieto{border-left-color:var(--muted)}
+.km-tj b{display:block;font-size:13px}.km-tj span{display:block;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.km-tj .km-tg{font-size:10.5px;font-weight:600;color:var(--ok)}.km-tj.warn .km-tg{color:var(--text)}.km-tj.quieto .km-tg{color:var(--muted)}
+.km-tj .km-pie{margin-top:2px}.km-tj a{color:var(--accent);font-weight:600}
+.km-guia{stroke:var(--ok);stroke-width:1.2;stroke-dasharray:2 4}.km-guia.warn{stroke:var(--warn)}.km-guia.quieto{stroke:var(--muted)}
 .km-t h4{margin:0 0 6px;font-size:13.5px;font-weight:600;display:flex;justify-content:space-between;gap:10px}
 .km-t h4 span{font-weight:400;color:var(--muted);font-size:12.5px;white-space:nowrap}
 .km-f{display:flex;gap:10px;padding:7px 0;border-top:1px solid var(--border);font-size:13px}
@@ -845,7 +848,7 @@ body.lv-abierta{overflow:hidden}
 .km-f small,.km-f em{display:block;font-style:normal;font-size:12.5px;color:var(--muted)}
 .km-f.warn small{color:var(--text)}
 .km-nota{margin:2px 2px 0;font-size:12px;color:var(--muted);line-height:1.5}
-@media (max-width:760px){.km{grid-template-columns:1fr}}
+@media (max-width:760px){.km-tc{display:none!important}.km-solo{display:block!important}}
 
 /* ---------- 10-nov · Bandeja y Errores: qué hacer, y botones que se ven como botones ---------- */
 .bj-hacer{font-weight:700;color:var(--text);margin-bottom:2px}
@@ -2612,6 +2615,7 @@ function aplicarDatos(j, clave, guardadoEn){
     window.PREGUNTAS = j.preguntas || [];   // preguntas al agente LogxIA (preguntas.js)
     window.TURNOS_C = j.turnosConductores || [];   // conductores enturnados y disponibles (app Viajes ETP)
     window.CONDUCTORES = j.conductores || [];
+    window.GPS = j.gps || [];   // GPS de Satrack por placa, solo el equipo (kpis-mapa.js)
     window.CALIF = j.calificaciones || null;
     window.REGISTRO = j.registro || null;   // vehículos y conductores con sus datos, solo el equipo (registro.js)   // calificación de conductores, solo el equipo (calificacion.js)
     window.SEG_INICIO = j.seguimiento || '';
@@ -6000,7 +6004,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '7adcdbdc70';
+const VERSION_TABLERO = '60b540f690';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -6993,14 +6997,19 @@ montarKC();
  *        en bodega de paso = en esa bodega si se reconoce el lugar; si no, junto al destino (IMPO) o al origen (EXPO) (gris);
  *        ya cargado / retirado de puerto / recogido = sobre el trayecto, por los pasos del conductor o a la mitad;
  *        IMPO entregado en bodega = devolviendo el vacío, cerca del destino.
- *      No hay GPS continuo: no se inventa una posición exacta.
+ *      Sin GPS no se inventa una posición exacta.
+ *   0. GPS de Satrack (10-nov, solo el equipo): si el equipo mandó por correo el enlace "Compartir ubicación" del vehículo (Gps.gs lo lee
+ *      cada 10 min), manda sobre todo lo demás mientras el dato tenga menos de KM_GPS_HORAS: lugar, hace cuánto, velocidad o tiempo
+ *      detenido, y el botón "Ver GPS" que abre el mapa de Satrack. Detenido (menos de 3 km/h) va en gris. El viaje "Asignado" que ya tiene
+ *      GPS también sale en el mapa.
  * En ruta ahora = con vehículo y ya arrancó (en tránsito o devolviendo el vacío), sin importar el periodo elegido arriba; sí
  * respeta la operación elegida. Cada vehículo es un punto con su número (el mismo de su fila en la lista); el que cae encima de otro se corre un poco.
  * El mapa es un dibujo propio (contorno simplificado de Colombia, sin librerías ni mapas de terceros): sirve en modo oscuro
  * y no manda la ubicación a nadie.
- * Valle ampliado (10-nov): Buenaventura, Yumbo y Cali quedan a pocos píxeles en el mapa del país y los puntos se amontonan. Los
- * vehículos de esa zona se pintan en un recuadro ampliado debajo del mapa; en el país la zona queda marcada con la cantidad.
- * El recuadro solo aparece cuando hay vehículos en la zona.
+ * Tarjetas unidas al mapa (10-nov, boceto del usuario "torre de control"): a los lados del mapa va una tarjeta por vehículo (estado,
+ * placa, pedido, qué pasa y de dónde sale el dato), unida a su punto con una línea punteada del color del estado. Caben KM_T.MAX:
+ * primero los que tienen novedad, después los que tienen GPS, después los demás; el resto queda como punto y en la lista de abajo.
+ * Reemplazó al recuadro ampliado del Valle. En pantallas angostas se ve solo el mapa y la lista.
  * Colores: verde = en movimiento, ámbar = con novedad o en espera. Prefijo CSS: km-. */
 const KM_BORDE = [[-75.37,-0.15],[-75.8,0.08],[-76.29,0.42],[-76.58,0.26],[-77.42,0.4],[-77.67,0.83],[-77.86,0.81],[-78.86,1.38],[-78.99,1.69],[-78.62,1.77],[-78.66,2.27],
   [-78.43,2.63],[-77.93,2.7],[-77.51,3.33],[-77.13,3.85],[-77.5,4.09],[-77.31,4.67],[-77.53,5.58],[-77.32,5.85],[-77.48,6.69],[-77.88,7.22],[-77.75,7.71],
@@ -7019,11 +7028,6 @@ const KM_LUGARES = [[/\bbun\b|buenaventura/, 'Buenaventura', 3.88, -77.03], [/\b
 const KM_ROTULO = {Buenaventura: [-9, 4, 'end'], Yumbo: [10, -5, 'start'], Cali: [9, 15, 'start'], Cartagena: [-8, 4, 'end'], Barranquilla: [0, -9, 'middle']};
 const KM_SEP = 14;   // separación entre dos puntos del mapa (cada punto mide 12)
 const KM = {W: 380, H: 510, O: -80.1, E: -66.5, N: 12.8, S: -4.5};
-// la zona del Valle que se amplía (misma anchura del mapa del país; se estira a lo ancho para que el trayecto quede largo)
-const KM_Z = {W: 380, H: 190, O: -77.3, E: -76.2, N: 4.15, S: 3.3, SEP: 20};
-const KM_Z_ROTULO = {Buenaventura: [0, -12, 'middle'], Yumbo: [11, -4, 'start'], Cali: [11, 6, 'start']};
-const kmZXY = (lat, lng) => [(lng - KM_Z.O) / (KM_Z.E - KM_Z.O) * KM_Z.W, (KM_Z.N - lat) / (KM_Z.N - KM_Z.S) * KM_Z.H];
-const kmEnValle = (lat, lng) => lat > KM_Z.S && lat < KM_Z.N && lng > KM_Z.O && lng < KM_Z.E;
 const kmXY = (lat, lng) => [(lng - KM.O) / (KM.E - KM.O) * KM.W, (KM.N - lat) / (KM.N - KM.S) * KM.H];
 const kmLugar = t => { const s = sinTilde(String(t || '')).toLowerCase(); return s ? KM_LUGARES.find(l => l[0].test(s)) || null : null; };
 const kmLugarDe = (...T) => T.map(kmLugar).find(Boolean) || null;
@@ -7035,14 +7039,19 @@ function kmTrayecto(v){
   return [kmLugarDe(v.origen) || KM_YUMBO, kmLugarDe(v.bodega, v.destino) || KM_YUMBO];
 }
 // en ruta ahora: ya arrancó y el transporte no ha terminado (la misma regla de las estaciones "En tránsito" y "Devolución del vacío")
+// GPS de Satrack de la placa del viaje (window.GPS, solo el equipo); vale para ubicar mientras el dato sea reciente
+const KM_GPS_HORAS = 12;
+function kmGps(v){ const pl = String(v.placa || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); return pl ? (window.GPS || []).find(g => g.placa === pl) || null : null; }
+const kmGpsVale = g => !!g && g.lat != null && g.lng != null && !!g.fecha && Date.now() - new Date(g.fecha) < KM_GPS_HORAS * 36e5;
+const kmDur = m => m < 60 ? `${Math.round(m)} min` : `${Math.floor(m / 60)} h ${Math.round(m % 60)} min`;
 const kmDevolviendo = v => v.operacion === 'IMPO' && !esLCL(v) && v.estado === 'Entregado en bodega';
 const kmEnRuta = v => !v.padre && !esPrueba(v) && (!KV.op || v.operacion === KV.op) && !kvCancel(v) && situacion(v) !== 'Cerrado' && !fueraDeRuta(v) && !transporteFinalizado(v)
-  && !!v.placa && (kmDevolviendo(v) || (tieneVehiculo(v) && !['Sin asignar', 'Asignado'].includes(v.estado)));
+  && !!v.placa && (kmDevolviendo(v) || (tieneVehiculo(v) && (!['Sin asignar', 'Asignado'].includes(v.estado) || (v.estado === 'Asignado' && kmGpsVale(kmGps(v))))));
 
 function calcKM(conNovedad){
   const L = viajes.filter(kmEnRuta).map(v => {
-    const [a, b] = kmTrayecto(v), c = conductorDe(v), lat = c && Number(c.lat), lng = c && Number(c.lng);
-    const real = !!c && isFinite(lat) && isFinite(lng) && lat > KM.S && lat < KM.N && lng > KM.O && lng < KM.E && (lat || lng);
+    const [a, b] = kmTrayecto(v), c = conductorDe(v), g0 = kmGps(v), gps = kmGpsVale(g0) ? g0 : null, u = gps || c, lat = u && Number(u.lat), lng = u && Number(u.lng);
+    const real = !!u && isFinite(lat) && isFinite(lng) && lat > KM.S && lat < KM.N && lng > KM.O && lng < KM.E && !!(lat || lng);
     // sin reporte con ubicación: sobre el trayecto, por los pasos que lleva el conductor o por la etapa
     // quieto = todavía no viaja: EXPO con el vacío retirado (falta cargar) o carga en la bodega de paso (falta el urbano)
     const porCargar = v.operacion === 'EXPO' && v.estado === 'Vacío retirado', dePaso = v.estado === 'En bodega de paso';
@@ -7052,17 +7061,16 @@ function calcKM(conNovedad){
     const f = porCargar ? 0 : dePaso ? (v.operacion === 'EXPO' ? .08 : .92) : kmDevolviendo(v) ? .9 : c && c.total && c.n ? Math.min(.95, Math.max(.08, c.n / c.total)) : .5;
     const p = real ? [lat, lng] : sitioPaso ? [sitioPaso[2], sitioPaso[3]] : [a[2] + (b[2] - a[2]) * f, a[3] + (b[3] - a[3]) * f];
     const nov = conNovedad.get(v.id);
-    return {v, a, b, real, lat: p[0], lng: p[1], valle: kmEnValle(p[0], p[1]), quieto: porCargar || dePaso, porCargar, warn: !!nov, nov, c, fecha: c && (real ? c.ubiFecha || c.fecha : c.fecha) || '',
+    return {v, a, b, real, lat: p[0], lng: p[1], quieto: gps && real ? gps.velocidad < 3 : porCargar || dePaso, porCargar, warn: !!nov, nov, c, gps: real ? gps : null, gpsViejo: !!g0 && !gps,
+      fecha: gps && real ? gps.fecha : c && (real ? c.ubiFecha || c.fecha : c.fecha) || '',
       tramo: kmDevolviendo(v) ? `${b[1]} · devolviendo el vacío` : a[1] === b[1] ? a[1] : `${a[1]} → ${b[1]}`};
   }).sort((p, q) => q.warn - p.warn || String(q.fecha).localeCompare(String(p.fecha)));
   // cada vehículo es un punto (10-nov: "ver todos los vehículos como puntos en el mapa"). El que cae encima de otro se corre:
   // el aproximado, a lo largo de su trayecto; el que tiene ubicación real, apenas alrededor de su sitio
-  // los del Valle se acomodan en su recuadro ampliado y los demás en el mapa del país
-  const valle = L.filter(p => p.valle);
-  kmSeparar(L.filter(p => !p.valle), kmXY, KM_SEP); kmSeparar(valle, kmZXY, KM_Z.SEP);
+  kmSeparar(L, kmXY, KM_SEP);
   const tramos = new Map(); L.forEach(p => { const k = p.a[1] + '|' + p.b[1]; if (!tramos.has(k)) tramos.set(k, [p.a, p.b]); });
   const sitios = new Map(); tramos.forEach(([a, b]) => { sitios.set(a[1], a); sitios.set(b[1], b); });
-  return {L, valle, tramos: [...tramos.values()], sitios: [...sitios.values()]};
+  return {L, tramos: [...tramos.values()], sitios: [...sitios.values()]};
 }
 // pone cada punto en su mapa (xy = la proyección de ese mapa) y corre el que cae encima de otro
 function kmSeparar(L, xy, sep){
@@ -7081,40 +7089,49 @@ function kmSeparar(L, xy, sep){
   });
 }
 
+// tarjetas a los lados del mapa: ancho y alto de cada una y cuántas caben (la mitad por lado)
+const KM_T = {W: 190, H: 92, MAX: 10};
 function htmlKM(N){
   const M = calcKM(new Map(N.filter(x => x.tag !== 'falta documento').map(x => [x.v.id, x])));
-  const nWarn = M.L.filter(p => p.warn).length, nQ = M.L.filter(p => p.quieto && !p.warn).length, nReal = M.L.filter(p => p.real).length;
-  // un mapa = sus trayectos, sus sitios con nombre y sus vehículos, con la proyección xy de ese mapa
-  const capas = (xy, tramos, sitios, rotulo, L, r) => { const pt = (lat, lng) => xy(lat, lng).map(n => Math.round(n * 10) / 10).join(',');
-    return `${tramos.map(([a, b]) => `<line class="km-tramo" x1="${pt(a[2], a[3]).replace(',', '" y1="')}" x2="${pt(b[2], b[3]).replace(',', '" y2="')}"/>`).join('')}
-    ${sitios.map(s => { const [x, y] = xy(s[2], s[3]), e = rotulo[s[1]] || [8, 4, 'start'];
-      // el nombre a la derecha se corre hasta pasar los vehículos amontonados en ese sitio
-      const dx = e[2] === 'start' ? Math.max(e[0], ...L.filter(p => Math.abs(p.y - y - e[1]) < r + 8 && p.x > x - r && p.x - x < 5 * r).map(p => p.x + r + 5 - x)) : e[0];
-      return `<circle class="km-sitio" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5"/><text class="km-nom" x="${(x + dx).toFixed(1)}" y="${(y + e[1]).toFixed(1)}" text-anchor="${e[2]}">${esc(s[1])}</text>`; }).join('')}
-    ${L.map(p => `<g class="km-v${p.warn ? ' warn' : p.quieto ? ' quieto' : ''}${p.real ? '' : ' aprox'}"><title>${esc(`${p.v.placa} · ${p.tramo}`)}</title><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r}"/><text x="${p.x.toFixed(1)}" y="${(p.y + r / 2).toFixed(1)}" text-anchor="middle">${p.num}</text></g>`).join('')}`; };
-  const pt = (lat, lng) => kmXY(lat, lng).map(n => Math.round(n * 10) / 10).join(',');
-  const nV = M.valle.length, wV = M.valle.some(p => p.warn) ? ' warn' : '', enV = s => kmEnValle(s[2], s[3]);
-  const z0 = kmXY(KM_Z.N, KM_Z.O), z1 = kmXY(KM_Z.S, KM_Z.E);
-  // el número de cada punto es el de su fila en la lista de al lado
+  const nGps = M.L.filter(p => p.gps).length, nWarn = M.L.filter(p => p.warn).length, nQ = M.L.filter(p => p.quieto && !p.warn).length, nReal = M.L.filter(p => p.real).length;
+  const cls = p => p.warn ? ' warn' : p.quieto ? ' quieto' : '';
+  const verGps = g => g.enlace ? ` · <a href="${esc(g.enlace)}" target="_blank" rel="noopener">Ver GPS</a>` : '';
+  const gpsTxt = p => { const g = p.gps, donde = [g.direccion, g.municipio].filter(Boolean).join(', ');
+    return `GPS ${haceTxt(g.fecha) || 'sin hora'} · ${g.velocidad >= 3 ? g.velocidad + ' km/h' : 'detenido ' + kmDur(g.minDetenido)}${g.sinSenal ? ' · sin señal' : ''}${donde ? ' · ' + esc(donde) : ''}${verGps(g)}`; };
+  // el número de cada punto es el de su fila en la lista y el de su tarjeta
   const porTramo = new Map(); M.L.forEach(p => { if (!porTramo.has(p.tramo)) porTramo.set(p.tramo, []); porTramo.get(p.tramo).push(p); });
   let num = 0; porTramo.forEach(L => L.forEach(p => { p.num = ++num; }));
-  const mapa = `<svg viewBox="0 0 ${KM.W} ${KM.H}" role="img" aria-label="Mapa de Colombia con ${klPl(M.L.length, 'vehículo')} en ruta">
-    <polygon class="km-pais" points="${KM_BORDE.map(([lng, lat]) => pt(lat, lng)).join(' ')}"/>
-    ${nV ? `${capas(kmXY, M.tramos.filter(([a, b]) => !enV(a) || !enV(b)), [], KM_ROTULO, [], 6)}
-      <rect class="km-zona${wV}" x="${z0[0].toFixed(1)}" y="${z0[1].toFixed(1)}" width="${(z1[0] - z0[0]).toFixed(1)}" height="${(z1[1] - z0[1]).toFixed(1)}" rx="3"><title>Valle del Cauca: ${klPl(nV, 'vehículo')}, en el recuadro ampliado</title></rect>
-      <text class="km-nom" x="${(z0[0] - 6).toFixed(1)}" y="${(z0[1] + 15).toFixed(1)}" text-anchor="end">Valle · ${nV}</text>` : ''}
-    ${capas(kmXY, nV ? [] : M.tramos, M.sitios.filter(s => !nV || !enV(s)), KM_ROTULO, M.L.filter(p => !p.valle), 6)}
-  </svg>${nV ? `<div class="km-zt">Valle del Cauca, ampliado · ${klPl(nV, 'vehículo')}</div>
-  <svg class="km-z${wV}" viewBox="0 0 ${KM_Z.W} ${KM_Z.H}" role="img" aria-label="Valle del Cauca ampliado con ${klPl(nV, 'vehículo')}">
-    ${capas(kmZXY, M.tramos.filter(([a, b]) => enV(a) || enV(b)), M.sitios.filter(enV), KM_Z_ROTULO, M.valle, 9)}
-  </svg>` : ''}`;
-  const fila = p => `<div class="km-f${p.warn ? ' warn' : p.quieto ? ' quieto' : ''}"><i class="${p.real ? '' : 'aprox'}">${p.num}</i><div><b>${esc(p.v.placa)}</b> <span>${esc(kcRef(p.v))}</span>
+  // el mapa: trayectos, sitios con nombre y vehículos
+  const pt = (lat, lng) => kmXY(lat, lng).map(n => Math.round(n * 10) / 10).join(',');
+  const capas = `<polygon class="km-pais" points="${KM_BORDE.map(([lng, lat]) => pt(lat, lng)).join(' ')}"/>
+    ${M.tramos.map(([a, b]) => `<line class="km-tramo" x1="${pt(a[2], a[3]).replace(',', '" y1="')}" x2="${pt(b[2], b[3]).replace(',', '" y2="')}"/>`).join('')}
+    ${M.sitios.map(s => { const [x, y] = kmXY(s[2], s[3]), e = KM_ROTULO[s[1]] || [8, 4, 'start'];
+      // el nombre a la derecha se corre hasta pasar los vehículos amontonados en ese sitio
+      const dx = e[2] === 'start' ? Math.max(e[0], ...M.L.filter(p => Math.abs(p.y - y - e[1]) < 14 && p.x > x - 6 && p.x - x < 30).map(p => p.x + 11 - x)) : e[0];
+      return `<circle class="km-sitio" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5"/><text class="km-nom" x="${(x + dx).toFixed(1)}" y="${(y + e[1]).toFixed(1)}" text-anchor="${e[2]}">${esc(s[1])}</text>`; }).join('')}`;
+  const puntos = M.L.map(p => `<g class="km-v${cls(p)}${p.real ? '' : ' aprox'}"><title>${esc(`${p.v.placa} · ${p.tramo}`)}</title><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="6"/><text x="${p.x.toFixed(1)}" y="${(p.y + 3).toFixed(1)}" text-anchor="middle">${p.num}</text></g>`).join('');
+  // las tarjetas: primero novedad, después GPS; la mitad a cada lado según dónde cae su punto, de arriba abajo
+  const T = [...M.L].sort((p, q) => q.warn - p.warn || !!q.gps - !!p.gps || p.num - q.num).slice(0, KM_T.MAX).sort((p, q) => p.x - q.x || p.y - q.y);
+  const W = KM.W + 2 * KM_T.W, mitad = Math.ceil(T.length / 2);
+  const ranuras = (L, x) => L.sort((p, q) => p.y - q.y || p.num - q.num).map((p, i) => ({p, x, y: (KM.H - L.length * KM_T.H) / (L.length + 1) * (i + 1) + KM_T.H * i}));
+  const R = [...ranuras(T.slice(0, mitad), 0), ...ranuras(T.slice(mitad), W - KM_T.W)];
+  const estado = p => p.warn ? p.nov.tag : p.gps ? (p.gps.velocidad >= 3 ? 'en movimiento' : 'detenido') : p.porCargar ? 'por cargar' : p.quieto ? 'en bodega de paso' : kmDevolviendo(p.v) ? 'devolviendo el vacío' : 'en camino';
+  const linea = p => p.gps ? `${p.gps.velocidad >= 3 ? p.gps.velocidad + ' km/h' : 'Detenido ' + kmDur(p.gps.minDetenido)}${p.gps.direccion || p.gps.municipio ? ' · ' + [p.gps.direccion, String(p.gps.municipio || '').split(',')[0]].filter(Boolean).join(', ') : ''}`
+    : String(p.v.estado || '').toLowerCase() + (p.warn && p.nov.dias ? ' · ' + klPl(p.nov.dias, 'día') : '');
+  const pie = p => p.gps ? `GPS ${haceTxt(p.gps.fecha) || 'sin hora'}${verGps(p.gps)}` : p.real ? `Reportó ${haceTxt(p.fecha) || 'sin hora'}` : 'Sin GPS · ubicación aproximada';
+  const tarjeta = ({p, x, y}) => `<foreignObject class="km-tjf" x="${x}" y="${y.toFixed(1)}" width="${KM_T.W}" height="${KM_T.H}"><div xmlns="http://www.w3.org/1999/xhtml" class="km-tj${cls(p)}${p.real ? '' : ' aprox'}">
+      <span class="km-tg">${p.num} · ${esc(estado(p))}</span><b>${esc(p.v.placa)}</b><span>${esc(kcRef(p.v))}</span><span>${esc(linea(p))}</span><span class="km-pie">${pie(p)}</span></div></foreignObject>`;
+  const guia = ({p, x, y}) => `<line class="km-guia${cls(p)}" x1="${x ? x + 3 : KM_T.W - 3}" y1="${(y + KM_T.H / 2).toFixed(1)}" x2="${(p.x + KM_T.W).toFixed(1)}" y2="${p.y.toFixed(1)}"/>`;
+  const rotulo = `Mapa de Colombia con ${klPl(M.L.length, 'vehículo')} en ruta`;
+  const mapa = `<svg class="km-tc" viewBox="0 0 ${W} ${KM.H}" role="img" aria-label="${rotulo}"><g transform="translate(${KM_T.W},0)">${capas}</g>${R.map(guia).join('')}<g transform="translate(${KM_T.W},0)">${puntos}</g>${R.map(tarjeta).join('')}</svg>
+    <svg class="km-solo" viewBox="0 0 ${KM.W} ${KM.H}" role="img" aria-label="${rotulo}">${capas}${puntos}</svg>`;
+  const fila = p => `<div class="km-f${cls(p)}"><i class="${p.real ? '' : 'aprox'}">${p.num}</i><div><b>${esc(p.v.placa)}</b> <span>${esc(kcRef(p.v))}</span>
       <small>${esc(p.warn ? `${p.nov.tag}${p.nov.dias ? ' · ' + klPl(p.nov.dias, 'día') : ''}` : String(p.v.estado || '').toLowerCase() + (p.porCargar ? ' · por cargar' : ''))}${p.c && p.c.n ? ` · ${esc(String(p.c.paso).toLowerCase())}` : ''}</small>
-      <em>${p.real ? `Reportó ${haceTxt(p.fecha) || 'sin hora'}` : p.c && p.c.n && p.fecha ? `Reportó ${haceTxt(p.fecha)}, sin ubicación` : 'Sin reporte del conductor'}</em></div></div>`;
+      <em>${p.gps ? gpsTxt(p) : (p.gpsViejo ? 'GPS sin dato reciente: pedir un enlace nuevo · ' : '') + (p.real ? `Reportó ${haceTxt(p.fecha) || 'sin hora'}` : p.c && p.c.n && p.fecha ? `Reportó ${haceTxt(p.fecha)}, sin ubicación` : 'Sin reporte del conductor')}</em></div></div>`;
   const lista = [...porTramo.entries()].map(([t, L]) => `<div class="km-t"><h4>${esc(t)}<span>${klPl(L.length, 'vehículo')}</span></h4>${L.map(fila).join('')}</div>`).join('');
-  return `<h3 class="kl-h">Vehículos en ruta <span class="km-cta ok">${miles(M.L.length - nWarn - nQ)} en movimiento</span>${nQ ? `<span class="km-cta q">${miles(nQ)} por cargar o en bodega de paso</span>` : ''}${nWarn ? `<span class="km-cta warn">${miles(nWarn)} con novedad</span>` : ''}</h3>
-    ${M.L.length ? `<div class="km"><div class="km-mapa">${mapa}<div class="kl-ley"><span><i class="ok km-r"></i>en movimiento</span><span><i class="km-r km-q"></i>por cargar o en bodega de paso</span><span><i class="rep km-r"></i>con novedad o en espera</span><span><i class="km-r km-ap"></i>ubicación aproximada</span></div></div>
-      <div class="km-lista">${lista}<p class="km-nota">${nReal ? `${klPl(nReal, 'vehículo')} de ${miles(M.L.length)} con la ubicación de su último reporte.` : 'Ningún vehículo ha reportado su ubicación todavía.'} Los demás se muestran según la etapa (el que no ha cargado, en el origen; el que va en camino, sobre su trayecto): es una ubicación aproximada.</p></div></div>`
+  return `<h3 class="kl-h">Vehículos en ruta <span class="km-cta ok">${miles(M.L.length - nWarn - nQ)} en movimiento</span>${nQ ? `<span class="km-cta q">${miles(nQ)} detenidos, por cargar o en bodega de paso</span>` : ''}${nGps ? `<span class="km-cta gps">${miles(nGps)} con GPS</span>` : ''}${nWarn ? `<span class="km-cta warn">${miles(nWarn)} con novedad</span>` : ''}</h3>
+    ${M.L.length ? `<div class="km"><div class="km-mapa">${mapa}<div class="kl-ley"><span><i class="ok km-r"></i>en movimiento</span><span><i class="km-r km-q"></i>detenido, por cargar o en bodega de paso</span><span><i class="rep km-r"></i>con novedad o en espera</span><span><i class="km-r km-ap"></i>ubicación aproximada</span></div></div>
+      <div class="km-lista">${lista}<p class="km-nota">${nGps ? `${klPl(nGps, 'vehículo')} con GPS de Satrack (se lee cada 10 minutos). ` : ''}${nReal - nGps > 0 ? `${klPl(nReal - nGps, 'vehículo')} con la ubicación de su último reporte.` : nReal ? '' : 'Ningún vehículo ha reportado su ubicación todavía.'} Los demás se muestran según la etapa (el que no ha cargado, en el origen; el que va en camino, sobre su trayecto): es una ubicación aproximada.${M.L.length > T.length ? ` Hay tarjeta para ${miles(T.length)} de ${miles(M.L.length)}: primero los que tienen novedad o GPS.` : ''}</p></div></div>`
       : '<div class="kl-vacio">Ningún vehículo en ruta en este momento.</div>'}`;
 }
 /* ---------- kpis-lean.js · 📊 Indicadores (nuevo): la versión corta para Reckitt (9-nov-2026) ----------
