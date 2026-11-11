@@ -3723,6 +3723,21 @@ const ICONOS_RUTA = {
 // (window.GPS, datos.js; solo llega al equipo), sobre el camión sale un pin que abre la ubicación: el enlace de Satrack mientras
 // esté activo; si ya venció, el último punto leído (menos de GPS_PIN_HORAS) en Google Maps. Sin GPS no sale nada.
 const GPS_PIN_HORAS = 12;
+// 10-nov ("¿este por dónde va? ¿podemos tomar una ciudad principal cerca como referencia?"): cuando el vehículo no está en una
+// geozona, el letrero dice el municipio que reporta el GPS y a cuántos km queda la ciudad principal más cercana, en línea recta
+// (no por carretera). Los puntos son el centro de cada ciudad: sirven de referencia, no para medir llegadas.
+const CIUDADES_REF = [['Cali', 3.4516, -76.5320], ['Buenaventura', 3.8801, -77.0312], ['Palmira', 3.5394, -76.3036], ['Buga', 3.9009, -76.2978], ['Tuluá', 4.0847, -76.1954],
+  ['Cartago', 4.7464, -75.9117], ['Popayán', 2.4448, -76.6147], ['Pasto', 1.2136, -77.2811], ['Pereira', 4.8133, -75.6961], ['Armenia', 4.5339, -75.6811], ['Manizales', 5.0703, -75.5138],
+  ['Ibagué', 4.4389, -75.2322], ['Girardot', 4.3030, -74.8040], ['Neiva', 2.9273, -75.2819], ['Bogotá', 4.7110, -74.0721], ['Villavicencio', 4.1420, -73.6266], ['Honda', 5.2086, -74.7350],
+  ['La Dorada', 5.4540, -74.6630], ['Medellín', 6.2442, -75.5812], ['Puerto Berrío', 6.4910, -74.4030], ['Barrancabermeja', 7.0653, -73.8547], ['Bucaramanga', 7.1193, -73.1227],
+  ['Cúcuta', 7.8939, -72.5078], ['Aguachica', 8.3080, -73.6140], ['Caucasia', 7.9865, -75.1935], ['Planeta Rica', 8.4090, -75.5830], ['Montería', 8.7479, -75.8814],
+  ['Sincelejo', 9.3047, -75.3978], ['Bosconia', 9.9760, -73.8880], ['Valledupar', 10.4631, -73.2532], ['Cartagena', 10.3910, -75.4794], ['Barranquilla', 10.9685, -74.7813], ['Santa Marta', 11.2408, -74.1990]];
+function dondeVaGps(g){
+  const c = CIUDADES_REF.map(x => [x[0], distanciaKm(g.lat, g.lng, x[1], x[2])]).sort((a, b) => a[1] - b[1])[0], km = Math.round(c[1]);
+  const muni = String(g.municipio || '').split(',')[0].trim(), esLaCiudad = minus(muni) === minus(c[0]);
+  const ref = km <= 6 || esLaCiudad ? `En ${c[0]}` : `a ${km} km de ${c[0]}`;
+  return muni && !esLaCiudad ? `${muni} · ${ref.replace(/^En /, 'en ')}` : ref.replace(/^a /, 'A ');
+}
 function gpsDeViaje(v){
   if (window.MODO_CLIENTE) return null;
   const pl = String(v.placa || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), g = pl && (window.GPS || []).find(x => x.placa === pl);
@@ -3732,9 +3747,9 @@ function gpsDeViaje(v){
   if (!/^https:\/\//.test(url)) return null;
   const que = [g.municipio, punto ? (g.velocidad >= 3 ? Math.round(g.velocidad) + ' km/h' : 'detenido') : '', g.fecha ? haceCuanto(fechaLocal(g.fecha)) : ''].filter(Boolean).join(' · ');
   const al = punto ? alertaGps(v, g) : null;   // dominio.js: llegó / cerca / en un lugar de la ruta (geozonas de 200 m)
-  return {url, al, satrack: !!g.enlace, quieto: punto && g.velocidad < 3, titulo: `Ver en el GPS${g.enlace ? '' : ' (último punto, en el mapa)'}${que ? ' · ' + que : ''}`};
+  return {url, al, donde: punto ? dondeVaGps(g) : '', satrack: !!g.enlace, quieto: punto && g.velocidad < 3, titulo: `Ver en el GPS${g.enlace ? '' : ' (último punto, en el mapa)'}${que ? ' · ' + que : ''}`};
 }
-const pinGps = v => { const g = gpsDeViaje(v); return g ? `<a class="gps-pin${g.quieto ? ' quieto' : ''}${g.al ? ' ' + g.al.tipo : ''}" href="${esc(g.url)}" target="_blank" rel="noopener" title="${esc(g.titulo)}" aria-label="${esc(g.titulo)}" onclick="event.stopPropagation()"><i></i><span>${g.al ? esc(g.al.texto) : 'Ver GPS'}</span></a>` : ''; };   // pin con el texto al lado (opción C, elegida por el usuario)
+const pinGps = v => { const g = gpsDeViaje(v); return g ? `<a class="gps-pin${g.quieto ? ' quieto' : ''}${g.al ? ' ' + g.al.tipo : ''}" href="${esc(g.url)}" target="_blank" rel="noopener" title="${esc(g.titulo)}" aria-label="${esc(g.titulo)}" onclick="event.stopPropagation()"><i></i><span>${esc(g.al ? g.al.texto : (g.donde || 'Ver GPS'))}</span></a>` : ''; };   // pin con el texto al lado (opción C, elegida por el usuario)
 const iconoParada = (v, et) => { const k = iconoEtapa(v, et), h = ICONOS_RUTA[k]; return k === 'camion' ? h.replace(/<\/span>$/, pinGps(v) + '</span>') : h; };
 function leadFactura(v){
   const fin = fechaFinTransporte(v);
@@ -6124,7 +6139,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '512f0c493b';
+const VERSION_TABLERO = '1c456c6985';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
