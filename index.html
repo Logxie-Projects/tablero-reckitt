@@ -932,6 +932,16 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 .ruta .ico .gps-pin.cerca{border-color:var(--warn);color:var(--warn)}
 .ruta .ico .gps-pin.cerca i{background:var(--warn)}
 .ruta .ico .gps-pin.cerca:hover{background:var(--warn);color:#fff}
+
+/* ---------- 11-nov · GPS en el celular ("en la versión celular no se ven los cambios del GPS") ----------
+   En pantalla angosta la tarjeta esconde el camión (.ruta .ico), y el letrero del GPS va dentro de él: no se veía. Aquí el camión
+   sigue escondido, pero si trae letrero del GPS, el letrero sale en su propio renglón debajo de la parada donde está el vehículo. */
+@media (max-width:640px){
+  .ruta .par:has(.gps-pin){flex-wrap:wrap}
+  .ruta .ico:has(.gps-pin){display:block;position:static;transform:none;width:auto;height:auto;order:3;flex-basis:100%;margin:2px 0 6px 20px}
+  .ruta .ico:has(.gps-pin) > i{display:none}
+  .ruta .ico .gps-pin{position:static;transform:none;display:inline-flex;font-size:13px;line-height:20px;padding:3px 10px 3px 7px;white-space:normal}
+}
 </style>
 </head>
 <body>
@@ -6201,7 +6211,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '6d8abe3985';
+const VERSION_TABLERO = '81ccf4acc5';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
