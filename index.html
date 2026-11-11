@@ -2258,6 +2258,8 @@ const PARADAS_SIN_VEHICULO = ['Origen', 'Motonave', 'Destino'];   // no las hace
 // g = {lat, lng, fecha} (window.GPS). → null | {tipo: 'llegada'|'cerca'|'en', lugar, km, parada, texto}
 function alertaGps(v, g, ahora){
   if (!g || g.lat == null || g.lng == null || !g.fecha) return null;
+  // solo el viaje que el vehículo está haciendo: la misma placa sale en viajes ya terminados o cerrados, y ahí el aviso confunde
+  if (['Cerrado', 'Cancelado'].includes(situacion(v)) || (!v.padre && terminoTransporte(v))) return null;
   const min = ((ahora || Date.now()) - new Date(g.fecha)) / 60e3; if (!(min >= -5 && min <= GPS_ALERTA_MIN)) return null;
   // subviaje: su vehículo lleva la carga del patio intermedio al destino final (urbano)
   const sig = v.padre ? (cumplido(v, 'fechaUrbano') ? null : ['Urbano al destino final', v.bodega || ''])
@@ -6105,7 +6107,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '3bfecc4074';
+const VERSION_TABLERO = 'db8161e06c';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
