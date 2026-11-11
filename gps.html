@@ -80,7 +80,7 @@
   var la = Number(P.get('la')), lo = Number(P.get('lo')), hayPunto = !!P.get('la') && !!P.get('lo') && la > -5 && la < 14 && lo > -82 && lo < -66;
   var hayCodigo = /^[A-Za-z0-9]{3,12}$/.test(codigo);
   if (!hayCodigo && !hayPunto) { $('titulo').textContent = 'Este enlace del GPS no es válido'; $('detalle').textContent = 'Ábralo de nuevo desde el tablero.'; document.querySelector('.via').style.display = 'none'; return; }
-  var satrack = hayCodigo ? 'https://l.satrack.com/' + codigo : '', satelite = hayPunto ? 'https://www.google.com/maps/embed?origin=mfe&pb=!1m4!2m1!1s' + la.toFixed(6) + ',' + lo.toFixed(6) + '!5e1!6i19'   /* 5e1 = satélite, 6i19 = acercamiento (17 al comienzo; el usuario pidió más cerca para ver el punto exacto) */ : '';
+  var satrack = hayCodigo ? 'https://l.satrack.com/' + codigo : '', satelite = hayPunto ? 'https://www.google.com/maps/embed?origin=mfe&pb=!1m4!2m1!1s' + la.toFixed(6) + ',' + lo.toFixed(6) + '!5e1!6i20'   /* 5e1 = satélite, 6i20 = acercamiento (escala de Google: 1 = el mundo, 21 = lo más cerca). Fue 17, luego 19; el usuario pidió más cerca ("el de Reckitt se ve muy lejos") */ : '';
   var hora = ''; try { var fe = new Date(P.get('f') || ''); if (!isNaN(fe)) hora = fe.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' }); } catch (x) {}
   var f = $('mapa'), t0 = 0, lento = 0;
   if (hayCodigo) { $('abrir').href = satrack; $('abrir').hidden = false; }
