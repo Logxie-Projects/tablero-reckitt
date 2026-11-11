@@ -2258,7 +2258,6 @@ const GEOZONAS = [
   ['Simarítima Yumbo', 3.54148, -76.49664, /simaritima/],                // registro BIC; queda a 200 m de Intermodal
   ['Agecolda', 3.51774, -76.51057, /agecold/],                           // registro BIC · Cra 29B # 11A-51, Arroyohondo
   ['DHL Cortijo', 3.50074, -76.50385, /cortijo|\bdhl\b/],                // Cra 35A # 16-80, Acopi (dirección de avisos de empleo de DHL)
-  ['Sicopark Yumbo', 3.55169, -76.48983, /sicopark/],                    // parqueadero; punto dado por el usuario
   ['CEDI Reckitt Bogotá', 4.65004, -74.11648, /solistica|\bagv\b|bodega 11|reckitt.*bogot/],   // Cra 69 # 21-63/73, Montevideo (mismo complejo que Solistica)
   ['Puerto de Buenaventura (SPRBUN)', 3.88872, -77.06936, /\bbun\b|buenaventura|sprbun/, 1.5],
   ['TCBUEN', 3.88429, -77.04400, /\bbun\b|buenaventura|tcbuen/, 0.6],
@@ -6125,7 +6124,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'd17c518500';
+const VERSION_TABLERO = '512f0c493b';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
