@@ -3863,9 +3863,12 @@ function rutaPedido(v){
   // 11-nov ("si ya llegaron a patios... el carrito debe moverse a la derecha... el carro se quedó atrás"): cuando el GPS ubica el
   // vehículo dentro de la geozona de su siguiente parada, el camión se dibuja EN esa parada y la etiqueta dice dónde llegó. Es lo que
   // dice el GPS, no un paso confirmado: la línea verde y el "por confirmar" siguen igual hasta que alguien del equipo lo confirme
-  // (regla del sistema: nada da un paso por hecho solo).
-  const gG = window.MODO_CLIENTE ? null : gpsDeViaje(v), nGps = gG && gG.al && gG.al.tipo === 'llegada' ? P.findIndex(p => p[0] === gG.al.parada) : -1;
-  const nIcono = nGps >= 0 ? nGps : n, ahoraTxt = nGps >= 0 ? `${gG.al.texto} · por confirmar` : ahora;
+  // (regla del sistema: nada da un paso por hecho solo). Confirmado por el usuario el 11-nov: "la recogida y entrega requieren
+  // confirmación, pero el GPS mueve la posición".
+  const gG = window.MODO_CLIENTE ? null : gpsDeViaje(v), nGps = !gG || !gG.al ? -1 : gG.al.tipo === 'llegada' ? P.findIndex(p => p[0] === gG.al.parada)
+    // está en un lugar conocido que es otra parada de este viaje (ej. sigue en el patio con el retiro ya confirmado): el camión va ahí
+    : gG.al.tipo === 'en' ? P.findIndex(p => !PARADAS_SIN_VEHICULO.includes(p[0]) && geozonasDe(p[1]).some(z => z[0] === gG.al.lugar)) : -1;
+  const nIcono = nGps >= 0 ? nGps : n, ahoraTxt = nGps >= 0 && gG.al.tipo === 'llegada' ? `${gG.al.texto} · por confirmar` : ahora;
   const ref = v.operacion==='EXPO' && v.booking ? ['Booking '+v.booking, contenedorDeBooking(v)].filter(Boolean).join(' · ') : (refCorta(v) || v.id);   // dominio refCorta
   return `<div class="ruta"><div class="dos"><div class="izq">
     <div class="cab"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
@@ -6149,7 +6152,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '0a970ddeba';
+const VERSION_TABLERO = 'a232ffe1d6';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
