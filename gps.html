@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>GPS · LogxView</title>
+<!-- gps.html · GPS de un vehículo con pantalla de carga (11-nov-2026)
+     Pedido del usuario: al abrir el GPS "se ve una ventana blanca cargando por cierto tiempo... ¿es posible mostrar algo mientras
+     se carga?". La página de Satrack no es nuestra y no se puede cambiar; esta página la muestra ADENTRO (iframe) y, mientras
+     carga, deja a la vista de qué vehículo es y dónde lo ubicó el GPS. Siempre queda el botón "Abrir en Satrack" por si adentro no
+     carga. Solo abre enlaces l.satrack.com: recibe el CÓDIGO del enlace, no una dirección, así que no sirve para abrir otra cosa.
+     Los datos llegan después del # (no viajan al servidor): e = código del enlace, p = placa, d = dónde está (texto del tablero).
+     No lleva datos de viajes ni claves. La abre lean.js (gpsDeViaje). -->
+<style>
+  :root{--marca:#ff007f;--texto:#1b1f27;--gris:#667085;--borde:#e5e7eb;--fondo:#f5f6f8}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;font-family:"Segoe UI",system-ui,Arial,sans-serif;color:var(--texto);background:var(--fondo)}
+  body{display:flex;flex-direction:column}
+  header{display:flex;align-items:center;gap:12px;padding:10px 16px;background:#fff;border-bottom:1px solid var(--borde);flex-wrap:wrap}
+  header .marca{font-weight:800;color:var(--marca)}
+  header .placa{font-weight:800;font-size:17px;border:1px solid var(--borde);border-radius:7px;padding:2px 9px}
+  header .donde{color:var(--gris);font-size:14px;flex:1;min-width:140px}
+  header a{font-size:13px;font-weight:700;color:var(--texto);text-decoration:none;border:1px solid var(--borde);border-radius:8px;padding:7px 12px;background:#fff}
+  header a:hover{border-color:var(--marca);color:var(--marca)}
+  main{position:relative;flex:1;min-height:0}
+  iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff}
+  #carga{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:var(--fondo);text-align:center;padding:24px;transition:opacity .35s}
+  #carga.fuera{opacity:0;pointer-events:none}
+  .via{position:relative;width:240px;height:46px;overflow:hidden}
+  .via:after{content:'';position:absolute;left:0;right:0;bottom:6px;height:2px;background:repeating-linear-gradient(90deg,var(--borde) 0 14px,transparent 14px 26px);animation:via 0.7s linear infinite}
+  .camion{position:absolute;left:94px;bottom:8px;width:52px;height:22px;animation:bote 0.5s ease-in-out infinite alternate}
+  .camion i{position:absolute;display:block}
+  .camion .carga{left:1px;top:3px;width:31px;height:12px;background:var(--marca);border-radius:1px}
+  .camion .chasis{left:1px;top:15px;width:50px;height:2px;background:var(--texto)}
+  .camion .cabina{left:37px;top:5px;width:14px;height:11px;background:var(--texto);border-radius:2px 6px 1px 1px}
+  .camion .ll{top:16px;width:5px;height:5px;border-radius:50%;background:var(--texto)}
+  @keyframes via{to{transform:translateX(-26px)}}
+  @keyframes bote{to{transform:translateY(-1.5px)}}
+  #carga h1{font-size:20px;margin:0}
+  #carga p{margin:0;color:var(--gris);font-size:14px;max-width:420px;line-height:1.5}
+  #carga .tarda{display:none}
+  #carga.lento .tarda{display:block}
+  @media (prefers-reduced-motion:reduce){.via:after,.camion{animation:none}}
+</style>
+</head>
+<body>
+<header>
+  <span class="marca">LogxView</span>
+  <span class="placa" id="placa" hidden></span>
+  <span class="donde" id="donde"></span>
+  <a id="abrir" target="_blank" rel="noopener" hidden>Abrir en Satrack ↗</a>
+</header>
+<main>
+  <iframe id="mapa" title="Mapa del GPS" referrerpolicy="no-referrer" hidden></iframe>
+  <div id="carga">
+    <div class="via"><div class="camion"><i class="carga"></i><i class="chasis"></i><i class="cabina"></i><i class="ll" style="left:3px"></i><i class="ll" style="left:9px"></i><i class="ll" style="left:27px"></i><i class="ll" style="left:44px"></i></div></div>
+    <h1 id="titulo">Cargando el GPS…</h1>
+    <p id="detalle"></p>
+    <p class="tarda">Está tardando más de lo normal. Puede abrirlo directamente con el botón <b>Abrir en Satrack</b>, arriba a la derecha.</p>
+  </div>
+</main>
+<script>
+(function () {
+  var P = new URLSearchParams(location.hash.replace(/^#/, ''));
+  var codigo = (P.get('e') || '').trim(), placa = (P.get('p') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8), donde = (P.get('d') || '').slice(0, 120);
+  var $ = function (id) { return document.getElementById(id); }, carga = $('carga');
+  if (placa) { $('placa').textContent = placa; $('placa').hidden = false; document.title = 'GPS · ' + placa + ' · LogxView'; $('titulo').textContent = 'Cargando el GPS de ' + placa + '…'; }
+  $('donde').textContent = donde;
+  $('detalle').textContent = donde ? 'Último dato en el tablero: ' + donde + '.' : '';
+  // solo códigos de enlaces de Satrack: nada que no sea l.satrack.com se abre desde aquí
+  if (!/^[A-Za-z0-9]{3,12}$/.test(codigo)) { $('titulo').textContent = 'Este enlace del GPS no es válido'; $('detalle').textContent = 'Ábralo de nuevo desde el tablero.'; document.querySelector('.via').style.display = 'none'; return; }
+  var url = 'https://l.satrack.com/' + codigo, f = $('mapa'), t0 = Date.now();
+  $('abrir').href = url; $('abrir').hidden = false;
+  f.addEventListener('load', function () { setTimeout(function () { carga.classList.add('fuera'); }, Math.max(0, 1200 - (Date.now() - t0))); });
+  f.hidden = false; f.src = url;
+  setTimeout(function () { carga.classList.add('lento'); }, 12000);
+})();
+</script>
+</body>
+</html>
