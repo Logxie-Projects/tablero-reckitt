@@ -924,6 +924,14 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 .gps-caja .gps-est{margin:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .gps-caja .gps-fila{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
 .gps-caja .gps-fila input{flex:1;min-width:220px}
+
+/* ---------- 10-nov · GPS en la tarjeta: llegó (verde) o cerca (ámbar) de la siguiente parada (dominio.js alertaGps) ---------- */
+.ruta .ico .gps-pin.llegada{border-color:var(--ok);color:var(--ok)}
+.ruta .ico .gps-pin.llegada i{background:var(--ok)}
+.ruta .ico .gps-pin.llegada:hover{background:var(--ok);color:#fff}
+.ruta .ico .gps-pin.cerca{border-color:var(--warn);color:var(--warn)}
+.ruta .ico .gps-pin.cerca i{background:var(--warn)}
+.ruta .ico .gps-pin.cerca:hover{background:var(--warn);color:#fff}
 </style>
 </head>
 <body>
@@ -2228,6 +2236,37 @@ function paradas(v){
     ['Motonave', v.mn||'—', cumplido(v, 'etd'), [v.etd&&dijo('ETD', 'etd')], pend(v, 'etd')],
     ['Destino', v.pais||'—', cumplido(v, 'eta'), [v.eta&&dijo('ETA', 'eta')], pend(v, 'eta')],
   ];
+}
+/* ---------- geozonas del GPS: cercanía y llegada (10-nov-2026) ----------
+ * Pedido del usuario: "busca las coordenadas de Reckitt Salomia, Patios Intermodal, etc. y de los puertos, compara con las coordenadas
+ * de los vehículos y das alertas de proximidad y llegada... que tenga geozonas de 1 km". Cada lugar de la ruta es un círculo de
+ * GEOZONA_KM alrededor de su punto. Con el último punto del GPS de la placa (Gps.gs; de menos de GPS_ALERTA_MIN minutos) se mira la
+ * SIGUIENTE parada del viaje que hace el vehículo: dentro de su geozona = "llegó"; a menos de GPS_CERCA_KM = "cerca". Si no es la
+ * siguiente parada pero está dentro de otro lugar conocido, se dice dónde está. Es un aviso: NO marca ningún paso como hecho; el
+ * equipo lo confirma. Cada geozona: [nombre, latitud, longitud, cómo lo escriben los viajes (sobre minus())]. Un nombre que sirve
+ * para varios lugares (el puerto "BUN" tiene tres terminales; "Patio Colombia" tiene dos sedes) toma el más cercano al vehículo. */
+const GEOZONA_KM = 1, GPS_CERCA_KM = 5, GPS_ALERTA_MIN = 60;
+const GEOZONAS = [
+  ['Patios Intermodal', 3.54036, -76.49496, /intermodal/],          // coordenadas dadas por el usuario (10-nov)
+  ['Sicopark Yumbo', 3.55169, -76.48983, /sicopark/],               // parqueadero; coordenadas dadas por el usuario (10-nov)
+];
+const distanciaKm = (la1, lo1, la2, lo2) => { const r = x => x * Math.PI / 180, h = Math.sin(r(la2 - la1) / 2) ** 2 + Math.cos(r(la1)) * Math.cos(r(la2)) * Math.sin(r(lo2 - lo1) / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(h)); };
+const geozonasDe = texto => { const s = minus(texto); return s ? GEOZONAS.filter(z => z[3].test(s)) : []; };
+const masCercana = (Z, lat, lng) => Z.map(z => ({z, km: distanciaKm(lat, lng, z[1], z[2])})).sort((a, b) => a.km - b.km)[0] || null;
+const PARADAS_SIN_VEHICULO = ['Origen', 'Motonave', 'Destino'];   // no las hace el vehículo (documentos, naviera)
+// g = {lat, lng, fecha} (window.GPS). → null | {tipo: 'llegada'|'cerca'|'en', lugar, km, parada, texto}
+function alertaGps(v, g, ahora){
+  if (!g || g.lat == null || g.lng == null || !g.fecha) return null;
+  const min = ((ahora || Date.now()) - new Date(g.fecha)) / 60e3; if (!(min >= -5 && min <= GPS_ALERTA_MIN)) return null;
+  // subviaje: su vehículo lleva la carga del patio intermedio al destino final (urbano)
+  const sig = v.padre ? (cumplido(v, 'fechaUrbano') ? null : ['Urbano al destino final', v.bodega || ''])
+    : paradas(v).find(p => !p[2] && !PARADAS_SIN_VEHICULO.includes(p[0]));
+  const c = sig ? masCercana(geozonasDe(sig[1]), g.lat, g.lng) : null, km = c ? Math.round(c.km * 10) / 10 : 0;
+  if (c && c.km <= GEOZONA_KM) return {tipo: 'llegada', lugar: c.z[0], km, parada: sig[0], texto: `Llegó a ${c.z[0]}`};
+  if (c && c.km <= GPS_CERCA_KM) return {tipo: 'cerca', lugar: c.z[0], km, parada: sig[0], texto: `A ${String(km).replace('.', ',')} km de ${c.z[0]}`};
+  const en = masCercana(GEOZONAS, g.lat, g.lng);
+  return en && en.km <= GEOZONA_KM ? {tipo: 'en', lugar: en.z[0], km: Math.round(en.km * 10) / 10, parada: sig ? sig[0] : '', texto: `En ${en.z[0]}`} : null;
 }
 // dónde se llena el contenedor EXPO: la programación lo anota como "cargue en DHL" cuando no es la planta
 function bodegaCargue(v){ return ((String(v.observacion||'').match(/cargue en ([^·(]+)/i) || [])[1] || '').trim(); }
@@ -3673,9 +3712,10 @@ function gpsDeViaje(v){
   const url = g.enlace || (punto ? `https://www.google.com/maps?q=${g.lat},${g.lng}` : '');
   if (!/^https:\/\//.test(url)) return null;
   const que = [g.municipio, punto ? (g.velocidad >= 3 ? Math.round(g.velocidad) + ' km/h' : 'detenido') : '', g.fecha ? haceCuanto(fechaLocal(g.fecha)) : ''].filter(Boolean).join(' · ');
-  return {url, satrack: !!g.enlace, quieto: punto && g.velocidad < 3, titulo: `Ver en el GPS${g.enlace ? '' : ' (último punto, en el mapa)'}${que ? ' · ' + que : ''}`};
+  const al = punto ? alertaGps(v, g) : null;   // dominio.js: llegó / cerca / en un lugar de la ruta (geozonas de 1 km)
+  return {url, al, satrack: !!g.enlace, quieto: punto && g.velocidad < 3, titulo: `Ver en el GPS${g.enlace ? '' : ' (último punto, en el mapa)'}${que ? ' · ' + que : ''}`};
 }
-const pinGps = v => { const g = gpsDeViaje(v); return g ? `<a class="gps-pin${g.quieto ? ' quieto' : ''}" href="${esc(g.url)}" target="_blank" rel="noopener" title="${esc(g.titulo)}" aria-label="${esc(g.titulo)}" onclick="event.stopPropagation()"><i></i><span>Ver GPS</span></a>` : ''; };   // pin con el texto al lado (opción C, elegida por el usuario)
+const pinGps = v => { const g = gpsDeViaje(v); return g ? `<a class="gps-pin${g.quieto ? ' quieto' : ''}${g.al ? ' ' + g.al.tipo : ''}" href="${esc(g.url)}" target="_blank" rel="noopener" title="${esc(g.titulo)}" aria-label="${esc(g.titulo)}" onclick="event.stopPropagation()"><i></i><span>${g.al ? esc(g.al.texto) : 'Ver GPS'}</span></a>` : ''; };   // pin con el texto al lado (opción C, elegida por el usuario)
 const iconoParada = (v, et) => { const k = iconoEtapa(v, et), h = ICONOS_RUTA[k]; return k === 'camion' ? h.replace(/<\/span>$/, pinGps(v) + '</span>') : h; };
 function leadFactura(v){
   const fin = fechaFinTransporte(v);
@@ -6065,7 +6105,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '9453a8fa72';
+const VERSION_TABLERO = '3bfecc4074';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -7739,6 +7779,7 @@ const BLOQUES = [
   ['tomar', 'Por tomar', 'p-acc', 'Viaje nuevo: nadie del equipo lo ha tomado'],
   ['vehiculo', 'Sin vehículo', 'p-bad', `Arranca en ${HORAS_COBERTURA} h o menos y no tiene placa`],
   ['sinact', '⚠ Sin actualizar', 'p-bad', 'La fecha del paso ya pasó y el viaje no registra que se hizo (la misma alerta de la Torre de Control)'],
+  ['gps', '📍 GPS', 'p-acc', 'El GPS ubica el vehículo en un lugar de su ruta o cerca (geozonas de 1 km). Es un aviso: nada se marca solo'],
   ['paso', '¿Pasó?', 'p-warn', 'La fecha llegó y nadie confirmó si se hizo'],
   ['donde', '¿Dónde va?', 'p-acc', 'Vehículo en movimiento: confirmar en cada ronda dónde va (o "Sigue igual")'],
   ['hacer', 'Por hacer', 'p-warn', 'Algo que hay que pedir o conseguir antes de una fecha (la cita antes del cierre documental, el vehículo antes del retiro…)'],
@@ -7751,7 +7792,7 @@ const BLOQUES = [
 ];
 // 10-nov ("que el equipo entienda qué debe hacer"): cada renglón empieza con la instrucción, en una frase con verbo. El nombre del
 // bloque (la etiqueta de color) dice de qué tipo es; esto dice qué hacer.
-const QUE_HACER = {programacion: 'Revise lo que mandó Reckitt y aplíquelo en el tablero', crear: 'Cree el viaje que pide el correo', tomar: 'Tome este viaje nuevo: ábralo y revise sus datos', vehiculo: 'Asigne vehículo y conductor',
+const QUE_HACER = {gps: 'Confirme lo que dice el GPS', programacion: 'Revise lo que mandó Reckitt y aplíquelo en el tablero', crear: 'Cree el viaje que pide el correo', tomar: 'Tome este viaje nuevo: ábralo y revise sus datos', vehiculo: 'Asigne vehículo y conductor',
   sinact: 'Actualice el viaje: ¿se hizo o cambió la fecha?', paso: 'Confirme si este paso ya se hizo', donde: 'Confirme dónde va el vehículo',
   nocoincide: 'Decida cuál dato vale', datos: 'Revise y guarde lo que llegó por correo', pedido: 'Haga lo que pide el correo y márquelo hecho',
   falta: 'Complete estos datos en el viaje', registro: 'Corrija los datos del conductor o del vehículo', cierre: 'Cierre el día y deje la nota de entrega de turno'};
@@ -7886,6 +7927,12 @@ function armarBandeja(){
           + asignar.map(b => btnT(`${esc(b.id)} hecha`, `data-b-hecha="${b.id}"`)).join('')
           + btnT(ICONO_WA + 'Invitar al grupo de conductores', 'data-b-invitar="1"', 'WhatsApp al grupo de conductores con todos los viajes sin vehículo (el mismo mensaje del botón 🚛 Invitar conductores)')});
     }
+    // 10-nov · GPS: el vehículo llegó o está cerca de su siguiente parada (dominio.js alertaGps). Solo avisa; el paso lo confirma el equipo
+    todos.filter(x => x.placa).forEach(x => { const g = gpsDeViaje(x), al = g && g.al;   // lean.js
+      if (!al || al.tipo === 'en') return;
+      add(v, {b: 'gps', k: 'gps|' + x.id + '|' + al.tipo + '|' + al.lugar,
+        html: `${x.padre ? `${esc(nombreSub(x))} · ` : ''}<span class="placa">${esc(x.placa)}</span> · <b>${esc(al.texto)}</b>${g.quieto ? ' · detenido' : ''}<br><span class="sub">Siguiente paso del viaje: ${esc(al.parada)}. ${al.tipo === 'llegada' ? 'Si ya se hizo, confírmelo en el viaje.' : 'Va llegando: avise a quien lo recibe.'}</span>`,
+        acc: `<a class="link" href="${esc(g.url)}" target="_blank" rel="noopener">📍 Ver en el GPS</a>` + btnT('Abrir el viaje', `data-b-abrir="${x.id}"`)}); });
     // 4 · ¿Pasó? (por confirmar + sin actualizar de la misma fecha: una pregunta)
     // 10-nov ("estos zarpes dependen de la naviera... usemos el estimado"): el zarpe y la llegada a destino no se le preguntan al
     // equipo; no los hace la transportadora. Queda la fecha estimada (ETD / ETA) como dato en el viaje.
