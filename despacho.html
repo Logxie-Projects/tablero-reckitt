@@ -646,7 +646,7 @@ async function confirmarCargue(booking) {
       <label><span id="ccLugarLbl">Lugar</span><input name="lugar" list="ccLugares" placeholder="Patio, planta o puerto" required oninput="this.dataset.auto=''"><datalist id="ccLugares">${(CC_DATOS.lugares || []).map(x => `<option value="${esc(x)}">`).join('')}</datalist></label>
       <label class="full">Comentario<textarea name="comentario" maxlength="1000" placeholder="Ej.: el vehículo llega con el contenedor vacío retirado ayer en patio"></textarea></label>
       <div class="full ccgrupo">Imagen de la orden (foto o captura · también se puede pegar con Ctrl+V)
-        <input type="file" name="orden" accept="image/*" onchange="leerOrdenCargue(this.files[0])"><div id="ccImg" style="font-weight:400"></div></div>
+        <input type="file" name="orden" accept="image/*,application/pdf" onchange="leerOrdenCargue(this.files[0])"><div id="ccImg" style="font-weight:400"></div></div>
       <label>Firma: nombre<input name="fnombre" required value="${esc(firma.nombre || '')}"></label>
       <label>Firma: cargo<input name="fcargo" value="${esc(firma.cargo || '')}"></label>
       <div class="full ccgrupo">Para<div style="display:flex;flex-wrap:wrap;gap:4px 14px">${cli.map(d => casilla(d, 'para', prev.para ? prev.para.includes(d.k) : d.k === 'jhonier')).join('')}</div></div>
@@ -724,7 +724,17 @@ function pintarVehiculosCargue(cambio) {
 // la imagen se reduce a 1600 px y JPEG para que el correo no pese (una foto del celular pasa de 4 MB a ~300 KB)
 function leerOrdenCargue(file) {
   if (!file) return;
-  if (!/^image\//.test(file.type)) return toast('La orden de cargue debe ser una imagen (JPG o PNG)');
+  // 11-nov: también PDF. Va tal cual (no se puede reducir) y en el correo sale como adjunto, no por dentro
+  if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '')) {
+    if (file.size > 3 * 1024 * 1024) return toast('El PDF pesa más de 3 MB: envíe uno más liviano o una foto de la orden');
+    const r = new FileReader();
+    r.onload = () => { CC_IMG = { tipo: 'application/pdf', b64: String(r.result).split(',')[1] };
+      $('#ccImg').innerHTML = `<div style="display:flex;gap:10px;align-items:center;margin-top:6px"><span style="font-size:26px">📄</span>
+        <span>${esc(file.name)} · ${Math.round(file.size / 1024)} KB · va adjunto (un PDF no se ve dentro del correo) <button type="button" class="b b-mini" onclick="CC_IMG=null;$('#ccImg').innerHTML='';$('#fcc').orden.value=''">✕ Quitar</button></span></div>`; };
+    r.onerror = () => toast('No se pudo leer el PDF');
+    return r.readAsDataURL(file);
+  }
+  if (!/^image\//.test(file.type)) return toast('La orden de cargue debe ser una imagen (JPG o PNG) o un PDF');
   const img = new Image();
   img.onload = () => { const k = Math.min(1, 1600 / Math.max(img.width, img.height)), c = document.createElement('canvas');
     c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
@@ -763,7 +773,7 @@ async function verCorreoCargue() {
     if (!r.ok) return estadoCargue('✖ ' + esc(r.error), 'var(--bad)');
     estadoCargue(`Para: <b>${esc(r.para.join(', '))}</b>${r.copia.length ? ' · CC: ' + esc(r.copia.join(', ')) : ''}`);
     const w = window.open('', '_blank'); if (!w) return toast('El navegador bloqueó la ventana del correo');
-    w.document.write(`<title>Vista del correo</title><body style="background:#eef0f4;padding:20px;margin:0">${r.html}${CC_IMG ? `<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;font-family:Arial"><tr><td style="padding:0 26px 20px"><span style="color:#667085;font-size:12px">📎 Orden de cargue (en el correo va aquí, antes de la firma, y adjunta)</span><br><img src="data:image/jpeg;base64,${CC_IMG.b64}" width="548" style="display:block;border:1px solid #d0d5dd;margin-top:6px"></td></tr></table>` : ''}</body>`); w.document.close();
+    w.document.write(`<title>Vista del correo</title><body style="background:#eef0f4;padding:20px;margin:0">${r.html}${CC_IMG && CC_IMG.tipo === 'application/pdf' ? `<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;font-family:Arial"><tr><td style="padding:0 26px 20px;font-size:14px">📎 <b>Orden de cargue adjunta</b> <span style="color:#667085;font-size:12px">(archivo PDF; en el correo sale como adjunto)</span></td></tr></table>` : CC_IMG ? `<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;font-family:Arial"><tr><td style="padding:0 26px 20px"><span style="color:#667085;font-size:12px">📎 Orden de cargue (en el correo va aquí, antes de la firma, y adjunta)</span><br><img src="data:image/jpeg;base64,${CC_IMG.b64}" width="548" style="display:block;border:1px solid #d0d5dd;margin-top:6px"></td></tr></table>` : ''}</body>`); w.document.close();
   } catch (e) { estadoCargue('✖ ' + esc(e.message), 'var(--bad)'); }
 }
 async function enviarCargue(prueba) {
