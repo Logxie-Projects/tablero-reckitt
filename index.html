@@ -2239,21 +2239,39 @@ function paradas(v){
 }
 /* ---------- geozonas del GPS: cercanía y llegada (10-nov-2026) ----------
  * Pedido del usuario: "busca las coordenadas de Reckitt Salomia, Patios Intermodal, etc. y de los puertos, compara con las coordenadas
- * de los vehículos y das alertas de proximidad y llegada... que tenga geozonas de 1 km". Cada lugar de la ruta es un círculo de
- * GEOZONA_KM alrededor de su punto. Con el último punto del GPS de la placa (Gps.gs; de menos de GPS_ALERTA_MIN minutos) se mira la
- * SIGUIENTE parada del viaje que hace el vehículo: dentro de su geozona = "llegó"; a menos de GPS_CERCA_KM = "cerca". Si no es la
- * siguiente parada pero está dentro de otro lugar conocido, se dice dónde está. Es un aviso: NO marca ningún paso como hecho; el
- * equipo lo confirma. Cada geozona: [nombre, latitud, longitud, cómo lo escriben los viajes (sobre minus())]. Un nombre que sirve
- * para varios lugares (el puerto "BUN" tiene tres terminales; "Patio Colombia" tiene dos sedes) toma el más cercano al vehículo. */
-const GEOZONA_KM = 1, GPS_CERCA_KM = 5, GPS_ALERTA_MIN = 60;
+ * de los vehículos y das alertas de proximidad y llegada"; primero pidió geozonas de 1 km y, al ver que dos lugares vecinos se
+ * pisaban (Sicopark e Intermodal están a 1,3 km), "reduce a 200 metros de geozona". Cada lugar de la ruta es un círculo de GEOZONA_KM
+ * alrededor de su punto; un puerto ocupa mucho más que eso (el de Buenaventura mide 2,7 km de largo), así que cada puerto lleva su
+ * propio radio (5.º dato), medido desde el centro del predio. Con el último punto del GPS de la placa (Gps.gs; de menos de
+ * GPS_ALERTA_MIN minutos) se mira la SIGUIENTE parada del viaje que hace el vehículo: dentro de su geozona = "llegó"; a menos de
+ * GPS_CERCA_KM = "cerca". Si no es la siguiente parada pero está dentro de otro lugar conocido, se dice dónde está. Es un aviso: NO
+ * marca ningún paso como hecho; el equipo lo confirma.
+ * Cada geozona: [nombre, latitud, longitud, cómo lo escriben los viajes (sobre minus()), radio en km si no es GEOZONA_KM]. Un nombre
+ * que sirve para varios lugares (el puerto "BUN" tiene tres terminales) toma el más cercano al vehículo.
+ * De dónde salen los puntos (búsqueda del 10-nov): registro BIC de patios, OpenStreetMap y la dirección publicada de cada sitio.
+ * SIN geozona todavía, por no tener un punto comprobado: Patio Colombia (Yumbo y Buenaventura), Cemue, Simarítima Buenaventura,
+ * ERCOL y Solistica Yumbo. Se agregan cuando el equipo dé el punto (clic derecho en Google Maps → copiar coordenadas). */
+const GEOZONA_KM = 0.2, GPS_CERCA_KM = 5, GPS_ALERTA_MIN = 60;
 const GEOZONAS = [
-  ['Patios Intermodal', 3.54036, -76.49496, /intermodal/],          // coordenadas dadas por el usuario (10-nov)
-  ['Sicopark Yumbo', 3.55169, -76.48983, /sicopark/],               // parqueadero; coordenadas dadas por el usuario (10-nov)
+  ['Reckitt Planta Cali', 3.46126, -76.50377, /salomia|planta reckitt|reckitt(?!.*(bogot|transfer|agv|bodega 11))/],   // Cl 46 # 5-76, Salomia
+  ['Patios Intermodal', 3.54036, -76.49496, /intermodal/],               // punto dado por el usuario; coincide con la dirección publicada (a 35 m)
+  ['Simarítima Yumbo', 3.54148, -76.49664, /simaritima/],                // registro BIC; queda a 200 m de Intermodal
+  ['Agecolda', 3.51774, -76.51057, /agecold/],                           // registro BIC · Cra 29B # 11A-51, Arroyohondo
+  ['DHL Cortijo', 3.50074, -76.50385, /cortijo|\bdhl\b/],                // Cra 35A # 16-80, Acopi (dirección de avisos de empleo de DHL)
+  ['Sicopark Yumbo', 3.55169, -76.48983, /sicopark/],                    // parqueadero; punto dado por el usuario
+  ['CEDI Reckitt Bogotá', 4.65004, -74.11648, /solistica|\bagv\b|bodega 11|reckitt.*bogot/],   // Cra 69 # 21-63/73, Montevideo (mismo complejo que Solistica)
+  ['Puerto de Buenaventura (SPRBUN)', 3.88872, -77.06936, /\bbun\b|buenaventura|sprbun/, 1.5],
+  ['TCBUEN', 3.88429, -77.04400, /\bbun\b|buenaventura|tcbuen/, 0.6],
+  ['Puerto Aguadulce (SPIA)', 3.90457, -77.08053, /\bbun\b|buenaventura|aguadulce|spia/, 1],
+  ['Puerto de Cartagena (SPRC Manga)', 10.40636, -75.53420, /\bctg\b|cartagena|sprc|manga/, 0.8],
+  ['Contecar', 10.37898, -75.50787, /\bctg\b|cartagena|contecar/, 1],
 ];
 const distanciaKm = (la1, lo1, la2, lo2) => { const r = x => x * Math.PI / 180, h = Math.sin(r(la2 - la1) / 2) ** 2 + Math.cos(r(la1)) * Math.cos(r(la2)) * Math.sin(r(lo2 - lo1) / 2) ** 2;
   return 12742 * Math.asin(Math.sqrt(h)); };
 const geozonasDe = texto => { const s = minus(texto); return s ? GEOZONAS.filter(z => z[3].test(s)) : []; };
-const masCercana = (Z, lat, lng) => Z.map(z => ({z, km: distanciaKm(lat, lng, z[1], z[2])})).sort((a, b) => a.km - b.km)[0] || null;
+// la más cercana de una lista, primero las que tienen el vehículo adentro (cada una con su radio)
+const masCercana = (Z, lat, lng) => Z.map(z => { const km = distanciaKm(lat, lng, z[1], z[2]); return {z, km, dentro: km <= (z[4] || GEOZONA_KM)}; })
+  .sort((a, b) => (b.dentro - a.dentro) || a.km - b.km)[0] || null;
 const PARADAS_SIN_VEHICULO = ['Origen', 'Motonave', 'Destino'];   // no las hace el vehículo (documentos, naviera)
 // g = {lat, lng, fecha} (window.GPS). → null | {tipo: 'llegada'|'cerca'|'en', lugar, km, parada, texto}
 function alertaGps(v, g, ahora){
@@ -2265,10 +2283,10 @@ function alertaGps(v, g, ahora){
   const sig = v.padre ? (cumplido(v, 'fechaUrbano') ? null : ['Urbano al destino final', v.bodega || ''])
     : paradas(v).find(p => !p[2] && !PARADAS_SIN_VEHICULO.includes(p[0]));
   const c = sig ? masCercana(geozonasDe(sig[1]), g.lat, g.lng) : null, km = c ? Math.round(c.km * 10) / 10 : 0;
-  if (c && c.km <= GEOZONA_KM) return {tipo: 'llegada', lugar: c.z[0], km, parada: sig[0], texto: `Llegó a ${c.z[0]}`};
+  if (c && c.dentro) return {tipo: 'llegada', lugar: c.z[0], km, parada: sig[0], texto: `Llegó a ${c.z[0]}`};
   if (c && c.km <= GPS_CERCA_KM) return {tipo: 'cerca', lugar: c.z[0], km, parada: sig[0], texto: `A ${String(km).replace('.', ',')} km de ${c.z[0]}`};
   const en = masCercana(GEOZONAS, g.lat, g.lng);
-  return en && en.km <= GEOZONA_KM ? {tipo: 'en', lugar: en.z[0], km: Math.round(en.km * 10) / 10, parada: sig ? sig[0] : '', texto: `En ${en.z[0]}`} : null;
+  return en && en.dentro ? {tipo: 'en', lugar: en.z[0], km: Math.round(en.km * 10) / 10, parada: sig ? sig[0] : '', texto: `En ${en.z[0]}`} : null;
 }
 // dónde se llena el contenedor EXPO: la programación lo anota como "cargue en DHL" cuando no es la planta
 function bodegaCargue(v){ return ((String(v.observacion||'').match(/cargue en ([^·(]+)/i) || [])[1] || '').trim(); }
@@ -3714,7 +3732,7 @@ function gpsDeViaje(v){
   const url = g.enlace || (punto ? `https://www.google.com/maps?q=${g.lat},${g.lng}` : '');
   if (!/^https:\/\//.test(url)) return null;
   const que = [g.municipio, punto ? (g.velocidad >= 3 ? Math.round(g.velocidad) + ' km/h' : 'detenido') : '', g.fecha ? haceCuanto(fechaLocal(g.fecha)) : ''].filter(Boolean).join(' · ');
-  const al = punto ? alertaGps(v, g) : null;   // dominio.js: llegó / cerca / en un lugar de la ruta (geozonas de 1 km)
+  const al = punto ? alertaGps(v, g) : null;   // dominio.js: llegó / cerca / en un lugar de la ruta (geozonas de 200 m)
   return {url, al, satrack: !!g.enlace, quieto: punto && g.velocidad < 3, titulo: `Ver en el GPS${g.enlace ? '' : ' (último punto, en el mapa)'}${que ? ' · ' + que : ''}`};
 }
 const pinGps = v => { const g = gpsDeViaje(v); return g ? `<a class="gps-pin${g.quieto ? ' quieto' : ''}${g.al ? ' ' + g.al.tipo : ''}" href="${esc(g.url)}" target="_blank" rel="noopener" title="${esc(g.titulo)}" aria-label="${esc(g.titulo)}" onclick="event.stopPropagation()"><i></i><span>${g.al ? esc(g.al.texto) : 'Ver GPS'}</span></a>` : ''; };   // pin con el texto al lado (opción C, elegida por el usuario)
@@ -6107,7 +6125,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'bf8901a307';
+const VERSION_TABLERO = 'd17c518500';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -7781,7 +7799,7 @@ const BLOQUES = [
   ['tomar', 'Por tomar', 'p-acc', 'Viaje nuevo: nadie del equipo lo ha tomado'],
   ['vehiculo', 'Sin vehículo', 'p-bad', `Arranca en ${HORAS_COBERTURA} h o menos y no tiene placa`],
   ['sinact', '⚠ Sin actualizar', 'p-bad', 'La fecha del paso ya pasó y el viaje no registra que se hizo (la misma alerta de la Torre de Control)'],
-  ['gps', '📍 GPS', 'p-acc', 'El GPS ubica el vehículo en un lugar de su ruta o cerca (geozonas de 1 km). Es un aviso: nada se marca solo'],
+  ['gps', '📍 GPS', 'p-acc', 'El GPS ubica el vehículo en un lugar de su ruta o cerca (geozonas de 200 m; los puertos, más). Es un aviso: nada se marca solo'],
   ['paso', '¿Pasó?', 'p-warn', 'La fecha llegó y nadie confirmó si se hizo'],
   ['donde', '¿Dónde va?', 'p-acc', 'Vehículo en movimiento: confirmar en cada ronda dónde va (o "Sigue igual")'],
   ['hacer', 'Por hacer', 'p-warn', 'Algo que hay que pedir o conseguir antes de una fecha (la cita antes del cierre documental, el vehículo antes del retiro…)'],
