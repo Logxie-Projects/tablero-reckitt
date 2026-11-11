@@ -10,7 +10,11 @@
      se carga?". La página de Satrack no es nuestra y no se puede cambiar; esta página la muestra ADENTRO (iframe) y, mientras
      carga, deja a la vista de qué vehículo es y dónde lo ubicó el GPS. Siempre queda el botón "Abrir en Satrack" por si adentro no
      carga. Solo abre enlaces l.satrack.com: recibe el CÓDIGO del enlace, no una dirección, así que no sirve para abrir otra cosa.
-     Los datos llegan después del # (no viajan al servidor): e = código del enlace, p = placa, d = dónde está (texto del tablero).
+     Los datos llegan después del # (no viajan al servidor): e = código del enlace, p = placa, d = dónde está (texto del tablero),
+     la / lo = último punto leído, f = su hora.
+     11-nov ("usa el modo satélite"): el mapa de Satrack no deja elegir la vista desde afuera, así que la página abre primero una
+     vista de SATÉLITE propia (Google Maps) con el último punto que leyó el sistema (cada 10 minutos) y un botón para pasar al mapa
+     en vivo de Satrack y volver. Sin punto, abre Satrack directo.
      No lleva datos de viajes ni claves. La abre lean.js (gpsDeViaje). -->
 <style>
   :root{--marca:#ff007f;--texto:#1b1f27;--gris:#667085;--borde:#e5e7eb;--fondo:#f5f6f8}
@@ -21,8 +25,10 @@
   header .marca{font-weight:800;color:var(--marca)}
   header .placa{font-weight:800;font-size:17px;border:1px solid var(--borde);border-radius:7px;padding:2px 9px}
   header .donde{color:var(--gris);font-size:14px;flex:1;min-width:140px}
-  header a{font-size:13px;font-weight:700;color:var(--texto);text-decoration:none;border:1px solid var(--borde);border-radius:8px;padding:7px 12px;background:#fff}
-  header a:hover{border-color:var(--marca);color:var(--marca)}
+  header a,header button{font-size:13px;font-weight:700;color:var(--texto);text-decoration:none;border:1px solid var(--borde);border-radius:8px;padding:7px 12px;background:#fff}
+  header a:hover,header button:hover{border-color:var(--marca);color:var(--marca)}
+  header button{cursor:pointer;font-family:inherit}
+  header button.on{background:var(--marca);border-color:var(--marca);color:#fff}
   main{position:relative;flex:1;min-height:0}
   iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff}
   #carga{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:var(--fondo);text-align:center;padding:24px;transition:opacity .35s}
@@ -49,6 +55,8 @@
   <span class="marca">LogxView</span>
   <span class="placa" id="placa" hidden></span>
   <span class="donde" id="donde"></span>
+  <button type="button" id="bSat" hidden>Satélite</button>
+  <button type="button" id="bVivo" hidden>En vivo (Satrack)</button>
   <a id="abrir" target="_blank" rel="noopener" hidden>Abrir en Satrack ↗</a>
 </header>
 <main>
@@ -68,13 +76,27 @@
   if (placa) { $('placa').textContent = placa; $('placa').hidden = false; document.title = 'GPS · ' + placa + ' · LogxView'; $('titulo').textContent = 'Cargando el GPS de ' + placa + '…'; }
   $('donde').textContent = donde;
   $('detalle').textContent = donde ? 'Último dato en el tablero: ' + donde + '.' : '';
-  // solo códigos de enlaces de Satrack: nada que no sea l.satrack.com se abre desde aquí
-  if (!/^[A-Za-z0-9]{3,12}$/.test(codigo)) { $('titulo').textContent = 'Este enlace del GPS no es válido'; $('detalle').textContent = 'Ábralo de nuevo desde el tablero.'; document.querySelector('.via').style.display = 'none'; return; }
-  var url = 'https://l.satrack.com/' + codigo, f = $('mapa'), t0 = Date.now();
-  $('abrir').href = url; $('abrir').hidden = false;
+  // solo códigos de enlaces de Satrack y coordenadas de Colombia: nada más se abre desde aquí
+  var la = Number(P.get('la')), lo = Number(P.get('lo')), hayPunto = !!P.get('la') && !!P.get('lo') && la > -5 && la < 14 && lo > -82 && lo < -66;
+  var hayCodigo = /^[A-Za-z0-9]{3,12}$/.test(codigo);
+  if (!hayCodigo && !hayPunto) { $('titulo').textContent = 'Este enlace del GPS no es válido'; $('detalle').textContent = 'Ábralo de nuevo desde el tablero.'; document.querySelector('.via').style.display = 'none'; return; }
+  var satrack = hayCodigo ? 'https://l.satrack.com/' + codigo : '', satelite = hayPunto ? 'https://maps.google.com/maps?q=' + la.toFixed(6) + ',' + lo.toFixed(6) + '&t=k&z=17&output=embed' : '';
+  var hora = ''; try { var fe = new Date(P.get('f') || ''); if (!isNaN(fe)) hora = fe.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' }); } catch (x) {}
+  var f = $('mapa'), t0 = 0, lento = 0;
+  if (hayCodigo) { $('abrir').href = satrack; $('abrir').hidden = false; }
+  else { $('abrir').href = 'https://www.google.com/maps?q=' + la.toFixed(6) + ',' + lo.toFixed(6) + '&t=k'; $('abrir').textContent = 'Abrir en Google Maps ↗'; $('abrir').hidden = false; }
   f.addEventListener('load', function () { setTimeout(function () { carga.classList.add('fuera'); }, Math.max(0, 1200 - (Date.now() - t0))); });
-  f.hidden = false; f.src = url;
-  setTimeout(function () { carga.classList.add('lento'); }, 12000);
+  function ver(que) {
+    var sat = que === 'sat';
+    $('bSat').classList.toggle('on', sat); $('bVivo').classList.toggle('on', !sat);
+    carga.classList.remove('fuera', 'lento'); t0 = Date.now(); clearTimeout(lento);
+    $('titulo').textContent = (sat ? 'Cargando la vista de satélite' : 'Cargando el GPS en vivo') + (placa ? ' de ' + placa : '') + '…';
+    $('detalle').textContent = sat ? 'Último punto que leyó el sistema' + (hora ? ', de las ' + hora : '') + '. El sistema lee el GPS cada 10 minutos; para verlo moverse use "En vivo (Satrack)".' : (donde ? 'Último dato en el tablero: ' + donde + '.' : '');
+    f.hidden = false; f.src = sat ? satelite : satrack;
+    lento = setTimeout(function () { carga.classList.add('lento'); }, 12000);
+  }
+  if (hayPunto && hayCodigo) { $('bSat').hidden = false; $('bVivo').hidden = false; $('bSat').onclick = function () { ver('sat'); }; $('bVivo').onclick = function () { ver('vivo'); }; }
+  ver(hayPunto ? 'sat' : 'vivo');
 })();
 </script>
 </body>

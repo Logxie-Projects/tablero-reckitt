@@ -3756,7 +3756,9 @@ function gpsDeViaje(v){
   // 11-nov ("se ve una ventana blanca cargando... ¿es posible mostrar algo mientras se carga?"): el enlace de Satrack se abre dentro
   // de gps.html, que muestra la placa y dónde está mientras carga el mapa. El punto en Google Maps (enlace vencido) abre directo.
   const cod = (String(g.enlace || '').match(/^https?:\/\/l\.satrack\.com\/([A-Za-z0-9]{3,12})$/) || [])[1];
-  const url = cod ? `gps.html#e=${cod}&p=${pl}&d=${encodeURIComponent((al ? al.texto : donde) || '')}` : directa;
+  // con punto fresco la página abre en vista de satélite (pedido del usuario) y deja pasar al mapa en vivo de Satrack
+  const pto = punto ? `&la=${g.lat}&lo=${g.lng}&f=${encodeURIComponent(g.fecha)}` : '';
+  const url = cod || punto ? `gps.html#${cod ? 'e=' + cod + '&' : ''}p=${pl}&d=${encodeURIComponent((al ? al.texto : donde) || '')}${pto}` : directa;
   return {url, al, donde, satrack: !!g.enlace, quieto: punto && g.velocidad < 3, titulo: `Ver en el GPS${g.enlace ? '' : ' (último punto, en el mapa)'}${que ? ' · ' + que : ''}`};
 }
 const pinGps = v => { const g = gpsDeViaje(v); return g ? `<a class="gps-pin${g.quieto ? ' quieto' : ''}${g.al ? ' ' + g.al.tipo : ''}" href="${esc(g.url)}" target="_blank" rel="noopener" title="${esc(g.titulo)}" aria-label="${esc(g.titulo)}" onclick="event.stopPropagation()"><i></i><span>${esc(g.al ? g.al.texto : (g.donde || 'Ver GPS'))}</span></a>` : ''; };   // pin con el texto al lado (opción C, elegida por el usuario)
@@ -6158,7 +6160,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'c788bb37df';
+const VERSION_TABLERO = 'd8ccd23e67';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
