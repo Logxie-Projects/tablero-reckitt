@@ -915,6 +915,12 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 .ruta .ico .gps-pin:after{content:'';position:absolute;left:3px;top:3px;width:5px;height:5px;border-radius:50%;background:var(--surface)}
 .ruta .ico .gps-pin.quieto{background:var(--muted)}
 .ruta .ico .gps-pin:hover{transform:rotate(-45deg) scale(1.25)}
+
+/* ---------- 10-nov · GPS del vehículo en la ventana del viaje (viaje.js pintarGpsViaje) ---------- */
+.gps-caja{margin-top:14px;padding:10px 12px;border:1px solid var(--border);border-radius:10px}
+.gps-caja .gps-est{margin:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.gps-caja .gps-fila{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.gps-caja .gps-fila input{flex:1;min-width:220px}
 </style>
 </head>
 <body>
@@ -1125,6 +1131,7 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
     <div id="mForm"></div>
     <div class="causa-box hidden" id="mCausa"><b>Cambio de fecha programada</b> <span class="sub" id="mCausaLista"></span><div id="mCausaCaja"></div></div>
     <datalist id="dlExtra"></datalist><datalist id="dlPatio"></datalist><datalist id="dlFwd"></datalist>
+    <div id="mGps"></div>
     <div class="calif" id="mCalif"></div>
     <div class="hist" id="mHist"></div>
     <div class="mfoot"><span class="sub" id="mNCambios" style="margin-right:auto"></span><input id="mUsuario" placeholder="Su nombre (queda en el historial)" style="width:230px"><button class="btn" id="mCancel">Cancelar</button><button class="btn primary" id="mSave">Guardar en la base</button></div>
@@ -4166,6 +4173,7 @@ function abrir(id){
   const v = viajes.find(x=>x.id===id); if (!v) { toast('No se encontró el viaje ' + id); return; }
   editId = id; estadoSel = MARCAS.some(m=>m.k===v.estadoHoja) ? v.estadoHoja : '';
   $('#mCausa').classList.add('hidden'); $('#mCausaCaja').innerHTML = '';   // causa del cambio de fecha con su respaldo (causa.js)
+  pintarGpsViaje(v);
   $('#mTitle').textContent = `${v.placa || 'Sin vehículo'} · ${v.operacion} ${v.pais||''}`;
   $('#mSub').textContent = `${v.id} · ${v.fechaRetiro?`Retiro en patio ${fd(v.fechaRetiro)} · Llenado planta ${fd(v.fechaCargue)}`:`Cargue ${fd(v.fechaCargue)}`} · Última actualización ${new Date(v.actualizado).toLocaleString('es-CO')}`;
   // 10-nov: los otros contenedores de la misma referencia, con lo que cada uno ya tiene (dominio.js hermanosDe); solo el equipo
@@ -4401,6 +4409,34 @@ $('#mForm').addEventListener('click', e => {
   if (e.target.id==='addExtra') { $('#mExtras').insertAdjacentHTML('beforeend', filaExtra()); $('#mExtras .exrow:last-child .exc').focus(); }
   else if (e.target.closest('[data-del]')) { e.target.closest('.exrow').remove(); syncExtras(); marcarCambios(); }
 });
+
+/* ---------- GPS del vehículo en la ventana del viaje (10-nov-2026) ----------
+ * Pedido del usuario: "al abrir el viaje tenga un espacio para pegar el link al gps, o por correo como ya está". Muestra lo que el
+ * GPS dice de la placa (lean.js gpsDeViaje) y una casilla para pegar el enlace "Compartir ubicación" de Satrack. El servidor solo lo
+ * acepta si Satrack confirma que es de la placa del viaje (Gps.gs gpsPegarEnlace_). Solo el equipo; el cliente no ve nada de esto. */
+function pintarGpsViaje(v){
+  const c = $('#mGps'); if (!c) return;
+  if (window.MODO_CLIENTE || !claveActual()) { c.innerHTML = ''; return; }
+  const g = gpsDeViaje(v), pl = String(v.placa || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), fila = pl && (window.GPS || []).find(x => x.placa === pl);
+  const estado = g ? `<a class="btn" href="${esc(g.url)}" target="_blank" rel="noopener">📍 ${g.satrack ? 'Ver en el GPS' : 'Ver el último punto'}</a> <span class="sub">${esc(g.titulo.replace(/^Ver en el GPS( \(último punto, en el mapa\))?( · )?/, ''))}</span>`
+    : fila ? `<span class="sub">El enlace de esta placa ${fila.estadoEnlace === 'Vencido' ? 'venció' : 'no está activo'}${fila.nota ? ' (' + esc(fila.nota) + ')' : ''}: pegue uno nuevo.</span>`
+    : `<span class="sub">Esta placa no tiene enlace de GPS todavía.</span>`;
+  c.innerHTML = `<div class="gps-caja"><b>📍 GPS del vehículo</b>${pl ? ' · ' + esc(v.placa) : ''}<div class="gps-est">${estado}</div>
+    ${pl ? `<div class="gps-fila"><input id="mGpsEnlace" placeholder="Pegue aquí el enlace de Satrack (https://l.satrack.com/…)" autocomplete="off"><button type="button" class="btn primary" id="mGpsGuardar">Guardar enlace</button></div>
+      <div class="sub">También sirve mandarlo por correo a calidad@, como hasta ahora. Los enlaces de Satrack vencen más o menos en un día.</div>`
+      : '<div class="sub">Asigne primero el vehículo para poder ligarle un enlace de GPS.</div>'}</div>`;
+  const b = $('#mGpsGuardar'); if (!b) return;
+  b.onclick = async () => {
+    const enlace = $('#mGpsEnlace').value.trim(), usuario = $('#mUsuario').value.trim();
+    if (!/^https?:\/\/l\.satrack\.com\/[A-Za-z0-9]{3,12}/.test(enlace)) return toast('Ese no es un enlace de Satrack: debe ser como https://l.satrack.com/XXXXX');
+    if (!usuario) { $('#mUsuario').focus(); return toast('Escriba su nombre para guardar el enlace'); }
+    b.disabled = true; b.textContent = 'Guardando…';
+    try { const j = await api('gpsEnlace', {id: v.id, enlace, usuario});
+      if (!j.ok) throw new Error(j.error === 'clave' ? 'clave incorrecta' : (j.error || 'no se pudo guardar'));
+      window.GPS = j.gps || window.GPS; toast('Enlace del GPS guardado para ' + j.placa); pintarGpsViaje(v); if (typeof renderLean === 'function') renderLean(); }
+    catch(e) { toast('No se guardó: ' + e.message); b.disabled = false; b.textContent = 'Guardar enlace'; }
+  };
+}
 /* ---------- Calificación de conductores ---------- */
 // Cada conductor arranca en 10 puntos = 5 estrellas (apps-script/Código.gs CALIF y CRITERIOS_CALIF: las preguntas y los descuentos
 // vienen del servidor, que vuelve a validarlos). En la ventana del viaje el coordinador responde Sí/No; "Sí" no descuenta, cada "No"
@@ -6026,7 +6062,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '1f1775f35d';
+const VERSION_TABLERO = 'f8f44e2a52';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
