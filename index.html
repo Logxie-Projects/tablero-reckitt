@@ -3746,7 +3746,11 @@ function gpsDeViaje(v){
   const url = g.enlace || (punto ? `https://www.google.com/maps?q=${g.lat},${g.lng}` : '');
   if (!/^https:\/\//.test(url)) return null;
   const que = [g.municipio, punto ? (g.velocidad >= 3 ? Math.round(g.velocidad) + ' km/h' : 'detenido') : '', g.fecha ? haceCuanto(fechaLocal(g.fecha)) : ''].filter(Boolean).join(' · ');
-  const al = punto ? alertaGps(v, g) : null;   // dominio.js: llegó / cerca / en un lugar de la ruta (geozonas de 200 m)
+  const al = punto ? alertaGps(v, g) : null;
+  // hora de llegada al lugar (Gps.gs gpsMarcarZonas_: desde cuándo está la placa en esa geozona; precisión: lo que tarda cada lectura)
+  if (al && al.tipo !== 'cerca' && g.zona === al.lugar && g.zonaDesde) { const f = fechaLocal(g.zonaDesde), H = Number(f.slice(11, 13));
+    al.hora = (f.slice(0, 10) === HOY ? '' : fd(f.slice(0, 10)) + ' ') + `${H % 12 || 12}:${f.slice(14, 16)} ${H < 12 ? 'a. m.' : 'p. m.'}`;
+    al.texto += al.tipo === 'llegada' ? ` · ${al.hora}` : ` desde ${al.hora}`; }   // dominio.js: llegó / cerca / en un lugar de la ruta (geozonas de 200 m)
   return {url, al, donde: punto ? dondeVaGps(g) : '', satrack: !!g.enlace, quieto: punto && g.velocidad < 3, titulo: `Ver en el GPS${g.enlace ? '' : ' (último punto, en el mapa)'}${que ? ' · ' + que : ''}`};
 }
 const pinGps = v => { const g = gpsDeViaje(v); return g ? `<a class="gps-pin${g.quieto ? ' quieto' : ''}${g.al ? ' ' + g.al.tipo : ''}" href="${esc(g.url)}" target="_blank" rel="noopener" title="${esc(g.titulo)}" aria-label="${esc(g.titulo)}" onclick="event.stopPropagation()"><i></i><span>${esc(g.al ? g.al.texto : (g.donde || 'Ver GPS'))}</span></a>` : ''; };   // pin con el texto al lado (opción C, elegida por el usuario)
@@ -6139,7 +6143,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '1c456c6985';
+const VERSION_TABLERO = '4da90e7998';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
