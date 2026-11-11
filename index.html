@@ -942,6 +942,40 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
   .ruta .ico:has(.gps-pin) > i{display:none}
   .ruta .ico .gps-pin{position:static;transform:none;display:inline-flex;font-size:13px;line-height:20px;padding:3px 10px 3px 7px;white-space:normal}
 }
+
+/* ---------- 11-nov · tarjeta del viaje para celular (lean.js rutaMovil): en pantalla angosta reemplaza el dibujo y los cuadros ---------- */
+.rm{display:none}
+@media (max-width:640px){
+  .rm{display:block;margin:8px 0 4px}
+  .ruta .cuerpo > div:first-child,.ruta .linea{display:none}
+  .rm-carga{font-size:12px;color:var(--muted);font-weight:600}
+  .rm-gps{display:flex;align-items:center;gap:10px;margin-top:8px;padding:9px 11px;border:1.5px solid var(--bad);border-radius:11px;text-decoration:none;color:var(--bad);background:var(--surface)}
+  .rm-gps i{flex:none;width:15px;height:15px;background:currentColor;border-radius:50% 50% 50% 0;transform:rotate(-45deg);position:relative}
+  .rm-gps i:after{content:'';position:absolute;left:4.5px;top:4.5px;width:6px;height:6px;border-radius:50%;background:var(--surface)}
+  .rm-gps span{display:flex;flex-direction:column;line-height:1.3;min-width:0}
+  .rm-gps b{font-size:15px}
+  .rm-gps small{font-size:11.5px;color:var(--muted);font-weight:500}
+  .rm-gps.llegada{border-color:var(--ok);color:var(--ok)}
+  .rm-gps.cerca{border-color:var(--warn);color:var(--warn)}
+  .rm-gps.quieto:not(.llegada):not(.cerca){border-color:var(--muted);color:var(--muted)}
+  .rm-pasos{display:flex;margin:12px 0 2px;position:relative}
+  .rm-pasos:before{content:'';position:absolute;left:8%;right:8%;top:6px;height:2px;background:var(--border)}
+  .rm-p{flex:1;min-width:0;background:none;border:0;padding:0 0 4px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;font:inherit;color:var(--muted);position:relative}
+  .rm-p i{width:13px;height:13px;border-radius:50%;background:var(--surface);border:2px solid var(--border);box-sizing:border-box}
+  .rm-p span{font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .rm-p.ok i{background:var(--ok);border-color:var(--ok)}
+  .rm-p.ya i{background:var(--accent);border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent)}
+  .rm-p.ya span{color:var(--accent);font-weight:800}
+  .rm-p.sel span{text-decoration:underline}
+  .rm-d{border:1.5px solid var(--accent);border-radius:9px;padding:8px 11px;font-size:12.5px;color:var(--muted);line-height:1.45;margin-top:4px}
+  .rm-d b{display:block;color:var(--text);font-size:14px}
+  .rm-veh{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:12.5px;color:var(--muted);flex-wrap:wrap}
+  .rm-veh > span:first-child{flex:1;min-width:0}
+  .rm-veh b{color:var(--text)}
+  /* el botón de LogxIA tapaba las tarjetas: en celular queda solo el círculo */
+  .fab{padding:5px;right:12px;bottom:12px}
+  .fab > span{display:none}
+}
 </style>
 </head>
 <body>
@@ -3884,6 +3918,29 @@ function etiquetaSinActualizar(v){
   return `<span class="tg" style="background:color-mix(in srgb, var(--bad) 15%, transparent);color:var(--bad)" title="${esc(det)}">⚠ Sin actualizar: ${esc(S[0].msg)}</span>`;
 }
 
+/* ---------- tarjeta del viaje para celular (11-nov-2026) ----------
+ * Pedido del usuario: "debemos revisar la versión de móvil... no es tan fácil de entender como está. Veamos una versión lean para
+ * móvil" → eligió la propuesta de media pantalla. En pantalla angosta la tarjeta gastaba pantalla y media por viaje (seis cuadros
+ * apilados) y dónde va el vehículo quedaba al final. Aquí va, en orden: carga, dónde va el vehículo (GPS, toca y abre el mapa), la
+ * ruta en una línea de puntos, el detalle de UNA parada (la actual; tocando un punto se ve otra) y vehículo con conductor. El CSS la
+ * muestra solo en pantalla angosta y esconde allí el dibujo del contenedor y los cuadros apilados; en el computador no cambia nada. */
+const PARADA_CORTA = {'Motonave': 'Nave', 'Retiro lleno': 'Retiro', 'Urbano al destino final': 'Urbano'};
+function rutaMovil(v, P, n, actual, gG){
+  const paso = (p, i) => `<button type="button" class="rm-p${i < n ? ' ok' : ''}${i === actual ? ' ya' : ''}" data-rm-i="${i}" onclick="event.stopPropagation();rmVer(this)" title="${esc(p[0])}: ${esc(p[1])}"><i></i><span>${esc(PARADA_CORTA[p[0]] || p[0])}</span></button>`;
+  const det = (p, i) => `<div class="rm-d${i === actual ? '' : ' hidden'}" data-rm-d="${i}">${esc(p[0])}<b>${esc(p[1])}</b>${p[3].filter(Boolean).map(esc).join(' · ')}</div>`;
+  const gps = !gG ? '' : `<a class="rm-gps${gG.al ? ' ' + gG.al.tipo : ''}${gG.quieto ? ' quieto' : ''}" href="${esc(gG.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
+      <i></i><span><b>${esc(gG.al ? gG.al.texto : (gG.donde || 'Ver GPS'))}</b><small>${esc(gG.titulo.replace(/^Ver en el GPS( \(último punto, en el mapa\))?( · )?/, '') || 'toque para ver el mapa')} · ver mapa</small></span></a>`;
+  return `<div class="rm">
+    <div class="rm-carga">${esc(esNacional(v) ? (v.carga || 'Nacional') : [v.contenedor || 'Sin contenedor', v.unidad].filter(Boolean).join(' · '))}</div>${gps}
+    <div class="rm-pasos">${P.map(paso).join('')}</div>${P.map(det).join('')}
+    <div class="rm-veh"><span><b>${esc(v.placa || 'Sin placa')}</b> · ${esc(v.conductor || 'Sin conductor')}</span>${telTarjeta(v)}
+      <button type="button" class="link" onclick="event.stopPropagation();abrir('${esc(v.id)}')">Abrir viaje</button></div>
+  </div>`;
+}
+// tocar un punto de la ruta: muestra el detalle de esa parada (solo en esa tarjeta)
+function rmVer(b){ const rm = b.closest('.rm'), i = b.dataset.rmI; if (!rm) return;
+  rm.querySelectorAll('[data-rm-d]').forEach(d => d.classList.toggle('hidden', d.dataset.rmD !== i));
+  rm.querySelectorAll('.rm-p').forEach(x => x.classList.toggle('sel', x === b)); }
 function rutaPedido(v){
   const {P, n} = avance(v);
   const ini = s => String(s||'').split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]).join('').toUpperCase() || '—';
@@ -3908,6 +3965,7 @@ function rutaPedido(v){
       <span class="sub">${esc([v.solicitante && 'Solicita '+v.solicitante, v.fwd].filter(Boolean).join(' · '))}</span></div>
       <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahoraTxt)}</span>${etiquetaSinActualizar(v)}${etiquetaPorConfirmar(pend)}${!window.MODO_CLIENTE && pendientesOps(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)" title="Lo que operaciones debe completar">Falta (operaciones): ${esc(pendientesOps(v).join(' · '))}</span>` : ''}${!window.MODO_CLIENTE && pendientesFact(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--muted) 15%, transparent);color:var(--muted)" title="Para poder facturarlo">Falta (facturación): ${esc(pendientesFact(v).join(' · '))}</span>` : ''}${!window.MODO_CLIENTE && notaHermanos(v) ? `<span class="tg" style="background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)" title="Otro contenedor de la misma referencia ya tiene este dato; cada contenedor lleva el suyo">${esc(notaHermanos(v))}</span>` : ''}</div>
     ${lineaNovedad(v)}
+    ${rutaMovil(v, P, n, Math.min(nIcono, P.length - 1), gG)}
     <div class="cuerpo"><div>
       <div style="display:flex;align-items:flex-end;gap:2px"><div class="cont"><b style="font-size:12px">${esc(esNacional(v) ? (v.carga||'—') : (v.contenedor||'—'))}</b><div class="sub">${esc(esNacional(v) ? 'Nacional' : (v.unidad||''))}</div></div><div class="cabina"></div></div>
       <div class="ruedas"><i></i><i></i><i></i><i></i></div>
@@ -6211,7 +6269,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '81ccf4acc5';
+const VERSION_TABLERO = 'ea1ccd3199';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
