@@ -6107,7 +6107,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'db8161e06c';
+const VERSION_TABLERO = 'bf8901a307';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -7931,9 +7931,9 @@ function armarBandeja(){
     }
     // 10-nov · GPS: el vehículo llegó o está cerca de su siguiente parada (dominio.js alertaGps). Solo avisa; el paso lo confirma el equipo
     todos.filter(x => x.placa).forEach(x => { const g = gpsDeViaje(x), al = g && g.al;   // lean.js
-      if (!al || al.tipo === 'en') return;
+      if (!al) return;   // 10-nov ("JYY043 está cerca a Sicopark, ¿por qué no ha emitido la alerta?"): también avisa cuando está en un lugar conocido que no es su siguiente parada
       add(v, {b: 'gps', k: 'gps|' + x.id + '|' + al.tipo + '|' + al.lugar,
-        html: `${x.padre ? `${esc(nombreSub(x))} · ` : ''}<span class="placa">${esc(x.placa)}</span> · <b>${esc(al.texto)}</b>${g.quieto ? ' · detenido' : ''}<br><span class="sub">Siguiente paso del viaje: ${esc(al.parada)}. ${al.tipo === 'llegada' ? 'Si ya se hizo, confírmelo en el viaje.' : 'Va llegando: avise a quien lo recibe.'}</span>`,
+        html: `${x.padre ? `${esc(nombreSub(x))} · ` : ''}<span class="placa">${esc(x.placa)}</span> · <b>${esc(al.texto)}</b>${g.quieto ? ' · detenido' : ''}<br><span class="sub">${al.parada ? `Siguiente paso del viaje: ${esc(al.parada)}. ` : ''}${al.tipo === 'llegada' ? 'Si ya se hizo, confírmelo en el viaje.' : al.tipo === 'cerca' ? 'Va llegando: avise a quien lo recibe.' : 'Ese lugar no es su siguiente parada: revise si está esperando o si hay novedad.'}</span>`,
         acc: `<a class="link" href="${esc(g.url)}" target="_blank" rel="noopener">📍 Ver en el GPS</a>` + btnT('Abrir el viaje', `data-b-abrir="${x.id}"`)}); });
     // 4 · ¿Pasó? (por confirmar + sin actualizar de la misma fecha: una pregunta)
     // 10-nov ("estos zarpes dependen de la naviera... usemos el estimado"): el zarpe y la llegada a destino no se le preguntan al
