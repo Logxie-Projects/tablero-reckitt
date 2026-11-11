@@ -858,7 +858,7 @@ body.lv-abierta{overflow:hidden}
 .kt-tabla>div{padding:8px 10px;border-top:1px solid var(--border);min-width:0}
 .kt-tabla>.kt-th{border-top:0;font-size:12.5px;color:var(--muted)}
 .kt-tabla small{display:block;font-size:11.5px;color:var(--muted);line-height:1.35}
-.kt-n{color:var(--muted)}.kt-c{color:var(--accent)}
+.kt-n{color:var(--muted)}.kt-c{color:var(--accent)}.kt-q{font-weight:600}.kt-q small{font-weight:400}.kt-p span small{font-size:11.5px}
 .kt-aviso,.kt-nota{margin:8px 2px 0;font-size:12px;color:var(--muted);line-height:1.5}.kt-nota b{color:var(--text);font-weight:600}
 @media (max-width:760px){.km-tc{display:none!important}.km-solo{display:block!important}}
 
@@ -6474,7 +6474,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '4084eb3acc';
+const VERSION_TABLERO = '41e568d1b8';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -7609,22 +7609,36 @@ function htmlKM(N){
  * Pedido del usuario: "debemos empezar a medir tiempos de cargue, llenados, tránsito, etc.", en una tabla de Indicadores y no en la
  * Torre de Control. El cálculo es del dominio (tiemposGps, promediosGps); aquí solo se pinta:
  *   1. el promedio del periodo elegido arriba por etapa y lugar, con cuántos viajes entran (menos de KT_POCOS va en gris: no es tendencia);
- *   2. una fila por viaje con sus tiempos por etapa ("en curso" / "en camino" si no ha terminado).
+ *   2. una fila por viaje con sus tiempos por etapa ("en curso" si sigue en el sitio).
  * El dato es window.GPS_PARADAS (Gps.gs, pestaña "GPS paradas"): llegada y salida de cada geozona, leídas cada 10 minutos.
- * Son tiempos del GPS, no fechas confirmadas por el equipo, y la pantalla lo dice junto con sus límites. Prefijo CSS: kt-. */
-const KT_POCOS = 5, KT_MAX = 30;
-const KT_ETAPA = {Patio: 'Retiro del vacío', Llenado: 'Llenado en planta', Puerto: 'Entrega en puerto', 'Retiro lleno': 'Retiro en puerto', Bodega: 'Descargue en bodega',
-  'Vacío': 'Devolución del vacío', Recogida: 'Recogida', Entrega: 'Entrega'};
-const KT_CORTO = {Patio: 'patio', Llenado: 'planta', Puerto: 'puerto', 'Retiro lleno': 'puerto', Bodega: 'bodega', 'Vacío': 'patio', Recogida: 'origen', Entrega: 'destino'};
-const ktNombre = e => e.tipo === 'parada' ? KT_ETAPA[e.etapa] || e.etapa
-  : e.etapa.split(' → ').map(x => KT_CORTO[x] || x.toLowerCase()).join(' → ').replace(/^./, c => c.toUpperCase());
+ * Son tiempos del GPS, no fechas confirmadas por el equipo, y la pantalla lo dice junto con sus límites.
+ * Ajustes del 11-nov, pedidos por el usuario al ver la tabla ("no midió tiempo en patio… después el desplazamiento y así sucesivamente"):
+ *   - Las columnas se llaman por lo que miden: "Tiempo en patio (cargue del vacío)", "Desplazamiento patio → planta", "Tiempo en planta"…
+ *   - El desplazamiento que no ha terminado mira la posición actual del GPS (window.GPS): si el vehículo está quieto dice "detenido" con
+ *     el lugar y hace cuánto, en vez de "en camino" (dos vehículos llevaban 3 horas parqueados a 700 m del patio y salían "en camino").
+ *   - El vehículo con GPS cuyo viaje no tiene ninguna parada registrada (pasó por patio y planta antes de tener enlace) también sale en
+ *     la tabla, con "sin GPS" en lo que ya pasó, para que no parezca olvidado.
+ * Prefijo CSS: kt-. */
+const KT_POCOS = 5, KT_MAX = 30, KT_QUIETO_MIN = 15;
+// cada parada: [dónde está el vehículo, qué se hace ahí]
+const KT_ETAPA = {Patio: ['patio', 'cargue del vacío'], Llenado: ['planta', 'llenado'], Puerto: ['puerto', 'entrega del lleno'], 'Retiro lleno': ['puerto', 'retiro del lleno'],
+  Bodega: ['bodega', 'descargue'], 'Vacío': ['patio', 'devolución del vacío'], Recogida: ['origen', 'recogida'], Entrega: ['destino', 'entrega']};
+const ktSitio = et => (KT_ETAPA[et] || [et.toLowerCase()])[0];
+const ktNombre = e => e.tipo === 'parada' ? `Tiempo en ${ktSitio(e.etapa)}` : `Desplazamiento ${e.etapa.split(' → ').map(ktSitio).join(' → ')}`;
+const ktQue = e => e.tipo === 'parada' ? (KT_ETAPA[e.etapa] || [])[1] || '' : '';
 // hora de Colombia; con el día si no es hoy
 function ktCuando(t){
   const d = new Date(t), o = {timeZone: 'America/Bogota'}, dia = x => x.toLocaleDateString('en-CA', o);
   const h = d.toLocaleTimeString('es-CO', {...o, hour: 'numeric', minute: '2-digit'}).replace(/\s/g, ' ').replace(/ ([ap])\. ?m\.?/, ' $1m');
   return dia(d) === dia(new Date()) ? h : `${d.toLocaleDateString('es-CO', {...o, day: 'numeric', month: 'short'}).replace('.', '')} ${h}`;
 }
-function ktCelda(e){
+// dónde está el vehículo ahora, según el GPS: 'quieto' | 'andando' | '' (sin dato reciente)
+function ktAhora(g){
+  if (!g) return {como: '', txt: ''};
+  const donde = [g.direccion, String(g.municipio || '').split(',')[0]].filter(Boolean).join(', ');
+  return g.velocidad < 3 && g.minDetenido >= KT_QUIETO_MIN ? {como: 'quieto', txt: `detenido ${kmDur(g.minDetenido)}`, donde} : {como: 'andando', txt: g.velocidad >= 3 ? `${g.velocidad} km/h` : '', donde};
+}
+function ktCelda(e, g){
   if (!e || e.estado === '') return '<div class="kt-n">—</div>';
   if (e.estado === 'sinGps') return '<div class="kt-n">sin GPS</div>';
   if (e.estado === 'sinCierre') return `<div class="kt-n">sin cierre<small>llegó ${esc(ktCuando(e.desde))} · el enlace venció</small></div>`;
@@ -7632,39 +7646,54 @@ function ktCelda(e){
   if (e.tipo === 'parada') return e.estado === 'curso'
     ? `<div class="kt-c">${kmDur(e.min)}<small>en curso · ${esc(e.lugar)} · desde ${esc(ktCuando(e.desde))}${veces}</small></div>`
     : `<div>${kmDur(e.min)}<small>${esc(e.lugar)} · ${esc(ktCuando(e.desde))} a ${esc(ktCuando(e.hasta))}${veces}</small></div>`;
-  return e.estado === 'curso' ? `<div class="kt-c">en camino<small>salió ${esc(ktCuando(e.desde))} · lleva ${kmDur(e.min)}</small></div>`
-    : `<div>${kmDur(e.min)}<small>${esc(ktCuando(e.desde))} a ${esc(ktCuando(e.hasta))}</small></div>`;
+  if (e.estado !== 'curso') return `<div>${kmDur(e.min)}<small>${esc(ktCuando(e.desde))} a ${esc(ktCuando(e.hasta))}</small></div>`;
+  // desplazamiento sin terminar: lo que dice el GPS ahora
+  const a = ktAhora(g), salio = e.desde != null ? `salió ${esc(ktCuando(e.desde))}` : 'sin hora de salida';
+  return a.como === 'quieto' ? `<div class="kt-q">${esc(a.txt)}<small>${esc(a.donde || 'sin dirección')} · ${salio}</small></div>`
+    : `<div class="kt-c">en camino<small>${[a.txt && esc(a.txt), a.donde && esc(a.donde), salio, e.min != null ? `lleva ${kmDur(e.min)}` : ''].filter(Boolean).join(' · ')}</small></div>`;
+}
+// viaje con GPS pero sin ninguna parada registrada: lo que ya pasó (pasos confirmados) queda "sin GPS" y, si va entre dos paradas, se ve dónde anda
+function ktSinRegistro(v, E){
+  const hecha = {}; paradas(v).forEach(p => { hecha[p[0]] = !!p[2]; });
+  const P = E.filter(e => e.tipo === 'parada'), ult = P.reduce((u, e, i) => hecha[e.etapa] ? i : u, -1);
+  let k = -1;
+  return E.map(e => { if (e.tipo === 'parada') k++;
+    return e.tipo === 'parada' ? {...e, estado: k <= ult ? 'sinGps' : ''} : {...e, estado: k < ult ? 'sinGps' : k === ult && ult < P.length - 1 ? 'curso' : ''}; });
 }
 function htmlKT(){
   if (window.MODO_CLIENTE) return '';
   const F = window.GPS_PARADAS || [], ahora = Date.now(), [desde, hasta] = kvRango();
   const dia = t => new Date(t - 5 * 36e5).toISOString().slice(0, 10), enPeriodo = t => t != null && dia(t) >= desde && dia(t) <= hasta;
-  const ids = new Set(F.map(f => f.viaje));
-  const V = viajes.filter(v => ids.has(v.id) && !v.padre && !esPrueba(v) && (!KV.op || v.operacion === KV.op))
-    .map(v => { const E = tiemposGps(v, F, ahora); return {v, E, ult: Math.max(0, ...E.map(e => e.hasta || e.desde || 0))}; })
+  const ids = new Set(F.map(f => f.viaje)), vale = v => !v.padre && !esPrueba(v) && (!KV.op || v.operacion === KV.op);
+  const gpsDe = v => { const g = kmGps(v); return kmGpsVale(g) && viajeActivoDePlaca(v.placa, viajes) === v ? g : null; };
+  const con = viajes.filter(v => ids.has(v.id) && vale(v)).map(v => { const E = tiemposGps(v, F, ahora); return {v, E, g: gpsDe(v), ult: Math.max(0, ...E.map(e => e.hasta || e.desde || 0))}; })
     .filter(x => x.E.some(e => enPeriodo(e.desde))).sort((a, b) => b.ult - a.ult);
+  const sin = (window.GPS || []).filter(kmGpsVale).map(g => viajeActivoDePlaca(g.placa, viajes)).filter((v, i, L) => v && L.indexOf(v) === i && !ids.has(v.id) && vale(v))
+    .map(v => ({v, E: ktSinRegistro(v, tiemposGps(v, [], ahora)), g: gpsDe(v), sinReg: true}));
+  const V = [...con, ...sin];
   const P = promediosGps(viajes, F, desde, hasta, ahora).filter(g => !KV.op || g.operacion === KV.op);
   const nota = `<p class="kt-nota"><b>Cómo leer estos tiempos.</b> Salen del GPS, no de las fechas que confirma el equipo. Cada hora se registra con unos 10 minutos de margen, así que un tiempo
-    puede tener hasta 20 minutos de error. Solo cuentan los vehículos con enlace de Satrack activo: si el enlace llegó cuando el vehículo ya estaba en el sitio, el tiempo sale corto.
-    Una parada abierta hace más de un día se muestra "sin cierre" y no entra al promedio. Cuando el vehículo vuelve al mismo sitio, los tiempos se suman. No se miden Patio Colombia
-    ni Cemue (no tienen punto en el mapa), los urbanos ni los viajes de prueba. Hay registro desde el 11 de noviembre.</p>`;
+    puede tener hasta 20 minutos de error. Solo cuentan los vehículos con enlace de Satrack activo: si el enlace llegó cuando el vehículo ya estaba en el sitio, el tiempo sale corto, y lo que
+    pasó antes de tener enlace queda "sin GPS". Una parada abierta hace más de un día se muestra "sin cierre" y no entra al promedio. Cuando el vehículo vuelve al mismo sitio, los tiempos se suman.
+    El desplazamiento incluye las paradas en el camino; mientras no termina, la casilla dice si el vehículo está detenido y dónde. No se miden Patio Colombia ni Cemue (no tienen punto en el
+    mapa), los urbanos ni los viajes de prueba. Hay registro desde el 11 de noviembre.</p>`;
   if (!V.length) return `<h3 class="kl-h">Tiempos según el GPS</h3><div class="kl-vacio">Todavía no hay paradas registradas por el GPS en este periodo.</div>${nota}`;
   const bloque = op => {
-    const L = V.filter(x => x.v.operacion === op), Pop = P.filter(g => g.operacion === op);
+    const L = V.filter(x => x.v.operacion === op), Pop = P.filter(g => g.operacion === op), nSin = L.filter(x => x.sinReg).length;
     if (!L.length) return '';
     // columnas: las etapas del viaje que más tiene (los de carga suelta no devuelven vacío)
     const cols = L.reduce((m, x) => x.E.length > m.length ? x.E : m, []);
-    const tarjetas = Pop.map(g => `<div class="kt-p${g.n && g.n < KT_POCOS ? ' pocos' : ''}"><span>${esc(ktNombre(g))}</span><b>${g.n ? kmDur(g.min) : '<i>sin dato</i>'}</b>
+    const tarjetas = Pop.map(g => `<div class="kt-p${g.n && g.n < KT_POCOS ? ' pocos' : ''}"><span>${esc(ktNombre(g))}${ktQue(g) ? ` <small>${esc(ktQue(g))}</small>` : ''}</span><b>${g.n ? kmDur(g.min) : '<i>sin dato</i>'}</b>
       <em>${esc([g.lugar, g.n ? klPl(g.n, 'viaje') : '', g.enCurso ? `${g.enCurso} en curso` : ''].filter(Boolean).join(' · '))}</em></div>`).join('');
-    const filas = L.slice(0, KT_MAX).map(x => `<div class="kt-v"><b>${esc(x.v.placa || '—')}</b><small>${esc(kcRef(x.v))}</small></div>${cols.map(c => ktCelda(x.E.find(e => e.etapa === c.etapa))).join('')}`).join('');
-    return `<h4 class="kt-op">${esc(op)} <span>${klPl(L.length, 'viaje')} con registro</span></h4>
+    const filas = L.slice(0, KT_MAX).map(x => `<div class="kt-v"><b>${esc(x.v.placa || '—')}</b><small>${esc(kcRef(x.v))}${x.sinReg ? ' · sin paradas registradas' : ''}</small></div>${cols.map(c => ktCelda(x.E.find(e => e.etapa === c.etapa), x.g)).join('')}`).join('');
+    return `<h4 class="kt-op">${esc(op)} <span>${klPl(L.length - nSin, 'viaje')} con registro${nSin ? ` · ${nSin} con GPS sin paradas registradas` : ''}</span></h4>
       ${tarjetas ? `<div class="kt-proms">${tarjetas}</div>` : ''}
-      <div class="kt-scroll"><div class="kt-tabla" style="grid-template-columns:minmax(120px,1.4fr) repeat(${cols.length},minmax(104px,1fr))">
-        <div class="kt-th">Viaje</div>${cols.map(c => `<div class="kt-th">${esc(ktNombre(c))}</div>`).join('')}${filas}</div></div>
+      <div class="kt-scroll"><div class="kt-tabla" style="grid-template-columns:minmax(120px,1.3fr) repeat(${cols.length},minmax(112px,1fr))">
+        <div class="kt-th">Viaje</div>${cols.map(c => `<div class="kt-th">${esc(ktNombre(c))}${ktQue(c) ? `<small>${esc(ktQue(c))}</small>` : ''}</div>`).join('')}${filas}</div></div>
       ${L.length > KT_MAX ? `<div class="kl-vacio">y ${klPl(L.length - KT_MAX, 'viaje')} más</div>` : ''}`;
   };
   const ops = [...new Set(V.map(x => x.v.operacion))].sort();
-  return `<h3 class="kl-h">Tiempos según el GPS <span class="km-cta gps">${klPl(V.length, 'viaje')} con registro</span></h3>
+  return `<h3 class="kl-h">Tiempos según el GPS <span class="km-cta gps">${klPl(con.length, 'viaje')} con registro</span></h3>
     ${ops.map(bloque).join('')}
     ${P.some(g => g.n && g.n < KT_POCOS) ? `<p class="kt-aviso">Con menos de ${KT_POCOS} viajes el promedio va en gris: todavía no es una tendencia.</p>` : ''}${nota}`;
 }
