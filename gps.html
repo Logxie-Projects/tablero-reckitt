@@ -91,7 +91,7 @@
     $('bSat').classList.toggle('on', sat); $('bVivo').classList.toggle('on', !sat);
     carga.classList.remove('fuera', 'lento'); t0 = Date.now(); clearTimeout(lento);
     $('titulo').textContent = (sat ? 'Cargando la vista de satélite' : 'Cargando el GPS en vivo') + (placa ? ' de ' + placa : '') + '…';
-    $('detalle').textContent = sat ? 'Último punto que leyó el sistema' + (hora ? ', de las ' + hora : '') + '. El sistema lee el GPS cada 10 minutos; para verlo moverse use "En vivo (Satrack)".' : (donde ? 'Último dato en el tablero: ' + donde + '.' : '');
+    $('detalle').textContent = sat ? 'Último punto que leyó el sistema' + (hora ? ' (' + hora + ')' : '') + '. El sistema lee el GPS cada 10 minutos; para verlo moverse use "En vivo (Satrack)".' : (donde ? 'Último dato en el tablero: ' + donde + '.' : '');
     f.hidden = false; f.src = sat ? satelite : satrack;
     lento = setTimeout(function () { carga.classList.add('lento'); }, 12000);
   }
