@@ -932,6 +932,9 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 .ruta .ico .gps-pin.cerca{border-color:var(--warn);color:var(--warn)}
 .ruta .ico .gps-pin.cerca i{background:var(--warn)}
 .ruta .ico .gps-pin.cerca:hover{background:var(--warn);color:#fff}
+
+/* ---------- 11-nov · horas del GPS en el cuadro de cada parada (lean.js horasGpsParada) ---------- */
+.ruta .caja .gps-horas{margin-top:4px;padding-top:4px;border-top:1px dashed var(--border);color:var(--ok);font-size:11px;font-weight:700;line-height:1.35}
 </style>
 </head>
 <body>
@@ -2690,6 +2693,7 @@ function aplicarDatos(j, clave, guardadoEn){
     window.PREGUNTAS = j.preguntas || [];   // preguntas al agente LogxIA (preguntas.js)
     window.TURNOS_C = j.turnosConductores || [];   // conductores enturnados y disponibles (app Viajes ETP)
     window.CONDUCTORES = j.conductores || [];
+    window.GPS_PARADAS = j.gpsParadas || [];   // llegada y salida por parada según el GPS (lean.js horasGpsParada)
     window.GPS = j.gps || [];   // GPS de Satrack por placa, solo el equipo (kpis-mapa.js)
     window.CALIF = j.calificaciones || null;
     window.REGISTRO = j.registro || null;   // vehículos y conductores con sus datos, solo el equipo (registro.js)   // calificación de conductores, solo el equipo (calificacion.js)
@@ -3753,6 +3757,14 @@ function gpsDeViaje(v){
     al.texto += al.tipo === 'llegada' ? ` · ${al.hora}` : ` desde ${al.hora}`; }   // dominio.js: llegó / cerca / en un lugar de la ruta (geozonas de 200 m)
   return {url, al, donde: punto ? dondeVaGps(g) : '', satrack: !!g.enlace, quieto: punto && g.velocidad < 3, titulo: `Ver en el GPS${g.enlace ? '' : ' (último punto, en el mapa)'}${que ? ' · ' + que : ''}`};
 }
+// 11-nov ("una vez completada una etapa, pon las horas... para registro"): la hora en que el GPS vio llegar y salir al vehículo de
+// cada parada (Gps.gs, pestaña "GPS paradas"), para el cuadro de esa parada. La última visita registrada de ese viaje a esa parada.
+const horaGps = iso => { const f = fechaLocal(iso), H = Number(f.slice(11, 13)); return (f.slice(0, 10) === HOY ? '' : fd(f.slice(0, 10)) + ' ') + `${H % 12 || 12}:${f.slice(14, 16)} ${H < 12 ? 'a. m.' : 'p. m.'}`; };
+function horasGpsParada(v, et){
+  if (window.MODO_CLIENTE) return '';
+  const r = (window.GPS_PARADAS || []).filter(x => x.viaje === v.id && x.parada === et).pop(); if (!r || !r.llego) return '';
+  return `<div class="gps-horas" title="Lo que registró el GPS. No confirma el paso.">📍 Llegó ${esc(horaGps(r.llego))}${r.salio ? `<br>Salió ${esc(horaGps(r.salio))}` : ''}</div>`;
+}
 const pinGps = v => { const g = gpsDeViaje(v); return g ? `<a class="gps-pin${g.quieto ? ' quieto' : ''}${g.al ? ' ' + g.al.tipo : ''}" href="${esc(g.url)}" target="_blank" rel="noopener" title="${esc(g.titulo)}" aria-label="${esc(g.titulo)}" onclick="event.stopPropagation()"><i></i><span>${esc(g.al ? g.al.texto : (g.donde || 'Ver GPS'))}</span></a>` : ''; };   // pin con el texto al lado (opción C, elegida por el usuario)
 const iconoParada = (v, et) => { const k = iconoEtapa(v, et), h = ICONOS_RUTA[k]; return k === 'camion' ? h.replace(/<\/span>$/, pinGps(v) + '</span>') : h; };
 function leadFactura(v){
@@ -3884,7 +3896,7 @@ function rutaPedido(v){
     </div><div>
       <div class="linea"><div class="hecho" style="width:${P.length>1 ? Math.min(86, 86*Math.max(0,n-1)/(P.length-1)) : 0}%"></div>
         ${P.map(([et, lugar, , det], i)=>`<div class="par ${i<n?'ok':i===n||i===nGps?'ya':''}${i>=n && P[i][4] && !window.MODO_CLIENTE ? ' conf' : ''}"><div class="pt"></div>${i!==nIcono ? '' : nGps >= 0 ? ICONOS_RUTA.camion.replace(/<\/span>$/, pinGps(v) + '</span>') : iconoParada(v, et)}
-          <div class="caja">${et}<b>${esc(lugar)}</b>${det.filter(Boolean).map(esc).join('<br>')}</div></div>`).join('')}</div>
+          <div class="caja">${et}<b>${esc(lugar)}</b>${det.filter(Boolean).map(esc).join('<br>')}${horasGpsParada(v, et)}</div></div>`).join('')}</div>
       <div class="esp"><span></span>${esperas.map(d=> `<span>${d===null?'':d+' d'}</span>`).join('')}</div>
       ${hijosDe(v).map(s => tarjetaHijo(s, v)).join('')}
       <div class="pie">${tiemposOperacion(v)}${v.operacion==='IMPO' && demora(v) ? `<span style="color:var(--bad)">${demora(v)} d de demora del vacío</span>`:''}</div>
@@ -6152,7 +6164,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'a232ffe1d6';
+const VERSION_TABLERO = '19aeb7a551';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
