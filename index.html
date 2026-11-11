@@ -1011,6 +1011,19 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 .tf-p.ya{color:var(--accent);font-weight:800}
 .tf-p.ya i{background:var(--accent);border-color:var(--accent)}
 .tf-p small{color:var(--muted);font-weight:500}
+
+/* ---------- 11-nov · Tráfico: plan de viaje que se abre con un clic (trafico.js planViajeHtml) ---------- */
+.tf-plan{margin-top:10px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2)}
+.tf-plan > summary{cursor:pointer;padding:8px 11px;font-weight:700;font-size:13px;color:var(--accent);list-style-position:inside}
+.tf-plan[open] > summary{border-bottom:1px solid var(--border)}
+.tf-tabla{width:100%;border-collapse:collapse;font-size:13px}
+.tf-tabla th{text-align:left;font-weight:600;color:var(--muted);font-size:11.5px;padding:6px 11px}
+.tf-tabla td{padding:6px 11px;border-top:1px solid var(--border)}
+.tf-tabla td:first-child{width:26px;text-align:center}
+.tf-tabla tr.ok td{color:var(--ok)}
+.tf-tabla tr.ya td{background:color-mix(in srgb, var(--accent) 9%, transparent)}
+.tf-tabla tr.noche td{color:var(--muted);font-size:12px;background:var(--surface)}
+.tf-plan > p{margin:0;padding:8px 11px;border-top:1px solid var(--border)}
 </style>
 </head>
 <body>
@@ -4190,6 +4203,27 @@ function vehiculosTrafico(){
   const peso = x => (x.est.alertas.some(a => a.nivel === 'alta') ? 0 : x.est.alertas.length ? 1 : 2);
   return [...porPlaca.values()].sort((a, b) => peso(a) - peso(b) || String(a.v.placa).localeCompare(String(b.v.placa)));
 }
+// 11-nov ("falta ver el plan de viaje en Tráfico, que se pueda abrir al dar clic"): cada tarjeta trae "Plan de viaje", que se abre
+// con un clic: los puntos de control de la ruta, cuáles ya pasó, a cuántos km queda cada uno y a qué hora llegaría manejando solo en
+// horario, con las noches de descanso marcadas. Si el vehículo todavía no va por carretera, el plan se calcula desde el origen de la
+// ruta saliendo ahora (dice "aún no sale"). Las tarjetas abiertas se recuerdan mientras la pestaña esté abierta.
+const TF_ABIERTOS = new Set();
+function planViajeHtml(x){
+  const {v, g, plan} = x, R = rutaDeViaje(v); if (!R) return '';
+  const teorico = !plan, P = plan || planDeRuta(v, {lat: R.puntos[0][1], lng: R.puntos[0][2]});
+  if (!P) return '';
+  const dia = ms => fechaLocal(new Date(ms).toISOString()).slice(0, 10), sig = P.puntos.find(p => !p.paso);
+  let antes = HOY;
+  const filas = P.puntos.map(p => { if (p.paso) return `<tr class="ok"><td>✔</td><td>${esc(p.nombre)}</td><td class="sub">${teorico ? 'origen' : 'ya pasó'}</td><td></td></tr>`;
+    const d = dia(p.llega), noche = d !== antes ? `<tr class="noche"><td>🌙</td><td colspan="3">Descanso: no se maneja de ${TRAFICO.hasta - 12} p. m. a ${TRAFICO.desde} a. m.</td></tr>` : '';
+    antes = d;
+    return noche + `<tr class="${p === sig ? 'ya' : ''}"><td>${p === sig ? '➜' : '○'}</td><td><b>${esc(p.nombre)}</b></td><td>a ${p.km} km</td><td>${esc(horaTf(p.llega))}</td></tr>`; }).join('');
+  return `<details class="tf-plan" data-tf="${esc(v.id)}"${TF_ABIERTOS.has(v.id) ? ' open' : ''} ontoggle="this.open ? TF_ABIERTOS.add(this.dataset.tf) : TF_ABIERTOS.delete(this.dataset.tf)">
+    <summary>🗺 Plan de viaje · ${esc(P.de)} → ${esc(P.a)}${teorico ? ' · aún no sale' : ` · faltan ${P.km} km`} · llegada estimada ${esc(horaTf(P.llega))}</summary>
+    <table class="tf-tabla"><tr><th></th><th>Punto de control</th><th>Distancia</th><th>Hora estimada</th></tr>${filas}</table>
+    <p class="sub">${teorico ? 'El vehículo todavía no va por carretera hacia el destino: plan calculado desde ' + esc(P.de) + ' saliendo ahora. ' : g ? 'Calculado desde el último punto del GPS. ' : ''}Son ${esc(duracionTxt(P.horas * 60))} de manejo a ${TRAFICO.kmh} km/h en promedio, solo entre ${TRAFICO.desde} a. m. y ${TRAFICO.hasta - 12} p. m. Es un estimado: la distancia sale de la línea recta entre puntos aumentada un ${Math.round((TRAFICO.factorVia - 1) * 100)} %, no de un servicio de rutas.</p>
+  </details>`;
+}
 function renderTrafico(){
   const c = document.getElementById('trafico'), b = document.querySelector('#nav [data-v="trafico"]'); if (!c) return;
   if (b) b.classList.toggle('hidden', !!window.MODO_CLIENTE);
@@ -4211,6 +4245,7 @@ function renderTrafico(){
         <div><span class="sub">Llegada estimada</span><b>${plan && !plan.puntos[plan.puntos.length - 1].paso ? esc(horaTf(plan.llega)) : '—'}</b>
           <span class="sub">${plan && plan.km ? `faltan ${plan.km} km · ${esc(duracionTxt(plan.horas * 60))} de manejo` : ''}</span></div>
       </div>
+      ${planViajeHtml(x)}
       ${plan ? `<div class="tf-ruta">${plan.puntos.map(p => `<span class="tf-p${p.paso ? ' ok' : p === sig ? ' ya' : ''}" title="${p.paso ? 'Ya pasó' : 'Estimado: ' + esc(horaTf(p.llega)) + ' · a ' + p.km + ' km'}"><i></i>${esc(p.nombre)}${!p.paso ? `<small>${esc(horaTf(p.llega))}</small>` : ''}</span>`).join('')}</div>` : ''}
     </div>`; };
   c.innerHTML = `<div class="tf-top"><b>${L.length} ${L.length === 1 ? 'vehículo' : 'vehículos'} en seguimiento</b> · ${conGps} con GPS${nAl ? ` · <b style="color:var(--bad)">${nAl} con alerta</b>` : ' · sin alertas'}
@@ -6474,7 +6509,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '41e568d1b8';
+const VERSION_TABLERO = 'fd0246e2a0';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
