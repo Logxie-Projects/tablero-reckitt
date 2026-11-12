@@ -1694,6 +1694,7 @@ const VENTANAS = {placa: 5, conductor: 3, booking: 7, patio: 7, mn: 7, cierreDoc
 const TRANSITO_PUERTO = {BUN: 1, CTG: 3};
 // SIN ACTUALIZAR: pasó la fecha del siguiente paso del viaje y no hay registro de que ocurrió (el viaje "no avanza").
 // La usan la pestaña Errores, la tarjeta del viaje y el aviso por correo a Gerencia y Calidad.
+const DIAS_NACIONAL = 2;
 function sinActualizar(v){
   const S = [];
   if (v.padre || ['Cerrado','Cancelado'].includes(situacion(v)) || v.estado === 'Cancelado') return S;
@@ -1712,6 +1713,12 @@ function sinActualizar(v){
     if (v.citaDevolucion && v.citaDevolucion < HOY && !v.fechaDevolucion && !v.tirillaDevolucion) S.push({sev: 'Alta', fecha: v.citaDevolucion, msg: `la cita de devolución del vacío era el ${fd(v.citaDevolucion)} y no hay devolución registrada`,
       porque: 'Si se devolvió, faltan la fecha y la tirilla; si no, el plazo de devolución sigue corriendo'});
   }
+  // 11-nov (decisión del usuario: "2 días"): NACIONAL recogido hace DIAS_NACIONAL días o más sin entrega confirmada. Antes los
+  // nacionales nunca salían en rojo: solo "¿Dónde va?", que se apaga con "Sigue igual". Si la entrega está programada para hoy o
+  // después, todavía no; si la recogida no está confirmada, eso ya lo pregunta "¿Pasó?".
+  if (esNacional(v) && cumplido(v, 'fechaRetiro') && -diffDias(v.fechaRetiro) >= DIAS_NACIONAL && !cumplido(v, 'fechaCargue') && !v.soporteEntrega && !(fechaPaso(v, 'fechaCargue') >= HOY))
+    S.push({sev: 'Alta', fecha: fechaPaso(v, 'fechaRetiro'), msg: `se recogió el ${fd(v.fechaRetiro)} (hace ${-diffDias(v.fechaRetiro)} días) y no hay entrega registrada`,
+      porque: 'Si ya se entregó, faltan la fecha de entrega y el soporte; si no, hay que confirmar dónde va la carga y la nueva fecha'});
   // con una novedad de hoy el viaje sí tiene seguimiento: no sale como "sin actualizar" (la novedad explica dónde va).
   // ultimaNovedad la pone quien carga los viajes (backend: leerViajes_; tablero: datos.js / novedades.js)
   if (S.length && String(v.ultimaNovedad || '').slice(0, 10) === HOY) return [];
@@ -2054,7 +2061,10 @@ function areaDe(b){
 /* ---------- Mi turno: las líneas rojas (las usan el tablero y el resumen diario del backend) ---------- */
 const HORAS_COBERTURA = 72, HORAS_CLIENTE = 4;
 // viaje sin vehículo que arranca en HORAS_COBERTURA o menos (o que ya debió arrancar)
-const sinCobertura = v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre && !tieneVehiculo(v) && !!primerEvento(v) && diffDias(primerEvento(v)) * 24 <= HORAS_COBERTURA;
+// 11-nov (decisión del usuario: "que la cita cuente"): cuándo arranca el viaje para pedir vehículo. En IMPO, con cita de retiro en
+// puerto y sin fecha de retiro escrita, el viaje no avisaba que faltaba vehículo; ahora la cita también cuenta.
+const arranqueDe = v => v.operacion === 'IMPO' ? (v.fechaRetiro || v.citaRetiro || v.fechaCargue) : primerEvento(v);
+const sinCobertura = v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre && !tieneVehiculo(v) && !!arranqueDe(v) && diffDias(arranqueDe(v)) * 24 <= HORAS_COBERTURA;
 // pedido del cliente (acción de Operaciones) de prioridad alta con más de HORAS_CLIENTE horas sin atender
 // prioridad de una acción de LogxIA: la programación de cargues de Reckitt cambia bookings y fechas de muchos viajes, así que
 // siempre es Alta (el coordinador la aplica en la ronda y, si pasan HORAS_CLIENTE sin hacerlo, bloquea como un pedido del cliente)
@@ -3438,7 +3448,7 @@ const CIERRE_DIA = false;
 function menusTurno(r){
   const V = viajes.filter(v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre);   // los de prueba no cuentan
   const SEV = e => e.sev === 'Alta' ? 0 : 1;
-  const cob = V.filter(v => !tieneVehiculo(v) && primerEvento(v) && sinCobertura(v));
+  const cob = V.filter(v => !tieneVehiculo(v) && sinCobertura(v));
   return [
     // primero los datos del registro que faltan (registro.js), los pasos con fecha pasada sin confirmar (confirmar.js) y dónde va
     // cada vehículo; el primero de la lista es el seguimiento de la ronda
@@ -4204,7 +4214,7 @@ const horaTf = ms => { const f = fechaLocal(new Date(ms).toISOString()), H = Num
 // los vehículos a monitorear: el viaje activo de cada placa en ruta (o con GPS), con su punto, su estado y su plan
 function vehiculosTrafico(){
   const G = window.GPS || [], porPlaca = new Map();
-  viajes.filter(v => !v.padre && v.placa && !['Cerrado', 'Cancelado'].includes(situacion(v)) && !terminoTransporte(v)).forEach(v => {
+  viajes.filter(v => !v.padre && v.placa && !['Cerrado', 'Cancelado'].includes(situacion(v)) && !fueraDeRuta(v)).forEach(v => {   // fueraDeRuta: la misma regla del seguimiento (una IMPO con el vacío devuelto ya soltó su vehículo, aunque falte el urbano)
     const pl = placaNorm(v.placa), activo = viajeActivoDePlaca(v.placa, viajes); if (activo !== v) return;
     const g = G.find(x => x.placa === pl) || null, enRuta = !['Sin asignar', 'Asignado'].includes(v.estado);
     if (!g && !enRuta) return;   // asignado para después y sin GPS: todavía no es tráfico
@@ -4218,6 +4228,12 @@ function vehiculosTrafico(){
     const despues = paradas(v).some(p => ['Puerto', 'Bodega'].includes(p[0]) && p[2]), llego = enCarretera && !!gv && !!gv.al && gv.al.tipo === 'llegada';
     porPlaca.set(pl, {v, g, enRuta, est, enCarretera, despues, llego, plan: fresco && enCarretera && !llego ? planDeRuta(v, g) : null, gv});
   });
+  // 11-nov (decisión del usuario: "vigilarlos igual"): el vehículo del subviaje (urbano de la bodega de paso al destino final) también
+  // se vigila: con GPS, o desde el día de su urbano. Sin plan de ruta (es un trayecto dentro de la ciudad). Si la placa ya está en
+  // un viaje principal en ruta, manda ese.
+  viajes.filter(s => s.padre && s.placa && vigente(s) && !esPrueba(s) && !cumplido(s, 'fechaUrbano')).forEach(s => { const pl = placaNorm(s.placa); if (porPlaca.has(pl)) return;
+    const g = G.find(x => x.placa === pl) || null; if (!g && !(fechaPaso(s, 'fechaUrbano') && fechaPaso(s, 'fechaUrbano') <= HOY)) return;
+    porPlaca.set(pl, {v: s, g, enRuta: true, est: estadoTrafico(s, g), enCarretera: false, despues: true, llego: false, plan: null, gv: gpsDeViaje(s), sub: true}); });
   const peso = x => (x.est.alertas.some(a => a.nivel === 'alta') ? 0 : x.est.alertas.length ? 1 : 2);
   return [...porPlaca.values()].sort((a, b) => peso(a) - peso(b) || String(a.v.placa).localeCompare(String(b.v.placa)));
 }
@@ -4253,7 +4269,7 @@ function renderTrafico(){
   const fila = x => { const {v, g, est, plan, gv} = x, sig = plan && plan.puntos.find(p => !p.paso);
     return `<div class="tf-card${est.alertas.some(a => a.nivel === 'alta') ? ' alta' : est.alertas.length ? ' media' : ''}">
       <div class="tf-cab"><span class="placa">${esc(v.placa)}</span><b>${esc(v.conductor || 'Sin conductor')}</b>${telTarjeta(v)}
-        <span class="sub">${esc(v.operacion)} ${esc(v.pais || v.bodega || '')} · ${esc(refCorta(v) || v.id)}</span>
+        <span class="sub">${x.sub ? esc(nombreSub(v)) + ' · ' : ''}${esc(v.operacion)} ${esc(v.pais || v.bodega || '')} · ${esc(refCorta(v) || v.id)}</span>
         <button type="button" class="link" onclick="abrir('${esc(v.id)}')">Abrir viaje</button></div>
       ${est.alertas.map(a => `<div class="tf-al ${a.nivel}">${a.nivel === 'alta' ? '⛔' : '⚠'} ${esc(a.texto)}</div>`).join('')}
       <div class="tf-datos">
@@ -6528,7 +6544,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '324637aa6e';
+const VERSION_TABLERO = 'fbe81e818e';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -8306,6 +8322,7 @@ const BLOQUES = [
   ['pedido', 'Pedido', 'p-warn', 'Lo que pide un correo y solo una persona puede hacer'],
   ['falta', 'Falta', 'p-ok', 'Datos que faltan para el próximo paso'],
   ['registro', 'Base de conductores', 'p-warn', 'Conductores y vehículos del registro con datos por corregir (las mismas reglas de Despacho → Conductores)'],
+  ['manana', 'Mañana', 'p-acc', 'Lo que el viaje tiene para mañana (cita, retiro, llenado, urbano), con su vehículo y conductor. Solo informa; en rojo si falta alguno'],
   ['cierre', 'Cierre del día', 'p-acc', 'Última ronda: lo de mañana listo y la nota de entrega de turno (antes en Mi turno)'],
 ];
 // 10-nov ("que el equipo entienda qué debe hacer"): cada renglón empieza con la instrucción, en una frase con verbo. El nombre del
@@ -8313,7 +8330,7 @@ const BLOQUES = [
 const QUE_HACER = {gps: 'Confirme lo que dice el GPS', programacion: 'Revise lo que mandó Reckitt y aplíquelo en el tablero', crear: 'Cree el viaje que pide el correo', tomar: 'Tome este viaje nuevo: ábralo y revise sus datos', vehiculo: 'Asigne vehículo y conductor',
   sinact: 'Actualice el viaje: ¿se hizo o cambió la fecha?', paso: 'Confirme si este paso ya se hizo', donde: 'Confirme dónde va el vehículo',
   nocoincide: 'Decida cuál dato vale', datos: 'Revise y guarde lo que llegó por correo', pedido: 'Haga lo que pide el correo y márquelo hecho',
-  falta: 'Complete estos datos en el viaje', registro: 'Corrija los datos del conductor o del vehículo', cierre: 'Cierre el día y deje la nota de entrega de turno'};
+  falta: 'Complete estos datos en el viaje', registro: 'Corrija los datos del conductor o del vehículo', cierre: 'Cierre el día y deje la nota de entrega de turno', manana: 'Deje listo lo de mañana'};
 const HORIZONTE_FALTA = 5;   // días: los faltantes de viajes que arrancan después quedan en Errores (revisión, no del día)
 const RE_ASIGNAR = /asignar vehiculo|programar vehiculo|placa y conductor|conductor y vehiculo|vehiculo planchon|programar (el )?vehiculo/;
 let bandejaFiltro = '';
@@ -8398,7 +8415,7 @@ function queHacer(b){
 // de renderBandeja (se recalcula al filtrar) y el aviso de la ronda (ronda-alerta.js).
 // 11-nov (auditoría): del GPS solo la LLEGADA es acción de hoy; "cerca" y "en otro lugar" informan, y antes inflaban el número
 // de viajes con acciones (un vehículo parqueado salía en cada lectura)
-const accionDeHoy = i => i.roja || (i.b === 'hacer' ? !!i.hoy : i.b === 'gps' ? ['llegada', 'trafico'].includes(i.gpsTipo) : i.b !== 'registro');
+const accionDeHoy = i => i.roja || (i.b === 'manana' ? !!i.falta : i.b === 'hacer' ? !!i.hoy : i.b === 'gps' ? ['llegada', 'trafico'].includes(i.gpsTipo) : i.b !== 'registro');
 // 10-nov · qué acción es una programación nueva (la misma que abre el atajo "Aplicar programación", acciones.js) y cuál una
 // reprogramación: el cliente mueve la fecha de un paso de un viaje. Solo las de Operaciones.
 const TITULO_PROGRAMACION = 'Programación y cambios de fecha de Reckitt';
@@ -8427,6 +8444,11 @@ function armarBandeja(){
     add(null, {b: 'crear', k: 'a' + b.id, area: areaDe(b), html: `${desdeCuando(b.fechaCorreo || b.registrado)}<b>${esc(b.accion)}</b><br><span class="sub">${esc(b.resumen || '')} · ${esc(b.remitente || '')}</span>`,
       acc: botonAtajo(b) + accHecha(b), roja: pedidoRojo(b)}, 'Viajes por crear', b);
   });
+  // 11-nov (decisión del usuario: "vigilarlos igual"): el viaje principal quedó Cerrado con el urbano de un subviaje todavía pendiente.
+  // Antes ese subviaje desaparecía de aquí (solo se recorrían los viajes abiertos).
+  viajes.filter(v => !v.padre && !esPrueba(v) && situacion(v) === 'Cerrado').forEach(v => hijosDe(v).filter(s => vigente(s) && !cumplido(s, 'fechaUrbano')).forEach(s =>
+    add(v, {b: 'paso', k: 'huer|' + s.id, html: `${esc(nombreSub(s))} · <b>El viaje principal está cerrado y el urbano sigue pendiente</b>${s.fechaUrbano ? ' · ' + esc(fd(s.fechaUrbano)) : ' · sin fecha'}`,
+      acc: btnT('Abrir el subviaje', `data-b-abrir="${s.id}"`)})));
   vivos.forEach(v => {
     const hijos = hijosDe(v), todos = [v, ...hijos];
     // 2 · Por tomar
@@ -8435,10 +8457,10 @@ function armarBandeja(){
     if (sinCobertura(v)) {
       const asignar = B.filter(b => !usadas.has(b.id) && viajeDeAccion(b)?.id === v.id && RE_ASIGNAR.test(minus(b.accion)));
       asignar.forEach(b => usadas.add(b.id));
-      const d = diffDias(primerEvento(v)), ent = enturnadosDe(v), disp = disponiblesPara(v).filter(x => !ent.some(e => e.placa === x.placa)).slice(0, 3);
+      const d = diffDias(arranqueDe(v)), ent = enturnadosDe(v), disp = disponiblesPara(v).filter(x => !ent.some(e => e.placa === x.placa)).slice(0, 3);
       const sug = sugeridos(v).filter(s => !ent.concat(disp).some(e => e.placa === s.placa)).slice(0, 3);
       const ofrecer = (s, icono, t) => btnT(`${icono} ${esc(s.placa)} · ${esc(String(s.conductor).split(' ').slice(0, 2).join(' '))}`, `data-b-asignar="${v.id}" data-placa="${esc(s.placa)}" data-conductor="${esc(s.conductor)}" data-telefono="${esc(s.telefono || '')}"`, t);
-      add(v, {b: 'vehiculo', k: 'cob|' + v.id, ks: asignar.map(b => 'a' + b.id), html: `Arranca ${d < 0 ? 'desde el ' : d === 0 ? 'hoy, ' : d === 1 ? 'mañana, ' : ''}${fd(primerEvento(v))} y no tiene placa`
+      add(v, {b: 'vehiculo', k: 'cob|' + v.id, ks: asignar.map(b => 'a' + b.id), html: `Arranca ${d < 0 ? 'desde el ' : d === 0 ? 'hoy, ' : d === 1 ? 'mañana, ' : ''}${fd(arranqueDe(v))} y no tiene placa`
         + (asignar.length ? `<br><span class="sub">También lo pide ${asignar.map(b => esc(b.id)).join(', ')}: al guardar la placa, márquela hecha</span>` : ''),
         acc: btnT('Asignar en el viaje', `data-b-abrir="${v.id}"`)
           + ent.map(s => ofrecer(s, '🙋', `Se enturnó en la app ${s.creado ? haceTxt(s.creado) : ''}: se revisa y se guarda`)).join('')
@@ -8459,6 +8481,13 @@ function armarBandeja(){
       if (gp) estadoTrafico(v, gp).alertas.filter(a => a.nivel === 'alta').forEach(a => add(v, {b: 'gps', gpsTipo: 'trafico', k: 'traf|' + v.id + '|' + a.tipo,
         html: `<span class="placa">${esc(v.placa)}</span> · <b style="color:var(--bad)">${esc(a.texto)}</b><br><span class="sub">Llame al conductor y deje la novedad en el viaje. Detalle en la pestaña Tráfico.</span>`,
         acc: (gl ? `<a class="link" href="${esc(gl.url)}" target="_blank" rel="noopener">📍 Ver en el GPS</a>` : '') + lnkT(ICONO_WA + 'Preguntar al conductor', waConductor(v, '¿todo bien? Confírmame dónde estás y por qué estás detenido o en movimiento a esta hora')) + btnT('Abrir el viaje', `data-b-abrir="${v.id}"`)})); }
+    // 11-nov (decisión del usuario: "sí, una línea sencilla"): lo de MAÑANA de cada viaje (cita, retiro, llenado, urbano), con su
+    // vehículo y conductor. Reemplaza el recordatorio que daba el Cierre del día; solo informa y sale todo el día. Si falta vehículo
+    // o conductor, cuenta como acción de hoy.
+    todos.forEach(x => { const hm = hitosDe(x).filter(h => diffDias(h.f) === 1 && h.que !== 'Cierre documental'); if (!hm.length) return;
+      add(v, {b: 'manana', k: 'man|' + x.id, falta: !x.placa || !x.conductor,
+        html: `${x.padre ? `${esc(nombreSub(x))} · ` : ''}<b>Mañana:</b> ${esc(hm.map(h => h.que.toLowerCase() + (h.donde ? ' en ' + h.donde : '')).join(' · '))}<br><span class="sub">${x.placa ? '✓ ' + esc(x.placa) : '<b style="color:var(--bad)">⚠ sin vehículo</b>'} · ${x.conductor ? '✓ ' + esc(x.conductor) : '<b style="color:var(--bad)">⚠ sin conductor</b>'}</span>`,
+        acc: (x.placa ? lnkT(ICONO_WA + 'Avisar al conductor', waConductor(x, `te confirmo mañana ${hm.map(h => h.que.toLowerCase()).join(' y ')}${hm[0].donde ? ' en ' + hm[0].donde : ''}. ¿Todo listo?`)) : '') + btnT('Abrir viaje', `data-b-abrir="${x.id}"`)}); });
     // 4 · ¿Pasó? (por confirmar + sin actualizar de la misma fecha: una pregunta)
     // 10-nov ("estos zarpes dependen de la naviera... usemos el estimado"): el zarpe y la llegada a destino no se le preguntan al
     // equipo; no los hace la transportadora. Queda la fecha estimada (ETD / ETA) como dato en el viaje.
