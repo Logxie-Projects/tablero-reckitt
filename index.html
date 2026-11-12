@@ -1224,7 +1224,7 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
   #tbl td[data-th="Viaje"]{font-weight:700;font-size:14px;text-align:left;justify-content:flex-start}#tbl td[data-th="Viaje"]::before{display:none}
   #tbl tr.dia-reunion{background:none;border:0;padding:6px 0 0}#tbl tr.dia-reunion td{display:block;text-align:left;font-weight:700}#tbl tr.dia-reunion td::before{display:none}
   /* Tráfico: la línea tiene su ancho y se desliza de lado dentro de su tarjeta */
-  .tf-scroll{overflow-x:auto;padding-bottom:4px}
+  .tf-scroll{overflow-x:auto;overflow-y:hidden;padding:8px 0 2px}
   .tf-scroll .tf-linea{min-width:560px}
 }
 </style>
@@ -7088,7 +7088,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '03d63d0052';
+const VERSION_TABLERO = '70a3840459';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
