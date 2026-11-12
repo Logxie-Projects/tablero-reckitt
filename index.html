@@ -1162,6 +1162,21 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 .tf-lc b{font-size:10.5px;font-weight:600;color:var(--muted);width:auto}
 .tf-lc small{font-size:10px;color:var(--muted);width:auto}
 @media (max-width:640px){.tf-fila > summary{grid-template-columns:1fr;grid-template-areas:"id" "badge" "linea"}.tf-b{text-align:left}.tf-linea{margin:0 40px}}
+
+/* 11-nov · el camión de las líneas de Tráfico es el MISMO de la Torre de Control (lean.js ICONOS_RUTA, reglas .ruta .camion): contenedor fucsia,
+   cabina con ventana y 6 llantas. Va sobre la línea, apoyado en ella; los nombres de los puntos de control suben para no quedar detrás */
+.tf-n{top:62px}
+.tf-linea > .tf-seg{top:68px}
+.tf-linea > .tf-camion{top:47px;width:52px;height:22px;background:none;padding:0;border-radius:0;line-height:0;z-index:3}
+.tf-camion .ico{position:relative;display:block;width:52px;height:22px}
+.tf-camion .ico i{position:absolute;display:block}
+.tf-camion .camion .carga{left:1px;top:3px;width:31px;height:12px;background:var(--accent);border-radius:1px}
+.tf-camion .camion .chasis{left:1px;top:15px;width:50px;height:2px;background:var(--text)}
+.tf-camion .camion .cabina{left:37px;top:5px;width:14px;height:11px;background:var(--text);border-radius:2px 6px 1px 1px}
+.tf-camion .camion .vent{left:43px;top:7px;width:6px;height:4px;background:#9ecbff;border-radius:1px}
+.tf-camion .camion .ll{top:16px;width:5px;height:5px;border-radius:50%;background:var(--text);border:1px solid var(--surface)}
+.tf-lc{bottom:34px}
+.tf-lc.nv1{bottom:50px}
 </style>
 </head>
 <body>
@@ -4537,8 +4552,8 @@ function lineaTf(x, G, maxF){
     const est = !f || f.hecho ? '' : f.estado === 'retraso' ? 'retrasado' : f.estado === 'atiempo' ? 'a tiempo' : '';
     const cuando = n.det != null ? n.det : f.hecho ? '✔ ' + (f.prog ? fd(f.prog) : 'hecho') : f.aqui ? 'aquí desde ' + horaTf(f.llega) : f.llega ? (f.sig ? 'llega ' : '~') + horaTf(f.inicio || f.llega) + (f.sig && f.km != null ? ` · ${f.km} km` : '') : f.prog ? 'prog. ' + fd(f.prog) : 'sin fecha';
     return `<div class="tf-n ${n.cls}${n.alt ? ' alt' : ''}" style="left:${p}%" title="${esc(f ? f.parada + ' · ' + (f.zona || f.lugar) + (f.retraso ? ' · ' + f.retraso : '') : n.nombre)}"><i class="tf-dot"></i><div class="tf-l"><b>${esc(n.nombre)}</b>${cuando ? `<small>${esc(cuando)}</small>` : ''}${est ? `<em>${est}</em>` : ''}</div></div>`; }).join('');
-  const cam = front < 0 ? '' : `<span class="tf-camion" style="left:${(front === 0 ? N[0].pos : N[front - 1].pos + N[front].fill / 100 * (N[front].pos - N[front - 1].pos)).toFixed(2)}%">🚚</span>`;
-  return {html: segs + nodos + cam, h: hayAlt ? 178 : 120};
+  const cam = front < 0 ? '' : `<span class="tf-camion" style="left:${(front === 0 ? N[0].pos : N[front - 1].pos + N[front].fill / 100 * (N[front].pos - N[front - 1].pos)).toFixed(2)}%">${ICONOS_RUTA.camion}</span>`;   // el mismo camión de la Torre de Control (lean.js ICONOS_RUTA)
+  return {html: segs + nodos + cam, h: hayAlt ? 188 : 138};
 }
 function filaLeanTf(x, detalle, ctx){ const v = x.v, pp = x.F.find(f => !f.hecho), nTiempo = x.F.some(f => !f.hecho && f.estado === 'atiempo');
   const badge = x.rojo ? `<span class="tf-b rojo">⛔ ${esc(x.motivos[0])}${x.motivos.length > 1 ? ` · +${x.motivos.length - 1} más` : ''}</span>` : x.ambar ? `<span class="tf-b ambar">⚠ ${esc(x.aviso)}</span>` : nTiempo ? '<span class="tf-b ok">✔ A tiempo</span>' : '<span class="tf-b">Sin fecha programada</span>';
@@ -7012,7 +7027,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '6ef5b32138';
+const VERSION_TABLERO = '506f8c8f4c';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
