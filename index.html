@@ -3617,9 +3617,13 @@ function cerrarAccionEnCurso(tipo, nota){
 // existe en el buzón de calidad@ ("se suprimió la conversación"). Se busca por los NÚMEROS del asunto (DO, pedido, booking) y por el día
 // del correo (el día anterior y los dos siguientes); sin números, por las primeras palabras del asunto, sin comillas.
 const urlCorreo = b => { const a = String(b.asunto || '').replace(/^\s*((re|rv|fw|fwd|enc)\s*:\s*)+/i, '').trim(); if (!a) return '';
-  const num = [...new Set(a.match(/\b[A-Za-z]*\d[\w-]{3,}\b/g) || [])].slice(0, 3), dia = b.fechaCorreo ? fechaLocal(b.fechaCorreo).slice(0, 10) : '';
+  // 12-nov (el usuario: "le di Ver correo y no abrió el correo"): un año o "NOVIEMBRE-2026" no identifica un correo (la búsqueda traía todo el
+  // día); sin número útil se busca por las palabras del asunto (subject:), que Gmail cruza aunque LogxIA haya resumido el asunto
+  const PARASOLO = /^(?:[A-Za-z]+-)?(?:19|20)\d{2}$|^\d{1,3}$/, SINPALABRA = /^(entrapetrol|reckitt|correo|favor|solicitud|para|sobre|este|esta|nuevo|nueva)$/i;
+  const num = [...new Set(a.match(/\b[A-Za-z]*\d[\w-]{3,}\b/g) || [])].filter(n => !PARASOLO.test(n)).slice(0, 3), dia = b.fechaCorreo ? fechaLocal(b.fechaCorreo).slice(0, 10) : '';
+  const palabras = a.replace(/[^\wáéíóúñÁÉÍÓÚÑ\s-]/g, ' ').split(/\s+/).filter(w => w.length >= 4 && !SINPALABRA.test(w)).slice(0, 6);
   const gm = s => s.replace(/-/g, '/'), ventana = dia && !isNaN(new Date(dia)) ? ` after:${gm(addDias(dia, -1))} before:${gm(addDias(dia, 2))}` : '';
-  const q = num.length ? num.join(' ') + ventana : a.split(/\s+/).slice(0, 6).join(' ') + ventana;
+  const q = num.length ? num.join(' ') + ventana : (palabras.length ? `subject:(${palabras.join(' ')})` : a.split(/\s+/).slice(0, 6).join(' ')) + ventana;
   return 'https://mail.google.com/mail/?authuser=calidad@stentrapetrol.com#search/' + encodeURIComponent(q); };
 const verCorreo = b => urlCorreo(b) ? lnkT('📧 Ver correo', urlCorreo(b)) : '';
 // BITÁCORA (7-nov, antes pestaña Acciones): historial de solo consulta de lo que LogxIA registró de los correos: qué pidió quién,
@@ -7124,7 +7128,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '2386c70d66';
+const VERSION_TABLERO = '92e728e8d1';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
