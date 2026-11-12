@@ -4282,7 +4282,17 @@ const TF_ABIERTOS = new Set();
 // 11-nov ("en Tráfico aparece en etapa Llenado y en la Torre de Control camino a puerto... los 2 lugares deben estar interconectados"):
 // era el mismo dato dicho de dos maneras. Tráfico mostraba el último paso confirmado ("Llenado") y la Torre de Control lo que eso
 // significa ("Lleno, en camino a puerto"). Ahora Tráfico usa el mismo texto de la Torre (turno.js pulsoViaje) y debajo el último paso.
-const proximaTf =x => x.sub ? null : planParadas(x.v, x.g).find(f => !f.hecho) || null;
+// 11-nov ("dice que llegará a Patios Intermodal 9:45 p. m. pero patios y planta solo reciben hasta 5 p. m.; puertos sí es 24 horas"):
+// horario de recibo de los lugares que no son puerto. La hora de apertura (7 a. m.) la puso el sistema: el usuario solo dio el cierre.
+// reciboTf → null si a esa hora lo reciben; si no, cuándo lo reciben (ms): ese mismo día al abrir, o al día siguiente.
+const RECIBO = {desde: 7, hasta: 17}, ES_PUERTO = /SPRBUN|TCBUEN|SPIA|SPRC|Contecar/i;
+function reciboTf(f, llega){
+  if (!f || !llega || ['Puerto', 'Retiro lleno'].includes(f.parada) || ES_PUERTO.test(f.zona || '')) return null;
+  const h = horaColombia(llega); if (h >= RECIBO.desde && h < RECIBO.hasta) return null;
+  return llega + (h < RECIBO.desde ? RECIBO.desde - h : 24 - h + RECIBO.desde) * 36e5;
+}
+const avisoRecibo = (f, llega) => { const r = reciboTf(f, llega); return r ? `fuera del horario de recibo (${RECIBO.desde} a. m. a ${RECIBO.hasta - 12} p. m.): lo reciben ${horaTf(r)}` : ''; };
+const proximaTf = x => x.sub ? null : planParadas(x.v, x.g).find(f => !f.hecho) || null;
 function planViajeHtml(x){
   const {v, g, plan} = x; if (x.sub) return '';
   const F = planParadas(v, g), sig = F.find(f => !f.hecho); if (!sig) return '';
@@ -4295,13 +4305,13 @@ function planViajeHtml(x){
       : `<tr class="via"><td></td><td class="sub" colspan="4">↳ por carretera ${esc(R.de)} → ${esc(R.a)}, pasando por ${esc(R.puntos.slice(1, -1).map(p => p[0]).join(', '))}</td></tr>`;
     return `<tr class="${f.sig ? 'ya' : ''}"><td>${f.sig ? '➜' : '○'}</td><td><b>${esc(f.parada)}</b> · ${esc(f.zona || f.lugar)}${f.zona ? '' : '<br><span style="color:var(--bad);font-size:12px">⚠ lugar sin coordenadas: el sistema no avisará la llegada</span>'}</td>
       <td>${f.aqui ? '<b>ya está aquí</b>' : km == null ? '—' : f.desdeGps ? `a ${km} km` : `${km} km desde la parada anterior`}</td>
-      <td>${f.aqui ? '' : llega ? esc(horaTf(llega)) : f.min != null ? esc(duracionTxt(f.min)) + ' de manejo' : '—'}</td>
+      <td>${f.aqui ? '' : llega ? esc(horaTf(llega)) + (avisoRecibo(f, llega) ? `<br><span style="color:var(--bad);font-size:12px">⚠ ${esc(avisoRecibo(f, llega))}</span>` : '') : f.min != null ? esc(duracionTxt(f.min)) + ' de manejo' : '—'}</td>
       <td>${esc(cuando(f))}</td></tr>` + puntos; }).join('');
   const kmS = sig.sig && carretera(sig) && plan ? plan.km : sig.km, llegaS = sig.sig && carretera(sig) && plan ? plan.llega : sig.llega;
   return `<details class="tf-plan" data-tf="${esc(v.id)}"${TF_ABIERTOS.has(v.id) ? ' open' : ''} ontoggle="this.open ? TF_ABIERTOS.add(this.dataset.tf) : TF_ABIERTOS.delete(this.dataset.tf)">
-    <summary>🗺 Plan de viaje · siguiente: ${esc(sig.parada)} en ${esc(sig.zona || sig.lugar)}${sig.aqui ? ' · ya está ahí' : llegaS ? ` · a ${kmS} km · llegada estimada ${esc(horaTf(llegaS))}` : ` · programado ${esc(cuando(sig))}`}</summary>
+    <summary>🗺 Plan de viaje · siguiente: ${esc(sig.parada)} en ${esc(sig.zona || sig.lugar)}${sig.aqui ? ' · ya está ahí' : llegaS ? ` · a ${kmS} km · llegada estimada ${esc(horaTf(llegaS))}${reciboTf(sig, llegaS) ? ' · ⚠ lo reciben ' + esc(horaTf(reciboTf(sig, llegaS))) : ''}` : ` · programado ${esc(cuando(sig))}`}</summary>
     <table class="tf-tabla"><tr><th></th><th>Parada</th><th>Distancia</th><th>Hora estimada</th><th>Programado</th></tr>${filas}</table>
-    <p class="sub">${sig.desdeGps ? 'La siguiente parada se calcula desde el último punto del GPS. ' : 'Sin un punto reciente del GPS no hay hora estimada. '}De las paradas posteriores solo va la distancia y el tiempo de manejo desde la anterior, porque no se sabe cuánto dura el cargue o la espera. El sistema avisa la llegada a cada parada que tenga coordenadas. Estimado a ${TRAFICO.kmh} km/h, manejando solo entre ${TRAFICO.desde} a. m. y ${TRAFICO.hasta - 12} p. m.; la distancia es la línea recta aumentada un ${Math.round((TRAFICO.factorVia - 1) * 100)} %.</p>
+    <p class="sub">${sig.desdeGps ? 'La siguiente parada se calcula desde el último punto del GPS. ' : 'Sin un punto reciente del GPS no hay hora estimada. '}De las paradas posteriores solo va la distancia y el tiempo de manejo desde la anterior, porque no se sabe cuánto dura el cargue o la espera. El sistema avisa la llegada a cada parada que tenga coordenadas. Patios, planta y bodegas reciben de ${RECIBO.desde} a. m. a ${RECIBO.hasta - 12} p. m.; los puertos, las 24 horas. Estimado a ${TRAFICO.kmh} km/h, manejando solo entre ${TRAFICO.desde} a. m. y ${TRAFICO.hasta - 12} p. m.; la distancia es la línea recta aumentada un ${Math.round((TRAFICO.factorVia - 1) * 100)} %.</p>
   </details>`;
 }
 function renderTrafico(){
@@ -4317,13 +4327,14 @@ function renderTrafico(){
         <span class="sub">${x.sub ? esc(nombreSub(v)) + ' · ' : ''}${esc(v.operacion)} ${esc(v.pais || v.bodega || '')} · ${esc(refCorta(v) || v.id)}</span>
         <button type="button" class="link" onclick="abrir('${esc(v.id)}')">Abrir viaje</button></div>
       ${est.alertas.map(a => `<div class="tf-al ${a.nivel}">${a.nivel === 'alta' ? '⛔' : '⚠'} ${esc(a.texto)}</div>`).join('')}
+      ${(pp => pp && !pp.aqui && avisoRecibo(pp, pp.llega) ? `<div class="tf-al media">⚠ Llegaría a ${esc(pp.zona || pp.lugar)} ${esc(horaTf(pp.llega))}, ${esc(avisoRecibo(pp, pp.llega))}</div>` : '')(proximaTf(x))}
       <div class="tf-datos">
         <div><span class="sub">Dónde</span><b>${gv ? `<a href="${esc(gv.url)}" target="_blank" rel="noopener">📍 ${esc(gv.al ? gv.al.texto : (gv.donde || 'Ver en el mapa'))}</a>` : '—'}</b>
           <span class="sub">${g && g.fecha && !isNaN(new Date(g.fecha)) ? 'punto de ' + esc(haceCuanto(fechaLocal(g.fecha))) : 'sin GPS'}</span></div>
         <div><span class="sub">Estado</span><b>${esc(est.movimiento)}</b><span class="sub">${est.min ? esc(duracionTxt(est.min)) : g && Number(g.velocidad) >= 3 ? Math.round(g.velocidad) + ' km/h' : ''}</span></div>
         <div><span class="sub">Etapa del viaje</span><b>${esc((x.sub ? `Producto en ${v.patioSub || 'bodega de paso'}, urbano a ${v.bodega && v.bodega !== v.patioSub ? v.bodega : 'el destino'}${v.fechaUrbano ? ' · ' + fd(v.fechaUrbano) : ' · sin fecha'}` : pulsoViaje(v).donde) || v.estado || '—')}</b><span class="sub">último paso confirmado: ${esc(v.estado || '—')}${plan ? ' · ' + esc(plan.de + ' → ' + plan.a) : ''}</span></div>
         <div><span class="sub">Próxima parada</span>${(pp => !pp ? '<b>—</b>' : `<b>${esc(pp.parada)} · ${esc(pp.zona || pp.lugar)}</b>
-          <span class="sub">${pp.aqui || x.llego ? 'ya llegó' : plan && !plan.puntos[plan.puntos.length - 1].paso ? `llega ${esc(horaTf(plan.llega))} · faltan ${plan.km} km` : pp.llega ? `llega ${esc(horaTf(pp.llega))} · a ${pp.km} km` : pp.prog ? 'programado ' + esc(fd(pp.prog)) : 'sin fecha'}${pp.zona ? '' : ' · ⚠ sin coordenadas'}</span>`)(proximaTf(x))}</div>
+          <span class="sub">${pp.aqui || x.llego ? 'ya llegó' : plan && !plan.puntos[plan.puntos.length - 1].paso ? `llega ${esc(horaTf(plan.llega))} · faltan ${plan.km} km` : pp.llega ? `llega ${esc(horaTf(pp.llega))} · a ${pp.km} km${reciboTf(pp, pp.llega) ? ' · ⚠ lo reciben ' + esc(horaTf(reciboTf(pp, pp.llega))) : ''}` : pp.prog ? 'programado ' + esc(fd(pp.prog)) : 'sin fecha'}${pp.zona ? '' : ' · ⚠ sin coordenadas'}</span>`)(proximaTf(x))}</div>
       </div>
       ${planViajeHtml(x)}
       ${plan ? `<div class="tf-ruta">${plan.puntos.map(p => `<span class="tf-p${p.paso ? ' ok' : p === sig ? ' ya' : ''}" title="${p.paso ? 'Ya pasó' : 'Estimado: ' + esc(horaTf(p.llega)) + ' · a ' + p.km + ' km'}"><i></i>${esc(p.nombre)}${!p.paso ? `<small>${esc(horaTf(p.llega))}</small>` : ''}</span>`).join('')}</div>` : ''}
@@ -6589,7 +6600,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '52bbef1037';
+const VERSION_TABLERO = '591b5d5eab';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
