@@ -2591,7 +2591,10 @@ function planParadas(v, g, ahora, sal){   // sal = salida programada (ver estado
   const ya = ahora || Date.now(), fresco = !!g && g.lat != null && g.lng != null && !!g.fecha && (ya - new Date(g.fecha)) / 60e3 <= TRAFICO.sinSenalMin;
   const dia = ms => new Date(ms - 5 * 36e5).toISOString().slice(0, 10), hoyCO = dia(ya), R = rutaDeViaje(v);
   let cur = fresco ? [g.lat, g.lng] : null, primero = true, libre = null;   // libre = a qué hora queda libre el vehículo en `cur` (null = no se sabe)
-  return paradas(v).filter(p => !PARADAS_SIN_VEHICULO.includes(p[0])).map(p => {
+  // con el contenedor vaciado en la bodega de paso (subviaje), la entrega en bodega la hace el vehículo del subviaje: el de este viaje
+  // va a devolver el vacío (si no, salía "Bodega: no ha llegado" en rojo a vehículos que están devolviendo el vacío)
+  const subVaciado = !v.padre && v.operacion === 'IMPO' && hijosDe(v).some(vaciadoSub);
+  return paradas(v).filter(p => !PARADAS_SIN_VEHICULO.includes(p[0]) && !(subVaciado && p[0] === 'Bodega')).map(p => {
     const prog = fechaParada(v, p[0]);
     if (p[2]) return {parada: p[0], lugar: p[1], hecho: true, prog};
     const Z = geozonasDe(p[1]), c = Z.length ? (cur ? masCercana(Z, cur[0], cur[1]) : {z: Z[0], km: null, dentro: false}) : null;
@@ -6751,7 +6754,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'f4b0244c30';
+const VERSION_TABLERO = 'e31b072b53';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
