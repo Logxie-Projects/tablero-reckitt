@@ -1212,7 +1212,7 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
   #gbar:not(.fil-abierto) > :not(.g-ops):not(.fil-btn){display:none}
   /* Viajes: los filtros ya salen bajo el botón Filtros de arriba; aquí queda la búsqueda y los estados. Una tarjeta por viaje */
   #v-viajes #gViajes{display:none}
-  .tbl-wrap{overflow:visible}
+  #v-viajes .tbl-wrap{overflow:visible}
   #tbl,#tbl tbody,#tbl tr,#tbl td{display:block;width:auto;min-width:0}
   #tbl{width:100%}
   #tbl thead{display:none}
@@ -3407,6 +3407,7 @@ function renderGbar(){
     <b>Filtros</b>${chipsGlobales()}${avisoNuevos()}<span class="sub" style="margin-left:auto">Mostrando <b>${visibles().length}</b> viaje${visibles().length===1?'':'s'}${
       Object.keys(FILTROS_INICIO).some(k => String(G[k]||'') !== String(FILTROS_INICIO[k])) ? ` · <button type="button" class="link" onclick="limpiarFiltros()">Limpiar filtros</button>` : ''} · aplican a Torre de Control, Viajes y Motonaves</span>`;
   $('#gViajes').innerHTML = chipsGlobales();
+  if (typeof decorarGbar === 'function') decorarGbar();   // tipos.js: botón Filtros plegable en el celular
 }
 
 /* ---------- control de calidad de datos ---------- */
@@ -7090,7 +7091,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '0276da17ad';
+const VERSION_TABLERO = '53e114774f';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -9383,7 +9384,7 @@ const TIPOS_DESC = {ops: 'Lo que hay que hacer hoy, Tráfico, Torre de Control y
 const TABS_TIPO = {
   ops: [['bandeja', '✅', 'Hoy'], ['trafico', '🚚', 'Tráfico'], ['tablero', '🗼', 'Torre']],
   ger: [['bandeja', '👔', 'Decidir'], ['trafico', '🚚', 'Tráfico'], ['kpis', '📊', 'Indicadores']],
-  cli: [['tablero', '📦', 'Mis viajes'], ['trafico', '🗺', 'Dónde va'], ['kpis', '📊', 'Indicadores']],
+  cli: [['tablero', '📦', 'Mis viajes'], ['viajes', '📋', 'Lista'], ['kpis', '📊', 'Indicadores']],   // Tráfico (GPS) no lo ve el cliente
 };
 function tipoActual(){
   if (window.MODO_CLIENTE) return 'cli';
@@ -9431,7 +9432,7 @@ function aplicarTipo(){
 function construirTabs(){
   let nav = $('#tabbar'); if (!nav) { document.body.insertAdjacentHTML('beforeend', '<nav class="tabbar" id="tabbar" aria-label="Menú"></nav><div class="mas-fondo" id="masFondo"><div class="mas-hoja" id="masHoja" role="dialog" aria-modal="true"></div></div>'); nav = $('#tabbar'); }
   const t = tipoActual() || 'ops', v = vistaActual();
-  nav.innerHTML = TABS_TIPO[t].filter(([k]) => k !== 'kpis' || botonKpis()).map(([k, ico, txt]) => `<button type="button" data-tab="${k}" class="${k === v ? 'on' : ''}"><i>${ico}</i>${txt}${k === 'bandeja' ? '<span class="badge" id="nTabBj"></span>' : ''}</button>`).join('')
+  nav.innerHTML = TABS_TIPO[t].filter(([k]) => k === 'kpis' ? botonKpis() : (b => b && !oculto(b))(document.querySelector(`#nav [data-v="${k}"]`))).map(([k, ico, txt]) => `<button type="button" data-tab="${k}" class="${k === v ? 'on' : ''}"><i>${ico}</i>${txt}${k === 'bandeja' ? '<span class="badge" id="nTabBj"></span>' : ''}</button>`).join('')
     + `<button type="button" data-tab="mas"><i>☰</i>Más</button>`;
   const bj = $('#nBandeja'), nb = $('#nTabBj'); if (nb && bj) nb.textContent = bj.textContent;
 }
@@ -9472,9 +9473,7 @@ document.addEventListener('click', e => {
 /* ---------- filtros plegados en el celular (11 listas en columna ocupaban una pantalla) ---------- */
 let filtrosAbiertos = false;
 const textoFiltrosBtn = () => { const n = document.querySelectorAll('#gbar .gsel.on').length; return '⚙ Filtros' + (n ? ' · ' + n + ' activo' + (n === 1 ? '' : 's') : '') + (filtrosAbiertos ? ' ▴' : ' ▾'); };
-const renderGbarBase = renderGbar;
-renderGbar = function(){
-  renderGbarBase();
+function decorarGbar(){   // lo llama renderGbar (filtros.js) al terminar de pintar la barra
   const g = $('#gbar'), ops = g && g.querySelector('.g-ops'); if (!ops) return;
   ops.insertAdjacentHTML('afterend', `<button type="button" class="btn fil-btn" data-fil-btn="1">${textoFiltrosBtn()}</button>`);
   g.classList.toggle('fil-abierto', filtrosAbiertos);
