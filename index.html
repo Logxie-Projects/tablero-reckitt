@@ -1254,6 +1254,10 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 .qh-va{margin:8px 0 2px;padding:8px 11px;background:var(--surface-2,var(--surface));border-radius:10px;font-size:13px;line-height:1.65}
 .qh-va .si{color:var(--ok)}.qh-va .no{color:var(--bad)}
 .bj-cierre{margin:6px 0 10px}
+
+/* 12-nov · las tablas de las tarjetas (quien.js y decisiones.js) parten el texto: la regla general de td es no partir y empujaba la tabla sobre los botones */
+.qh-tab td,.qh-tab th{white-space:normal;overflow-wrap:anywhere}
+.qh{max-width:100%;min-width:0;overflow-x:auto}
 </style>
 </head>
 <body>
@@ -7135,7 +7139,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'bc42041936';
+const VERSION_TABLERO = 'd11412a841';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
