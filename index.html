@@ -3593,9 +3593,9 @@ async function deshacerCierre(id){
 let accionEnCurso = null;   // {id, tipo, desde}
 const ATAJOS = [
   // la acción trae datos de su correo por aprobar (propuestas.js): se aplican y la acción se cierra, sin abrir el viaje
-  ['aplicar', b => `✔ Aplicar ${datosDeAccion(b).length} dato${datosDeAccion(b).length === 1 ? '' : 's'}`, b => datosDeAccion(b).length > 0, b => aplicarAccion(b)],
-  ['programacion', '📋 Aplicar programación', b => /programaci[oó]n/i.test(b.accion) && /programaci[oó]n/i.test(b.asunto + ' ' + b.resumen), b => atajoProgramacion(b)],
-  ['propuestas', '✔ Revisar datos', b => /Llenar datos desde correos/i.test(b.accion) && !pareceHecha(b), () => abrirPropuestas()],   // si ya están en el viaje, no queda nada que revisar
+  ['aplicar', b => `✔ Guardar ${datosDeAccion(b).length} dato${datosDeAccion(b).length === 1 ? '' : 's'} en el viaje`, b => datosDeAccion(b).length > 0, b => aplicarAccion(b)],
+  ['programacion', '📋 Revisar la programación', b => /programaci[oó]n/i.test(b.accion) && /programaci[oó]n/i.test(b.asunto + ' ' + b.resumen), b => atajoProgramacion(b)],
+  ['propuestas', '✔ Ver los datos del correo', b => /Llenar datos desde correos/i.test(b.accion) && !pareceHecha(b), () => abrirPropuestas()],   // si ya están en el viaje, no queda nada que revisar
   // pedido de la operación NACIONAL (estibas de ERCOL…): formulario del viaje nacional con lo que dice el correo (nacional.js)
   ['nacional', '＋ Crear viaje nacional', b => operacionAccion(b) === 'NACIONAL' && !viajeDeAccion(b) && !viajeNacionalDe(b) && !/^sin acci/i.test(b.accion || ''), b => nuevoNacional(b)],
   ['viaje', '＋ Crear viaje', b => pideCrearViaje(b) && !yaCreado(b), () => abrirBarrido()],   // si ya existe, no (yaCreado)
@@ -7135,7 +7135,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'f3ead463ba';
+const VERSION_TABLERO = 'dfeca6d53b';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
