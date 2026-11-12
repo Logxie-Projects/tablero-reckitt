@@ -1227,6 +1227,21 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
   .tf-scroll{overflow-x:auto;overflow-y:hidden;padding:8px 0 2px}
   .tf-scroll .tf-linea{min-width:560px}
 }
+
+/* ---------- 12-nov · ¿Quién la hace? (quien.js): lo que hay → lo nuevo en la tarjeta de la acción y la pregunta de "Ya la hice yo" ---------- */
+.qh{margin:8px 0 2px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2,var(--surface));font-size:12.5px}
+.qh > summary{cursor:pointer;padding:7px 10px;list-style:none}
+.qh > summary::-webkit-details-marker{display:none}
+.qh-tab{width:100%;border-collapse:collapse;margin:0 0 4px}
+.qh-tab th{text-align:left;font-size:11px;color:var(--muted);font-weight:600;padding:3px 10px}
+.qh-tab td{padding:5px 10px;border-top:1px solid var(--border);vertical-align:top}
+.qh-v{color:var(--muted)}
+.qh-n{color:var(--accent)}
+.qh-btn{margin-right:6px}
+.qh-lista{margin:8px 0 4px;padding-left:18px;font-size:13px;line-height:1.55}
+.qh-ops{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.qh-ops .btn{display:block;width:100%;text-align:left;padding:10px 12px}
+.qh-ops .btn small{display:block;font-weight:400;opacity:.8;margin-top:2px}
 </style>
 </head>
 <body>
@@ -5214,7 +5229,7 @@ function abrir(id){
   const bloqueLx = lx.length ? '<b>Acciones LogxIA (de los correos):</b>' + lx.map(b=>`<div class="lx-item ${b.estadoAccion==='Hecha'?'hecha':''}">
     <span class="sev sev-${b.prioridad==='Alta'?'Alta':'Media'}">${esc(String(b.prioridad||'').toUpperCase())}</span> ${tagArea(b)} <b>${esc(b.accion)}</b><br>
     <span class="sub">${esc(b.resumen)} · ${esc(b.remitente)} · ${esc(String(b.fechaCorreo||'').slice(0,16).replace('T',' '))}</span><br>
-    ${b.estadoAccion==='Hecha' ? `<span class="sub">${estadoCerrada(b)}</span>` : `${botonAtajo(b) ? botonAtajo(b) + ' · ' : ''}<button type="button" class="link" onclick="marcarHecha('${b.id}')">Marcar como hecha</button> · <button type="button" class="link" onclick="marcarHecha('${b.id}', true)" title="La gestiona Reckitt, el agente de carga u otro: no le toca a Entrapetrol">No es para ETP</button>`}</div>`).join('') + '<br>' : '';
+    ${b.estadoAccion==='Hecha' ? `<span class="sub">${estadoCerrada(b)}</span>` : `${botonAtajo(b) ? botonAtajo(b) + ' · ' : ''}<button type="button" class="link" onclick="confirmarHecha('${b.id}')">Ya la hice yo</button> · <button type="button" class="link" onclick="marcarHecha('${b.id}', true)" title="La gestiona Reckitt, el agente de carga u otro: no le toca a Entrapetrol">No es para ETP</button>`}</div>`).join('') + '<br>' : '';
   $('#mHist').innerHTML = bloqueLx;   // la línea de tiempo está arriba, junto a las novedades (novedades.js)
   $('#ov').classList.add('open');
 }
@@ -6306,19 +6321,22 @@ function marcarDocProg(i){
   if (f && f.accion === 'documento' && m) m.checked = [...document.querySelectorAll(`#progLista [data-pd="${i}"]`)].some(x => x.checked);
 }
 
-async function aplicarProgramacion(){
-  const usuario = $('#progUsuario').value.trim();
+// op = {rapido, usuario}: "✓ Aplicar" desde la tarjeta de la acción (quien.js) aplica lo que la ventana trae marcado por defecto, sin abrirla
+async function aplicarProgramacion(op){
+  const rapido = !!(op && op.rapido);
+  const usuario = rapido ? op.usuario : $('#progUsuario').value.trim();
   if (!usuario) { $('#progUsuario').focus(); return toast('Escriba su nombre: queda en el Historial'); }
   guardarUsuario(usuario);
   // datos de documento que el equipo decidió reemplazar por lo del cuadro (casillas data-pd); su fila entra aunque no esté marcada
   const docSel = {};
-  document.querySelectorAll('#progLista [data-pd]:checked').forEach(x => { (docSel[x.dataset.pd] = docSel[x.dataset.pd] || []).push(x.dataset.pk); });
-  const marcadas = new Set([...document.querySelectorAll('#progLista [data-pi]:checked')].map(x => x.dataset.pi).concat(Object.keys(docSel)));
+  if (!rapido) document.querySelectorAll('#progLista [data-pd]:checked').forEach(x => { (docSel[x.dataset.pd] = docSel[x.dataset.pd] || []).push(x.dataset.pk); });
+  const marcadas = new Set((rapido ? PROG.filas.map((f, i) => ['crear', 'cambiar', 'reusar'].includes(f.accion) ? String(i) : '').filter(Boolean)
+    : [...document.querySelectorAll('#progLista [data-pi]:checked')].map(x => x.dataset.pi)).concat(Object.keys(docSel)));
   const sel = [...marcadas].map(i => PROG.filas[+i]);
   if (!sel.length) return toast('No hay filas seleccionadas');
   const c = PROG.c, mesTxt = MES[Number(c.programacion[0].fechaCargue.slice(5, 7)) - 1], quien = `${usuario} (programación ${mesTxt}, correo ${c.fecha.slice(0, 10)})`;
   const post = b => api(b.action, {...b, usuario: quien});
-  $('#progAplicar').disabled = true;
+  const btnAplicar = $('#progAplicar'); if (btnAplicar) btnAplicar.disabled = true;
   try {
     const crear = sel.filter(f => f.accion==='crear');
     if (crear.length) {
@@ -6331,7 +6349,7 @@ async function aplicarProgramacion(){
     }
     for (const f of sel.filter(f => f.accion!=='crear')) {
       const i = PROG.filas.indexOf(f), causa = (document.querySelector(`.prog-causa[data-pc="${i}"]`) || {}).value || 'Cliente (Reckitt)';
-      const filaMarcada = (document.querySelector(`#progLista [data-pi="${i}"]`) || {}).checked && f.accion !== 'documento';
+      const filaMarcada = (rapido || (document.querySelector(`#progLista [data-pi="${i}"]`) || {}).checked) && f.accion !== 'documento';
       let ch = filaMarcada ? {...f.cambios} : {};
       (docSel[i] || []).forEach(k => { ch[k] = f.doc[k].cuadro; });
       if (!Object.keys(ch).length) continue;
@@ -6345,10 +6363,10 @@ async function aplicarProgramacion(){
     }
     toast(`Programación aplicada: ${crear.length} creados, ${sel.length - crear.length} actualizados`);
     await cargar(); render();
-    cerrarAccionEnCurso('programacion', `programación aplicada en el tablero (${crear.length} creados, ${sel.length - crear.length} actualizados)`);
+    cerrarAccionEnCurso('programacion', `${rapido ? 'LogxIA aplicó la programación' : 'programación aplicada en el tablero'} (${crear.length} creados, ${sel.length - crear.length} actualizados)`);
     PROG = {c, ...compararProgramacion(c)}; pintarProgramacion();
   } catch(e) { toast('No se pudo aplicar: ' + e.message); }
-  $('#progAplicar').disabled = false;
+  if (btnAplicar) btnAplicar.disabled = false;
 }
 /* ---------- buscar correos ahora: lectura directa del buzón de calidad@ (reglas fijas) ---------- */
 let BARRIDO = [];
@@ -7091,7 +7109,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '53e114774f';
+const VERSION_TABLERO = '895c3fe555';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -8843,6 +8861,87 @@ const leida = id => { try { return (localStorage.getItem('rkt-preg-leidas') || '
 function marcarLeidas(){ const ids = (window.PREGUNTAS || []).filter(p => p.estado === 'Respondida').map(p => p.id);
   try { localStorage.setItem('rkt-preg-leidas', ids.join(',')); } catch(e){} }
 $('#chatMsgs').addEventListener('click', e => { const b = e.target.closest('[data-preguntar]'); if (b) { b.disabled = true; preguntarALogxia(b.dataset.preguntar); } });
+/* ---------- quien.js · "¿Quién la hace?": lo que hay → lo nuevo, aplicar con LogxIA y "Ya la hice yo" con verificación (12-nov-2026) ----------
+ * Capa: pantalla. Nació de LX-0465 (programación de Jhonier): el equipo creyó que "Marcar hecha" era darle permiso a LogxIA de hacerla,
+ * la acción se cerró y los viajes quedaron sin los cambios. Ahora:
+ *   1. la tarjeta de la acción muestra lo que hay en cada viaje y lo nuevo que dice el correo (cambiosDeAccion, htmlCambios);
+ *   2. "✓ Aplicar" (aplicarConLogxIA) escribe esos datos con la misma lógica de siempre (aplicarProgramacion, aplicarAccion): LogxIA
+ *      propone, el equipo aprueba con un clic y el nombre de quien pulsó queda en el Historial de cada viaje;
+ *   3. "Ya la hice yo" (confirmarHecha) mira los viajes antes de cerrar: si lo que pedía la acción no está, pregunta qué hacer.
+ * Las acciones que no traen datos concretos (llamar, enviar un correo) se cierran como siempre. */
+const CAMBIOS_QH = ['crear', 'cambiar', 'reusar'];
+const campoProg = k => (CAMPOS_PROG.find(c => c[0] === k) || [k, k])[1];
+const verProg = (k, x) => k === 'mesProg' ? (x ? nombreMes(String(x).slice(0, 7)) : '') : (x ? fv(x) : '');
+
+// los cuadros de programación llegan del servidor por detrás (programacion.js): hasta entonces no hay nada que comparar
+const cuadroProgDe = b => { if (!CUADROS_PROG) return null; try { return cuadroDeAccion(CUADROS_PROG.correos, b) || null; } catch(x) { return null; } };
+
+// lo que la acción dejaría en los viajes: {tipo, filas:[{viaje, nombre, campos:[[campo, antes (null = no hay antes), después]]}]}; null si no trae
+// cambios concretos o aún no se sabe
+function cambiosDeAccion(b){
+  const a = atajoDe(b); if (!a) return null;
+  if (a[0] === 'aplicar') {
+    const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x, P = datosDeAccion(b);
+    return P.length ? {tipo: 'aplicar', filas: P.map(p => ({viaje: p.viajeId, nombre: p.placa || '', campos: [[p.etiqueta, p.actual ? fx(p.actual) : '', fx(p.valor)]]}))} : null;
+  }
+  if (a[0] === 'programacion') {
+    resumenProgramacion(b);   // pide los cuadros al servidor si aún no están y repinta la Bandeja cuando llegan
+    const c = cuadroProgDe(b); if (!c) return null;
+    const R = compararProgramacion(c);
+    const filas = R.filas.filter(f => CAMBIOS_QH.includes(f.accion)).map(f => f.accion === 'crear'
+      ? {viaje: 'Nuevo', nombre: [f.r.pais, f.r.unidad].filter(Boolean).join(' '), campos: [['Se crea el viaje', null, 'llenado ' + fv(f.r.fechaCargue) + (f.r.mn ? ' · ' + f.r.mn : '')]]}
+      : {viaje: f.v.id, nombre: f.v.pais || '', campos: Object.entries(f.cambios || {}).filter(([k]) => k !== 'situacion').map(([k, x]) => [campoProg(k), verProg(k, f.v[k]), verProg(k, x)])});
+    return {tipo: 'programacion', c, R, filas};
+  }
+  return null;
+}
+const textoCampo = ([k, a, n]) => a === null ? `${esc(k)}: <b class="qh-n">${esc(n)}</b>` : `<span class="sub">${esc(k)}:</span> <span class="qh-v">${esc(a || 'vacío')}</span> → <b class="qh-n">${esc(n)}</b>`;
+function htmlCambios(b){
+  const c = cambiosDeAccion(b); if (!c || !c.filas.length) return '';
+  const fila = f => `<tr><td><b>${esc(f.viaje)}</b>${f.nombre ? `<br><span class="sub">${esc(f.nombre)}</span>` : ''}</td><td>${f.campos.map(k => `<div>${textoCampo(k)}</div>`).join('')}</td></tr>`;
+  return `<details class="qh"${c.filas.length <= 8 ? ' open' : ''}><summary>🤖 LogxIA ya lo preparó · <b>${c.filas.length}</b> ${c.filas.length === 1 ? 'viaje' : 'viajes'} · lo que hay → lo nuevo</summary>`
+    + `<table class="qh-tab"><tr><th>Viaje</th><th>Cambio</th></tr>${c.filas.map(fila).join('')}</table></details>`;
+}
+const botonAplicar = b => { const c = cambiosDeAccion(b); if (!c || !c.filas.length) return '';
+  const n = c.filas.length, txt = c.tipo === 'aplicar' ? `Aplicar ${n} dato${n === 1 ? '' : 's'}` : `Aplicar en ${n} ${n === 1 ? 'viaje' : 'viajes'}`;
+  return `<button type="button" class="btn primary qh-btn" data-b-aplicar="${b.id}" title="LogxIA escribe estos datos en los viajes a su nombre y la acción se cierra">✓ ${txt}</button>`; };
+
+// "✓ Aplicar": LogxIA escribe los cambios (con la lógica de siempre) y cierra la acción diciendo que fue así
+async function aplicarConLogxIA(id){
+  const b = (window.BITACORA || []).find(x => x.id === id), c = b && cambiosDeAccion(b);
+  if (!c) return toast('Todavía no tengo los datos de esta acción: intente en un momento');
+  if (c.tipo === 'aplicar') { accionEnCurso = {id, tipo: 'aplicar', desde: Date.now()}; return aplicarAccion(b); }
+  const usuario = usuarioGuardado(); if (!usuario) { elegirUsuario(); return toast('Primero elija quién es y vuelva a presionar'); }
+  const nuevos = c.filas.filter(f => f.viaje === 'Nuevo').length;
+  const ok = await preguntarSiNo(`¿Aplicar la programación en ${c.filas.length} ${c.filas.length === 1 ? 'viaje' : 'viajes'}${nuevos ? ` (${nuevos} nuevos)` : ''}?\n\nLogxIA escribe los datos a nombre de ${usuario}, cada viaje guarda el cambio en su Historial y la acción se cierra. Los cambios de fecha quedan con la causa "Cliente (Reckitt)".`, 'Aplicar', 'Cancelar');
+  if (!ok) return;
+  PROG = {c: c.c, ...c.R}; accionEnCurso = {id, tipo: 'programacion', desde: Date.now()};
+  await aplicarProgramacion({rapido: true, usuario});
+}
+
+// "Ya la hice yo": si la acción trae datos que comparar y no están en los viajes, pregunta antes de cerrar
+function preguntarQuien(c){
+  return new Promise(ok => {
+    $('#ovQuienHace')?.remove();
+    const lista = c.filas.slice(0, 6).map(f => `<li><b>${esc(f.viaje)}</b>${f.nombre ? ' <span class="sub">' + esc(f.nombre) + '</span>' : ''}: ${f.campos.map(textoCampo).join(' · ')}</li>`).join('') + (c.filas.length > 6 ? `<li class="sub">… y ${c.filas.length - 6} más</li>` : '');
+    document.body.insertAdjacentHTML('beforeend', `<div class="ov open" id="ovQuienHace" style="z-index:75"><div class="modal" role="dialog" aria-modal="true" style="width:min(540px,100%)">
+      <h3>Aún no veo esto en los viajes</h3><div class="sub">Para cerrar la acción esperaba encontrar:</div><ul class="qh-lista">${lista}</ul>
+      <div class="qh-ops"><button type="button" class="btn primary" data-q="aplicar">Aplicar con LogxIA<small>LogxIA escribe los cambios ahora, a su nombre.</small></button>
+      <button type="button" class="btn" data-q="igual">Ya los puse a mano, ciérrela igual<small>Queda anotado que se cerró sin verificar.</small></button>
+      <button type="button" class="btn" data-q="volver">Volver<small>No cierra nada.</small></button></div></div></div>`);
+    $('#ovQuienHace').onclick = e => { const x = e.target.closest('[data-q]'); if (!x && e.target.id !== 'ovQuienHace') return; $('#ovQuienHace').remove(); ok(x ? x.dataset.q : 'volver'); };
+  });
+}
+async function confirmarHecha(id){
+  const b = (window.BITACORA || []).find(x => x.id === id); if (!b) return;
+  const a = atajoDe(b);
+  if (a && a[0] === 'programacion' && !CUADROS_PROG) await pedirCuadrosProg();   // sin los cuadros no hay con qué comparar
+  const c = cambiosDeAccion(b);
+  if (!c || !c.filas.length) return marcarHecha(id);
+  const q = await preguntarQuien(c);
+  if (q === 'aplicar') return aplicarConLogxIA(id);
+  if (q === 'igual') return marcarHecha(id, false, `cerrada sin verificar: ${c.filas.length === 1 ? 'faltaba 1 viaje' : 'faltaban ' + c.filas.length + ' viajes'} por actualizar`);
+}
 /* ---------- bandeja.js · Bandeja (prueba, desde 6-nov): todo lo que pide trabajo, una tarjeta por viaje ----------
  * Capa: pantalla. No tiene reglas ni datos propios: junta lo que ya calculan Mi turno, Acciones, Llenar datos y Errores
  * (dominio.js: sinCobertura, pasosPorConfirmar, sinActualizar, validar, pareceHecha, yaCreado; acciones.js BITACORA;
@@ -8950,7 +9049,7 @@ function queHacer(b){
   const L = v ? ks.map(k => `• ${esc(etiquetaCampo(v, k))}: el correo dice <b>${esc(fx(d[k]))}</b> · ${mismoDato(v[k], d[k]) ? '<span class="ok-txt">el viaje ya lo tiene</span>' : `el viaje dice <b>${esc(v[k] ? fx(v[k]) : 'vacío')}</b>`}`) : [];
   const todo = v && ks.length && ks.every(k => mismoDato(v[k], d[k]));
   const que = !v ? 'el viaje no se encontró: abra el correo y busque el viaje.'
-    : todo ? 'nada que guardar: el viaje ya tiene lo que dice el correo. Presione <b>Marcar hecha</b>.'
+    : todo ? 'nada que guardar: el viaje ya tiene lo que dice el correo. Presione <b>Ya la hice yo</b>.'
     : pend ? 'arriba, en "Datos de correos" de este viaje, presione <b>Guardar</b> si el correo es correcto o <b>Descartar</b> si no.'
     : 'abra el correo; si el dato es correcto, póngalo en el viaje y marque la acción hecha.';
   return `${b.resumen ? `<br><span class="sub">📧 ${esc(b.resumen)}</span>` : ''}<div class="bj-que">👉 <b>Qué hacer:</b> ${que}${L.length ? '<br>' + L.join('<br>') : ''}</div>`;
@@ -8982,7 +9081,8 @@ function armarBandeja(){
   // op: la operación del viaje (IMPO, EXPO, NACIONAL) para la barra de arriba; sin viaje, la que dice la acción (dominio operacionAccion)
   const add = (v, it, titulo, b) => { if (b) { const f = new Date(b.fechaCorreo || b.registrado); if (!isNaN(f)) it.desde = fechaLocal(f.toISOString()).slice(0, 10); }   // día de Colombia, no UTC
     it.op = v ? v.operacion : (b && operacionAccion(b)) || 'General'; tarjeta(v, titulo).items.push(it); if (v) hoyViajes.add(v.id); };
-  const accHecha = b => btnT('Marcar hecha', `data-b-hecha="${b.id}"`) + btnT('No es para ETP', `data-b-noetp="${b.id}"`);
+  // 12-nov (LX-0465): "Marcar hecha" parecía darle permiso a LogxIA y solo cerraba la acción; ahora dice quién la hizo y quien.js verifica los viajes
+  const accHecha = b => btnT('Ya la hice yo', `data-b-hecha="${b.id}"`, 'Ya la hice a mano: el tablero revisa que los viajes tengan lo que pedía la acción') + btnT('No es para ETP', `data-b-noetp="${b.id}"`);
   const pista = b => { const p = pareceHecha(b); return p ? ` <span class="ok-txt">✔ Ya hecha según el viaje: ${esc(p)}</span>` : ''; };
 
   // 1 · Por crear: el correo pide un viaje que no existe (acción "Crear viaje" o "Crear viaje nacional" sin viaje)
@@ -9115,12 +9215,12 @@ function armarBandeja(){
     // programación nueva o cambio de fecha del cliente: a su tarjeta, arriba de todo y en rojo desde que llega
     if (areaDe(b) === 'Operaciones' && !pareceHecha(b) && (esProgramacionNueva(b) || esReprogramacion(b))) {
       add(null, {b: 'programacion', k: 'a' + b.id, area: 'Operaciones', prog: true,
-        html: `${desdeCuando(b.fechaCorreo || b.registrado)}<b>${esProgramacionNueva(b) ? 'Programación nueva' : 'Cambio de fecha'}</b>${v ? ' · ' + esc(nombreTurno(v)) : ''}<br>${esc(String(b.accion).replace(/^Operaciones:\s*/i, ''))}${b.resumen ? `<br><span class="sub">${esc(b.resumen)}</span>` : ''}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>`,
-        acc: (esProgramacionNueva(b) ? `<button type="button" class="link" onclick="hacerAqui('${b.id}')" title="Abre el cuadro de Reckitt comparado con el tablero; usted marca qué se crea y qué se cambia">${esc(textoBotonProgramacion(b))}</button>` : botonAtajo(b)) + (v ? btnT('Abrir el viaje', `data-b-abrir="${v.id}"`) : '') + verCorreo(b) + accHecha(b)}, TITULO_PROGRAMACION, b);
+        html: `${desdeCuando(b.fechaCorreo || b.registrado)}<b>${esProgramacionNueva(b) ? 'Programación nueva' : 'Cambio de fecha'}</b>${v ? ' · ' + esc(nombreTurno(v)) : ''}<br>${esc(String(b.accion).replace(/^Operaciones:\s*/i, ''))}${b.resumen ? `<br><span class="sub">${esc(b.resumen)}</span>` : ''}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>${htmlCambios(b)}`,
+        acc: botonAplicar(b) + (esProgramacionNueva(b) ? `<button type="button" class="link" onclick="hacerAqui('${b.id}')" title="Abre el cuadro de Reckitt comparado con el tablero; usted marca qué se crea y qué se cambia">${botonAplicar(b) ? '📋 Elegir cuáles' : esc(textoBotonProgramacion(b))}</button>` : botonAtajo(b)) + (v ? btnT('Abrir el viaje', `data-b-abrir="${v.id}"`) : '') + verCorreo(b) + accHecha(b)}, TITULO_PROGRAMACION, b);
       tarjetas.get(TITULO_PROGRAMACION).prog = true; usadas.add(b.id); return; }
     add(v && vivos.includes(v) ? v : null, {b: 'pedido', k: 'a' + b.id, area: areaDe(b),
-      html: `${desdeCuando(b.fechaCorreo || b.registrado)}${areaDe(b) !== 'Operaciones' ? `<span class="tg">${esc(areaDe(b))}</span> ` : ''}${esc(b.accion)}${pista(b)}${queHacer(b)}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>`,
-      acc: verCorreo(b) + botonAtajo(b) + accHecha(b)}, v && vivos.includes(v) ? '' : 'Pedidos sin viaje', b);
+      html: `${desdeCuando(b.fechaCorreo || b.registrado)}${areaDe(b) !== 'Operaciones' ? `<span class="tg">${esc(areaDe(b))}</span> ` : ''}${esc(b.accion)}${pista(b)}${queHacer(b)}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>${htmlCambios(b)}`,
+      acc: verCorreo(b) + (botonAplicar(b) || botonAtajo(b)) + accHecha(b)}, v && vivos.includes(v) ? '' : 'Pedidos sin viaje', b);
     usadas.add(b.id); });
   // 9 · Base de conductores y vehículos (7-nov): lo que hay que corregir en el registro (dominio problemasConductores /
   // problemasVehiculos, las mismas reglas de Despacho → Conductores): datos vacíos o mal escritos, posibles duplicados. Una sola
@@ -9294,7 +9394,8 @@ $('#bandeja').onclick = e => {
   else if (d.bOp !== undefined) elegirOperacion(d.bOp);
   else if (d.bCampo) abrirEnCampo(d.bCampo, d.campo);   // calidad.js: abre el viaje con el cursor en esa casilla
   else if (d.bAbrir) abrir(d.bAbrir);
-  else if (d.bHecha) marcarHecha(d.bHecha);
+  else if (d.bAplicar) aplicarConLogxIA(d.bAplicar);
+  else if (d.bHecha) confirmarHecha(d.bHecha);
   else if (d.bNoetp) marcarHecha(d.bNoetp, true);
   else if (d.bAprobar) decidirBandeja(d.bAprobar, true, d.area, d.solo);
   else if (d.bRechazar) decidirBandeja(d.bRechazar, false, d.area, d.solo);
