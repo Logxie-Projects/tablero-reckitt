@@ -2372,8 +2372,11 @@ const PARADAS_SIN_VEHICULO = ['Origen', 'Motonave', 'Destino'];   // no las hace
 // Antes los dos decían "Llegó a…", el camión se movía en las dos tarjetas y el correo podía salir con la referencia del otro viaje.
 function viajeActivoDePlaca(placa, lista){
   const pl = placaNorm(placa), ref = v => fechaPaso(v, 'fechaRetiro') || fechaPaso(v, 'fechaCargue') || HOY;
-  return !pl ? null : (lista || []).filter(v => !v.padre && placaNorm(v.placa) === pl && !['Cerrado', 'Cancelado'].includes(situacion(v)) && !terminoTransporte(v))
-    .sort((a, b) => Math.abs(diffDias(ref(a))) - Math.abs(diffDias(ref(b))) || String(a.id).localeCompare(String(b.id)))[0] || null;
+  // 11-nov (2.ª auditoría): primero el viaje que YA arrancó. Con el camión en carretera hace 4 días y otro viaje asignado para
+  // mañana, ganaba el de mañana (fecha más cercana) y el viaje real se quedaba sin aviso de llegada ni plan de ruta.
+  const sinArrancar = v => ['Sin asignar', 'Asignado'].includes(v.estado) ? 1 : 0;
+  return !pl ? null : (lista || []).filter(v => !v.padre && placaNorm(v.placa) === pl && !['Cerrado', 'Cancelado'].includes(situacion(v)) && v.estado !== 'Cancelado' && !terminoTransporte(v))
+    .sort((a, b) => sinArrancar(a) - sinArrancar(b) || Math.abs(diffDias(ref(a))) - Math.abs(diffDias(ref(b))) || String(a.id).localeCompare(String(b.id)))[0] || null;
 }
 // g = {lat, lng, fecha} (window.GPS). → null | {tipo: 'llegada'|'cerca'|'en', lugar, km, parada, texto}
 // lista (opcional) = todos los viajes: con ella el aviso sale solo en el viaje activo de la placa (viajeActivoDePlaca)
@@ -2476,8 +2479,11 @@ const kmVia = (la1, lo1, la2, lo2) => distanciaKm(la1, lo1, la2, lo2) * TRAFICO.
 // de dónde a dónde va el viaje por carretera (EXPO: Cali → puerto; IMPO: puerto → Cali o Bogotá) y su ruta, en ese sentido
 function rutaDeViaje(v){
   if (v.operacion !== 'EXPO' && v.operacion !== 'IMPO') return null;
-  const puerto = /ctg|cartagena/.test(minus(v.puerto)) ? 'Cartagena' : 'Buenaventura';
-  const ciudad = v.operacion === 'EXPO' ? 'Cali' : (minus(v.sede) === 'bogota' || /bogot|solistica|\bagv\b|bodega 11/.test(minus([v.bodega, v.destino].join(' '))) ? 'Bogotá' : 'Cali');
+  // 11-nov (2.ª auditoría): un puerto que no es Cartagena ni Buenaventura (Barranquilla, Santa Marta) no tiene ruta: antes se le
+  // ponía la de Buenaventura. Bogotá también por Funza, Mosquera y Siberia (como el mapa de Indicadores).
+  const pto = minus(v.puerto); if (pto && !/ctg|cartagena|bun|buenaventura|sprbun|tcbuen|spia|aguadulce|sprc|contecar/.test(pto)) return null;
+  const puerto = /ctg|cartagena|sprc|contecar/.test(pto) ? 'Cartagena' : 'Buenaventura';
+  const ciudad = v.operacion === 'EXPO' ? 'Cali' : (minus(v.sede) === 'bogota' || /bogot|solistica|funza|mosquera|siberia|\bagv\b|bodega 11/.test(minus([v.bodega, v.destino].join(' '))) ? 'Bogotá' : 'Cali');
   const [de, a] = v.operacion === 'EXPO' ? [ciudad, puerto] : [puerto, ciudad];
   const r = RUTAS_TRAFICO.find(x => (x[0] === de && x[1] === a) || (x[0] === a && x[1] === de));
   return r ? {de, a, puntos: r[0] === de ? r[2] : r[2].slice().reverse()} : null;
@@ -2501,10 +2507,14 @@ function estadoTrafico(v, g, ahora){
   const t = ahora || Date.now(), A = [], edad = g && g.fecha ? (t - new Date(g.fecha)) / 60e3 : NaN;
   if (!g || g.lat == null || g.lng == null || isNaN(edad)) return {movimiento: 'Sin GPS', min: 0, alertas: [{nivel: 'media', tipo: 'sinGps', texto: 'Sin punto del GPS: pida el enlace al conductor'}]};
   if (edad > TRAFICO.sinSenalMin) return {movimiento: 'Sin señal', min: Math.round(edad), alertas: [{nivel: 'media', tipo: 'sinSenal', texto: `Sin señal hace ${duracionTxt(edad)}: el último punto es viejo`}]};
-  const anda = Number(g.velocidad) >= 3, det = Number(g.minDetenido) || 0, horario = enHorarioManejo(t), z = masCercana(GEOZONAS, g.lat, g.lng), lugar = z && z.dentro ? z.z[0] : '';
+  // 11-nov (2.ª auditoría): la noche no cuenta como detención. Un camión que durmió en la vía desde las 10 p. m. salía a las 6:00
+  // con "8 h detenido" en rojo: el tiempo detenido se cuenta solo desde que abrió el horario de manejo. Y "manejando fuera del
+  // horario" se juzga con la hora del punto del GPS (cuando iba andando), no con la hora en que se mira.
+  const anda = Number(g.velocidad) >= 3, horario = enHorarioManejo(t),
+    det = Math.min(Number(g.minDetenido) || 0, horario ? Math.round((horaColombia(t) - TRAFICO.desde) * 60) : Infinity), z = masCercana(GEOZONAS, g.lat, g.lng), lugar = z && z.dentro ? z.z[0] : '';
   const al = alertaGps(v, g, t), enSuParada = !!al && al.tipo === 'llegada';
-  if (anda && !horario) A.push({nivel: 'alta', tipo: 'fueraHorario', texto: `Manejando fuera del horario (${TRAFICO.desde} a. m. a ${TRAFICO.hasta - 12} p. m.): requiere aprobación`});
-  if (!anda && horario && !lugar && det >= TRAFICO.detenidoMin) A.push({nivel: 'alta', tipo: 'detencion', texto: `Detención no planeada: ${duracionTxt(det)} detenido${g.municipio ? ' en ' + String(g.municipio).split(',')[0] : ''}`});
+  if (anda && !enHorarioManejo(new Date(g.fecha).getTime())) A.push({nivel: 'alta', tipo: 'fueraHorario', texto: `Manejando fuera del horario (${TRAFICO.desde} a. m. a ${TRAFICO.hasta - 12} p. m.): requiere aprobación`});
+  if (!anda && horario && !lugar && det >= TRAFICO.detenidoMin) A.push({nivel: 'alta', tipo: 'detencion', texto: `Detención no planeada: ${duracionTxt(det)} detenido en horario de manejo${g.municipio ? ' en ' + String(g.municipio).split(',')[0] : ''}`});
   if (!anda && horario && lugar && !enSuParada && det >= TRAFICO.quietoMin) A.push({nivel: 'media', tipo: 'quieto', texto: `${duracionTxt(det)} sin moverse en ${lugar}`});
   return {movimiento: anda ? 'En movimiento' : !horario ? 'Detenido (fuera del horario de manejo)' : 'Detenido', min: anda ? 0 : det, alertas: A};
 }
@@ -4201,7 +4211,12 @@ function vehiculosTrafico(){
     // el plan de ruta y la llegada estimada solo cuando el vehículo ya va por carretera hacia el destino de la ruta (EXPO: cargado,
     // rumbo al puerto; IMPO: con el contenedor, rumbo a la bodega). Antes de eso el estimado no dice nada cierto.
     const sig = paradas(v).find(p => !p[2] && !PARADAS_SIN_VEHICULO.includes(p[0])), enCarretera = !!sig && ['Puerto', 'Bodega'].includes(sig[0]);
-    porPlaca.set(pl, {v, g, enRuta, est: estadoTrafico(v, g), plan: g && enCarretera ? planDeRuta(v, g) : null, gv: gpsDeViaje(v)});
+    // 11-nov (2.ª auditoría): el estimado solo con un punto reciente (con el enlace vencido decía "sin señal hace 30 h" junto a una
+    // llegada "hoy 3:40 p. m." calculada como si el punto fuera de ahora); si el GPS ya lo tiene en su destino, dice "Ya llegó"; y
+    // con el tramo de carretera ya hecho (entregado en puerto o en bodega) no hay plan que mostrar.
+    const est = estadoTrafico(v, g), gv = gpsDeViaje(v), fresco = !!g && !['sinGps', 'sinSenal'].includes((est.alertas[0] || {}).tipo);
+    const despues = paradas(v).some(p => ['Puerto', 'Bodega'].includes(p[0]) && p[2]), llego = enCarretera && !!gv && !!gv.al && gv.al.tipo === 'llegada';
+    porPlaca.set(pl, {v, g, enRuta, est, enCarretera, despues, llego, plan: fresco && enCarretera && !llego ? planDeRuta(v, g) : null, gv});
   });
   const peso = x => (x.est.alertas.some(a => a.nivel === 'alta') ? 0 : x.est.alertas.length ? 1 : 2);
   return [...porPlaca.values()].sort((a, b) => peso(a) - peso(b) || String(a.v.placa).localeCompare(String(b.v.placa)));
@@ -4212,7 +4227,8 @@ function vehiculosTrafico(){
 // ruta saliendo ahora (dice "aún no sale"). Las tarjetas abiertas se recuerdan mientras la pestaña esté abierta.
 const TF_ABIERTOS = new Set();
 function planViajeHtml(x){
-  const {v, g, plan} = x, R = rutaDeViaje(v); if (!R) return '';
+  const {v, g, plan} = x, R = rutaDeViaje(v); if (!R || x.despues || x.llego) return '';
+  const sinPunto = !plan && x.enCarretera;   // va por carretera pero sin punto reciente del GPS
   const teorico = !plan, P = plan || planDeRuta(v, {lat: R.puntos[0][1], lng: R.puntos[0][2]});
   if (!P) return '';
   const dia = ms => fechaLocal(new Date(ms).toISOString()).slice(0, 10), sig = P.puntos.find(p => !p.paso);
@@ -4222,9 +4238,9 @@ function planViajeHtml(x){
     antes = d;
     return noche + `<tr class="${p === sig ? 'ya' : ''}"><td>${p === sig ? '➜' : '○'}</td><td><b>${esc(p.nombre)}</b></td><td>a ${p.km} km</td><td>${esc(horaTf(p.llega))}</td></tr>`; }).join('');
   return `<details class="tf-plan" data-tf="${esc(v.id)}"${TF_ABIERTOS.has(v.id) ? ' open' : ''} ontoggle="this.open ? TF_ABIERTOS.add(this.dataset.tf) : TF_ABIERTOS.delete(this.dataset.tf)">
-    <summary>🗺 Plan de viaje · ${esc(P.de)} → ${esc(P.a)}${teorico ? ' · aún no sale' : ` · faltan ${P.km} km`} · llegada estimada ${esc(horaTf(P.llega))}</summary>
+    <summary>🗺 Plan de viaje · ${esc(P.de)} → ${esc(P.a)}${sinPunto ? ' · sin GPS reciente' : teorico ? ' · aún no sale' : ` · faltan ${P.km} km`} · llegada estimada ${esc(horaTf(P.llega))}</summary>
     <table class="tf-tabla"><tr><th></th><th>Punto de control</th><th>Distancia</th><th>Hora estimada</th></tr>${filas}</table>
-    <p class="sub">${teorico ? 'El vehículo todavía no va por carretera hacia el destino: plan calculado desde ' + esc(P.de) + ' saliendo ahora. ' : g ? 'Calculado desde el último punto del GPS. ' : ''}Son ${esc(duracionTxt(P.horas * 60))} de manejo a ${TRAFICO.kmh} km/h en promedio, solo entre ${TRAFICO.desde} a. m. y ${TRAFICO.hasta - 12} p. m. Es un estimado: la distancia sale de la línea recta entre puntos aumentada un ${Math.round((TRAFICO.factorVia - 1) * 100)} %, no de un servicio de rutas.</p>
+    <p class="sub">${sinPunto ? 'No hay un punto reciente del GPS: plan de referencia calculado desde ' + esc(P.de) + ' saliendo ahora, no desde donde va el vehículo. ' : teorico ? 'El vehículo todavía no va por carretera hacia el destino: plan calculado desde ' + esc(P.de) + ' saliendo ahora. ' : g ? 'Calculado desde el último punto del GPS. ' : ''}Son ${esc(duracionTxt(P.horas * 60))} de manejo a ${TRAFICO.kmh} km/h en promedio, solo entre ${TRAFICO.desde} a. m. y ${TRAFICO.hasta - 12} p. m. Es un estimado: la distancia sale de la línea recta entre puntos aumentada un ${Math.round((TRAFICO.factorVia - 1) * 100)} %, no de un servicio de rutas.</p>
   </details>`;
 }
 function renderTrafico(){
@@ -4245,7 +4261,7 @@ function renderTrafico(){
           <span class="sub">${g && g.fecha && !isNaN(new Date(g.fecha)) ? 'punto de ' + esc(haceCuanto(fechaLocal(g.fecha))) : 'sin GPS'}</span></div>
         <div><span class="sub">Estado</span><b>${esc(est.movimiento)}</b><span class="sub">${est.min ? esc(duracionTxt(est.min)) : g && Number(g.velocidad) >= 3 ? Math.round(g.velocidad) + ' km/h' : ''}</span></div>
         <div><span class="sub">Etapa del viaje</span><b>${esc(v.estado || '—')}</b><span class="sub">${plan ? esc(plan.de + ' → ' + plan.a) : ''}</span></div>
-        <div><span class="sub">Llegada estimada</span><b>${plan && !plan.puntos[plan.puntos.length - 1].paso ? esc(horaTf(plan.llega)) : '—'}</b>
+        <div><span class="sub">Llegada estimada</span><b>${x.llego ? 'Ya llegó' : plan && !plan.puntos[plan.puntos.length - 1].paso ? esc(horaTf(plan.llega)) : '—'}</b>
           <span class="sub">${plan && plan.km ? `faltan ${plan.km} km · ${esc(duracionTxt(plan.horas * 60))} de manejo` : ''}</span></div>
       </div>
       ${planViajeHtml(x)}
@@ -6512,7 +6528,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '6122eddb80';
+const VERSION_TABLERO = '324637aa6e';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -8382,7 +8398,7 @@ function queHacer(b){
 // de renderBandeja (se recalcula al filtrar) y el aviso de la ronda (ronda-alerta.js).
 // 11-nov (auditoría): del GPS solo la LLEGADA es acción de hoy; "cerca" y "en otro lugar" informan, y antes inflaban el número
 // de viajes con acciones (un vehículo parqueado salía en cada lectura)
-const accionDeHoy = i => i.roja || (i.b === 'hacer' ? !!i.hoy : i.b === 'gps' ? i.gpsTipo === 'llegada' : i.b !== 'registro');
+const accionDeHoy = i => i.roja || (i.b === 'hacer' ? !!i.hoy : i.b === 'gps' ? ['llegada', 'trafico'].includes(i.gpsTipo) : i.b !== 'registro');
 // 10-nov · qué acción es una programación nueva (la misma que abre el atajo "Aplicar programación", acciones.js) y cuál una
 // reprogramación: el cliente mueve la fecha de un paso de un viaje. Solo las de Operaciones.
 const TITULO_PROGRAMACION = 'Programación y cambios de fecha de Reckitt';
@@ -8400,7 +8416,7 @@ function armarBandeja(){
   const tarjeta = (v, titulo) => { const k = v ? v.id : titulo; if (!tarjetas.has(k)) tarjetas.set(k, {v, titulo: titulo || nombreTurno(v), items: []}); return tarjetas.get(k); };
   const padreDe = v => v && v.padre ? viajes.find(x => x.id === v.padre) || v : v;
   // op: la operación del viaje (IMPO, EXPO, NACIONAL) para la barra de arriba; sin viaje, la que dice la acción (dominio operacionAccion)
-  const add = (v, it, titulo, b) => { if (b) { const f = new Date(b.fechaCorreo || b.registrado); if (!isNaN(f)) it.desde = f.toISOString().slice(0, 10); }
+  const add = (v, it, titulo, b) => { if (b) { const f = new Date(b.fechaCorreo || b.registrado); if (!isNaN(f)) it.desde = fechaLocal(f.toISOString()).slice(0, 10); }   // día de Colombia, no UTC
     it.op = v ? v.operacion : (b && operacionAccion(b)) || 'General'; tarjeta(v, titulo).items.push(it); if (v) hoyViajes.add(v.id); };
   const accHecha = b => btnT('Marcar hecha', `data-b-hecha="${b.id}"`) + btnT('No es para ETP', `data-b-noetp="${b.id}"`);
   const pista = b => { const p = pareceHecha(b); return p ? ` <span class="ok-txt">✔ Ya hecha según el viaje: ${esc(p)}</span>` : ''; };
@@ -8437,10 +8453,16 @@ function armarBandeja(){
       add(v, {b: 'gps', gpsTipo: al.tipo, k: 'gps|' + x.id + '|' + al.tipo + '|' + al.lugar,
         html: `${x.padre ? `${esc(nombreSub(x))} · ` : ''}<span class="placa">${esc(x.placa)}</span> · <b>${esc(al.texto)}</b>${g.quieto ? ' · detenido' : ''}<br><span class="sub">${al.parada ? `Siguiente paso del viaje: ${esc(al.parada)}. ` : ''}${al.tipo === 'llegada' ? 'Si ya se hizo, confírmelo en el viaje.' : al.tipo === 'cerca' ? 'Va llegando: avise a quien lo recibe.' : 'Ese lugar no es su siguiente parada: revise si está esperando o si hay novedad.'}</span>`,
         acc: `<a class="link" href="${esc(g.url)}" target="_blank" rel="noopener">📍 Ver en el GPS</a>` + btnT('Abrir el viaje', `data-b-abrir="${x.id}"`)}); });
+    // 11-nov (auditoría: "todo debe estar alineado"): las alertas altas de Tráfico (detención no planeada, manejo fuera de horario;
+    // dominio estadoTrafico) también salen aquí, como acción de hoy. Antes solo se veían en la pestaña Tráfico.
+    if (v.placa && viajeActivoDePlaca(v.placa, viajes) === v) { const gp = (window.GPS || []).find(q => q.placa === placaNorm(v.placa)), gl = gp && gpsDeViaje(v);
+      if (gp) estadoTrafico(v, gp).alertas.filter(a => a.nivel === 'alta').forEach(a => add(v, {b: 'gps', gpsTipo: 'trafico', k: 'traf|' + v.id + '|' + a.tipo,
+        html: `<span class="placa">${esc(v.placa)}</span> · <b style="color:var(--bad)">${esc(a.texto)}</b><br><span class="sub">Llame al conductor y deje la novedad en el viaje. Detalle en la pestaña Tráfico.</span>`,
+        acc: (gl ? `<a class="link" href="${esc(gl.url)}" target="_blank" rel="noopener">📍 Ver en el GPS</a>` : '') + lnkT(ICONO_WA + 'Preguntar al conductor', waConductor(v, '¿todo bien? Confírmame dónde estás y por qué estás detenido o en movimiento a esta hora')) + btnT('Abrir el viaje', `data-b-abrir="${v.id}"`)})); }
     // 4 · ¿Pasó? (por confirmar + sin actualizar de la misma fecha: una pregunta)
     // 10-nov ("estos zarpes dependen de la naviera... usemos el estimado"): el zarpe y la llegada a destino no se le preguntan al
     // equipo; no los hace la transportadora. Queda la fecha estimada (ETD / ETA) como dato en el viaje.
-    todos.forEach(x => pasosPorConfirmar(x).filter(p => !p.naviera).forEach(p => add(v, {b: 'paso', k: 'conf|' + x.id,
+    todos.forEach(x => pasosPorConfirmar(x).filter(p => !p.naviera).forEach(p => add(v, {b: 'paso', k: 'conf|' + x.id, ks: x === v && sinActualizar(v).length ? [kSeg(v)] : [],   // 11-nov (auditoría): si además está sin actualizar (rojo), esta línea lleva esa clave; antes bloqueaba la ronda sin línea roja ni excepción
       html: `${x.padre ? `${esc(nombreSub(x))} · ` : ''}<b>${esc(p.txt)}</b> ${esc(fd(p.fecha))}${p.dias ? ` · hace ${p.dias} d` : ' · hoy'}`,
       acc: botonConfirmar({v: x, ...p}, 'Sí, se hizo') + btnT('No: nueva fecha', `data-b-abrir="${x.id}"`, 'Abre el viaje para poner la fecha nueva con su causa')})));
     if (!pasosPorConfirmar(v).some(p => !p.naviera)) sinActualizar(v).forEach(s => add(v, {b: 'sinact', k: kSeg(v), html: `${esc(s.msg)}<br><span class="sub">${esc(s.porque || '')}</span>`,
@@ -8562,9 +8584,12 @@ function armarBandeja(){
     // entrega en puerto saltaba a la fecha del zarpe y quedaba abajo, como si no pidiera nada hasta ese día. Si el paso que sigue es
     // nuestro (no de la naviera), no tiene fecha y los anteriores ya están confirmados, la tarjeta es de hoy: falta programar ese paso.
     const sigueSinFecha = x => { const P = pasosDe(x), i = P.findIndex(p => !cumplido(x, p[0])); return i > 0 && !P[i][2] && !fechaPaso(x, P[i][0]); };
-    const F = [t.v, ...hijosDe(t.v)].flatMap(x => sigueSinFecha(x) ? [HOY] : pasosDe(x).map(p => p[0]).filter(k => fechaPaso(x, k) && !cumplido(x, k)).map(k => fechaPaso(x, k)))
+    const F = [t.v, ...hijosDe(t.v)].flatMap(x => sigueSinFecha(x) ? [HOY] : pasosDe(x).filter(p => fechaPaso(x, p[0]) && !cumplido(x, p[0]) && !(p[2] && fechaPaso(x, p[0]) < HOY)).map(p => fechaPaso(x, p[0])))
       .concat(t.items.some(i => i.b === 'sinact') ? sinActualizar(t.v).map(s => String(s.fecha || '').slice(0, 10)).filter(Boolean) : []).sort();
-    return F[0] || String(primerEvento(t.v) || '').slice(0, 10);
+    // 11-nov (auditoría): el zarpe o la llegada a destino ya pasados (de la naviera, nadie los confirma) no son un atraso nuestro, y
+    // un viaje sin pasos pendientes que aún pide algo (tirilla, dato de correo) es de hoy: antes salía "Atrasado desde" su retiro
+    const pe = String(primerEvento(t.v) || '').slice(0, 10);
+    return F[0] || (pe >= HOY ? pe : HOY);
   };
   // una tarjeta es de hoy si cualquiera de sus acciones lo es (accionDeHoy); primero las de hoy, luego las de los próximos días
   const L = [...tarjetas.values()].map(t => ({...t, rango: rango(t), roja: t.items.some(i => i.roja), fecha: fechaAccion(t), hoy: t.items.some(accionDeHoy)}))
@@ -8592,7 +8617,7 @@ function renderBandeja(){
   const L0 = R.L, porArea = a => L0.filter(t => t.items.some(i => !a || i.area === a)).length;
   R.L = R.L.map(t => ({...t, items: t.items.filter(enArea)})).filter(t => t.items.length).map(t => ({...t, roja: t.items.some(i => i.roja), hoy: t.items.some(accionDeHoy)}));
   // barra IMPO / EXPO / Nacional: cuenta tarjetas del área elegida; ⛔ si esa operación tiene líneas rojas (para no perderlas de vista)
-  const deOp = (t, o) => t.items.filter(i => !o || i.b === 'registro' || (i.b === 'programacion' && (!i.op || i.op === 'General')) || (i.b === 'cierre' ? !i.opViaje || i.opViaje === o : i.op === o));
+  const deOp = (t, o) => t.items.filter(i => !o || i.b === 'registro' || (i.b === 'programacion' && (!i.op || i.op === 'General')) || (i.b === 'cierre' ? !i.opViaje || i.opViaje === o : (i.op === o || (i.op === 'General' && (i.b === 'crear' || i.roja)))));   // 11-nov (auditoría): un viaje por crear o un pedido en rojo sin operación reconocida no salía en ninguna pestaña de operación
   const opN = o => R.L.filter(t => deOp(t, o).length).length, opRoja = o => R.L.some(t => deOp(t, o).some(i => i.roja));
   if (bandejaOp && !opN(bandejaOp) && !OPS_BANDEJA.some(([o]) => o === bandejaOp)) bandejaOp = '';
   const barraOp = barraOperaciones(opN, opRoja);
