@@ -6654,7 +6654,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '8d6e01672f';
+const VERSION_TABLERO = '5dfcb9bcf6';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -8615,7 +8615,7 @@ function armarBandeja(){
     // ¿Dónde va? (seguimiento de la ronda): vehículos en movimiento sin nada atrasado; "Sigue igual" lo marca revisado en esta ronda
     // 10-nov (corrección): antes esta fila solo salía si el viaje además tenía un paso por confirmar (un "else" de más); los vehículos
     // en movimiento sin nada pendiente contaban en la ronda pero no tenían dónde marcarse, y la ronda no se podía cerrar desde aquí
-    if (!sinActualizar(v).length && enSeguimiento([v]).length && !gpsVivo(v) && !T.R.has(kSeg(v))) {   // con GPS vivo no se pregunta (turno.js gpsVivo) const p = pulsoViaje(v);
+    if (!sinActualizar(v).length && enSeguimiento([v]).length && !gpsVivo(v) && !T.R.has(kSeg(v))) { const p = pulsoViaje(v);   // con GPS vivo no se pregunta (turno.js gpsVivo)
       add(v, {b: 'donde', k: kSeg(v), html: `📍 <b>${esc(p.donde)}</b>${p.quieto ? ' · ' + esc(p.quieto) : ''}${p.espera ? '<br>' + esc(p.espera) : ''}${p.app ? '<br>' + esc(p.app) : ''}${ultimoComentario(v) ? '<br><span class="sub">' + ultimoComentario(v) + '</span>' : ''}`,
         acc: btnT('✏️ Actualizar', `data-b-abrir="${v.id}"`) + (v.placa ? lnkT(ICONO_WA + 'Preguntar dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas')) : '')
           + btnT('📍 Sigue igual', `data-t-rev="${kSeg(v)}"`, 'Lo marca revisado en esta ronda para todo el equipo')}); }
