@@ -3066,6 +3066,11 @@ const colorEstado = k => ([...ESTADOS, ...MARCAS].find(e=>e.k===k)||ESTADOS[0]).
 const HOY = CFG.FECHA_REFERENCIA || new Date().toLocaleDateString('en-CA', {timeZone:'America/Bogota'});
 
 let viajes = [], historial = [], filtroEstado = '', orden = {k:'', asc:true}, editId = null, estadoSel = null;
+// ayudantes de búsqueda (12-nov, auditoría): antes cada módulo repetía estas líneas (31 veces el viaje por su id, 6 la acción por su id)
+const viajePorId = id => viajes.find(v => v.id === id);
+const accionPorId = id => (window.BITACORA || []).find(x => x.id === id);
+// una fecha AAAA-MM-DD se muestra como fecha legible; cualquier otro texto, tal cual (antes escrito en 8 sitios)
+const fxDato = x => /^\d{4}-\d{2}-\d{2}$/.test(String(x)) ? fd(String(x)) : x;
 
 /* ---------- utilidades ---------- */
 const $ = s => document.querySelector(s);
@@ -3188,6 +3193,7 @@ function ahoraBogota(){
 // enlace de WhatsApp con el mensaje listo (sin número: WhatsApp pide elegir el chat o el grupo)
 const waLink = (tel, texto) => `https://wa.me/${String(tel || '').replace(/\D/g, '')}?text=${encodeURIComponent(texto || '')}`;
 /* ---------- datos: la base en Google Sheets, por la API de Apps Script ---------- */
+const pedirDatosServidor = clave => fetch(CFG.SHEETS_API_URL + '?formato=json&clave=' + encodeURIComponent(clave));
 async function cargar(){
   // la clave llega en el enlace (?clave=...), está guardada en este celular (base.js claveGuardada) o se pide en pantalla
   const clave = new URLSearchParams(location.search).get('clave') || claveGuardada();
@@ -3200,7 +3206,7 @@ async function cargar(){
     if (u) { try { aplicarDatos(u.j, clave, u.t); refrescarFondo(clave); return; } catch(e) { console.warn('Última carga guardada: ' + e); borrarUltimaCarga(); } }
   }
   try{
-    const r = await fetch(CFG.SHEETS_API_URL + '?formato=json&clave=' + encodeURIComponent(clave));
+    const r = await pedirDatosServidor(clave);
     const texto = await r.text(), j = JSON.parse(texto);
     if (!j.ok && j.error !== 'clave') { toast('El servidor no pudo responder (' + (j.error || 'sin detalle') + '). Espere un momento y recargue.', 9000); return false; }   // 12-nov: un error del servidor ya no borra la clave guardada
     if (!j.ok) { try { localStorage.removeItem('rkt-clave'); } catch(e) {} borrarUltimaCarga(); pedirClave(true); return false; }   // la clave cambió: se pide de nuevo
@@ -3223,7 +3229,7 @@ function ultimaCarga(clave){
 async function refrescarFondo(clave){
   for (let i = 0; i < 3; i++) {
     try {
-      const r = await fetch(CFG.SHEETS_API_URL + '?formato=json&clave=' + encodeURIComponent(clave));
+      const r = await pedirDatosServidor(clave);
       const texto = await r.text(), j = JSON.parse(texto);
       if (!j.ok && j.error !== 'clave') throw new Error(j.error || 'sin respuesta');   // 12-nov: un error del servidor se reintenta; solo la clave equivocada la borra
       if (!j.ok) { try { localStorage.removeItem('rkt-clave'); } catch(e) {} borrarUltimaCarga(); pedirClave(true); return; }
@@ -3305,7 +3311,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) revi
 // todo, también el estado (Asignado, En tránsito…), se escribe en la pestaña Seguimiento EXPO / IMPO de la base
 // opciones.confirma = false: las fechas son planes (citas que trae un correo, lo que propone el chat): no confirman ningún paso
 async function guardarCambio(id, cambios, usuario, opciones = {}){
-  const v = viajes.find(x=>x.id===id);
+  const v = viajePorId(id);
   // contenedor o placa con el formato del otro (dominio.js datoMalEscrito): no se guarda, se avisa qué está mal
   const mal = ['contenedor', 'placa'].map(k => k in cambios ? datoMalEscrito(k, cambios[k]) : '').filter(Boolean);
   if (mal.length) { toast('No se guardó: ' + mal.join(' · ')); return false; }
@@ -3532,7 +3538,7 @@ const avisoHecha = b => { const p = pareceHecha(b); return p ? `<div class="sub"
 const COLOR_AREA = {Operaciones:'var(--accent)', 'Facturación':'var(--warn)', Gerencia:'#7c3aed'};
 const tagArea = b => { const a = areaDe(b); return `<span class="tg" style="background:color-mix(in srgb, ${COLOR_AREA[a]} 15%, transparent);color:${COLOR_AREA[a]}" title="Área de Entrapetrol que la hace">${a}</span>`; };
 async function marcarHecha(id, noEtp, nota, ya){   // ya: la ventana de "Cerrar acción" ya preguntó
-  const b = (window.BITACORA||[]).find(x=>x.id===id); if (!b) return;
+  const b = accionPorId(id); if (!b) return;
   if (noEtp && !ya && !confirm(`¿Cerrar esta acción como "No es para ETP"?\n\n${b.accion}\n\nSale de pendientes; queda registrada como cerrada por no corresponder a Entrapetrol.`)) return;
   nota = nota || (!noEtp && pareceHecha(b) ? 'el viaje ya muestra que ' + pareceHecha(b) : '');
   const yo = usuarioActual();
@@ -3573,7 +3579,7 @@ async function autocerrarHechas(){
 const cerradasPorSistema = () => (window.BITACORA || []).filter(b => b.estadoAccion === 'Hecha' && String(b.resueltoPor || '').startsWith(POR_SISTEMA)
   && b.resueltoEn && Date.now() - new Date(b.resueltoEn) < 24 * 36e5);
 async function deshacerCierre(id){
-  const b = (window.BITACORA || []).find(x => x.id === id); if (!b) return;
+  const b = accionPorId(id); if (!b) return;
   if (!confirm(`¿Reabrir ${id}?\n\n${b.accion}\n\nVuelve a pendientes y el sistema no la cerrará sola otra vez.`)) return;
   const usuario = usuarioActual();
   try { const j = await api('resolver', {id, usuario, reabrir: true}); if (!j.ok) throw new Error(j.error || 'error');
@@ -3598,7 +3604,7 @@ const ATAJOS = [
 const atajoDe = b => b.estadoAccion==='Hecha' || window.MODO_CLIENTE ? null : ATAJOS.find(a => a[2](b));
 const botonAtajo = b => { const a = atajoDe(b); return a ? `<button type="button" class="link" onclick="hacerAqui('${b.id}')" title="${a[0] === 'aplicar' ? esc(datosDeAccion(b).map(p => p.etiqueta + ': ' + p.valor).join(' · ')) : 'Lo hace el tablero; al terminar, la acción se cierra sola'}">${typeof a[1] === 'function' ? a[1](b) : a[1]}</button>` : ''; };
 function hacerAqui(id){
-  const b = (window.BITACORA||[]).find(x=>x.id===id), a = b && atajoDe(b); if (!a) return;
+  const b = accionPorId(id), a = b && atajoDe(b); if (!a) return;
   accionEnCurso = {id, tipo: a[0], desde: Date.now()};
   a[3](b);
 }
@@ -3953,7 +3959,7 @@ function ofrecerEnlaceConductor(v, a, sinPreguntar){
 }
 // botón "Enviar enlace al conductor" de la ventana del viaje: reenviar sin tocar el viaje (crea la asignación si faltaba)
 async function enviarEnlaceConductor(id){
-  const v = viajes.find(x => x.id === id); if (!v || !v.placa) return toast('Primero guarde la placa del viaje');
+  const v = viajePorId(id); if (!v || !v.placa) return toast('Primero guarde la placa del viaje');
   try {
     const j = await api('enlaceConductor', {id, telefono: telefonoPara(id), usuario: CFG.USUARIO || 'tablero'});
     if (!j.ok) return toast(j.error || 'No se pudo crear el enlace');
@@ -4694,7 +4700,7 @@ document.addEventListener('click', async e => { const b = e.target.closest('[dat
   if (d.tfGerencia) { await entrarGerencia(); return pinta(); }
   if (d.tfOk || d.tfNo) { if (!esGerencia()) return toast('Solo Gerencia o Calidad, con la clave');
     if (confirm(`¿${d.tfOk ? 'Aprobar' : 'Rechazar'} esta salida fuera del horario?\n\nQueda registrado con su nombre y la hora.`)) { await marcarRevisado((d.tfOk ? 'salok|' : 'salno|') + (d.tfOk || d.tfNo)); pinta(); } return; }
-  const id = d.tfGuardar || d.tfQuitar, v = viajes.find(y => y.id === id); if (!v) return;
+  const id = d.tfGuardar || d.tfQuitar, v = viajePorId(id); if (!v) return;
   const viejas = (salidaDe(v) || {todas: []}).todas;
   if (d.tfQuitar) { if (!confirm('¿Quitar la salida programada para anotar otra?')) return; for (const k of viejas) await marcarRevisado(k); return pinta(); }
   const caja = b.closest('.tf-sal'), iso = (caja.querySelector('[data-tf-cuando]').value || '').slice(0, 16), motivo = (caja.querySelector('[data-tf-motivo]').value || '').replace(/[|\s]+/g, ' ').trim().slice(0, 80);
@@ -4975,7 +4981,7 @@ async function cambioDeGerencia(accion, ev, datos){
   if (!j.ok) { if (/clave/i.test(j.error || '')) claveGerenciaSesion = ''; throw new Error(j.error || 'error'); }
   claveGerenciaSesion = codigo;
   window.NOVEDADES = j.novedades || window.NOVEDADES;
-  const v = viajes.find(x => x.id === editId); if (v) $('#mNovedades').innerHTML = bloqueNovedades(v);
+  const v = viajePorId(editId); if (v) $('#mNovedades').innerHTML = bloqueNovedades(v);
   render(); return true;
 }
 // borrar (Gerencia): para una novedad mal escrita; la fila queda en la hoja marcada "borrada" y deja de salir en todos lados
@@ -4997,7 +5003,7 @@ document.addEventListener('click', e => {
   b.remove(); caja.querySelector('.nov-etexto').focus();
 });
 document.addEventListener('click', e => { if (!e.target.closest('[data-ncancelar]')) return;
-  const v = viajes.find(x => x.id === editId); if (v) $('#novLista').innerHTML = listaLinea(v); });
+  const v = viajePorId(editId); if (v) $('#novLista').innerHTML = listaLinea(v); });
 document.addEventListener('click', async e => {
   const b = e.target.closest('[data-nguardar]'); if (!b) return;
   const ev = EVENTOS_LINEA[+b.dataset.nguardar], caja = b.closest('[data-nev]');
@@ -5009,7 +5015,7 @@ document.addEventListener('click', async e => {
   catch(err) { toast('No se guardó: ' + err.message); b.disabled = false; b.textContent = 'Guardar corrección'; }
 });
 document.addEventListener('click', e => { const b = e.target.closest('[data-flinea]'); if (!b) return;
-  filtroLinea = b.dataset.flinea; const v = viajes.find(x => x.id === editId);
+  filtroLinea = b.dataset.flinea; const v = viajePorId(editId);
   document.querySelectorAll('[data-flinea]').forEach(x => x.classList.toggle('on', x === b)); $('#novLista').innerHTML = listaLinea(v); });
 function bloqueNovedades(v){
   filtroLinea = '';
@@ -5032,7 +5038,7 @@ async function agregarNovedad(id){
     const j = await api('novedadViaje', {id, usuario, tipo: tipoNovedad, texto});
     if (!j.ok) throw new Error(j.error || 'error');
     window.NOVEDADES = j.novedades || window.NOVEDADES;
-    const v = viajes.find(x => x.id === id);
+    const v = viajePorId(id);
     v.ultimaNovedad = ahoraBogota().fecha + 'T' + ahoraBogota().hhmm;   // "sin actualizar" (dominio) ya la cuenta
     $('#mNovedades').innerHTML = bloqueNovedades(v);
     // fase 3: lo que LogxIA dedujo de la novedad (Correos.gs propuestasDeNovedad_): fechas por aprobar y acción abierta
@@ -5125,7 +5131,7 @@ function htmlCausa(v, conCosto){
 }
 // fechas que se mueven, según dónde está la caja: en el chat, las casillas de la propuesta; en la ventana, el formulario
 function movidasCausa(box){
-  const v = viajes.find(x => x.id === box.dataset.caV); if (!v) return [];
+  const v = viajePorId(box.dataset.caV); if (!v) return [];
   const pc = box.closest('.pc');
   if (pc) { const ch = {}; pc.querySelectorAll('[data-pc]').forEach(i => { ch[i.dataset.pc] = i.value.trim(); }); return fechasMovidas(v, ch); }
   return typeof cambiosForm === 'function' ? fechasMovidas(v, cambiosForm(v)) : [];
@@ -5140,7 +5146,7 @@ function correoDelCliente(v, quienK){
 }
 // lo que eligió el coordinador → {causa, quienK, quien, medio, detalle, costo, incidente, respaldo, texto (correo que sale o null), error}
 function leerCausa(box){
-  const v = viajes.find(x => x.id === box.dataset.caV), causa = box.dataset.causa || '', r = responsable(causa);
+  const v = viajePorId(box.dataset.caV), causa = box.dataset.causa || '', r = responsable(causa);
   const quienK = (box.querySelector('.ca-quien') || {}).value || '', quien = (PERSONAS_CAMBIO.find(p => p[0] === quienK) || ['', ''])[1];
   const medio = box.dataset.medio || 'teléfono', detalle = (box.querySelector('.ca-det') || {}).value?.trim() || '';
   const d = {causa, quienK, quien, medio, detalle, costo: (box.querySelector('.ca-costo') || {}).value || '', incidente: (box.querySelector('.ca-inc') || {}).value || ''};
@@ -5155,7 +5161,7 @@ function leerCausa(box){
   return {...d, respaldo, texto: textoCambio(v, movidasCausa(box), d)};
 }
 function pintarCausa(box){
-  const v = viajes.find(x => x.id === box.dataset.caV); if (!v) return;
+  const v = viajePorId(box.dataset.caV); if (!v) return;
   const causa = box.dataset.causa || '', r = responsable(causa), cli = r === 'Reckitt', ter = r === 'Terceros';
   box.querySelectorAll('.ca-c').forEach(b => b.classList.toggle('on', b.dataset.causa === causa));
   box.querySelectorAll('.ca-m').forEach(b => b.classList.toggle('on', b.dataset.medio === box.dataset.medio));
@@ -5203,7 +5209,7 @@ async function enviarCambio(v, movidas, d, usuario){
 // CAMPOS_ETAPA = columnas de Base.gs SEGUIMIENTO) y guarda (datos.js guardarCambio). Antes de guardar placa o conductor exige el
 // registro completo (registro.js registroCompleto); la calificación del conductor va en la misma ventana (calificacion.js).
 function abrir(id){
-  const v = viajes.find(x=>x.id===id); if (!v) { toast('No se encontró el viaje ' + id); return; }
+  const v = viajePorId(id); if (!v) { toast('No se encontró el viaje ' + id); return; }
   editId = id; estadoSel = MARCAS.some(m=>m.k===v.estadoHoja) ? v.estadoHoja : '';
   $('#mCausa').classList.add('hidden'); $('#mCausaCaja').innerHTML = '';   // causa del cambio de fecha con su respaldo (causa.js)
   pintarGpsViaje(v);
@@ -5257,7 +5263,7 @@ const SIGUIENTE_ETAPA = {
 };
 function pintarEstados(){
   // carga suelta (dominio.js esLCL): termina en Entregado en bodega, no hay vacío que devolver
-  const v = viajes.find(x=>x.id===editId), sig = v && !(esLCL(v) && v.estado === 'Entregado en bodega') && (SIGUIENTE_ETAPA[v.operacion] || {})[v.estado];
+  const v = viajePorId(editId), sig = v && !(esLCL(v) && v.estado === 'Entregado en bodega') && (SIGUIENTE_ETAPA[v.operacion] || {})[v.estado];
   $('#mStates').innerHTML = `<span class="sub" style="margin-right:6px">Etapa: ${v ? pill(v.estado) : ''} <span title="Sale de las fechas del viaje: para avanzarla, ponga la fecha correspondiente">(sale de las fechas)</span></span>`
     + (v && v.placa && !window.MODO_CLIENTE ? `<button type="button" data-enlace="1" title="Abre WhatsApp con el enlace del viaje para el conductor (asignacion.js)">${ICONO_WA}Enviar enlace al conductor</button>` : '')
     + (sig ? `<button type="button" data-sig="${sig[0]}" title="Pone la fecha de hoy en el campo; se puede cambiar antes de guardar">→ ${sig[1]} (hoy)</button>` : '')
@@ -5365,7 +5371,7 @@ function cambiosForm(v){
   return c;
 }
 function marcarCambios(){
-  const v = viajes.find(x=>x.id===editId); if (!v) return;
+  const v = viajePorId(editId); if (!v) return;
   const c = cambiosForm(v), n = Object.keys(c).length;
   if (typeof pintarInfoVC === 'function') pintarInfoVC();   // celular del conductor y propietario del vehículo (registro.js)
   // si se mueve una fecha ya programada se pide la causa (cliente, transportadora, puerto, externo o corrección)
@@ -5396,7 +5402,7 @@ $('#mCancel').onclick = cerrar;
 $('#ov').onclick = e => { if (e.target.id==='ov') cerrar(); };
 document.addEventListener('keydown', e => { if (e.key==='Escape') cerrar(); });
 $('#mSave').onclick = () => {
-  const v = viajes.find(x=>x.id===editId);
+  const v = viajePorId(editId);
   let cambios = cambiosForm(v); const usuario = $('#mUsuario').value.trim();
   const mov = fechasMovidas(v, cambios);
   let causaSel = null;   // causa con su respaldo y el correo que sale al guardar (causa.js)
@@ -5526,7 +5532,7 @@ function totalCalif(){
   t.innerHTML = R.some(r => r.opcion >= 0) ? `Descuento de este viaje: <b>${fmtPts(tot)}</b>${tot <= -reg.gerencia ? ' · <b style="color:var(--warn)">lo revisa Gerencia antes de contar</b>' : ''}` : `Sin descuentos: <b>+${fmtPts(reg.recupera)}</b>`;
 }
 async function guardarCalif(){
-  const v = viajes.find(x => x.id === editId); if (!v) return;
+  const v = viajePorId(editId); if (!v) return;
   const R = respuestasCalif(), C = CALIF().criterios;
   const falta = R.find(r => r.opcion >= 0 && r.justificacion.length < 15);
   if (falta) { document.querySelector(`#mCalif [data-cal-k="${falta.k}"] [data-cal-just]`).focus(); return toast('Escriba la justificación (mínimo 15 letras): ' + C.find(c => c.k === falta.k).pregunta); }
@@ -5547,7 +5553,7 @@ async function revisarCalif(viajeId, decision){
     const j = await api('revisarCalificacion', {viajeId, decision, codigo, usuario: usuarioActual() || 'Gerencia'});
     if (!j.ok) throw new Error(j.error || 'error');
     window.CALIF = j.calificaciones;
-    const v = viajes.find(x => x.id === editId); if (v) pintarCalif(v);
+    const v = viajePorId(editId); if (v) pintarCalif(v);
     if (typeof renderBandeja === 'function') renderBandeja();   // la lista de Gerencia está en la Bandeja
     toast(decision === 'Aprobada' ? 'Descuento aprobado: ya cuenta' : 'Descuento rechazado: no cuenta');
   } catch(e) { toast('No se guardó: ' + e.message); }
@@ -5562,7 +5568,7 @@ function bloqueCalifGerencia(){
 }
 $('#ov').addEventListener('click', e => {
   const b = e.target.closest('#mCalif button'); if (!b) return;
-  const v = viajes.find(x => x.id === editId); if (!v) return;
+  const v = viajePorId(editId); if (!v) return;
   if (b.dataset.calAbrir) { califAbierta = true; pintarCalif(v); }
   else if (b.dataset.calCancelar) { califAbierta = false; pintarCalif(v); }
   else if (b.dataset.calGuardar) guardarCalif();
@@ -5861,7 +5867,7 @@ const fuenteDeOrigen = o => /conductor/i.test(o || '') ? 'conductor' : /novedad/
 
 // guarda la confirmación (doPost 'confirmar'); el tablero la refleja de una vez y, si falla, la quita
 async function confirmarPaso(id, campo, fecha){
-  const v = viajes.find(x => x.id === id); if (!v) return toast('No se encontró el viaje ' + id);
+  const v = viajePorId(id); if (!v) return toast('No se encontró el viaje ' + id);
   const txt = (pasosDe(v).find(p => p[0] === campo) || [])[1] || campo;
   // nombre y pregunta dentro del tablero (base.js pedirUsuario / preguntarSiNo): confirm() y prompt() los bloquean algunos navegadores del celular
   const usuario = pedirUsuario(); if (!usuario) return;
@@ -5880,7 +5886,7 @@ async function confirmarPaso(id, campo, fecha){
 // repinta las vistas; en la ventana del viaje abierta solo cambia la línea del paso (no se pierde lo que se esté escribiendo)
 function repintarConfirmado(id){
   etapasViajes(); render();
-  const v = viajes.find(x => x.id === id);
+  const v = viajePorId(id);
   document.querySelectorAll('#mForm .paso-est').forEach(el => { const k = el.dataset.paso; if (v && k && editId === id) el.outerHTML = estadoPaso(v, k); });
 }
 document.addEventListener('click', e => {
@@ -6002,9 +6008,9 @@ function pintarPropuestas(){
   $('#propLista').innerHTML = chips + `<div class="tbl-wrap"><table class="prop"><colgroup><col class="c-sel"><col class="c-dato"><col class="c-hoy"><col class="c-correo"><col></colgroup><tr><th></th><th>Dato</th><th>En la base hoy</th><th>Del correo</th><th>Evidencia</th></tr>${ver.map(([p, i]) => {
     const g = p.viajeId !== previo ? `<tr class="grupo"><td colspan="5">${esc(p.operacion)} · ${esc(p.placa || 'Sin placa')} · ${esc(p.ref)} <span class="sub">(${esc(p.viajeId)})</span></td></tr>` : '';
     previo = p.viajeId;
-    const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
+    const fx = fxDato;
     // IMPO: el patio de devolución (donde se entrega el VACÍO) no es la bodega donde se descarga la mercancía (dominio.js patioPareceBodega)
-    const ojo = p.campo === 'patio' && p.operacion === 'IMPO' && patioPareceBodega(p.valor, viajes.find(x => x.id === p.viajeId), p.evidencia)
+    const ojo = p.campo === 'patio' && p.operacion === 'IMPO' && patioPareceBodega(p.valor, viajePorId(p.viajeId), p.evidencia)
       ? '<div style="color:var(--bad);font-weight:600">⚠ Parece la bodega de entrega, no el patio donde se devuelve el vacío. Revise antes de aprobar.</div>' : '';
     return g + `<tr><td><input type="checkbox" data-i="${i}"></td><td>${esc(p.etiqueta)}</td><td>${p.actual ? `<span class="antes">${esc(fx(p.actual))}</span>` : '<span class="sub">vacío</span>'}</td>
       <td class="nuevo">${esc(fx(p.valor))}${ojo}</td><td class="sub">${esc(p.evidencia)}${p.fecha ? ' · ' + esc(String(p.fecha).slice(0,10)) : ''}</td></tr>`;
@@ -6026,7 +6032,7 @@ async function decidirPropuestas(aprobar){
     const usados = new Set(sel.map(p => p.clave));
     PROP = PROP.filter(p => !usados.has(p.clave));
     // la base confirma el paso aprobado (Correos.gs decidirPropuestas_); aquí se anota igual para verlo sin recargar (confirmar.js)
-    if (aprobar) { sel.forEach(p => { const v = viajes.find(x => x.id === p.viajeId); if (v) { v[p.campo] = p.valor; anotarConfirmacion(v, p.campo, p.valor, usuario, fuenteDeOrigen(p.origen)); } }); etapasViajes(); }
+    if (aprobar) { sel.forEach(p => { const v = viajePorId(p.viajeId); if (v) { v[p.campo] = p.valor; anotarConfirmacion(v, p.campo, p.valor, usuario, fuenteDeOrigen(p.origen)); } }); etapasViajes(); }
     $('#propTodos').checked = false;
     pintarPropuestas(); render();
   } catch(e) { toast('No se pudo guardar: ' + e.message); }
@@ -6043,7 +6049,7 @@ $('#propRechazar').onclick = () => decidirPropuestas(false);
 const datosDeAccion = b => PROP.filter(p => p.origen === 'Correo ' + b.id);
 async function aplicarAccion(b, previa, claves){   // previa: quien.js ya mostró los cambios y se autorizó; claves: solo esos datos
   const TODAS = datosDeAccion(b), P = claves ? TODAS.filter(p => claves.includes(p.clave)) : TODAS; if (!P.length) return;
-  const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
+  const fx = fxDato;
   if (!previa && !confirm(`¿Guardar en ${P[0].viajeId} (${P[0].placa || 'sin placa'}) estos datos del correo y cerrar la acción?\n\n${P.map(p => `• ${p.etiqueta}: ${p.actual ? fx(p.actual) : 'vacío'} → ${fx(p.valor)}`).join('\n')}`)) return;
   const usuario = pedirUsuario('¿Quién eres? Queda como quien aprobó los datos'); if (!usuario) return;
   try {
@@ -6051,7 +6057,7 @@ async function aplicarAccion(b, previa, claves){   // previa: quien.js ya mostr�
     if (!j.ok) throw new Error(j.error || 'error');
     const usados = new Set(P.map(p => p.clave));
     PROP = PROP.filter(p => !usados.has(p.clave));
-    P.forEach(p => { const v = viajes.find(x => x.id === p.viajeId); if (v) { v[p.campo] = p.valor; anotarConfirmacion(v, p.campo, p.valor, usuario, fuenteDeOrigen(p.origen)); } }); etapasViajes();
+    P.forEach(p => { const v = viajePorId(p.viajeId); if (v) { v[p.campo] = p.valor; anotarConfirmacion(v, p.campo, p.valor, usuario, fuenteDeOrigen(p.origen)); } }); etapasViajes();
     accionEnCurso = null;
     if (P.length < TODAS.length) { toast(`Guardó ${P.length} de ${TODAS.length} datos: la acción sigue pendiente`, 6000); return render(); }
     await marcarHecha(b.id, false, `aplicó ${j.aprobadas} dato${j.aprobadas === 1 ? '' : 's'} del correo`);
@@ -6075,7 +6081,7 @@ $('#mTomar').onclick = () => {
 /* ---------- subviajes ---------- */
 let subPadreId = null;
 function nuevoSubviaje(id){
-  const v = viajes.find(x=>x.id===id); if (!v) return;
+  const v = viajePorId(id); if (!v) return;
   subPadreId = id;
   $('#subPadre').textContent = `${v.operacion} · ${v.booking || v.pedido || v.id} · ${v.placa || 'sin placa'}`;
   $('#subMotivo').innerHTML = MOTIVOS_SUBVIAJE.map(m=>`<option>${esc(m)}</option>`).join('');
@@ -6096,7 +6102,7 @@ $('#subCrear').onclick = async () => {
   $('#subCrear').disabled = true;
   try {
     const j = await api('subviaje', {id:subPadreId, usuario, campos:{motivoSub:$('#subMotivo').value, patioSub:$('#subPatio').value.trim(), fechaDescargueSub:$('#subFecha').value,
-      ...(viajes.find(x=>x.id===subPadreId)?.operacion === 'IMPO' ? {contenedorSub:$('#subCont').value} : {})}});
+      ...(viajePorId(subPadreId)?.operacion === 'IMPO' ? {contenedorSub:$('#subCont').value} : {})}});
     if (!j.ok) throw new Error(j.error || 'error');
     $('#ovSub').classList.remove('open');
     toast('Subviaje creado: complete el vehículo y los costos');
@@ -6120,6 +6126,7 @@ function textoProgramacion(v, antes, despues){
 // 10-nov ("Viajes por crear y Viajes con cambios de fecha"): el botón de la tarjeta de programación dice cuántos viajes hay por
 // crear y cuántos con cambios de fecha. Para eso el tablero pide los cuadros al servidor por detrás (consulta liviana, v197) y los
 // guarda 10 minutos; con ellos a la mano, el cuadro además abre al instante.
+const traerCuadrosProg = async () => (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=programacion&clave=' + encodeURIComponent(claveActual()))).json();
 let CUADROS_PROG = null, cuadrosProgPidiendo = false;   // {correos, t}
 const CUADROS_PROG_MIN = 10;
 const cuadroDeAccion = (correos, b) => { const nMes = MESES_LARGO.findIndex(m => minus(b.asunto + ' ' + b.accion).includes(m));
@@ -6127,7 +6134,7 @@ const cuadroDeAccion = (correos, b) => { const nMes = MESES_LARGO.findIndex(m =>
 async function pedirCuadrosProg(){
   if (cuadrosProgPidiendo || window.MODO_CLIENTE || !claveActual()) return;
   cuadrosProgPidiendo = true;
-  try { const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=programacion&clave=' + encodeURIComponent(claveActual()))).json();
+  try { const j = await traerCuadrosProg();
     if (j && j.ok && Array.isArray(j.correos) && j.correos.every(x => x.programacion && x.programacion.length)) { CUADROS_PROG = {correos: j.correos, t: Date.now()};
       if (!document.querySelector('.ov.open') && typeof renderBandeja === 'function') renderBandeja(); } } catch(x) {}
   setTimeout(() => { cuadrosProgPidiendo = false; }, CUADROS_PROG_MIN * 60e3);   // no más de una consulta cada 10 minutos
@@ -6162,7 +6169,7 @@ async function atajoProgramacion(b){
       return progs.find(p => Number(p.programacion[0].fechaCargue.slice(5, 7)) === nMes + 1) || progs[0]; };
     // primero la consulta liviana del servidor (solo los cuadros de programación, v197); si el servidor aún no la tiene, la de antes
     let c = null, liviana = false;
-    try { const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=programacion&clave=' + encodeURIComponent(claveActual()))).json();
+    try { const j = await traerCuadrosProg();
       if (j && j.ok && Array.isArray(j.correos) && j.correos.every(x => x.programacion)) { liviana = true; c = j.correos.find(p => Number(p.programacion[0].fechaCargue.slice(5, 7)) === nMes + 1) || j.correos[0]; } } catch(x) {}
     if (!liviana) c = await buscar(dias);
     if (!c && !liviana && dias < 20) { toast('No está en los correos recientes: busco en los últimos 20 días, tarda más…'); c = await buscar(20); }
@@ -6409,7 +6416,7 @@ function cambiosDeCorreo(c){
   const b = c.enBase || {}, ch = {};
   if (b.operacion === 'IMPO') {
     // con subviaje, la fecha del correo es la del urbano (se ve en el subviaje), no la entrega del viaje padre
-    const padre = viajes.find(x => x.id === c.viajeId), conSub = padre && hijosDe(padre).length;
+    const padre = viajePorId(c.viajeId), conSub = padre && hijosDe(padre).length;
     if (c.fechaDescargue && c.fechaDescargue !== b.fechaCargue && !conSub) ch.fechaCargue = c.fechaDescargue;
     if (c.tipo === 'Orden de retiro' && !b.fechaLevante) ch.fechaLevante = c.fecha.slice(0,10);
     const bod = bodegaDeCorreo(c.lugar);
@@ -6572,7 +6579,7 @@ function pintarDocumentos(){
     !tiene(r, 'Carta de retiro', r.carta) && 'Carta de retiro', nav(r) && !tiene(r, nav(r), /✔$/.test(r.naviera) ? '✔' : '✖') && nav(r)].filter(Boolean).join(' · ');
   const otros = bk => deBooking(bk).filter(a => !TIPOS_CLAVE.includes(a.tipo)).map(a => `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.tipo)}</a>`).join(' · ');
   // tirilla de entrega (EXPO): la del booking; "falta" solo si algún viaje de ese booking ya entregó en puerto
-  const entrego = r => String(r.viaje || '').split(', ').some(id => { const v = viajes.find(x => x.id === id); return !!v && ['Entregado en puerto', 'Zarpó'].includes(v.estado); });
+  const entrego = r => String(r.viaje || '').split(', ').some(id => { const v = viajePorId(id); return !!v && ['Entregado en puerto', 'Zarpó'].includes(v.estado); });
   const tirilla = r => !r.booking || r.booking === 'PTE' ? '<span class="sub">—</span>'
     : deBooking(r.booking).some(a => a.tipo === 'Tirilla de entrega') ? `<span style="color:var(--ok)">✔</span> ${enlaces(r.booking, 'Tirilla de entrega')}`
     : entrego(r) ? '<b style="color:var(--bad)">✖ falta</b>' : '<span class="sub">aún no entrega</span>';
@@ -6728,7 +6735,7 @@ function filaResCli(x, marcado){
   // 7-nov ("deberia mostrar ultima actualizacion y ultimo comentario para que el cliente realmente vea lo que esta pasando"): la
   // etapa de hoy y el comentario que le llega al cliente (dominio comentarioViaje, el mismo del correo y de la tarjeta). El aviso en
   // cola (escrito cuando se guardó la fecha) ya no se muestra como estado: solo dice por qué el viaje está en la lista
-  const v = viajes.find(y => y.id === x.id), n = v && ultimaNovedad(v);
+  const v = viajePorId(x.id), n = v && ultimaNovedad(v);
   const com = n ? `${n.tipo === 'Hecho' ? '✅' : '💬'} ${esc(textoNovedad(n))} <span class="sub">· ${esc(haceCuanto(fechaLocal(n.fecha)))}${n.usuario && n.tipo !== 'Hecho' ? ' · ' + esc(n.usuario) : ''}</span>` : '<span class="sub">Sin comentario: le llega solo la etapa</span>';
   const porque = [x.hoy && x.hoy.length && 'paso hoy', x.avisos && x.avisos.length && 'aviso en cola', x.motivo].filter(Boolean).join(' · ');
   return `<label class="rc-fila" data-buscar="${esc(texto)}"><input type="checkbox" data-rc="${esc(x.id)}" ${marcado ? 'checked' : ''}>
@@ -7058,7 +7065,7 @@ function leerTirilla(file){
   });
 }
 async function abrirDevolucion(id, solo){
-  const v = viajes.find(x => x.id === id); if (!v) return;
+  const v = viajePorId(id); if (!v) return;
   if (!pedirUsuario()) return;
   DEV_ID = id; DEV_ARCHIVO = null; DEV_SOLO = !!solo;
   const expo = esTirillaExpo(v), fv = expo ? v.fechaEntregaPuerto : v.fechaDevolucion;
@@ -7112,7 +7119,7 @@ async function guardarDevolucion(){
     if (!j.ok) throw new Error(j.error || 'error');
     if (DEV_SOLO) { if (!j.envio || !j.envio.ok) throw new Error(j.envio ? j.envio.error : 'no salió'); $('#ovDev').classList.remove('open'); toast('✓ Aviso enviado con la tirilla', 6000); await cargar(); render(); if (editId === DEV_ID) abrir(DEV_ID); b.disabled = false; return; }
     $('#ovDev').classList.remove('open');
-    const hecho = esTirillaExpo(viajes.find(x => x.id === DEV_ID) || {}) ? 'Entregado en puerto' : 'Vacío devuelto';
+    const hecho = esTirillaExpo(viajePorId(DEV_ID) || {}) ? 'Entregado en puerto' : 'Vacío devuelto';
     toast(j.envio ? (j.envio.ok ? `✓ ${hecho} y aviso enviado` + (j.envio.hilo ? ' en el correo del proceso' : '') : '✓ Guardado, pero el aviso no salió: ' + j.envio.error) : `✓ ${hecho} con su tirilla`, 6000);
     await cargar(); render(); if (editId === DEV_ID) abrir(DEV_ID);
   } catch (e) { toast('No se pudo guardar: ' + e.message, 6000); }
@@ -7128,7 +7135,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '92e728e8d1';
+const VERSION_TABLERO = 'f3ead463ba';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -7237,8 +7244,8 @@ const AGENTES = [
     revisar: a => ({txt: `${a.tipo || 'documento'}${a.booking ? ' · ' + a.booking : ''}`})},
   {id: 'digita', cod: 'DIGITA', ic: '✎', color: '#db2777', tarea: 'saca fechas, citas y tirillas', sub: 'espera tu aprobación', tag: 'dato',
     items: () => typeof PROP !== 'undefined' ? PROP : [],
-    etiqueta: p => `${p.campo} · ${lvViaje(viajes.find(v => v.id === p.viajeId))}`,
-    revisar: p => { const v = viajes.find(x => x.id === p.viajeId); return {txt: `${p.campo}: ${lvCorto(v && v[p.campo] || '—', 16)} → ${lvCorto(p.valor, 26)} · espera aprobación`, v, tono: 'info'}; }},
+    etiqueta: p => `${p.campo} · ${lvViaje(viajePorId(p.viajeId))}`,
+    revisar: p => { const v = viajePorId(p.viajeId); return {txt: `${p.campo}: ${lvCorto(v && v[p.campo] || '—', 16)} → ${lvCorto(p.valor, 26)} · espera aprobación`, v, tono: 'info'}; }},
   {id: 'vigia', cod: 'VIGÍA', ic: '◉', color: '#ea580c', tarea: 'busca riesgos de las próximas 72 h', sub: 'cierres, citas y devoluciones', tag: 'alerta',
     items: () => activos().filter(v => !v.padre && abierto(v)),
     etiqueta: lvViaje,
@@ -7390,7 +7397,7 @@ function historicoLog(){
   const D = datosLV(), E = [];
   D.correos.forEach(c => { const b = c.b, v = c.acciones[0] && viajeDeAccion(c.acciones[0]);
     E.push([enBog(b.registrado), c.acciones.length ? 'cruzado' : 'descartado', `${esc(nombreCorto(b.remitente))} · «${esc(lvCorto(b.asunto, 46))}» → ${c.acciones.length ? `${nombreAg('lector')} lo cruzó con ${esc(lvViaje(v) || 'un viaje')}: ${esc(lvCorto(c.acciones[0].accion, 50))}` : 'no pide nada, descartado'}`, v]); });
-  D.H.forEach(h => E.push([enBog(h.fecha), 'aplicado', `${esc(h.usuario || 'Equipo')} · ${esc(lvCorto(h.observacion || `${h.estadoAnterior || ''} → ${h.estadoNuevo || ''}`, 80))}`, viajes.find(v => v.id === h.id)]));
+  D.H.forEach(h => E.push([enBog(h.fecha), 'aplicado', `${esc(h.usuario || 'Equipo')} · ${esc(lvCorto(h.observacion || `${h.estadoAnterior || ''} → ${h.estadoNuevo || ''}`, 80))}`, viajePorId(h.id)]));
   (D.docs || []).forEach(a => E.push([enBog(a.fecha), 'archivado', `${nombreAg('archivo')} guardó ${esc(a.tipo || 'documento')}${a.booking ? ' · booking ' + esc(a.booking) : ''}`, null]));
   E.push(...LV.vivos);
   E.sort((a, b) => b[0].localeCompare(a[0])).slice(0, 80).forEach(e => filaLog(e[0], e[1], e[2], e[3]));
@@ -7624,12 +7631,12 @@ function calcKV(){
   const hitoDe = (v, campo) => ((HITOS_PLAN[v.operacion] || []).find(h => h[2].includes(campo)) || [campo])[0];
   const RP = B.flatMap(v => reprogsDe(v).filter(r => kvEnPer(r.fecha) && r.causa !== 'Corrección de dato').map(r => ({r, v})));
   const porCausa = c => RP.filter(x => responsable(x.r.causa) === c).length;
-  const Hs = (typeof historial !== 'undefined' ? historial : []).filter(h => kvEnPer(diaDe(h.fecha)) && vOk(viajes.find(v => v.id === h.id)));
+  const Hs = (typeof historial !== 'undefined' ? historial : []).filter(h => kvEnPer(diaDe(h.fecha)) && vOk(viajePorId(h.id)));
   const quienes = new Set(Hs.map(h => h.usuario).filter(Boolean));
   const E = B.filter(v => situacion(v) !== 'Cerrado' || window.SEG_INICIO).map(v => ({v, e: validar(v).filter(x => x.tipo !== 'Alerta')})).filter(x => x.e.length);
   const nE = E.reduce((t, x) => t + x.e.length, 0), alta = x => x.e.some(e => e.sev === 'Alta'), altas = E.filter(alta);
-  const PR = (typeof PROP !== 'undefined' ? PROP : []).filter(p => vOk(viajes.find(v => v.id === p.viajeId)));
-  const NV = (window.NOVEDADES || []).filter(n => !n.borrada && n.origen !== 'Sistema' && kvEnPer(diaDe(n.fecha)) && vOk(viajes.find(v => v.id === n.viaje)));
+  const PR = (typeof PROP !== 'undefined' ? PROP : []).filter(p => vOk(viajePorId(p.viajeId)));
+  const NV = (window.NOVEDADES || []).filter(n => !n.borrada && n.origen !== 'Sistema' && kvEnPer(diaDe(n.fecha)) && vOk(viajePorId(n.viaje)));
   const durac = h => `${Math.floor(h / 24) ? Math.floor(h / 24) + ' d ' : ''}${Math.round(h % 24)} h`;
   const recientes = (L2, f) => L2.slice().sort((a, b) => String(enBog(f(b))).localeCompare(enBog(f(a))));
   const gest = [
@@ -7644,13 +7651,13 @@ function calcKV(){
     {id: 'reprog', cod: 'CAMBIOS DE FECHA', ic: '↻', color: '#ea580c', v: RP.length, suf: '', sub: `registrados · Reckitt ${porCausa('Reckitt')}, Entrapetrol ${porCausa('Entrapetrol')}, terceros ${porCausa('Terceros')}`, n: porCausa('Entrapetrol') + porCausa('Sin causa'),
       L: RP.sort((a, b) => String(b.r.fecha).localeCompare(a.r.fecha)).map(x => rev(x.v, responsable(x.r.causa), `${hitoDe(x.v, x.r.campo).toLowerCase()}: ${fd(x.r.antes)} → ${fd(x.r.despues)}${x.r.detalle ? ' · ' + lvCorto(x.r.detalle, 40) : ''}`, ['Entrapetrol', 'Sin causa'].includes(responsable(x.r.causa)) ? 'bad' : 'warn', fd(x.r.fecha)))},
     {id: 'cambios', cod: 'CAMBIOS', ic: '✎', color: '#db2777', v: Hs.length, suf: '', sub: `en la hoja · ${new Set(Hs.map(h => h.id)).size} viajes, ${quienes.size} persona${quienes.size === 1 ? '' : 's'}`, n: 0,
-      L: recientes(Hs, h => h.fecha).map(h => rev(viajes.find(v => v.id === h.id), lvCorto(h.usuario || 'equipo', 16), lvCorto(h.observacion || `${h.estadoAnterior || ''} → ${h.estadoNuevo || ''}`, 90), 'info', diaHora(enBog(h.fecha))))},
+      L: recientes(Hs, h => h.fecha).map(h => rev(viajePorId(h.id), lvCorto(h.usuario || 'equipo', 16), lvCorto(h.observacion || `${h.estadoAnterior || ''} → ${h.estadoNuevo || ''}`, 90), 'info', diaHora(enBog(h.fecha))))},
     {id: 'errores', cod: 'ERRORES', ic: '!', color: '#dc2626', v: nE, suf: '', sub: `en la hoja hoy · ${E.length} viajes, ${altas.length} de prioridad alta`, n: altas.length, enTodo: true,
       L: E.sort((a, b) => alta(b) - alta(a)).map(x => rev(x.v, `${x.e.length} error${x.e.length === 1 ? '' : 'es'}`, lvCorto(x.e.map(e => e.msg).join(' · '), 110), alta(x) ? 'bad' : 'warn'))},
     {id: 'datos', cod: 'DATOS LOGXIA', ic: '✦', color: '#ca8a04', v: PR.length, suf: '', sub: 'sacados de los correos · esperan tu aprobación', n: PR.length,
-      L: PR.map(p => { const v = viajes.find(x => x.id === p.viajeId); return rev(v, p.campo, `${lvCorto(v && v[p.campo] || '—', 18)} → ${lvCorto(p.valor, 40)}`, 'info'); })},
+      L: PR.map(p => { const v = viajePorId(p.viajeId); return rev(v, p.campo, `${lvCorto(v && v[p.campo] || '—', 18)} → ${lvCorto(p.valor, 40)}`, 'info'); })},
     {id: 'noved', cod: 'NOVEDADES', ic: '✱', color: '#4f46e5', v: NV.length, suf: '', sub: `${NV.filter(n => n.origen === 'Conductor').length} del conductor · ${NV.filter(n => n.origen !== 'Conductor').length} del equipo`, n: 0,
-      L: recientes(NV, n => n.fecha).map(n => rev(viajes.find(v => v.id === n.viaje), n.origen === 'Conductor' ? 'conductor' : String(n.tipo || 'novedad').toLowerCase(), lvCorto(n.texto, 100), 'info', diaHora(enBog(n.fecha))))},
+      L: recientes(NV, n => n.fecha).map(n => rev(viajePorId(n.viaje), n.origen === 'Conductor' ? 'conductor' : String(n.tipo || 'novedad').toLowerCase(), lvCorto(n.texto, 100), 'info', diaHora(enBog(n.fecha))))},
   ];
   return {B, A, Ped, Vig, Asig, Rep, D, porResp, emb, ind, ahora, gest, etapas, asign, S, serie,
     cumpleP: kvPct(conPlan(Vig).length - conPlan(Vig).filter(v => desviosPlan(v).length).length, conPlan(Vig).length),
@@ -7707,7 +7714,7 @@ function montarKV(){
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#v-kpis').classList.contains('hidden') && !document.fullscreenElement && !document.querySelector('.ov.open')) salirKV(); });
   $('#kvVolver').onclick = salirKV;
   // un viaje: se elige en el buscador (lista con booking/pedido/placa) o con 📊 en una línea de la lista
-  const elegir = () => { const t = $('#kvViaje').value.trim(), m = t.match(/·\s*([^·\s]+)$/), v = m && viajes.find(x => x.id === m[1]) || viajes.find(x => x.id === t);
+  const elegir = () => { const t = $('#kvViaje').value.trim(), m = t.match(/·\s*([^·\s]+)$/), v = m && viajePorId(m[1]) || viajePorId(t);
     if (v) { KV.viaje = v.id; KV.sel = ''; pintarKV(); } };
   $('#kvViaje').addEventListener('change', elegir);
   $('#kvViaje').addEventListener('keydown', e => { if (e.key === 'Enter') elegir(); });
@@ -7717,7 +7724,7 @@ function montarKV(){
     if (op) { KV.op = op.dataset.op; KV.viaje = ''; $('#kvViaje').value = ''; pintarKV(); return; }
     if (per) { KV.per = per.dataset.per; KV.viaje = ''; $('#kvViaje').value = ''; pintarKV(); return; }
     if (ind) { KV.sel = KV.sel === ind.dataset.ind ? '' : ind.dataset.ind; pintarKV(true); return; }
-    if (solo) { e.stopPropagation(); const v = viajes.find(x => x.id === solo.dataset.kvsolo); KV.viaje = solo.dataset.kvsolo; KV.sel = ''; $('#kvViaje').value = v ? `${kvViaje(v)} · ${v.id}` : ''; pintarKV(); $('#kv').scrollIntoView({behavior: 'smooth'}); return; }
+    if (solo) { e.stopPropagation(); const v = viajePorId(solo.dataset.kvsolo); KV.viaje = solo.dataset.kvsolo; KV.sel = ''; $('#kvViaje').value = v ? `${kvViaje(v)} · ${v.id}` : ''; pintarKV(); $('#kv').scrollIntoView({behavior: 'smooth'}); return; }
     if (vj && vj.dataset.viaje) abrir(vj.dataset.viaje);
   });
   $('#kv').addEventListener('keydown', e => { const ind = e.target.closest('[data-ind]'); if (ind && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); ind.click(); } });
@@ -7744,7 +7751,7 @@ function kvContar(el, n){ if (!el) return; if (n === null || n === undefined) { 
 function pintarKV(suave){
   if (!$('#kv')) return;
   if (KV.viaje && !viajes.some(v => v.id === KV.viaje)) KV.viaje = '';
-  const K = calcKV(), S = K.S, ult = S.length - 1, [a, b] = kvRango(), uno = KV.viaje && viajes.find(v => v.id === KV.viaje);
+  const K = calcKV(), S = K.S, ult = S.length - 1, [a, b] = kvRango(), uno = KV.viaje && viajePorId(KV.viaje);
   $('#kvOp').querySelectorAll('button').forEach(x => x.classList.toggle('on', !uno && x.dataset.op === KV.op));
   $('#kvPer').querySelectorAll('button').forEach(x => x.classList.toggle('on', !uno && x.dataset.per === KV.per));
   $('#kvViajeX').classList.toggle('hidden', !uno); $('#kv').classList.toggle('kv-uno', !!uno);
@@ -7858,7 +7865,7 @@ function calcKC(equipo){
   const flete = CB.reduce((s, x) => s + x.c.flete, 0), extra = CB.reduce((s, x) => s + x.c.extra, 0), conFlete = CB.filter(x => x.c.flete);
   const facturado = CB.filter(x => x.c.fact === 'Facturado').reduce((s, x) => s + x.c.flete + x.c.extra, 0);
   // lo que entra a LogxIA en el periodo (con una operación elegida, solo lo que se cruzó con un viaje de esa operación)
-  const vOk = id => { const v = id && viajes.find(x => x.id === id); return KV.viaje ? !!v && v.id === KV.viaje : KV.op ? !!v && v.operacion === KV.op : !id || !!v; };
+  const vOk = id => { const v = id && viajePorId(id); return KV.viaje ? !!v && v.id === KV.viaje : KV.op ? !!v && v.operacion === KV.op : !id || !!v; };
   const ins = k => ((window.INSUMOS || {})[k] || []).filter(([d, id]) => kvEnPer(d) && vOk(id)).length;
   const fila = (v, tag, txt, tono) => ({v, tag, txt, tono: tono || 'info'});
   const pedTxt = v => `pedido para ${fd(kvFechaPedido(v))}`;
@@ -8691,7 +8698,7 @@ function proponerCambio(v, q){
     <div class="pc-act"><input class="pc-user" placeholder="Su nombre" value="${esc(usuario)}"><button type="button" class="btn primary" onclick="confirmarChat(this)">Confirmar</button><button type="button" class="btn" onclick="cancelarChat(this)">Cancelar</button></div></div>`;
 }
 async function confirmarChat(btn){
-  const caja = btn.closest('.pc'), v = viajes.find(x => x.id === caja.dataset.vid);
+  const caja = btn.closest('.pc'), v = viajePorId(caja.dataset.vid);
   const usuario = caja.querySelector('.pc-user').value.trim();
   if (!usuario) { caja.querySelector('.pc-user').focus(); return toast('Escriba su nombre: queda en el Historial'); }
   guardarUsuario(usuario);
@@ -8901,7 +8908,7 @@ const cuadroProgDe = b => { if (!CUADROS_PROG) return null; try { return cuadroD
 function cambiosDeAccion(b){
   const a = atajoDe(b); if (!a) return null;
   if (a[0] === 'aplicar') {
-    const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x, P = datosDeAccion(b);
+    const fx = fxDato, P = datosDeAccion(b);
     return P.length ? {tipo: 'aplicar', filas: P.map(p => ({clave: p.clave, viaje: p.viajeId, nombre: p.placa || '', campos: [[p.etiqueta, p.actual ? fx(p.actual) : '', fx(p.valor)]]}))} : null;
   }
   if (a[0] === 'programacion') {
@@ -8939,7 +8946,7 @@ const botonAplicar = b => { const c = cambiosDeAccion(b); if (!c || !c.filas.len
   return `<button type="button" class="btn primary qh-btn" data-b-guardar="${b.id}"${n ? '' : ' disabled'} title="Se guardan en los viajes a su nombre; cada viaje anota el cambio en su Historial">${textoGuardar(n)}</button>`; };
 // una casilla cambió: se recuerda y se actualizan las casillas y el botón sin repintar la Bandeja
 function seleccionQh(el){
-  const id = el.dataset.qtodos || String(el.dataset.qsel).split('|')[0], b = (window.BITACORA || []).find(x => x.id === id), c = b && cambiosDeAccion(b); if (!c) return;
+  const id = el.dataset.qtodos || String(el.dataset.qsel).split('|')[0], b = accionPorId(id), c = b && cambiosDeAccion(b); if (!c) return;
   if (el.dataset.qtodos) SIN_MARCAR_QH[id] = el.checked ? new Set() : new Set(c.filas.map((f, i) => i));
   else { const s = SIN_MARCAR_QH[id] = SIN_MARCAR_QH[id] || new Set(), i = +String(el.dataset.qsel).split('|')[1]; if (el.checked) s.delete(i); else s.add(i); }
   const m = new Set(marcadasQh(id, c.filas.length));
@@ -8948,7 +8955,7 @@ function seleccionQh(el){
   document.querySelectorAll(`[data-b-guardar="${id}"]`).forEach(x => { x.disabled = !m.size; x.textContent = textoGuardar(m.size); });
 }
 async function guardarSeleccion(id){
-  const b = (window.BITACORA || []).find(x => x.id === id), c = b && cambiosDeAccion(b);
+  const b = accionPorId(id), c = b && cambiosDeAccion(b);
   if (!c) return toast('Todavía no tengo los datos de esta acción: intente en un momento');
   const usuario = usuarioGuardado(); if (!usuario) { elegirUsuario(); return toast('Primero elija quién es y vuelva a presionar'); }
   const sel = marcadasQh(id, c.filas.length); if (!sel.length) return toast('Marque al menos un viaje');
@@ -8960,7 +8967,7 @@ async function guardarSeleccion(id){
 
 // "Cerrar acción": un solo botón; pregunta por qué se cierra
 function cerrarAccion(id){
-  const b = (window.BITACORA || []).find(x => x.id === id); if (!b) return;
+  const b = accionPorId(id); if (!b) return;
   $('#ovCerrar')?.remove();
   document.body.insertAdjacentHTML('beforeend', `<div class="ov open" id="ovCerrar" style="z-index:75"><div class="modal" role="dialog" aria-modal="true" style="width:min(480px,100%)">
     <h3>Cerrar la acción</h3><div class="sub">${esc(b.id)} · ${esc(String(b.accion || '').slice(0, 150))}</div>
@@ -8985,7 +8992,7 @@ function preguntarQuien(c){
   });
 }
 async function confirmarHecha(id){
-  const b = (window.BITACORA || []).find(x => x.id === id); if (!b) return;
+  const b = accionPorId(id); if (!b) return;
   const a = atajoDe(b);
   if (a && a[0] === 'programacion' && !CUADROS_PROG) await pedirCuadrosProg();   // sin los cuadros no hay con qué comparar
   const c = cambiosDeAccion(b);
@@ -9065,9 +9072,9 @@ const BLOQUES = [
 ];
 // 10-nov ("que el equipo entienda qué debe hacer"): cada renglón empieza con la instrucción, en una frase con verbo. El nombre del
 // bloque (la etiqueta de color) dice de qué tipo es; esto dice qué hacer.
-const QUE_HACER = {gps: 'Confirme lo que dice el GPS', programacion: 'Revise lo que mandó Reckitt y aplíquelo en el tablero', crear: 'Cree el viaje que pide el correo', tomar: 'Tome este viaje nuevo: ábralo y revise sus datos', vehiculo: 'Asigne vehículo y conductor',
+const QUE_HACER = {gps: 'El GPS ubica el vehículo: confirme si es lo esperado', programacion: 'Revise lo que mandó Reckitt y aplíquelo en el tablero', crear: 'Cree el viaje que pide el correo', tomar: 'Tome este viaje nuevo: ábralo y revise sus datos', vehiculo: 'Asigne vehículo y conductor',
   sinact: 'Actualice el viaje: ¿se hizo o cambió la fecha?', paso: 'Confirme si este paso ya se hizo', donde: 'Confirme dónde va el vehículo',
-  nocoincide: 'Decida cuál dato vale', datos: 'Revise y guarde lo que llegó por correo', pedido: 'Haga lo que pide el correo y márquelo hecho',
+  nocoincide: 'Elija con qué dato se queda el viaje', datos: 'Guarde los datos nuevos del correo si son correctos', pedido: 'Haga lo que pide el correo y márquelo hecho',
   falta: 'Complete estos datos en el viaje', registro: 'Corrija los datos del conductor o del vehículo', cierre: 'Cierre el día y deje la nota de entrega de turno', manana: 'Deje listo lo de mañana'};
 const HORIZONTE_FALTA = 5;   // días: los faltantes de viajes que arrancan después quedan en Errores (revisión, no del día)
 const RE_ASIGNAR = /asignar vehiculo|programar vehiculo|placa y conductor|conductor y vehiculo|vehiculo planchon|programar (el )?vehiculo/;
@@ -9092,23 +9099,22 @@ let bandejaOp =(() => { try { return localStorage.getItem('bandejaOp') || ''; } 
 // cómo se lee un dato del correo en la Bandeja. El equipo no aprueba el dato: decide si lo que dice el correo se GUARDA en el
 // viaje. La aprobación de extracostos la da Reckitt (6-nov: el correo de Samir Bastidas "Autorización facturación" salía como
 // "Aprobar" en Facturación, como si Facturación aprobara los costos): se dice "Reckitt aprobó los extracostos"
-const fxDato = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
 const quienDato = p => esc(String(p.evidencia || '').split(' · ')[0].slice(0, 60));
 // 10-nov ("que tenga sentido la salida con respecto a la entrega en puerto y fechas estimadas enviadas por el cliente"): un dato de
 // correo que no cuadra con lo que el viaje ya tiene lo dice antes de aprobarlo (dominio.js avisosAntesDeGuardar)
-const avisoDato = p => { const x = viajes.find(y => y.id === p.viajeId); let A = []; try { A = x ? avisosAntesDeGuardar(x, {[p.campo]: p.valor}) : []; } catch(e) {}
+const avisoDato = p => { const x = viajePorId(p.viajeId); let A = []; try { A = x ? avisosAntesDeGuardar(x, {[p.campo]: p.valor}) : []; } catch(e) {}
   return A.length ? `<br><span style="color:var(--bad);font-weight:600">⚠ No cuadra: ${esc(A.join(' · '))}</span>` : ''; };
 const lineaDato = p => p.campo === 'aprobacionExtra'
   ? `<b>Reckitt ${p.valor === 'Aprobado' ? 'aprobó' : p.valor === 'Rechazado' ? 'rechazó' : 'marcó «' + esc(p.valor) + '» en'} los extracostos</b> <span class="sub">· lo dice ${quienDato(p)}; se anota en "Aprobación extracostos"</span>`
   : `${esc(p.etiqueta)}: ${p.actual ? `<s class="sub">${esc(fxDato(p.actual))}</s> → ` : ''}<b>${esc(fxDato(p.valor))}</b> <span class="sub">${esc(String(p.evidencia || '').slice(0, 90))}</span>`;
 // 10-nov · No coincide (dominio.js noCoincide): la casilla ya tenía otro valor. Se muestran los dos, con quién lo dice y cuándo
 const fuenteChoque = p => /conductor/i.test(p.origen || '') ? 'el conductor' : /document|archivo|adjunto/i.test(p.origen || '') ? 'el documento' : 'el correo';
-const lineaChoque = p => `${esc(p.etiqueta)}: la base dice <b>${esc(fxDato(p.actual))}</b> · ${fuenteChoque(p)} dice <b style="color:var(--bad)">${esc(fxDato(p.valor))}</b> <span class="sub">${esc(String(p.evidencia || '').slice(0, 90))}${p.fecha ? ' · ' + esc(fxDato(String(p.fecha).slice(0, 10))) : ''}</span>`;
-const botonesChoque = (id, n, area) => btnT(`Vale lo que llegó${n > 1 ? ' (' + n + ')' : ''}`, `data-b-aprobar="${id}" data-solo="choque"${area ? ` data-area="${area}"` : ''}`, 'Cambia el viaje a lo que dice el correo, el documento o el conductor, a su nombre')
-  + btnT('La base está bien', `data-b-rechazar="${id}" data-solo="choque"${area ? ` data-area="${area}"` : ''}`, 'Se deja el viaje como está; lo que llegó se descarta y no vuelve a aparecer')
+const lineaChoque = p => `${esc(p.etiqueta)}: el viaje dice <b>${esc(fxDato(p.actual))}</b> · ${fuenteChoque(p)} dice <b style="color:var(--bad)">${esc(fxDato(p.valor))}</b> <span class="sub">${esc(String(p.evidencia || '').slice(0, 90))}${p.fecha ? ' · ' + esc(fxDato(String(p.fecha).slice(0, 10))) : ''}</span>`;
+const botonesChoque = (id, n, area) => btnT(`Usar lo del documento${n > 1 ? ' (' + n + ' datos)' : ''}`, `data-b-aprobar="${id}" data-solo="choque"${area ? ` data-area="${area}"` : ''}`, 'Cambia el viaje a lo que dice el correo, el documento o el conductor, a su nombre')
+  + btnT('Dejar lo que tiene el viaje', `data-b-rechazar="${id}" data-solo="choque"${area ? ` data-area="${area}"` : ''}`, 'Se deja el viaje como está; lo que llegó se descarta y no vuelve a aparecer')
   + btnT('Abrir el viaje', `data-b-abrir="${id}"`, 'Si las dos cosas son ciertas porque algo cambió (otro vehículo, otra fecha), se cambia en el viaje con su causa');
-const botonesDato = (id, n, area, solo) => btnT(`✔ Guardar en el viaje${n > 1 ? ' (' + n + ')' : ''}`, `data-b-aprobar="${id}"${solo ? ` data-solo="${solo}"` : ''}${area ? ` data-area="${area}"` : ''}`, 'Lo que dice el correo pasa al viaje, a su nombre')
-  + btnT('Descartar', `data-b-rechazar="${id}"${solo ? ` data-solo="${solo}"` : ''}${area ? ` data-area="${area}"` : ''}`, 'No se guarda y no vuelve a aparecer');
+const botonesDato = (id, n, area, solo) => btnT(`✔ Guardar ${n > 1 ? n + ' datos' : 'el dato'} en el viaje`, `data-b-aprobar="${id}"${solo ? ` data-solo="${solo}"` : ''}${area ? ` data-area="${area}"` : ''}`, 'Lo que dice el correo pasa al viaje, a su nombre')
+  + btnT('No guardar', `data-b-rechazar="${id}"${solo ? ` data-solo="${solo}"` : ''}${area ? ` data-area="${area}"` : ''}`, 'No se guarda y no vuelve a aparecer');
 const areaInicial = () => { const p = EQUIPO.find(x => x.nombre === usuarioGuardado()); return p && AREAS.includes(p.area) ? p.area : ''; };
 
 // los 3 separadores (los usan la Bandeja y Mi turno, con la misma operación elegida): opN(o) = cuántos, opRoja(o) = tiene líneas rojas
@@ -9136,13 +9142,13 @@ function queHacer(b){
   const t = minus(b.accion), v = viajeDeAccion(b);
   if (!/llenar datos desde correos/.test(t)) return b.resumen ? `<br><span class="sub">📧 ${esc(b.resumen)}</span>` : '';
   const d = datosNuevosDe(b), ks = Object.keys(d).filter(k => d[k]);
-  const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(String(x)) ? fd(String(x)) : x;
+  const fx = fxDato;
   const pend = v ? PROP.filter(p => p.viajeId === v.id).length : 0;
   const L = v ? ks.map(k => `• ${esc(etiquetaCampo(v, k))}: el correo dice <b>${esc(fx(d[k]))}</b> · ${mismoDato(v[k], d[k]) ? '<span class="ok-txt">el viaje ya lo tiene</span>' : `el viaje dice <b>${esc(v[k] ? fx(v[k]) : 'vacío')}</b>`}`) : [];
   const todo = v && ks.length && ks.every(k => mismoDato(v[k], d[k]));
   const que = !v ? 'el viaje no se encontró: abra el correo y busque el viaje.'
     : todo ? 'nada que guardar: el viaje ya tiene lo que dice el correo. Presione <b>Ya la hice yo</b>.'
-    : pend ? 'arriba, en "Datos de correos" de este viaje, presione <b>Guardar</b> si el correo es correcto o <b>Descartar</b> si no.'
+    : pend ? 'arriba, en "Datos de correos" de este viaje, presione <b>Guardar</b> si el correo es correcto o <b>No guardar</b> si no.'
     : 'abra el correo; si el dato es correcto, póngalo en el viaje y marque la acción hecha.';
   return `${b.resumen ? `<br><span class="sub">📧 ${esc(b.resumen)}</span>` : ''}<div class="bj-que">👉 <b>Qué hacer:</b> ${que}${L.length ? '<br>' + L.join('<br>') : ''}</div>`;
 }
@@ -9169,7 +9175,7 @@ function armarBandeja(){
   const vivos = viajes.filter(v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre);
   const tarjetas = new Map(), usadas = new Set(), propUsadas = new Set(), hoyViajes = new Set();
   const tarjeta = (v, titulo) => { const k = v ? v.id : titulo; if (!tarjetas.has(k)) tarjetas.set(k, {v, titulo: titulo || nombreTurno(v), items: []}); return tarjetas.get(k); };
-  const padreDe = v => v && v.padre ? viajes.find(x => x.id === v.padre) || v : v;
+  const padreDe = v => v && v.padre ? viajePorId(v.padre) || v : v;
   // op: la operación del viaje (IMPO, EXPO, NACIONAL) para la barra de arriba; sin viaje, la que dice la acción (dominio operacionAccion)
   const add = (v, it, titulo, b) => { if (b) { const f = new Date(b.fechaCorreo || b.registrado); if (!isNaN(f)) it.desde = fechaLocal(f.toISOString()).slice(0, 10); }   // día de Colombia, no UTC
     it.op = v ? v.operacion : (b && operacionAccion(b)) || 'General'; tarjeta(v, titulo).items.push(it); if (v) hoyViajes.add(v.id); };
@@ -9191,17 +9197,17 @@ function armarBandeja(){
   vivos.forEach(v => {
     const hijos = hijosDe(v), todos = [v, ...hijos];
     // 2 · Por tomar
-    if (esNuevo(v)) add(v, {b: 'tomar', html: `Nadie lo ha tomado: ábralo y presione <b>Tomar</b>`, acc: btnT('Abrir y tomar', `data-b-abrir="${v.id}"`)});
+    if (esNuevo(v)) add(v, {b: 'tomar', html: `Nadie lo ha tomado: ábralo y presione <b>Tomar</b>`, acc: btnT('Tomar este viaje', `data-b-abrir="${v.id}"`)});
     // 3 · Sin vehículo (Cobertura + error "sin vehículo" + acción "asignar vehículo": una sola línea)
     if (sinCobertura(v)) {
       const asignar = B.filter(b => !usadas.has(b.id) && viajeDeAccion(b)?.id === v.id && RE_ASIGNAR.test(minus(b.accion)));
       asignar.forEach(b => usadas.add(b.id));
       const d = diffDias(arranqueDe(v)), ent = enturnadosDe(v), disp = disponiblesPara(v).filter(x => !ent.some(e => e.placa === x.placa)).slice(0, 3);
       const sug = sugeridos(v).filter(s => !ent.concat(disp).some(e => e.placa === s.placa)).slice(0, 3);
-      const ofrecer = (s, icono, t) => btnT(`${icono} ${esc(s.placa)} · ${esc(String(s.conductor).split(' ').slice(0, 2).join(' '))}`, `data-b-asignar="${v.id}" data-placa="${esc(s.placa)}" data-conductor="${esc(s.conductor)}" data-telefono="${esc(s.telefono || '')}"`, t);
+      const ofrecer = (s, icono, t) => btnT(`${icono} Asignar ${esc(s.placa)} · ${esc(String(s.conductor).split(' ').slice(0, 2).join(' '))}`, `data-b-asignar="${v.id}" data-placa="${esc(s.placa)}" data-conductor="${esc(s.conductor)}" data-telefono="${esc(s.telefono || '')}"`, t);
       add(v, {b: 'vehiculo', k: 'cob|' + v.id, ks: asignar.map(b => 'a' + b.id), html: `Arranca ${d < 0 ? 'desde el ' : d === 0 ? 'hoy, ' : d === 1 ? 'mañana, ' : ''}${fd(arranqueDe(v))} y no tiene placa`
         + (asignar.length ? `<br><span class="sub">También lo pide ${asignar.map(b => esc(b.id)).join(', ')}: al guardar la placa, márquela hecha</span>` : ''),
-        acc: btnT('Asignar en el viaje', `data-b-abrir="${v.id}"`)
+        acc: btnT('Abrir el viaje y asignar', `data-b-abrir="${v.id}"`)
           + ent.map(s => ofrecer(s, '🙋', `Se enturnó en la app ${s.creado ? haceTxt(s.creado) : ''}: se revisa y se guarda`)).join('')
           + disp.map(s => ofrecer(s, '🟢', `Disponible${s.desde ? ' desde ' + fd(s.desde) : ''}${s.ciudad ? ' en ' + s.ciudad : ''}: se revisa y se guarda`)).join('')
           + sug.map(s => ofrecer(s, '🚚', 'Ya hizo esta ruta: se revisa y se guarda')).join('')
@@ -9236,32 +9242,32 @@ function armarBandeja(){
     todos.forEach(x => { const hm = hitosDe(x).filter(h => diffDias(h.f) === 1 && h.que !== 'Cierre documental'); if (!hm.length) return;
       add(v, {b: 'manana', k: 'man|' + x.id, falta: !x.placa || !x.conductor,
         html: `${x.padre ? `${esc(nombreSub(x))} · ` : ''}<b>Mañana:</b> ${esc(hm.map(h => h.que.toLowerCase() + (h.donde ? ' en ' + h.donde : '')).join(' · '))}<br><span class="sub">${x.placa ? '✓ ' + esc(x.placa) : '<b style="color:var(--bad)">⚠ sin vehículo</b>'} · ${x.conductor ? '✓ ' + esc(x.conductor) : '<b style="color:var(--bad)">⚠ sin conductor</b>'}</span>`,
-        acc: (x.placa ? lnkT(ICONO_WA + 'Avisar al conductor', waConductor(x, `te confirmo mañana ${hm.map(h => h.que.toLowerCase()).join(' y ')}${hm[0].donde ? ' en ' + hm[0].donde : ''}. ¿Todo listo?`)) : '') + btnT('Abrir viaje', `data-b-abrir="${x.id}"`)}); });
+        acc: (x.placa ? lnkT(ICONO_WA + 'Avisar al conductor', waConductor(x, `te confirmo mañana ${hm.map(h => h.que.toLowerCase()).join(' y ')}${hm[0].donde ? ' en ' + hm[0].donde : ''}. ¿Todo listo?`)) : '') + btnT('Abrir el viaje', `data-b-abrir="${x.id}"`)}); });
     // 4 · ¿Pasó? (por confirmar + sin actualizar de la misma fecha: una pregunta)
     // 10-nov ("estos zarpes dependen de la naviera... usemos el estimado"): el zarpe y la llegada a destino no se le preguntan al
     // equipo; no los hace la transportadora. Queda la fecha estimada (ETD / ETA) como dato en el viaje.
     todos.forEach(x => pasosPorConfirmar(x).filter(p => !p.naviera).forEach(p => add(v, {b: 'paso', k: 'conf|' + x.id, ks: x === v && sinActualizar(v).length ? [kSeg(v)] : [],   // 11-nov (auditoría): si además está sin actualizar (rojo), esta línea lleva esa clave; antes bloqueaba la ronda sin línea roja ni excepción
       html: `${x.padre ? `${esc(nombreSub(x))} · ` : ''}<b>${esc(p.txt)}</b> ${esc(fd(p.fecha))}${p.dias ? ` · hace ${p.dias} d` : ' · hoy'}`,
-      acc: botonConfirmar({v: x, ...p}, 'Sí, se hizo') + btnT('No: nueva fecha', `data-b-abrir="${x.id}"`, 'Abre el viaje para poner la fecha nueva con su causa')})));
+      acc: botonConfirmar({v: x, ...p}, 'Sí, ya se hizo') + btnT('No se hizo: poner nueva fecha', `data-b-abrir="${x.id}"`, 'Abre el viaje para poner la fecha nueva con su causa')})));
     if (!pasosPorConfirmar(v).some(p => !p.naviera)) sinActualizar(v).forEach(s => add(v, {b: 'sinact', k: kSeg(v), html: `${esc(s.msg)}<br><span class="sub">${esc(s.porque || '')}</span>`,
-      acc: btnT('Actualizar el viaje', `data-b-abrir="${v.id}"`) + (v.placa ? lnkT(ICONO_WA + 'Preguntar dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas')) : '')}));
+      acc: btnT('Actualizar el viaje', `data-b-abrir="${v.id}"`) + (v.placa ? lnkT(ICONO_WA + 'Preguntar al conductor dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas')) : '')}));
     // ¿Dónde va? (seguimiento de la ronda): vehículos en movimiento sin nada atrasado; "Sigue igual" lo marca revisado en esta ronda
     // 10-nov (corrección): antes esta fila solo salía si el viaje además tenía un paso por confirmar (un "else" de más); los vehículos
     // en movimiento sin nada pendiente contaban en la ronda pero no tenían dónde marcarse, y la ronda no se podía cerrar desde aquí
     if (!sinActualizar(v).length && enSeguimiento([v]).length && !gpsVivo(v) && !T.R.has(kSeg(v))) { const p = pulsoViaje(v);   // con GPS vivo no se pregunta (turno.js gpsVivo)
       add(v, {b: 'donde', k: kSeg(v), html: `📍 <b>${esc(p.donde)}</b>${p.quieto ? ' · ' + esc(p.quieto) : ''}${p.espera ? '<br>' + esc(p.espera) : ''}${p.app ? '<br>' + esc(p.app) : ''}${ultimoComentario(v) ? '<br><span class="sub">' + ultimoComentario(v) + '</span>' : ''}`,
-        acc: btnT('✏️ Actualizar', `data-b-abrir="${v.id}"`) + (v.placa ? lnkT(ICONO_WA + 'Preguntar dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas')) : '')
+        acc: btnT('Actualizar el viaje', `data-b-abrir="${v.id}"`) + (v.placa ? lnkT(ICONO_WA + 'Preguntar al conductor dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas')) : '')
           + btnT('📍 Sigue igual', `data-t-rev="${kSeg(v)}"`, 'Lo marca revisado en esta ronda para todo el equipo')}); }
     // 10-nov · dos frentes: el vehículo del subviaje, con su propia pregunta (turno.js urbanoEnSeguimiento)
     hijosDe(v).filter(s => urbanoEnSeguimiento(s) && !T.R.has(kSeg(s))).forEach(s => { const p = pulsoSubviaje(s);
       add(v, {b: 'donde', k: kSeg(s), html: `${esc(nombreSub(s))}${s.placa ? ' · <span class="placa">' + esc(s.placa) + '</span>' : ''}<br>📍 <b>${esc(p.donde)}</b>${p.app ? '<br>' + esc(p.app) : ''}${ultimoComentario(s) ? '<br><span class="sub">' + ultimoComentario(s) + '</span>' : ''}`,
-        acc: btnT('✏️ Actualizar', `data-b-abrir="${s.id}"`) + lnkT(ICONO_WA + 'Preguntar si está listo', waConductor(s, '¿todo listo para el urbano de mañana? Confírmame')) + btnT('📍 Sigue igual', `data-t-rev="${kSeg(s)}"`, 'Lo marca revisado en esta ronda para todo el equipo')}); });
+        acc: btnT('Actualizar el viaje', `data-b-abrir="${s.id}"`) + lnkT(ICONO_WA + 'Preguntar al conductor si está listo', waConductor(s, '¿todo listo para el urbano de mañana? Confírmame')) + btnT('📍 Sigue igual', `data-t-rev="${kSeg(s)}"`, 'Lo marca revisado en esta ronda para todo el equipo')}); });
     // 5 · Datos de correos (Llenar datos + los datos de cada acción): se aprueban o rechazan aquí; la acción que los trajo se cierra
     // una línea por área: los datos de cobro (extracostos, RBHY, factura…) son de Facturación, el resto de Operaciones
     ['Operaciones', 'Facturación'].forEach(area => {
       const P = PROP.filter(p => todos.some(x => x.id === p.viajeId) && areaProp(p) === area); if (!P.length) return;
       P.forEach(p => propUsadas.add(p.clave));
-      const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
+      const fx = fxDato;
       // las acciones que trajeron esos datos y las que solo dicen "revise los datos del correo" de este viaje: una sola línea
       const deAcc = [...new Set([...P.map(p => (String(p.origen || '').match(/^Correo (LX-\d+)/) || [])[1]),
         ...(area === 'Operaciones' ? B.filter(b => /llenar datos desde correos/i.test(b.accion) && todos.some(x => x.id === viajeDeAccion(b)?.id)).map(b => b.id) : [])].filter(Boolean))];
@@ -9269,9 +9275,9 @@ function armarBandeja(){
       // 10-nov: lo que choca con un valor que el viaje ya tiene va aparte, en rojo (No coincide); lo demás, como siempre
       const choques = P.filter(noCoincide), nuevos = P.filter(p => !noCoincide(p)), vienen = deAcc.length ? `<br><span class="sub">Vienen de ${deAcc.map(esc).join(', ')}: al decidir todos, se cierran</span>` : '';
       if (choques.length) add(v, {b: 'nocoincide', area, ks: nuevos.length ? [] : deAcc.map(id => 'a' + id), html: choques.map(p => lineaChoque(p) + avisoDato(p)).join('<br>') + (nuevos.length ? '' : vienen),
-        acc: botonesChoque(v.id, choques.length, area) + btnT('Ver uno por uno', 'data-b-prop="1"')});
+        acc: botonesChoque(v.id, choques.length, area) + btnT('Elegir dato por dato', 'data-b-prop="1"')});
       if (nuevos.length) add(v, {b: 'datos', area, ks: deAcc.map(id => 'a' + id), html: nuevos.map(p => lineaDato(p) + avisoDato(p)).join('<br>') + vienen,
-        acc: botonesDato(v.id, nuevos.length, area, choques.length ? 'nuevo' : '') + btnT('Ver uno por uno', 'data-b-prop="1"')});
+        acc: botonesDato(v.id, nuevos.length, area, choques.length ? 'nuevo' : '') + btnT('Elegir dato por dato', 'data-b-prop="1"')});
     });
     // 7 · Falta (errores del viaje y de sus subviajes; sin los que ya salen arriba), solo si arranca en ≤ HORIZONTE_FALTA días o ya arrancó
     const pe = primerEvento(v), cerca = !pe || diffDias(pe) <= HORIZONTE_FALTA;
@@ -9279,7 +9285,7 @@ function armarBandeja(){
       const E = todos.flatMap(x => validar(x).map(e => ({...e, x}))).filter(e => e.tipo !== 'Alerta' && e.campo !== 'Seguimiento'
         && !(sinCobertura(v) && e.x === v && /veh[ií]culo/i.test(e.msg)));
       if (E.length) add(v, {b: 'falta', html: E.map(e => `${e.x.padre ? `${esc(nombreSub(e.x))} · ` : ''}${esc(e.msg)}`).join('<br>'),
-        acc: btnT('Completar en el viaje', `data-b-abrir="${v.id}"`) + clavesBusqueda(v).slice(0, 1).map(([k, c]) => lnkT(`🔎 ${esc(k)} ${esc(c)}`, urlBusqueda(c))).join('')});
+        acc: btnT('Abrir el viaje y completar', `data-b-abrir="${v.id}"`) + clavesBusqueda(v).slice(0, 1).map(([k, c]) => lnkT(`🔎 Buscar el correo (${esc(k)} ${esc(c)})`, urlBusqueda(c))).join('')});
     }
   });
   // 10-nov · Por hacer ("pida la cita no es un error: es algo muy importante por hacer"): las alertas de lo que viene (pedir la cita
@@ -9290,12 +9296,12 @@ function armarBandeja(){
       && !(sinCobertura(v) && e.x === v && /veh[ií]culo/i.test(e.msg))).forEach(e => {
         const limite = String((/cita de ingreso/i.test(e.campo) ? e.x.cierreDoc : primerEvento(e.x)) || '').slice(0, 10);
         add(v, {b: 'hacer', hoy: !limite || diffDias(limite) <= 1, html: `${e.x.padre ? `${esc(nombreSub(e.x))} · ` : ''}<b>${esc(textoHacer(e))}</b>${e.porque ? `<br><span class="sub">${esc(e.porque)}</span>` : ''}`,
-          acc: btnT('Completar en el viaje', `data-b-campo="${e.x.id}" data-campo="${esc(e.campo)}"`, 'Abre el viaje en esa casilla') + clavesBusqueda(v).slice(0, 1).map(([k, c]) => lnkT(`🔎 ${esc(k)} ${esc(c)}`, urlBusqueda(c))).join('')}); }); });
+          acc: btnT('Completar este dato en el viaje', `data-b-campo="${e.x.id}" data-campo="${esc(e.campo)}"`, 'Abre el viaje en esa casilla') + clavesBusqueda(v).slice(0, 1).map(([k, c]) => lnkT(`🔎 Buscar el correo (${esc(k)} ${esc(c)})`, urlBusqueda(c))).join('')}); }); });
   // datos de correos de viajes que no están abiertos (ej. la aprobación de extracostos de un viaje ya cerrado, que es de Facturación)
   [...new Set(PROP.filter(p => !propUsadas.has(p.clave)).map(p => p.viajeId))].forEach(id => {
-    const v = viajes.find(x => x.id === id), P = PROP.filter(p => p.viajeId === id && !propUsadas.has(p.clave));
+    const v = viajePorId(id), P = PROP.filter(p => p.viajeId === id && !propUsadas.has(p.clave));
     P.forEach(p => propUsadas.add(p.clave));
-    const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
+    const fx = fxDato;
     add(v || null, {b: 'datos', area: P.every(p => areaProp(p) === 'Facturación') ? 'Facturación' : 'Operaciones', html: `${v ? `<span class="tg">${esc(situacion(v))}</span> ` : ''}` + P.map(lineaDato).join('<br>'),
       acc: v ? botonesDato(v.id, P.length) : btnT('Ver en Llenar datos', 'data-b-prop="1"')}, v ? '' : 'Datos de viajes que no se encontraron');
   });
@@ -9338,7 +9344,7 @@ function armarBandeja(){
     const v = x.v, it = x.tipo === 'man'
       ? {b: 'cierre', k: x.k, html: `<b>${esc(nombreTurno(v))}</b> · mañana ${esc(x.h.map(h => h.que.toLowerCase() + (h.donde ? ' en ' + h.donde : '')).join(' · '))}<br><span class="sub">${v.placa ? '✓ ' + esc(v.placa) : '<b style="color:var(--bad)">⚠ sin vehículo</b>'} · ${v.conductor ? '✓ ' + esc(v.conductor) : '<b style="color:var(--bad)">⚠ sin conductor</b>'}</span>`,
         acc: (v.placa ? lnkT(ICONO_WA + 'Avisar al conductor', waConductor(v, `te confirmo mañana ${x.h.map(h => h.que.toLowerCase()).join(' y ')}${x.h[0].donde ? ' en ' + x.h[0].donde : ''}. ¿Todo listo?`)) : '')
-          + btnT('Abrir viaje', `data-b-abrir="${v.id}"`) + btnT('✓ Listo para mañana', `data-t-rev="${esc(x.k)}"`, 'Lo marca listo para todo el equipo')}
+          + btnT('Abrir el viaje', `data-b-abrir="${v.id}"`) + btnT('✓ Listo para mañana', `data-t-rev="${esc(x.k)}"`, 'Lo marca listo para todo el equipo')}
       : {b: 'cierre', k: x.k, html: `<b>Nota de entrega de turno</b><br><span class="sub">Qué queda pendiente, qué se habló con Reckitt o con los conductores, qué debe mirar el siguiente turno. Va en el resumen del día a Gerencia y Calidad.</span>`
           + `<textarea id="bjNota" maxlength="180" rows="2" class="tr-nota" placeholder="Ej.: booking 088ICO0103300 sin confirmar cita; Jhonier espera la tirilla de JYY043"></textarea>`,
         acc: btnT('Guardar nota', 'data-b-nota="1"')};
@@ -9381,7 +9387,7 @@ function soloEnOtra(R){
   const fuera = [];
   R.B.filter(b => !R.usadas.has(b.id)).forEach(b => fuera.push(['Acciones', `${b.id} · ${b.accion}`]));
   PROP.filter(p => !R.propUsadas.has(p.clave)).forEach(p => fuera.push(['Llenar datos', `${p.viajeId} · ${p.etiqueta}: ${p.valor}`]));
-  try { menusTurno(rondaActual()).forEach(m => m.filas.forEach(x => { const v = x.v && (x.v.padre ? viajes.find(y => y.id === x.v.padre) : x.v);
+  try { menusTurno(rondaActual()).forEach(m => m.filas.forEach(x => { const v = x.v && (x.v.padre ? viajePorId(x.v.padre) : x.v);
     if (v && ['seg', 'cob', 'conf', 'reg', 'dato'].includes(x.tipo) && !R.hoyViajes.has(v.id) && !(x.tipo === 'seg' && !x.roja) && !(x.tipo === 'dato' && primerEvento(v) && diffDias(primerEvento(v)) > HORIZONTE_FALTA))
       fuera.push(['Mi turno · ' + m.titulo, `${v.id} · ${x.tipo === 'dato' ? x.e[0].msg : x.tipo}`]); })); } catch(e) {}
   return fuera;
@@ -9433,7 +9439,7 @@ function renderBandeja(){
   // 10-nov · dos tramos: Para hoy (con lo atrasado) y Próximos días (plegado hasta que se pida, salvo con un filtro puesto)
   const hoyL = ver.filter(t => t.hoy), proxL = ver.filter(t => !t.hoy);
   const seccion = (titulo, n, nota) => `<div class="bj-sec"><b>${titulo}</b> <span class="bj-secn">${n}</span> <span class="sub">${nota}</span></div>`;
-  const pintarTarjeta = t => `<div class="bj-card${t.roja ? ' roja' : ''}"><div class="bj-h">${fechaTarjeta(t)}<b>${esc(t.titulo)}</b>${t.v ? ` <span class="sub">${esc([t.v.contenedor, t.v.estado].filter(Boolean).join(' · '))}</span> ${btnT('Abrir viaje', `data-b-abrir="${t.v.id}"`)}` : ''}</div>`
+  const pintarTarjeta = t => `<div class="bj-card${t.roja ? ' roja' : ''}"><div class="bj-h">${fechaTarjeta(t)}<b>${esc(t.titulo)}</b>${t.v ? ` <span class="sub">${esc([t.v.contenedor, t.v.estado].filter(Boolean).join(' · '))}</span> ${btnT('Abrir el viaje', `data-b-abrir="${t.v.id}"`)}` : ''}</div>`
       + BLOQUES.flatMap(([k, nombre, cls]) => t.items.filter(i => i.b === k && (!bandejaFiltro || bandejaFiltro === k)).map(i => plegar(i, `<div class="bj-item${i.roja ? ' roja' : ''}"><span class="pill ${cls}">${i.pill || nombre}</span><div class="bj-txt">${i.hacer || QUE_HACER[k] ? `<div class="bj-hacer">${i.hacer || QUE_HACER[k]}</div>` : ''}${i.html}${extra(i)}</div><div class="tr-acc">${i.acc || ''}${accExc(i)}</div></div>`))).join('')
       + '</div>';
   cont.innerHTML = `<div class="bj-ronda sub">${ronda}${bloqueo}${llave}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}</div>` + bloqueGerencia(T) + bloqueCalifGerencia() + avisoAuto + resumenCierre() + barraOp
@@ -9451,24 +9457,24 @@ function renderBandeja(){
 // aprobar o rechazar los datos de los correos de un viaje (los mismos de "Llenar datos"); la acción que los trajo se cierra si ya no le quedan
 // solo (10-nov): 'choque' = solo los que no coinciden con la base; 'nuevo' = solo los datos nuevos; vacío = todos los de la línea
 async function decidirBandeja(id, aprobar, area, solo){
-  const v = viajes.find(x => x.id === id); if (!v) return;
+  const v = viajePorId(id); if (!v) return;
   // solo los datos de esa línea: los del área (Operaciones o Facturación) si la línea es de un área
   const todos = [v, ...hijosDe(v)], P = PROP.filter(p => todos.some(x => x.id === p.viajeId) && (!area || areaProp(p) === area) && (!solo || (solo === 'choque') === noCoincide(p))); if (!P.length) return;
-  const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
-  if (!await preguntarSiNo(`¿${aprobar ? 'Guardar en el viaje' : 'Descartar'} lo que dice el correo en ${id}?${aprobar ? '' : ' (no se guarda y no vuelve a aparecer)'}\n\n${P.map(p => p.campo === 'aprobacionExtra' ? `• Reckitt ${p.valor === 'Aprobado' ? 'aprobó' : p.valor === 'Rechazado' ? 'rechazó' : 'marcó ' + p.valor + ' en'} los extracostos (lo dice ${String(p.evidencia || '').split(' · ')[0]})` : `• ${p.etiqueta}: ${p.actual ? fx(p.actual) : 'vacío'} → ${fx(p.valor)}`).join('\n')}`, aprobar ? 'Sí, guardar' : 'Sí, descartar')) return;
+  const fx = fxDato;
+  if (!await preguntarSiNo(`¿${aprobar ? 'Guardar en el viaje' : 'No guardar'} lo que dice el correo en ${id}?${aprobar ? '' : ' (no se guarda y no vuelve a aparecer)'}\n\n${P.map(p => p.campo === 'aprobacionExtra' ? `• Reckitt ${p.valor === 'Aprobado' ? 'aprobó' : p.valor === 'Rechazado' ? 'rechazó' : 'marcó ' + p.valor + ' en'} los extracostos (lo dice ${String(p.evidencia || '').split(' · ')[0]})` : `• ${p.etiqueta}: ${p.actual ? fx(p.actual) : 'vacío'} → ${fx(p.valor)}`).join('\n')}`, aprobar ? 'Sí, guardar' : 'Sí, descartar')) return;
   const usuario = pedirUsuario(); if (!usuario) return;
   const datos = P.map(({clave, viajeId, campo, valor, evidencia, origen}) => ({clave, viajeId, campo, valor, evidencia, origen}));
   try {
     const j = await api('decidir', {usuario, aprobar: aprobar ? datos : [], rechazar: aprobar ? [] : datos});
     if (!j.ok) throw new Error(j.error || 'error');
     const usados = new Set(P.map(p => p.clave)); PROP = PROP.filter(p => !usados.has(p.clave)); 
-    if (aprobar) { P.forEach(p => { const x = viajes.find(y => y.id === p.viajeId); if (x) { x[p.campo] = p.valor; anotarConfirmacion(x, p.campo, p.valor, usuario, fuenteDeOrigen(p.origen)); } }); etapasViajes(); }
+    if (aprobar) { P.forEach(p => { const x = viajePorId(p.viajeId); if (x) { x[p.campo] = p.valor; anotarConfirmacion(x, p.campo, p.valor, usuario, fuenteDeOrigen(p.origen)); } }); etapasViajes(); }
     // la acción de LogxIA que trajo esos datos se cierra si ya no le quedan datos por decidir (R1 de la propuesta)
     const ids = [...new Set([...P.map(p => (String(p.origen || '').match(/^Correo (LX-\d+)/) || [])[1]),
       // "revise los datos del correo": se cierra solo cuando al viaje ya no le quedan datos de Operaciones por decidir
       ...((area && area !== 'Operaciones') || PROP.some(p => todos.some(x => x.id === p.viajeId) && areaProp(p) === 'Operaciones') ? []
         : (window.BITACORA || []).filter(b => b.estadoAccion !== 'Hecha' && /llenar datos desde correos/i.test(b.accion) && todos.some(x => x.id === viajeDeAccion(b)?.id)).map(b => b.id))].filter(Boolean))];
-    for (const lx of ids) { const b = (window.BITACORA || []).find(x => x.id === lx);
+    for (const lx of ids) { const b = accionPorId(lx);
       if (b && b.estadoAccion !== 'Hecha' && !datosDeAccion(b).length) await marcarHecha(lx, false, `${aprobar ? 'aprobó' : 'rechazó'} los datos del correo en la Bandeja`); }
     toast(aprobar ? `${j.aprobadas} dato${j.aprobadas === 1 ? '' : 's'} guardado${j.aprobadas === 1 ? '' : 's'}` : `${j.rechazadas} rechazado${j.rechazadas === 1 ? '' : 's'}`);
     render();
@@ -9705,7 +9711,7 @@ cargar().then(ok => { if (ok === false) return; if (window.MODO_CLIENTE) documen
   if (!window.MODO_CLIENTE && claveActual() && !window.PROP_EN_CARGA) cargarPropuestas().then(ok => { if (ok) render(); });   // 9-nov: ya vienen en la carga (datos.js)
   // enlace "Abrir viaje" de un correo (?viaje=FILA-9): el equipo ve la ventana del viaje; el cliente (solo lectura) ve la lista
   // Viajes filtrada por ese viaje. Se usa una sola vez: se quita de la dirección para que recargar o guardar el enlace no lo reabra
-  const vid = new URLSearchParams(location.search).get('viaje'), vv = vid && viajes.find(x => x.id === vid);
+  const vid = new URLSearchParams(location.search).get('viaje'), vv = vid && viajePorId(vid);
   if (vv && !window.MODO_CLIENTE) abrir(vid);
   else if (vv) { const [, clave] = clavesBusqueda(vv).find(([k]) => k !== 'Placa') || ['', vv.placa || ''];
     document.querySelector('#nav [data-v="viajes"]')?.click(); $('#q').value = clave; renderTabla(); }
