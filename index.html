@@ -7135,7 +7135,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'dfeca6d53b';
+const VERSION_TABLERO = 'bc42041936';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -9041,6 +9041,80 @@ function resumenCierre(){
   const partes = [logxia ? `${logxia} con LogxIA` : '', sistema ? `${sistema} solas, porque el viaje ya lo mostraba` : '', mano > 0 ? `${mano} a mano` : '', noetp ? `${noetp} que no nos tocaban` : ''].filter(Boolean);
   return `<div class="bj-cierre sub">✔ Hoy se cerraron <b>${cer.length}</b> ${cer.length === 1 ? 'acción' : 'acciones'} (${partes.join(' · ')}). Quedan <b>${quedan}</b> pendientes.</div>`;
 }
+/* ---------- decisiones.js · "No coincide" y "Datos de correos": tabla Hoy → Lo que llegó y una elección por dato (12-nov-2026) ----------
+ * Capa: pantalla. Pedido del usuario ("la idea es arreglar todo"): igual que las acciones de programación (quien.js), estas dos tarjetas
+ * muestran lo que el viaje tiene hoy contra lo que llegó (correo, documento o conductor) y dejan decidir dato por dato, en la misma
+ * tarjeta y con un solo botón:
+ *   · Datos nuevos (el viaje no tenía nada distinto): una casilla por dato, todas marcadas. "Guardar N seleccionados" los escribe en el
+ *     viaje; "No guardar los marcados" los descarta (no vuelven a salir). Lo desmarcado sigue pendiente.
+ *   · No coincide (el viaje ya tenía otro valor): por cada dato dos opciones, "Usar lo que llegó" o "Dejar lo del viaje", sin ninguna
+ *     marcada de antemano porque decide la persona. "Guardar mi elección" aplica lo elegido; lo que no se eligió sigue pendiente.
+ * Quien guarda queda en el Historial del viaje; la acción de LogxIA que trajo los datos se cierra cuando ya no le queda ninguno. */
+const ELEC_DATOS = {};   // id de la tarjeta → {sin: Set de claves sin marcar (datos nuevos), eleg: {clave: 'nuevo' | 'viaje'} (choques)}
+const estadoElec = id => ELEC_DATOS[id] || (ELEC_DATOS[id] = {sin: new Set(), eleg: {}});
+const idDecision = (viajeId, area, tipo) => [viajeId, area, tipo].join('|');
+const propsDeTarjeta = (viajeId, area, tipo) => { const v = viajePorId(viajeId); if (!v) return [];
+  const todos = [v, ...hijosDe(v)]; return PROP.filter(p => todos.some(x => x.id === p.viajeId) && areaProp(p) === area && (tipo === 'choque') === noCoincide(p)); };
+// qué se va a escribir, en palabras: la aprobación de extracostos la da Reckitt y se dice así
+const textoLlego = p => p.campo === 'aprobacionExtra' ? `Reckitt ${p.valor === 'Aprobado' ? 'aprobó' : p.valor === 'Rechazado' ? 'rechazó' : 'marcó «' + p.valor + '» en'} los extracostos` : fxDato(p.valor);
+const celdaLlego = p => `<b class="qh-n">${esc(textoLlego(p))}</b><br><span class="sub">${esc(fuenteChoque(p).replace(/^el /, ''))} · ${esc(String(p.evidencia || '').slice(0, 80))}${p.fecha ? ' · ' + esc(fxDato(String(p.fecha).slice(0, 10))) : ''}</span>${avisoDato(p)}`;
+const filaDecision = (p, control) => `<tr><td>${control}</td><td>${esc(p.etiqueta)}</td><td class="qh-v">${p.actual ? esc(fxDato(p.actual)) : 'vacío'}</td><td>${celdaLlego(p)}</td></tr>`;
+
+// datos nuevos: una casilla por dato
+function htmlDatosNuevos(P, tid){
+  const E = estadoElec(tid), n = P.filter(p => !E.sin.has(p.clave)).length;
+  return `<table class="qh-tab"><tr><th><input type="checkbox" data-qdtodos="${esc(tid)}"${n === P.length ? ' checked' : ''} aria-label="Todos" title="Marcar o desmarcar todos"></th><th>Dato</th><th>Hoy en el viaje</th><th>Lo que llegó</th></tr>`
+    + P.map(p => filaDecision(p, `<input type="checkbox" data-qd="${esc(tid)}" data-clave="${esc(p.clave)}"${E.sin.has(p.clave) ? '' : ' checked'} aria-label="Guardar ${esc(p.etiqueta)}">`)).join('') + '</table>';
+}
+const botonesDatosNuevos = (P, tid) => { const E = estadoElec(tid), n = P.filter(p => !E.sin.has(p.clave)).length;
+  return `<button type="button" class="btn primary qh-btn" data-b-dguardar="${esc(tid)}"${n ? '' : ' disabled'} title="Los datos marcados pasan al viaje, a su nombre">${textoGuardar(n)}</button>`
+    + `<button type="button" class="btn" data-b-dno="${esc(tid)}"${n ? '' : ' disabled'} title="Los datos marcados no se guardan y no vuelven a aparecer">No guardar los marcados</button>`; };
+
+// no coincide: por dato, "usar lo que llegó" o "dejar lo del viaje"
+function htmlChoques(P, tid){
+  const E = estadoElec(tid);
+  return `<table class="qh-tab"><tr><th>Qué hago</th><th>Dato</th><th>Hoy en el viaje</th><th>Lo que llegó</th></tr>`
+    + P.map((p, i) => filaDecision(p, ['nuevo', 'viaje'].map(o => `<label class="qh-op"><input type="radio" name="qe-${esc(tid)}-${i}" data-qe="${esc(tid)}" data-clave="${esc(p.clave)}" value="${o}"${E.eleg[p.clave] === o ? ' checked' : ''}> ${o === 'nuevo' ? 'Usar lo que llegó' : 'Dejar lo del viaje'}</label>`).join('<br>'))).join('') + '</table>';
+}
+const botonesChoques = (P, tid, viajeId) => { const E = estadoElec(tid), n = P.filter(p => E.eleg[p.clave]).length;
+  return `<button type="button" class="btn primary qh-btn" data-b-cguardar="${esc(tid)}"${n ? '' : ' disabled'} title="Se aplica lo elegido en cada dato, a su nombre; lo que no elija sigue pendiente">${n ? `Guardar mi elección (${n})` : 'Elija qué hacer con cada dato'}</button>`
+    + btnT('Marcar todos: usar lo que llegó', `data-b-ctodos="${esc(tid)}|nuevo"`) + btnT('Marcar todos: dejar lo del viaje', `data-b-ctodos="${esc(tid)}|viaje"`)
+    + btnT('Abrir el viaje', `data-b-abrir="${viajeId}"`, 'Si las dos cosas son ciertas porque algo cambió (otro vehículo, otra fecha), se cambia en el viaje con su causa'); };
+
+// una casilla o una opción cambió: se recuerda y se actualiza el botón sin repintar la Bandeja
+function seleccionDecision(el){
+  const tid = el.dataset.qdtodos || el.dataset.qd || el.dataset.qe, E = estadoElec(tid), [vid, area, tipo] = tid.split('|'), P = propsDeTarjeta(vid, area, tipo);
+  if (el.dataset.qdtodos) E.sin = el.checked ? new Set() : new Set(P.map(p => p.clave));
+  else if (el.dataset.qd) { if (el.checked) E.sin.delete(el.dataset.clave); else E.sin.add(el.dataset.clave); }
+  else E.eleg[el.dataset.clave] = el.value;
+  const q = s => document.querySelectorAll(s.replace('%', tid.replace(/"/g, '\\"')));
+  if (tipo === 'choque') { const n = P.filter(p => E.eleg[p.clave]).length;
+    q('[data-b-cguardar="%"]').forEach(b => { b.disabled = !n; b.textContent = n ? `Guardar mi elección (${n})` : 'Elija qué hacer con cada dato'; }); }
+  else { const n = P.filter(p => !E.sin.has(p.clave)).length;
+    q('[data-qd="%"]').forEach(x => { x.checked = !E.sin.has(x.dataset.clave); }); q('[data-qdtodos="%"]').forEach(x => { x.checked = n === P.length; });
+    q('[data-b-dguardar="%"]').forEach(b => { b.disabled = !n; b.textContent = textoGuardar(n); }); q('[data-b-dno="%"]').forEach(b => { b.disabled = !n; }); }
+}
+function marcarTodosChoques(tid, que){
+  const [vid, area, tipo] = tid.split('|'), E = estadoElec(tid); propsDeTarjeta(vid, area, tipo).forEach(p => { E.eleg[p.clave] = que; });
+  document.querySelectorAll('[data-qe]').forEach(x => { if (x.dataset.qe === tid) x.checked = E.eleg[x.dataset.clave] === x.value; });
+  const n = propsDeTarjeta(vid, area, tipo).length;
+  document.querySelectorAll(`[data-b-cguardar="${tid.replace(/"/g, '\\"')}"]`).forEach(b => { b.disabled = !n; b.textContent = `Guardar mi elección (${n})`; });
+}
+async function guardarDatosMarcados(tid, rechazar){
+  const [vid, area, tipo] = tid.split('|'), v = viajePorId(vid), E = estadoElec(tid), sel = propsDeTarjeta(vid, area, tipo).filter(p => !E.sin.has(p.clave));
+  if (!v || !sel.length) return toast('Marque al menos un dato');
+  const usuario = pedirUsuario(); if (!usuario) return;
+  delete ELEC_DATOS[tid];
+  await aplicarDecision(v, area, rechazar ? [] : sel, rechazar ? sel : [], usuario);
+}
+async function guardarEleccionChoques(tid){
+  const [vid, area, tipo] = tid.split('|'), v = viajePorId(vid), E = estadoElec(tid), P = propsDeTarjeta(vid, area, tipo);
+  const A = P.filter(p => E.eleg[p.clave] === 'nuevo'), R = P.filter(p => E.eleg[p.clave] === 'viaje');
+  if (!v || !(A.length + R.length)) return toast('Elija qué hacer con al menos un dato');
+  const usuario = pedirUsuario(); if (!usuario) return;
+  delete ELEC_DATOS[tid];
+  await aplicarDecision(v, area, A, R, usuario);
+}
 /* ---------- bandeja.js · Bandeja (prueba, desde 6-nov): todo lo que pide trabajo, una tarjeta por viaje ----------
  * Capa: pantalla. No tiene reglas ni datos propios: junta lo que ya calculan Mi turno, Acciones, Llenar datos y Errores
  * (dominio.js: sinCobertura, pasosPorConfirmar, sinActualizar, validar, pareceHecha, yaCreado; acciones.js BITACORA;
@@ -9107,12 +9181,8 @@ const avisoDato = p => { const x = viajePorId(p.viajeId); let A = []; try { A = 
 const lineaDato = p => p.campo === 'aprobacionExtra'
   ? `<b>Reckitt ${p.valor === 'Aprobado' ? 'aprobó' : p.valor === 'Rechazado' ? 'rechazó' : 'marcó «' + esc(p.valor) + '» en'} los extracostos</b> <span class="sub">· lo dice ${quienDato(p)}; se anota en "Aprobación extracostos"</span>`
   : `${esc(p.etiqueta)}: ${p.actual ? `<s class="sub">${esc(fxDato(p.actual))}</s> → ` : ''}<b>${esc(fxDato(p.valor))}</b> <span class="sub">${esc(String(p.evidencia || '').slice(0, 90))}</span>`;
-// 10-nov · No coincide (dominio.js noCoincide): la casilla ya tenía otro valor. Se muestran los dos, con quién lo dice y cuándo
+// 10-nov · No coincide (dominio.js noCoincide): la casilla ya tenía otro valor. Se muestran los dos, con quién lo dice y cuándo (decisiones.js)
 const fuenteChoque = p => /conductor/i.test(p.origen || '') ? 'el conductor' : /document|archivo|adjunto/i.test(p.origen || '') ? 'el documento' : 'el correo';
-const lineaChoque = p => `${esc(p.etiqueta)}: el viaje dice <b>${esc(fxDato(p.actual))}</b> · ${fuenteChoque(p)} dice <b style="color:var(--bad)">${esc(fxDato(p.valor))}</b> <span class="sub">${esc(String(p.evidencia || '').slice(0, 90))}${p.fecha ? ' · ' + esc(fxDato(String(p.fecha).slice(0, 10))) : ''}</span>`;
-const botonesChoque = (id, n, area) => btnT(`Usar lo del documento${n > 1 ? ' (' + n + ' datos)' : ''}`, `data-b-aprobar="${id}" data-solo="choque"${area ? ` data-area="${area}"` : ''}`, 'Cambia el viaje a lo que dice el correo, el documento o el conductor, a su nombre')
-  + btnT('Dejar lo que tiene el viaje', `data-b-rechazar="${id}" data-solo="choque"${area ? ` data-area="${area}"` : ''}`, 'Se deja el viaje como está; lo que llegó se descarta y no vuelve a aparecer')
-  + btnT('Abrir el viaje', `data-b-abrir="${id}"`, 'Si las dos cosas son ciertas porque algo cambió (otro vehículo, otra fecha), se cambia en el viaje con su causa');
 const botonesDato = (id, n, area, solo) => btnT(`✔ Guardar ${n > 1 ? n + ' datos' : 'el dato'} en el viaje`, `data-b-aprobar="${id}"${solo ? ` data-solo="${solo}"` : ''}${area ? ` data-area="${area}"` : ''}`, 'Lo que dice el correo pasa al viaje, a su nombre')
   + btnT('No guardar', `data-b-rechazar="${id}"${solo ? ` data-solo="${solo}"` : ''}${area ? ` data-area="${area}"` : ''}`, 'No se guarda y no vuelve a aparecer');
 const areaInicial = () => { const p = EQUIPO.find(x => x.nombre === usuarioGuardado()); return p && AREAS.includes(p.area) ? p.area : ''; };
@@ -9274,10 +9344,11 @@ function armarBandeja(){
       deAcc.forEach(id => usadas.add(id));
       // 10-nov: lo que choca con un valor que el viaje ya tiene va aparte, en rojo (No coincide); lo demás, como siempre
       const choques = P.filter(noCoincide), nuevos = P.filter(p => !noCoincide(p)), vienen = deAcc.length ? `<br><span class="sub">Vienen de ${deAcc.map(esc).join(', ')}: al decidir todos, se cierran</span>` : '';
-      if (choques.length) add(v, {b: 'nocoincide', area, ks: nuevos.length ? [] : deAcc.map(id => 'a' + id), html: choques.map(p => lineaChoque(p) + avisoDato(p)).join('<br>') + (nuevos.length ? '' : vienen),
-        acc: botonesChoque(v.id, choques.length, area) + btnT('Elegir dato por dato', 'data-b-prop="1"')});
-      if (nuevos.length) add(v, {b: 'datos', area, ks: deAcc.map(id => 'a' + id), html: nuevos.map(p => lineaDato(p) + avisoDato(p)).join('<br>') + vienen,
-        acc: botonesDato(v.id, nuevos.length, area, choques.length ? 'nuevo' : '') + btnT('Elegir dato por dato', 'data-b-prop="1"')});
+      // 12-nov (decisiones.js): tabla "Hoy en el viaje / Lo que llegó" con una elección por dato y un solo botón
+      if (choques.length) { const tid = idDecision(v.id, area, 'choque');
+        add(v, {b: 'nocoincide', area, ks: nuevos.length ? [] : deAcc.map(id => 'a' + id), html: htmlChoques(choques, tid) + (nuevos.length ? '' : vienen), acc: botonesChoques(choques, tid, v.id)}); }
+      if (nuevos.length) { const tid = idDecision(v.id, area, 'nuevo');
+        add(v, {b: 'datos', area, ks: deAcc.map(id => 'a' + id), html: htmlDatosNuevos(nuevos, tid) + vienen, acc: botonesDatosNuevos(nuevos, tid)}); }
     });
     // 7 · Falta (errores del viaje y de sus subviajes; sin los que ya salen arriba), solo si arranca en ≤ HORIZONTE_FALTA días o ya arrancó
     const pe = primerEvento(v), cerca = !pe || diffDias(pe) <= HORIZONTE_FALTA;
@@ -9463,26 +9534,31 @@ async function decidirBandeja(id, aprobar, area, solo){
   const fx = fxDato;
   if (!await preguntarSiNo(`¿${aprobar ? 'Guardar en el viaje' : 'No guardar'} lo que dice el correo en ${id}?${aprobar ? '' : ' (no se guarda y no vuelve a aparecer)'}\n\n${P.map(p => p.campo === 'aprobacionExtra' ? `• Reckitt ${p.valor === 'Aprobado' ? 'aprobó' : p.valor === 'Rechazado' ? 'rechazó' : 'marcó ' + p.valor + ' en'} los extracostos (lo dice ${String(p.evidencia || '').split(' · ')[0]})` : `• ${p.etiqueta}: ${p.actual ? fx(p.actual) : 'vacío'} → ${fx(p.valor)}`).join('\n')}`, aprobar ? 'Sí, guardar' : 'Sí, descartar')) return;
   const usuario = pedirUsuario(); if (!usuario) return;
-  const datos = P.map(({clave, viajeId, campo, valor, evidencia, origen}) => ({clave, viajeId, campo, valor, evidencia, origen}));
+  await aplicarDecision(v, area, aprobar ? P : [], aprobar ? [] : P, usuario);
+}
+// núcleo común (12-nov): escribe lo aprobado A, descarta lo rechazado R, y cierra la acción de LogxIA que trajo los datos si ya no le quedan
+async function aplicarDecision(v, area, A, R, usuario){
+  const todos = [v, ...hijosDe(v)], P = [...A, ...R], limpio = ({clave, viajeId, campo, valor, evidencia, origen}) => ({clave, viajeId, campo, valor, evidencia, origen});
   try {
-    const j = await api('decidir', {usuario, aprobar: aprobar ? datos : [], rechazar: aprobar ? [] : datos});
+    const j = await api('decidir', {usuario, aprobar: A.map(limpio), rechazar: R.map(limpio)});
     if (!j.ok) throw new Error(j.error || 'error');
-    const usados = new Set(P.map(p => p.clave)); PROP = PROP.filter(p => !usados.has(p.clave)); 
-    if (aprobar) { P.forEach(p => { const x = viajePorId(p.viajeId); if (x) { x[p.campo] = p.valor; anotarConfirmacion(x, p.campo, p.valor, usuario, fuenteDeOrigen(p.origen)); } }); etapasViajes(); }
+    const usados = new Set(P.map(p => p.clave)); PROP = PROP.filter(p => !usados.has(p.clave));
+    if (A.length) { A.forEach(p => { const x = viajePorId(p.viajeId); if (x) { x[p.campo] = p.valor; anotarConfirmacion(x, p.campo, p.valor, usuario, fuenteDeOrigen(p.origen)); } }); etapasViajes(); }
     // la acción de LogxIA que trajo esos datos se cierra si ya no le quedan datos por decidir (R1 de la propuesta)
     const ids = [...new Set([...P.map(p => (String(p.origen || '').match(/^Correo (LX-\d+)/) || [])[1]),
       // "revise los datos del correo": se cierra solo cuando al viaje ya no le quedan datos de Operaciones por decidir
       ...((area && area !== 'Operaciones') || PROP.some(p => todos.some(x => x.id === p.viajeId) && areaProp(p) === 'Operaciones') ? []
         : (window.BITACORA || []).filter(b => b.estadoAccion !== 'Hecha' && /llenar datos desde correos/i.test(b.accion) && todos.some(x => x.id === viajeDeAccion(b)?.id)).map(b => b.id))].filter(Boolean))];
     for (const lx of ids) { const b = accionPorId(lx);
-      if (b && b.estadoAccion !== 'Hecha' && !datosDeAccion(b).length) await marcarHecha(lx, false, `${aprobar ? 'aprobó' : 'rechazó'} los datos del correo en la Bandeja`); }
-    toast(aprobar ? `${j.aprobadas} dato${j.aprobadas === 1 ? '' : 's'} guardado${j.aprobadas === 1 ? '' : 's'}` : `${j.rechazadas} rechazado${j.rechazadas === 1 ? '' : 's'}`);
+      if (b && b.estadoAccion !== 'Hecha' && !datosDeAccion(b).length) await marcarHecha(lx, false, `${A.length && !R.length ? 'guardó' : R.length && !A.length ? 'descartó' : 'decidió'} los datos del correo en la Bandeja`); }
+    toast([A.length ? `${j.aprobadas} dato${j.aprobadas === 1 ? '' : 's'} guardado${j.aprobadas === 1 ? '' : 's'}` : '', R.length ? `${j.rechazadas} dejado${j.rechazadas === 1 ? '' : 's'} como estaba${j.rechazadas === 1 ? '' : 'n'}` : ''].filter(Boolean).join(' · '));
     render();
   } catch(e) { toast('No se pudo guardar: ' + e.message); }
 }
 
 $('#bandeja').onchange = e => { if (e.target.dataset.bAreasel) { bandejaArea = e.target.value; bandejaTodo = false; renderBandeja(); }
-  else if (e.target.dataset.qsel !== undefined || e.target.dataset.qtodos !== undefined) seleccionQh(e.target); };   // quien.js: casillas de la tarjeta de cambios
+  else if (e.target.dataset.qsel !== undefined || e.target.dataset.qtodos !== undefined) seleccionQh(e.target);   // quien.js: casillas de la tarjeta de cambios
+  else if (e.target.dataset.qd !== undefined || e.target.dataset.qdtodos !== undefined || e.target.dataset.qe !== undefined) seleccionDecision(e.target); };   // decisiones.js
 $('#bandeja').onclick = e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   const d = b.dataset;
@@ -9495,6 +9571,10 @@ $('#bandeja').onclick = e => {
   else if (d.bCampo) abrirEnCampo(d.bCampo, d.campo);   // calidad.js: abre el viaje con el cursor en esa casilla
   else if (d.bAbrir) abrir(d.bAbrir);
   else if (d.bGuardar) guardarSeleccion(d.bGuardar);
+  else if (d.bDguardar) guardarDatosMarcados(d.bDguardar, false);
+  else if (d.bDno) guardarDatosMarcados(d.bDno, true);
+  else if (d.bCguardar) guardarEleccionChoques(d.bCguardar);
+  else if (d.bCtodos) marcarTodosChoques(...d.bCtodos.split(/\|(?=[^|]*$)/));
   else if (d.bCerrar) cerrarAccion(d.bCerrar);
   else if (d.bHecha) confirmarHecha(d.bHecha);
   else if (d.bNoetp) marcarHecha(d.bNoetp, true);
