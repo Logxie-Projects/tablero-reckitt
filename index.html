@@ -2507,8 +2507,8 @@ function paradas(v){
  * Cada geozona: [nombre, latitud, longitud, cómo lo escriben los viajes (sobre minus()), radio en km si no es GEOZONA_KM]. Un nombre
  * que sirve para varios lugares (el puerto "BUN" tiene tres terminales) toma el más cercano al vehículo.
  * De dónde salen los puntos (búsqueda del 10-nov): registro BIC de patios, OpenStreetMap y la dirección publicada de cada sitio.
- * SIN geozona todavía, por no tener un punto comprobado: Patio Colombia (Yumbo y Buenaventura), Simarítima Buenaventura,
- * y Solistica Yumbo (Cemue y ERCOL ya tienen: el usuario dio su punto el 11-nov). Se agregan cuando el equipo dé el punto (clic derecho en Google Maps → copiar coordenadas). */
+ * SIN geozona todavía, por no tener un punto comprobado: Patio Colombia de Buenaventura, Simarítima Buenaventura y
+ * Solistica Yumbo (Cemue, ERCOL y Patios Colombia de Yumbo ya tienen: el usuario dio su punto el 11-nov). Se agregan cuando el equipo dé el punto (clic derecho en Google Maps → copiar coordenadas). */
 const GEOZONA_KM = 0.2, GPS_CERCA_KM = 5, GPS_ALERTA_MIN = 60;
 const GEOZONAS = [
   ['Reckitt Planta Cali', 3.46126, -76.50377, /salomia|planta reckitt|reckitt(?!.*(bogot|transfer|agv|bodega 11))/],   // Cl 46 # 5-76, Salomia
@@ -2522,6 +2522,7 @@ const GEOZONAS = [
   ['Puerto Aguadulce (SPIA)', 3.90457, -77.08053, /\bbun\b|buenaventura|aguadulce|spia/, 1],
   ['Puerto de Cartagena (SPRC Manga)', 10.40636, -75.53420, /\bctg\b|cartagena|sprc|manga/, 0.8],
   ['Contecar', 10.37898, -75.50787, /\bctg\b|cartagena|contecar/, 1],
+  ['Patios Colombia', 3.507653, -76.500584, /patios? colombia(?!.*(\bbun\b|buenaventura))/],   // Patio de Contenedores (Yumbo / Acopi); punto dado por el usuario (11-nov); el de Buenaventura no tiene punto todavía
   ['ERCOL Yumbo', 3.537027, -76.498462, /ercol/],                          // recogida de los viajes nacionales; punto dado por el usuario (11-nov) en Google Maps; queda a 530 m de Intermodal
   ['Cemue', 3.879814, -76.946662, /cemue/],                                // Buenaventura, devolución del contenedor vacío; punto dado por el usuario (11-nov) en Google Maps
 ];
@@ -7029,7 +7030,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '63b4a1fe2f';
+const VERSION_TABLERO = '499abe3fd7';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
