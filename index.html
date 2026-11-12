@@ -1024,6 +1024,7 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 .tf-tabla tr.ya td{background:color-mix(in srgb, var(--accent) 9%, transparent)}
 .tf-tabla tr.noche td{color:var(--muted);font-size:12px;background:var(--surface)}
 .tf-plan > p{margin:0;padding:8px 11px;border-top:1px solid var(--border)}
+.tf-tabla tr.via td{padding:3px 11px;border-top:0;font-size:12px}
 </style>
 </head>
 <body>
@@ -2401,6 +2402,13 @@ function alertaGps(v, g, ahora, lista){
     : paradas(v).find(p => !p[2] && !PARADAS_SIN_VEHICULO.includes(p[0]));
   const c = sig ? masCercana(geozonasDe(sig[1]), g.lat, g.lng) : null, km = c ? Math.round(c.km * 10) / 10 : 0;
   if (c && c.dentro) return {tipo: 'llegada', lugar: c.z[0], km, parada: sig[0], texto: `Llegó a ${c.z[0]}`};
+  // 11-nov (auditoría + "se deben activar las alertas de llegada a patio, llegada a llenar"): si nadie confirmó la parada pendiente
+  // (el retiro del vacío) y el vehículo ya está en la SIGUIENTE (la planta), antes no avisaba la llegada: decía "En Reckitt" y no
+  // salía correo. Ahora avisa, pero solo si la parada pendiente ya debía haberse hecho (su fecha es de hoy o anterior): así un camión
+  // que termina su viaje anterior en el puerto no dispara la llegada de un viaje que aún no empieza.
+  if (!v.padre && sig) { const P = paradas(v).filter(p => !p[2] && !PARADAS_SIN_VEHICULO.includes(p[0])), otra = P[1], fs = fechaParada(v, sig[0]);
+    const c2 = otra && fs && fs <= HOY ? masCercana(geozonasDe(otra[1]), g.lat, g.lng) : null;
+    if (c2 && c2.dentro) return {tipo: 'llegada', lugar: c2.z[0], km: Math.round(c2.km * 10) / 10, parada: otra[0], texto: `Llegó a ${c2.z[0]}`, sinConfirmar: sig[0]}; }
   if (c && c.km <= GPS_CERCA_KM) return {tipo: 'cerca', lugar: c.z[0], km, parada: sig[0], texto: `A ${String(km).replace('.', ',')} km de ${c.z[0]}`};
   const en = masCercana(GEOZONAS, g.lat, g.lng);
   return en && en.dentro ? {tipo: 'en', lugar: en.z[0], km: Math.round(en.km * 10) / 10, parada: sig ? sig[0] : '', texto: `En ${en.z[0]}`} : null;
@@ -2511,6 +2519,31 @@ function planDeRuta(v, g, ahora){
     return {nombre: p[0], paso: false, km: Math.round(km), llega: llegadaConHorario(t0, km / TRAFICO.kmh)}; });
   if (dVeh <= TRAFICO.puntoKm) puntos[puntos.length - 1].paso = true;
   return {de: R.de, a: R.a, puntos, km: Math.round(km), horas: Math.round(km / TRAFICO.kmh * 10) / 10, llega: puntos[puntos.length - 1].llega};
+}
+/* 11-nov (pedido del usuario: "este viaje aún no ha iniciado, ni siquiera ha recogido contenedor vacío, así que su plan de viaje es
+ * primero ir al patio, se deben activar las alertas de llegada a patio, llegada a llenar y después es el viaje a Buenaventura... todo
+ * esto se debe monitorear"). El plan de Tráfico solo conocía el tramo de carretera (Cali → puerto): un viaje sin arrancar mostraba un
+ * plan a Buenaventura "aún no sale" y nada sobre el patio ni la planta. planParadas es el plan COMPLETO del vehículo, parada por
+ * parada (las de `paradas`, sin las que no hace el vehículo): hecha o pendiente, la fecha programada, si el lugar tiene coordenadas
+ * (sin ellas no puede haber aviso de llegada) y, con un punto reciente del GPS, a cuántos km está la siguiente y a qué hora llegaría.
+ * De las paradas posteriores solo se da la distancia y el tiempo de manejo desde la anterior: cuánto dura un cargue o una espera no
+ * se puede estimar, así que no se inventa una hora.
+ * → [{parada, lugar, hecho, sig, prog, zona, km, min, llega, aqui, desdeGps}] */
+const FECHA_PARADA = {'Patio': ['fechaRetiro'], 'Llenado': ['fechaCargue'], 'Puerto': ['citaIngreso', 'fechaEntregaPuerto'], 'Retiro lleno': ['citaRetiro', 'fechaRetiro'],
+  'Bodega': ['fechaCargue'], 'Vacío': ['citaDevolucion', 'fechaDevolucion'], 'Recogida': ['fechaRetiro'], 'Entrega': ['fechaCargue']};
+const fechaParada = (v, etiqueta) => (FECHA_PARADA[etiqueta] || []).map(k => fechaPaso(v, k)).find(Boolean) || '';
+function planParadas(v, g, ahora){
+  const t0 = ahora || Date.now(), fresco = !!g && g.lat != null && g.lng != null && !!g.fecha && (t0 - new Date(g.fecha)) / 60e3 <= TRAFICO.sinSenalMin;
+  let cur = fresco ? [g.lat, g.lng] : null, primero = true;
+  return paradas(v).filter(p => !PARADAS_SIN_VEHICULO.includes(p[0])).map(p => {
+    const prog = fechaParada(v, p[0]);
+    if (p[2]) return {parada: p[0], lugar: p[1], hecho: true, prog};
+    const Z = geozonasDe(p[1]), c = Z.length ? (cur ? masCercana(Z, cur[0], cur[1]) : {z: Z[0], km: null, dentro: false}) : null;
+    const km = c && c.km != null ? Math.round(c.km * TRAFICO.factorVia) : null, sig = primero; primero = false;
+    const fila = {parada: p[0], lugar: p[1], hecho: false, sig, prog, zona: c ? c.z[0] : '', km, min: km == null ? null : Math.round(km / TRAFICO.kmh * 60),
+      llega: sig && fresco && km != null ? llegadaConHorario(t0, km / TRAFICO.kmh) : null, aqui: sig && fresco && !!c && c.dentro, desdeGps: sig && fresco};
+    if (c) cur = [c.z[1], c.z[2]];
+    return fila; });
 }
 // estado y alertas de un vehículo con GPS. → {movimiento, min, alertas: [{nivel: 'alta'|'media', tipo, texto}]}
 function estadoTrafico(v, g, ahora){
@@ -4242,21 +4275,30 @@ function vehiculosTrafico(){
 // horario, con las noches de descanso marcadas. Si el vehículo todavía no va por carretera, el plan se calcula desde el origen de la
 // ruta saliendo ahora (dice "aún no sale"). Las tarjetas abiertas se recuerdan mientras la pestaña esté abierta.
 const TF_ABIERTOS = new Set();
+// 11-nov ("su plan de viaje es primero ir al patio... llegada a llenar y después es el viaje a Buenaventura... todo esto se debe
+// monitorear"): el plan es el viaje COMPLETO del vehículo, parada por parada (dominio planParadas): patio, planta, puerto (EXPO) o
+// puerto, bodega, patio (IMPO). La siguiente parada lleva distancia y hora estimada desde el GPS; el tramo de carretera, sus puntos de
+// control. Cada parada dice si tiene coordenadas: sin ellas el sistema no puede avisar la llegada.
+const proximaTf = x => x.sub ? null : planParadas(x.v, x.g).find(f => !f.hecho) || null;
 function planViajeHtml(x){
-  const {v, g, plan} = x, R = rutaDeViaje(v); if (!R || x.despues || x.llego) return '';
-  const sinPunto = !plan && x.enCarretera;   // va por carretera pero sin punto reciente del GPS
-  const teorico = !plan, P = plan || planDeRuta(v, {lat: R.puntos[0][1], lng: R.puntos[0][2]});
-  if (!P) return '';
-  const dia = ms => fechaLocal(new Date(ms).toISOString()).slice(0, 10), sig = P.puntos.find(p => !p.paso);
-  let antes = HOY;
-  const filas = P.puntos.map(p => { if (p.paso) return `<tr class="ok"><td>✔</td><td>${esc(p.nombre)}</td><td class="sub">${teorico ? 'origen' : 'ya pasó'}</td><td></td></tr>`;
-    const d = dia(p.llega), noche = d !== antes ? `<tr class="noche"><td>🌙</td><td colspan="3">Descanso: no se maneja de ${TRAFICO.hasta - 12} p. m. a ${TRAFICO.desde} a. m.</td></tr>` : '';
-    antes = d;
-    return noche + `<tr class="${p === sig ? 'ya' : ''}"><td>${p === sig ? '➜' : '○'}</td><td><b>${esc(p.nombre)}</b></td><td>a ${p.km} km</td><td>${esc(horaTf(p.llega))}</td></tr>`; }).join('');
+  const {v, g, plan} = x; if (x.sub) return '';
+  const F = planParadas(v, g), sig = F.find(f => !f.hecho); if (!sig) return '';
+  const R = rutaDeViaje(v), cuando = f => f.prog ? (f.prog === HOY ? 'hoy' : f.prog === addDias(HOY, 1) ? 'mañana' : fd(f.prog)) : 'sin fecha';
+  const carretera = f => ['Puerto', 'Bodega'].includes(f.parada) && !!R;
+  const filas = F.map(f => { if (f.hecho) return `<tr class="ok"><td>✔</td><td>${esc(f.parada)} · ${esc(f.lugar)}</td><td class="sub">hecho</td><td></td><td class="sub">${esc(f.prog ? fd(f.prog) : '')}</td></tr>`;
+    const conPlan = f.sig && carretera(f) && plan, km = conPlan ? plan.km : f.km, llega = conPlan ? plan.llega : f.llega;
+    const puntos = !carretera(f) ? '' : conPlan
+      ? plan.puntos.slice(0, -1).map(p => `<tr class="via"><td></td><td class="sub">↳ ${esc(p.nombre)}</td><td class="sub">${p.paso ? 'ya pasó' : 'a ' + p.km + ' km'}</td><td class="sub">${p.paso ? '' : esc(horaTf(p.llega))}</td><td></td></tr>`).join('')
+      : `<tr class="via"><td></td><td class="sub" colspan="4">↳ por carretera ${esc(R.de)} → ${esc(R.a)}, pasando por ${esc(R.puntos.slice(1, -1).map(p => p[0]).join(', '))}</td></tr>`;
+    return `<tr class="${f.sig ? 'ya' : ''}"><td>${f.sig ? '➜' : '○'}</td><td><b>${esc(f.parada)}</b> · ${esc(f.zona || f.lugar)}${f.zona ? '' : '<br><span style="color:var(--bad);font-size:12px">⚠ lugar sin coordenadas: el sistema no avisará la llegada</span>'}</td>
+      <td>${f.aqui ? '<b>ya está aquí</b>' : km == null ? '—' : f.desdeGps ? `a ${km} km` : `${km} km desde la parada anterior`}</td>
+      <td>${f.aqui ? '' : llega ? esc(horaTf(llega)) : f.min != null ? esc(duracionTxt(f.min)) + ' de manejo' : '—'}</td>
+      <td>${esc(cuando(f))}</td></tr>` + puntos; }).join('');
+  const kmS = sig.sig && carretera(sig) && plan ? plan.km : sig.km, llegaS = sig.sig && carretera(sig) && plan ? plan.llega : sig.llega;
   return `<details class="tf-plan" data-tf="${esc(v.id)}"${TF_ABIERTOS.has(v.id) ? ' open' : ''} ontoggle="this.open ? TF_ABIERTOS.add(this.dataset.tf) : TF_ABIERTOS.delete(this.dataset.tf)">
-    <summary>🗺 Plan de viaje · ${esc(P.de)} → ${esc(P.a)}${sinPunto ? ' · sin GPS reciente' : teorico ? ' · aún no sale' : ` · faltan ${P.km} km`} · llegada estimada ${esc(horaTf(P.llega))}</summary>
-    <table class="tf-tabla"><tr><th></th><th>Punto de control</th><th>Distancia</th><th>Hora estimada</th></tr>${filas}</table>
-    <p class="sub">${sinPunto ? 'No hay un punto reciente del GPS: plan de referencia calculado desde ' + esc(P.de) + ' saliendo ahora, no desde donde va el vehículo. ' : teorico ? 'El vehículo todavía no va por carretera hacia el destino: plan calculado desde ' + esc(P.de) + ' saliendo ahora. ' : g ? 'Calculado desde el último punto del GPS. ' : ''}Son ${esc(duracionTxt(P.horas * 60))} de manejo a ${TRAFICO.kmh} km/h en promedio, solo entre ${TRAFICO.desde} a. m. y ${TRAFICO.hasta - 12} p. m. Es un estimado: la distancia sale de la línea recta entre puntos aumentada un ${Math.round((TRAFICO.factorVia - 1) * 100)} %, no de un servicio de rutas.</p>
+    <summary>🗺 Plan de viaje · siguiente: ${esc(sig.parada)} en ${esc(sig.zona || sig.lugar)}${sig.aqui ? ' · ya está ahí' : llegaS ? ` · a ${kmS} km · llegada estimada ${esc(horaTf(llegaS))}` : ` · programado ${esc(cuando(sig))}`}</summary>
+    <table class="tf-tabla"><tr><th></th><th>Parada</th><th>Distancia</th><th>Hora estimada</th><th>Programado</th></tr>${filas}</table>
+    <p class="sub">${sig.desdeGps ? 'La siguiente parada se calcula desde el último punto del GPS. ' : 'Sin un punto reciente del GPS no hay hora estimada. '}De las paradas posteriores solo va la distancia y el tiempo de manejo desde la anterior, porque no se sabe cuánto dura el cargue o la espera. El sistema avisa la llegada a cada parada que tenga coordenadas. Estimado a ${TRAFICO.kmh} km/h, manejando solo entre ${TRAFICO.desde} a. m. y ${TRAFICO.hasta - 12} p. m.; la distancia es la línea recta aumentada un ${Math.round((TRAFICO.factorVia - 1) * 100)} %.</p>
   </details>`;
 }
 function renderTrafico(){
@@ -4277,8 +4319,8 @@ function renderTrafico(){
           <span class="sub">${g && g.fecha && !isNaN(new Date(g.fecha)) ? 'punto de ' + esc(haceCuanto(fechaLocal(g.fecha))) : 'sin GPS'}</span></div>
         <div><span class="sub">Estado</span><b>${esc(est.movimiento)}</b><span class="sub">${est.min ? esc(duracionTxt(est.min)) : g && Number(g.velocidad) >= 3 ? Math.round(g.velocidad) + ' km/h' : ''}</span></div>
         <div><span class="sub">Etapa del viaje</span><b>${esc(v.estado || '—')}</b><span class="sub">${plan ? esc(plan.de + ' → ' + plan.a) : ''}</span></div>
-        <div><span class="sub">Llegada estimada</span><b>${x.llego ? 'Ya llegó' : plan && !plan.puntos[plan.puntos.length - 1].paso ? esc(horaTf(plan.llega)) : '—'}</b>
-          <span class="sub">${plan && plan.km ? `faltan ${plan.km} km · ${esc(duracionTxt(plan.horas * 60))} de manejo` : ''}</span></div>
+        <div><span class="sub">Próxima parada</span>${(pp => !pp ? '<b>—</b>' : `<b>${esc(pp.parada)} · ${esc(pp.zona || pp.lugar)}</b>
+          <span class="sub">${pp.aqui || x.llego ? 'ya llegó' : plan && !plan.puntos[plan.puntos.length - 1].paso ? `llega ${esc(horaTf(plan.llega))} · faltan ${plan.km} km` : pp.llega ? `llega ${esc(horaTf(pp.llega))} · a ${pp.km} km` : pp.prog ? 'programado ' + esc(fd(pp.prog)) : 'sin fecha'}${pp.zona ? '' : ' · ⚠ sin coordenadas'}</span>`)(proximaTf(x))}</div>
       </div>
       ${planViajeHtml(x)}
       ${plan ? `<div class="tf-ruta">${plan.puntos.map(p => `<span class="tf-p${p.paso ? ' ok' : p === sig ? ' ya' : ''}" title="${p.paso ? 'Ya pasó' : 'Estimado: ' + esc(horaTf(p.llega)) + ' · a ' + p.km + ' km'}"><i></i>${esc(p.nombre)}${!p.paso ? `<small>${esc(horaTf(p.llega))}</small>` : ''}</span>`).join('')}</div>` : ''}
@@ -6544,7 +6586,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'fbe81e818e';
+const VERSION_TABLERO = '453fbc2763';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
