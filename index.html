@@ -1177,6 +1177,56 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 .tf-camion .camion .ll{top:16px;width:5px;height:5px;border-radius:50%;background:var(--text);border:1px solid var(--surface)}
 .tf-lc{bottom:34px}
 .tf-lc.nv1{bottom:50px}
+
+/* ---------- 12-nov · tipo de usuario y celular (tipos.js): menú de abajo, hoja "Más", filtros plegados, Viajes en tarjetas ---------- */
+.tipo-lista{display:flex;flex-direction:column;gap:9px}
+.tipo-op{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;padding:12px 14px;border:2px solid var(--border);border-radius:14px;background:var(--surface);color:var(--text);cursor:pointer;font:inherit}
+.tipo-op.sel{border-color:var(--accent);background:var(--accent-soft)}
+.tipo-op b{font-size:15px}.tipo-op span{font-size:12.5px;color:var(--muted);line-height:1.4}
+.tabbar,.mas-fondo{display:none}
+.fil-btn{display:none}
+.tf-scroll{grid-area:linea;min-width:0}
+.tf-hscroll{overflow-x:auto}
+@media (max-width:700px){
+  header .bar > nav#nav,header .bar > .btn:not(#btnTipo),header .bar > a.btn,header .bar > .modos{display:none!important}
+  header .bar{gap:8px;flex-wrap:wrap}
+  header .bar > #btnTipo{order:2;margin-left:auto}
+  header .bar > .conn{order:3;flex-basis:100%}
+  header .bar > .spacer{display:none}
+  #btnTipo:disabled{opacity:1;color:var(--text)}
+  .brand small{display:none}
+  body{padding-bottom:78px}
+  .tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--surface);border-top:1px solid var(--border);padding:6px 4px calc(8px + env(safe-area-inset-bottom))}
+  .tabbar button{flex:1;background:none;border:0;color:var(--muted);font:600 10.5px Inter,system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;gap:1px;padding:4px 0;position:relative;cursor:pointer}
+  .tabbar button i{font-style:normal;font-size:20px;line-height:1.2}
+  .tabbar button.on{color:var(--accent)}
+  .tabbar .badge{position:absolute;top:-1px;left:56%;margin:0}
+  .fab{bottom:calc(76px + env(safe-area-inset-bottom))}
+  .mas-fondo{position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:80}
+  .mas-fondo.open{display:block}
+  .mas-hoja{position:absolute;left:0;right:0;bottom:0;max-height:80vh;overflow:auto;background:var(--surface);border-radius:18px 18px 0 0;padding:6px 14px calc(20px + env(safe-area-inset-bottom))}
+  .mas-hoja h4{margin:14px 0 6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .mas-fila{display:block;width:100%;text-align:left;padding:12px 12px;margin-bottom:6px;border:1px solid var(--border);border-radius:11px;background:var(--surface);color:var(--text);font:600 14px Inter,system-ui,sans-serif;cursor:pointer}
+  /* filtros plegados: solo la barra de operación y el botón; las listas salen al tocar Filtros */
+  .fil-btn{display:inline-flex;margin:2px 0}
+  #gbar:not(.fil-abierto) > :not(.g-ops):not(.fil-btn){display:none}
+  /* Viajes: los filtros ya salen bajo el botón Filtros de arriba; aquí queda la búsqueda y los estados. Una tarjeta por viaje */
+  #v-viajes #gViajes{display:none}
+  .tbl-wrap{overflow:visible}
+  #tbl,#tbl tbody,#tbl tr,#tbl td{display:block;width:auto;min-width:0}
+  #tbl{width:100%}
+  #tbl thead{display:none}
+  #tbl tr{background:var(--surface);border:1px solid var(--border);border-radius:12px;margin:0 0 10px;padding:8px 11px}
+  #tbl td{display:flex;gap:10px;justify-content:space-between;align-items:baseline;padding:4px 0;border:0;text-align:right;white-space:normal!important}
+  #tbl td::before{content:attr(data-th);flex:none;max-width:42%;color:var(--muted);font-size:11.5px;font-weight:600;text-align:left}
+  #tbl td[data-th=""]::before{display:none}#tbl td[data-th=""]{justify-content:flex-start}
+  #tbl td.num,#tbl td:not([data-m]){display:none}
+  #tbl td[data-th="Viaje"]{font-weight:700;font-size:14px;text-align:left;justify-content:flex-start}#tbl td[data-th="Viaje"]::before{display:none}
+  #tbl tr.dia-reunion{background:none;border:0;padding:6px 0 0}#tbl tr.dia-reunion td{display:block;text-align:left;font-weight:700}#tbl tr.dia-reunion td::before{display:none}
+  /* Tráfico: la línea tiene su ancho y se desliza de lado dentro de su tarjeta */
+  .tf-scroll{overflow-x:auto;padding-bottom:4px}
+  .tf-scroll .tf-linea{min-width:560px}
+}
 </style>
 </head>
 <body>
@@ -4572,7 +4622,7 @@ function filaLeanTf(x, detalle, ctx){ const v = x.v, pp = x.F.find(f => !f.hecho
   const linea = lt ? lt.html : `<span class="sub">${x.sub ? esc(nombreSub(v)) + ' · urbano ' + (v.fechaUrbano ? esc(fd(v.fechaUrbano)) : 'sin fecha') : esc(v.estado || '')}</span>`;
   return `<details class="tf-fila ${x.rojo ? 'rojo' : x.ambar ? 'ambar' : 'ok'}" data-tff="${esc(v.id)}"${TF_FILAS.has(v.id) ? ' open' : ''} ontoggle="this.open ? TF_FILAS.add(this.dataset.tff) : TF_FILAS.delete(this.dataset.tff)">
     <summary><div class="tf-id"><span class="placa">${esc(v.placa)}</span><span class="sub">${esc(String(v.conductor || 'Sin conductor').split(' ').slice(0, 2).join(' '))} · ${esc(v.operacion)} ${esc(v.pais || v.bodega || '')}</span></div>
-      <div class="tf-linea"${lt ? ` style="height:${lt.h}px"` : ''}>${linea}</div>${badge}</summary>${detalle}</details>`; }
+      <div class="tf-scroll"><div class="tf-linea"${lt ? ` style="height:${lt.h}px"` : ''}>${linea}</div></div>${badge}</summary>${detalle}</details>`; }
 // 11-nov ("su plan de viaje es primero ir al patio... llegada a llenar y después es el viaje a Buenaventura... todo esto se debe
 // monitorear"): el plan es el viaje COMPLETO del vehículo, parada por parada (dominio planParadas): patio, planta, puerto (EXPO) o
 // puerto, bodega, patio (IMPO). La siguiente parada lleva distancia y hora estimada desde el GPS; el tramo de carretera, sus puntos de
@@ -4640,7 +4690,7 @@ function planViajeHtml(x){
   const kmS = sig.sig && carretera(sig) && plan ? plan.km : sig.km, llegaS = sig.sig && carretera(sig) && plan ? plan.llega : sig.llega;
   return `<details class="tf-plan" data-tf="${esc(v.id)}"${TF_ABIERTOS.has(v.id) ? ' open' : ''} ontoggle="this.open ? TF_ABIERTOS.add(this.dataset.tf) : TF_ABIERTOS.delete(this.dataset.tf)">
     <summary>🗺 Plan de viaje · siguiente: ${esc(sig.parada)} en ${esc(sig.zona || sig.lugar)}${sig.aqui ? ' · ya está ahí' : llegaS ? ` · a ${kmS} km · llegada estimada ${esc(horaTf(llegaS))}${porSalir ? ' · saliendo ' + esc(sal.txt) + (sal.estado === 'pendiente' ? ' (por aprobar)' : sal.estado === 'rechazada' ? ' (rechazada: cuenta desde las ' + TRAFICO.desde + ' a. m.)' : '') : ''}${reciboTf(sig, llegaS) ? ' · ⚠ lo reciben ' + esc(horaTf(reciboTf(sig, llegaS))) : ''}` : ` · programado ${esc(cuando(sig))}`}</summary>
-    <table class="tf-tabla"><tr><th></th><th>Parada</th><th>Distancia</th><th>Hora estimada</th><th>Programado</th><th>Estado</th></tr>${filas}</table>
+    <div class="tf-hscroll"><table class="tf-tabla"><tr><th></th><th>Parada</th><th>Distancia</th><th>Hora estimada</th><th>Programado</th><th>Estado</th></tr>${filas}</table></div>
     <p class="sub">${sig.desdeGps ? 'La siguiente parada se calcula desde el último punto del GPS. ' : 'Sin un punto reciente del GPS no hay hora estimada. '}${porSalir ? 'Las horas cuentan desde la salida programada (' + esc(sal.txt) + ')' + (sal.estado === 'pendiente' ? ', que aún espera aprobación' : sal.estado === 'rechazada' ? ', que fue rechazada: se cuenta desde que abre el horario de manejo' : '') + '. ' : ''}Las horas encadenan todo el viaje: llega, espera a que abra el recibo si hace falta, permanece ${TRAFICO.cargueH} h en el patio (cargue del contenedor) y ${TRAFICO.llenadoH} h en la planta (llenado), y maneja a la siguiente. Una parada está \"a tiempo\" si la atienden el día programado o antes. El sistema avisa la llegada a cada parada que tenga coordenadas. Patios, planta y bodegas reciben de ${RECIBO.desde} a. m. a ${RECIBO.hasta - 12} p. m.; los puertos, las 24 horas. Estimado a ${TRAFICO.kmh} km/h, manejando solo entre ${TRAFICO.desde} a. m. y ${TRAFICO.hasta - 12} p. m.; la distancia es la línea recta aumentada un ${Math.round((TRAFICO.factorVia - 1) * 100)} %.</p>
   </details>`;
 }
@@ -7038,7 +7088,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '508b0eb47b';
+const VERSION_TABLERO = '03d63d0052';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -9320,6 +9370,124 @@ function revisarAlertaRonda(){
 setInterval(revisarAlertaRonda, 60e3);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) revisarAlertaRonda(); });
 setTimeout(revisarAlertaRonda, 12e3);
+/* ---------- tipos.js · tipo de usuario (Operaciones · Gerencia · Cliente) y menú del celular (12-nov-2026) ----------
+ * Capa: pantalla. El tipo de usuario cambia lo que se MUESTRA, no lo que está permitido: los datos internos los sigue cerrando la clave del
+ * equipo, el cliente (Reckitt) entra con su enlace y su clave y siempre es "Cliente", y aprobar sigue pidiendo la clave de Gerencia en el
+ * servidor. Sin clave por tipo (decisión del usuario, 12-nov: "por ahora sin claves, solo tipo de usuario").
+ * En el celular (menos de 700 px) el encabezado de botones se cambia por un menú de pestañas abajo y una hoja "Más". */
+const TIPOS = {ops: ['🛠', 'Operaciones'], ger: ['👔', 'Gerencia'], cli: ['📦', 'Cliente']};
+const TIPOS_DESC = {ops: 'Lo que hay que hacer hoy, Tráfico, Torre de Control y Despacho.', ger: 'Lo que espera su aprobación, lo que está en rojo e indicadores.'};
+// pestañas de abajo en el celular: [vista del menú o 'kpis', icono, nombre]
+const TABS_TIPO = {
+  ops: [['bandeja', '✅', 'Hoy'], ['trafico', '🚚', 'Tráfico'], ['tablero', '🗼', 'Torre']],
+  ger: [['bandeja', '👔', 'Decidir'], ['trafico', '🚚', 'Tráfico'], ['kpis', '📊', 'Indicadores']],
+  cli: [['tablero', '📦', 'Mis viajes'], ['trafico', '🗺', 'Dónde va'], ['kpis', '📊', 'Indicadores']],
+};
+function tipoActual(){
+  if (window.MODO_CLIENTE) return 'cli';
+  try { const t = localStorage.getItem('rkt-tipo'); return t === 'ger' || t === 'ops' ? t : ''; } catch(e) { return ''; }
+}
+// el botón de indicadores que le toca a cada tipo (btnKC lo crea kpis-cliente.js y btnKpis kpis-vivo.js)
+const botonKpis = () => $(tipoActual() === 'cli' ? '#btnKC' : '#btnKpis');
+const vistaActual = () => (document.querySelector('#nav button.on') || {}).dataset?.v || '';
+
+function elegirTipo(luego){
+  $('#ovTipo')?.remove();
+  const act = tipoActual();
+  document.body.insertAdjacentHTML('beforeend', `<div class="ov open" id="ovTipo" style="z-index:72"><div class="modal" role="dialog" aria-modal="true" style="width:min(420px,100%)">
+    <h3>¿Quién va a usar el tablero?</h3><div class="sub" style="margin-bottom:12px">Se muestra lo que esa persona necesita. Se cambia cuando quiera, tocando el tipo arriba.</div>
+    <div class="tipo-lista">${['ops', 'ger'].map(k => `<button type="button" class="tipo-op${act === k ? ' sel' : ''}" data-tipo="${k}"><b>${TIPOS[k][0]} ${TIPOS[k][1]}</b><span>${TIPOS_DESC[k]}</span></button>`).join('')}</div>
+    <div class="sub" style="margin-top:12px">Reckitt entra con su propio enlace y ve la vista de cliente. <button type="button" class="link" data-tipo-cli="1">Ver cómo la ve</button></div></div></div>`);
+  $('#ovTipo').onclick = e => {
+    if (e.target.closest('[data-tipo-cli]')) { $('#ovTipo').remove(); const b = $('#btnKC'); if (b) b.click(); else toast('La vista del cliente todavía no cargó'); if (luego) luego(act || 'ops'); return; }
+    const b = e.target.closest('[data-tipo]'); if (!b) return;
+    try { localStorage.setItem('rkt-tipo', b.dataset.tipo); } catch(x) {}
+    $('#ovTipo').remove(); aplicarTipo();
+    if (b.dataset.tipo === 'ger') document.querySelector('#nav [data-v="bandeja"]')?.click();
+    if (luego) luego(b.dataset.tipo);
+  };
+}
+// primera vez en este celular: primero el tipo y luego el nombre (inicio.js); si ya hay tipo, solo el nombre
+function pedirTipoYUsuario(sugerido){
+  if (window.MODO_CLIENTE) return;
+  if (!tipoActual()) elegirTipo(k => { if (!usuarioGuardado()) elegirUsuario(k === 'ger' ? 'Gerencia' : sugerido); });
+  else if (!usuarioGuardado()) elegirUsuario(sugerido);
+}
+
+function aplicarTipo(){
+  const t = tipoActual() || 'ops';
+  document.body.dataset.tipo = t;
+  let b = $('#btnTipo');
+  if (!b) { const ref = $('#btnQuien') || $('#connDot'); if (!ref) return;
+    ref.closest('.bar').insertAdjacentHTML('beforeend', `<button class="btn" id="btnTipo" type="button" title="Tipo de usuario: cambia lo que se muestra"></button>`); b = $('#btnTipo');
+    b.onclick = () => { if (!window.MODO_CLIENTE) elegirTipo(); }; }
+  b.textContent = TIPOS[t][0] + ' ' + TIPOS[t][1] + (t === 'cli' ? '' : ' ▾'); b.disabled = t === 'cli';
+  construirTabs();
+}
+
+/* ---------- menú de abajo (celular) ---------- */
+function construirTabs(){
+  let nav = $('#tabbar'); if (!nav) { document.body.insertAdjacentHTML('beforeend', '<nav class="tabbar" id="tabbar" aria-label="Menú"></nav><div class="mas-fondo" id="masFondo"><div class="mas-hoja" id="masHoja" role="dialog" aria-modal="true"></div></div>'); nav = $('#tabbar'); }
+  const t = tipoActual() || 'ops', v = vistaActual();
+  nav.innerHTML = TABS_TIPO[t].filter(([k]) => k !== 'kpis' || botonKpis()).map(([k, ico, txt]) => `<button type="button" data-tab="${k}" class="${k === v ? 'on' : ''}"><i>${ico}</i>${txt}${k === 'bandeja' ? '<span class="badge" id="nTabBj"></span>' : ''}</button>`).join('')
+    + `<button type="button" data-tab="mas"><i>☰</i>Más</button>`;
+  const bj = $('#nBandeja'), nb = $('#nTabBj'); if (nb && bj) nb.textContent = bj.textContent;
+}
+const oculto = el => el.classList.contains('hidden') || (window.MODO_CLIENTE && el.classList.contains('solo-interno'));
+function abrirMas(){
+  const t = tipoActual() || 'ops', enTabs = TABS_TIPO[t].map(x => x[0]);
+  const fila = (txt, clave) => `<button type="button" class="mas-fila" data-mas="${clave}">${esc(txt)}</button>`;
+  const pantallas = [...document.querySelectorAll('#nav button')].filter(b => !oculto(b) && !enTabs.includes(b.dataset.v)).map(b => fila(b.textContent.replace(/\s+/g, ' ').trim(), 'nav:' + b.dataset.v));
+  const barra = [...document.querySelectorAll('header .bar > .btn')].filter(b => !oculto(b) && !['btnTipo', 'btnQuien', 'btnSalir', 'btnTheme'].includes(b.id) && !(enTabs.includes('kpis') && b === botonKpis()));
+  const herr = barra.map((b, i) => { b.dataset.masi = i; return fila(b.textContent.replace(/\s+/g, ' ').trim(), 'bar:' + i); });
+  const modos = [...document.querySelectorAll('#modosHdr button')].map((b, i) => fila(b.textContent.trim() + (b.classList.contains('on') ? ' ✓' : ''), 'modo:' + i));
+  const cuenta = [!window.MODO_CLIENTE ? fila('👤 ' + (usuarioGuardado() || 'Ingresar como…'), 'id:quien') : '', !window.MODO_CLIENTE ? fila('🔁 Tipo de usuario: ' + TIPOS[t][1], 'id:tipo') : '', fila('◐ Cambiar tema', 'id:btnTheme'), !window.MODO_CLIENTE ? fila('⏻ Salir', 'id:btnSalir') : ''].join('');
+  const grupo = (titulo, filas) => filas.length ? `<h4>${titulo}</h4>${filas.join('')}` : '';
+  $('#masHoja').innerHTML = grupo('Pantallas', pantallas) + grupo('Herramientas', herr) + grupo('Vista', modos) + `<h4>Cuenta</h4>${cuenta}`;
+  $('#masFondo').classList.add('open');
+}
+const cerrarMas = () => $('#masFondo')?.classList.remove('open');
+document.addEventListener('click', e => {
+  const tab = e.target.closest('#tabbar [data-tab]');
+  if (tab) { const k = tab.dataset.tab;
+    if (k === 'mas') return abrirMas();
+    if (k === 'kpis') { const b = botonKpis(); if (b) b.click(); return; }
+    document.querySelector(`#nav [data-v="${k}"]`)?.click(); window.scrollTo(0, 0); setTimeout(construirTabs, 0); return; }
+  if (e.target.id === 'masFondo') return cerrarMas();
+  const m = e.target.closest('[data-mas]'); if (m) {
+    const [tipo, id] = m.dataset.mas.split(':'); cerrarMas();
+    if (tipo === 'nav') { document.querySelector(`#nav [data-v="${id}"]`)?.click(); window.scrollTo(0, 0); setTimeout(construirTabs, 0); }
+    else if (tipo === 'bar') document.querySelector(`header .bar > [data-masi="${id}"]`)?.click();
+    else if (tipo === 'modo') document.querySelectorAll('#modosHdr button')[+id]?.click();
+    else if (id === 'quien') elegirUsuario();
+    else if (id === 'tipo') elegirTipo();
+    else $('#' + id)?.click();
+    return; }
+  if (e.target.closest('#nav')) setTimeout(construirTabs, 0);
+  const fb = e.target.closest('[data-fil-btn]'); if (fb) { filtrosAbiertos = !filtrosAbiertos; $('#gbar').classList.toggle('fil-abierto', filtrosAbiertos); fb.textContent = textoFiltrosBtn(); }
+});
+
+/* ---------- filtros plegados en el celular (11 listas en columna ocupaban una pantalla) ---------- */
+let filtrosAbiertos = false;
+const textoFiltrosBtn = () => { const n = document.querySelectorAll('#gbar .gsel.on').length; return '⚙ Filtros' + (n ? ' · ' + n + ' activo' + (n === 1 ? '' : 's') : '') + (filtrosAbiertos ? ' ▴' : ' ▾'); };
+const renderGbarBase = renderGbar;
+renderGbar = function(){
+  renderGbarBase();
+  const g = $('#gbar'), ops = g && g.querySelector('.g-ops'); if (!ops) return;
+  ops.insertAdjacentHTML('afterend', `<button type="button" class="btn fil-btn" data-fil-btn="1">${textoFiltrosBtn()}</button>`);
+  g.classList.toggle('fil-abierto', filtrosAbiertos);
+};
+
+/* ---------- Viajes como tarjetas en el celular: cada celda lleva el nombre de su columna (se muestra con CSS) ---------- */
+function anotarTabla(){
+  const t = $('#tbl'); if (!t) return;
+  const hs = [...t.querySelectorAll('thead th')].map(h => h.textContent.replace(/[▲▼]/g, '').trim());
+  // en la tarjeta solo van estas columnas y, de ellas, las que tienen dato (el resto se ve al abrir el viaje)
+  const MOVIL = ['', 'Viaje', 'Avance', 'Estado', 'Op.', 'Retiro patio', 'Llenado / Cargue', 'Placa', 'Conductor', 'Destino', 'Precio · facturación', 'Observación'];
+  t.querySelectorAll('tbody tr').forEach(tr => { if (!tr.classList.contains('dia-reunion')) [...tr.children].forEach((td, i) => { if (td.dataset.th !== undefined) return;
+    td.dataset.th = hs[i] || ''; const txt = td.textContent.trim(); if (i && MOVIL.includes(hs[i]) && txt && txt !== '—') td.dataset.m = '1'; if (i === 1) td.dataset.m = '1'; }); });
+}
+if ($('#tbl')) new MutationObserver(anotarTabla).observe($('#tbl'), {childList: true});
 /* ---------- inicio.js · arranque del tablero ---------- */
 // Capa: pantalla. render() repinta todas las vistas; carga los datos (datos.js), pide "Ingresar como" al equipo (base.js) y atiende
 // los enlaces de los correos (?viaje=, ?vista=, ?area=, ?usuario=). Se carga de último.
@@ -9346,7 +9514,8 @@ cargar().then(ok => { if (ok === false) return; if (window.MODO_CLIENTE) documen
   // enlace de un correo por área (ej. el de Facturación): ?vista=acciones&area=Facturación&usuario=Pedro González
   // el ?usuario= del enlace solo sugiere el nombre en "Ingresar como": ya no queda guardado en el navegador (base.js elegirUsuario)
   const qp = new URLSearchParams(location.search);
-  if (!window.MODO_CLIENTE) { fijarUsuario(); if (!usuarioGuardado()) elegirUsuario(qp.get('usuario')); }
+  try { aplicarTipo(); } catch(e) { console.warn('Tipo de usuario: ' + e); }   // tipos.js (12-nov): tipo de usuario Operaciones / Gerencia / Cliente y menú de abajo en el celular
+  if (!window.MODO_CLIENTE) { fijarUsuario(); try { pedirTipoYUsuario(qp.get('usuario')); } catch(e) { console.warn('Tipo de usuario: ' + e); if (!usuarioGuardado()) elegirUsuario(qp.get('usuario')); } }   // la primera vez pregunta el tipo y luego el nombre
   // 7-nov: la Bandeja de Pendientes reemplaza a Mi turno y Acciones (siguen en el código, fuera del menú); los enlaces viejos
   // (?vista=acciones&area=Facturación del correo de Facturación, ?vista=turno) abren la Bandeja con esa área
   if (AREAS.includes(qp.get('area'))) bandejaArea = qp.get('area');
