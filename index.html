@@ -1025,6 +1025,10 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 .tf-tabla tr.noche td{color:var(--muted);font-size:12px;background:var(--surface)}
 .tf-plan > p{margin:0;padding:8px 11px;border-top:1px solid var(--border)}
 .tf-tabla tr.via td{padding:3px 11px;border-top:0;font-size:12px}
+/* 11-nov · Tráfico: salida programada del viaje (trafico.js salidaHtml) */
+.tf-sal{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;padding:8px 11px;border:1px dashed var(--border);border-radius:9px;font-size:13px}
+.tf-sal input{font:inherit;font-size:13px;padding:4px 7px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text)}
+.tf-sal input[type=text]{flex:1;min-width:180px}
 </style>
 </head>
 <body>
@@ -2532,8 +2536,8 @@ function planDeRuta(v, g, ahora){
 const FECHA_PARADA = {'Patio': ['fechaRetiro'], 'Llenado': ['fechaCargue'], 'Puerto': ['citaIngreso', 'fechaEntregaPuerto'], 'Retiro lleno': ['citaRetiro', 'fechaRetiro'],
   'Bodega': ['fechaCargue'], 'Vacío': ['citaDevolucion', 'fechaDevolucion'], 'Recogida': ['fechaRetiro'], 'Entrega': ['fechaCargue']};
 const fechaParada = (v, etiqueta) => (FECHA_PARADA[etiqueta] || []).map(k => fechaPaso(v, k)).find(Boolean) || '';
-function planParadas(v, g, ahora){
-  const t0 = ahora || Date.now(), fresco = !!g && g.lat != null && g.lng != null && !!g.fecha && (t0 - new Date(g.fecha)) / 60e3 <= TRAFICO.sinSenalMin;
+function planParadas(v, g, ahora, sal){   // sal = salida programada (ver estadoTrafico): la hora estimada cuenta desde ahí si aún no llega
+  const ya = ahora || Date.now(), t0 = sal && sal.ms > ya ? sal.ms : ya, nocturna = !!sal && sal.ms > ya && !!sal.aprobada && !enHorarioManejo(sal.ms), fresco = !!g && g.lat != null && g.lng != null && !!g.fecha && (ya - new Date(g.fecha)) / 60e3 <= TRAFICO.sinSenalMin;
   let cur = fresco ? [g.lat, g.lng] : null, primero = true;
   return paradas(v).filter(p => !PARADAS_SIN_VEHICULO.includes(p[0])).map(p => {
     const prog = fechaParada(v, p[0]);
@@ -2541,25 +2545,31 @@ function planParadas(v, g, ahora){
     const Z = geozonasDe(p[1]), c = Z.length ? (cur ? masCercana(Z, cur[0], cur[1]) : {z: Z[0], km: null, dentro: false}) : null;
     const km = c && c.km != null ? Math.round(c.km * TRAFICO.factorVia) : null, sig = primero; primero = false;
     const fila = {parada: p[0], lugar: p[1], hecho: false, sig, prog, zona: c ? c.z[0] : '', km, min: km == null ? null : Math.round(km / TRAFICO.kmh * 60),
-      llega: sig && fresco && km != null ? llegadaConHorario(t0, km / TRAFICO.kmh) : null, aqui: sig && fresco && !!c && c.dentro, desdeGps: sig && fresco};
+      llega: sig && fresco && km != null ? (nocturna ? t0 + km / TRAFICO.kmh * 36e5 : llegadaConHorario(t0, km / TRAFICO.kmh)) : null, aqui: sig && fresco && !!c && c.dentro, desdeGps: sig && fresco};
     if (c) cur = [c.z[1], c.z[2]];
     return fila; });
 }
 // estado y alertas de un vehículo con GPS. → {movimiento, min, alertas: [{nivel: 'alta'|'media', tipo, texto}]}
-function estadoTrafico(v, g, ahora){
-  const t = ahora || Date.now(), A = [], edad = g && g.fecha ? (t - new Date(g.fecha)) / 60e3 : NaN;
+// 11-nov ("Gustavo Ceballos se ve detenido no planeado pero realmente se planeó salir 2:00 a. m... ¿el equipo deberá poner un inicio
+// de plan para los cálculos?" → sí, en la tarjeta de Tráfico, con aprobación de Gerencia o Calidad si es fuera del horario).
+// sal = la salida programada del viaje: {ms, aprobada, txt} | null. Antes de esa hora el vehículo está EN ESPERA (no es detención);
+// si pasa SALIDA_TOLERANCIA_MIN y sigue detenido desde antes, alerta; una salida nocturna aprobada no es "manejar fuera del horario".
+const SALIDA_TOLERANCIA_MIN = 30;
+function estadoTrafico(v, g, ahora, sal){
+  const t = ahora || Date.now(), A = [], espera = !!sal && t < sal.ms, edad = g && g.fecha ? (t - new Date(g.fecha)) / 60e3 : NaN;
   if (!g || g.lat == null || g.lng == null || isNaN(edad)) return {movimiento: 'Sin GPS', min: 0, alertas: [{nivel: 'media', tipo: 'sinGps', texto: 'Sin punto del GPS: pida el enlace al conductor'}]};
   if (edad > TRAFICO.sinSenalMin) return {movimiento: 'Sin señal', min: Math.round(edad), alertas: [{nivel: 'media', tipo: 'sinSenal', texto: `Sin señal hace ${duracionTxt(edad)}: el último punto es viejo`}]};
   // 11-nov (2.ª auditoría): la noche no cuenta como detención. Un camión que durmió en la vía desde las 10 p. m. salía a las 6:00
   // con "8 h detenido" en rojo: el tiempo detenido se cuenta solo desde que abrió el horario de manejo. Y "manejando fuera del
   // horario" se juzga con la hora del punto del GPS (cuando iba andando), no con la hora en que se mira.
-  const anda = Number(g.velocidad) >= 3, horario = enHorarioManejo(t),
-    det = Math.min(Number(g.minDetenido) || 0, horario ? Math.round((horaColombia(t) - TRAFICO.desde) * 60) : Infinity), z = masCercana(GEOZONAS, g.lat, g.lng), lugar = z && z.dentro ? z.z[0] : '';
+  const anda = Number(g.velocidad) >= 3, horario = enHorarioManejo(t), det0 = Number(g.minDetenido) || 0, tg = new Date(g.fecha).getTime(),
+    det = Math.min(det0, horario ? Math.round((horaColombia(t) - TRAFICO.desde) * 60) : Infinity, sal && t >= sal.ms ? Math.round((t - sal.ms) / 60e3) : Infinity), z = masCercana(GEOZONAS, g.lat, g.lng), lugar = z && z.dentro ? z.z[0] : '';
   const al = alertaGps(v, g, t), enSuParada = !!al && al.tipo === 'llegada';
-  if (anda && !enHorarioManejo(new Date(g.fecha).getTime())) A.push({nivel: 'alta', tipo: 'fueraHorario', texto: `Manejando fuera del horario (${TRAFICO.desde} a. m. a ${TRAFICO.hasta - 12} p. m.): requiere aprobación`});
-  if (!anda && horario && !lugar && det >= TRAFICO.detenidoMin) A.push({nivel: 'alta', tipo: 'detencion', texto: `Detención no planeada: ${duracionTxt(det)} detenido en horario de manejo${g.municipio ? ' en ' + String(g.municipio).split(',')[0] : ''}`});
-  if (!anda && horario && lugar && !enSuParada && det >= TRAFICO.quietoMin) A.push({nivel: 'media', tipo: 'quieto', texto: `${duracionTxt(det)} sin moverse en ${lugar}`});
-  return {movimiento: anda ? 'En movimiento' : !horario ? 'Detenido (fuera del horario de manejo)' : 'Detenido', min: anda ? 0 : det, alertas: A};
+  if (sal && !anda && t >= sal.ms + SALIDA_TOLERANCIA_MIN * 60e3 && t - sal.ms < 12 * 36e5 && det0 >= (t - sal.ms) / 60e3) A.push({nivel: 'alta', tipo: 'noSalio', texto: `Debía salir ${sal.txt || ''} y sigue detenido`.replace('  ', ' ')});
+  if (anda && !enHorarioManejo(tg) && !(sal && sal.aprobada && tg >= sal.ms - 30 * 60e3 && tg <= sal.ms + 8 * 36e5)) A.push({nivel: 'alta', tipo: 'fueraHorario', texto: `Manejando fuera del horario (${TRAFICO.desde} a. m. a ${TRAFICO.hasta - 12} p. m.): requiere aprobación`});
+  if (!anda && horario && !lugar && !espera && !A.length && det >= TRAFICO.detenidoMin) A.push({nivel: 'alta', tipo: 'detencion', texto: `Detención no planeada: ${duracionTxt(det)} detenido en horario de manejo${g.municipio ? ' en ' + String(g.municipio).split(',')[0] : ''}`});
+  if (!anda && horario && lugar && !enSuParada && !espera && det >= TRAFICO.quietoMin) A.push({nivel: 'media', tipo: 'quieto', texto: `${duracionTxt(det)} sin moverse en ${lugar}`});
+  return {movimiento: anda ? 'En movimiento' : espera ? 'En espera de su salida' : !horario ? 'Detenido (fuera del horario de manejo)' : 'Detenido', min: anda || espera ? 0 : det, alertas: A, espera};
 }
 const duracionTxt = min => { const m = Math.round(min); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ' ' + (m % 60) + ' min' : ''}`; };
 // dónde se llena el contenedor EXPO: la programación lo anota como "cargue en DHL" cuando no es la planta
@@ -3478,6 +3488,11 @@ function excepcionDe(k, R){
 // 11-nov (pedido del usuario: "no está siendo útil el cierre del día, por ahora podemos eliminarlo"): apagado. Con false no sale la
 // tarjeta "Cierre del día" de Acciones para hoy (lo de mañana listo y la nota de entrega de turno). Para volverlo a prender: true.
 const CIERRE_DIA = false;
+// 11-nov ("este tipo de acción ya no aplicaría porque se toma del GPS"): con un punto reciente del GPS (el mismo plazo de "sin señal"
+// de Tráfico) ya se sabe dónde va el vehículo: no se le pregunta al equipo en la ronda ni cuenta para cerrarla. Si el GPS se
+// queda sin señal, la pregunta vuelve. Lo que está sin actualizar (rojo) se sigue pidiendo siempre.
+const gpsVivo = v => { const g = v && v.placa ? (window.GPS || []).find(x => x.placa === placaNorm(v.placa)) : null;
+  return !!g && !!g.fecha && g.lat != null && (Date.now() - new Date(g.fecha)) / 60e3 <= TRAFICO.sinSenalMin; };
 function menusTurno(r){
   const V = viajes.filter(v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre);   // los de prueba no cuentan
   const SEV = e => e.sev === 'Alta' ? 0 : 1;
@@ -3485,7 +3500,7 @@ function menusTurno(r){
   return [
     // primero los datos del registro que faltan (registro.js), los pasos con fecha pasada sin confirmar (confirmar.js) y dónde va
     // cada vehículo; el primero de la lista es el seguimiento de la ronda
-    {id: 'seg', filas: [...filasRegistro(V), ...filasConfirmar(V), ...[...V.filter(v => enSeguimiento([v]).length || sinActualizar(v).length).map(v => ({k: `seg${r ? r.n : 0}|${v.id}`, tipo: 'seg', v, p: pulsoViaje(v), roja: !!sinActualizar(v).length})),
+    {id: 'seg', filas: [...filasRegistro(V), ...filasConfirmar(V), ...[...V.filter(v => (enSeguimiento([v]).length && !gpsVivo(v)) || sinActualizar(v).length).map(v => ({k: `seg${r ? r.n : 0}|${v.id}`, tipo: 'seg', v, p: pulsoViaje(v), roja: !!sinActualizar(v).length})),
        ...V.flatMap(hijosDe).filter(s => !esPrueba(s) && urbanoEnSeguimiento(s)).map(s => ({k: `seg${r ? r.n : 0}|${s.id}`, tipo: 'seg', v: s, p: pulsoSubviaje(s), roja: false}))]
        .sort((a, b) => b.roja - a.roja || b.p.hace - a.p.hace)]},
     {id: 'cob', filas: cob.map(v => ({k: 'cob|' + v.id, tipo: 'cob', v, roja: true}))},
@@ -4257,7 +4272,7 @@ function vehiculosTrafico(){
     // 11-nov (2.ª auditoría): el estimado solo con un punto reciente (con el enlace vencido decía "sin señal hace 30 h" junto a una
     // llegada "hoy 3:40 p. m." calculada como si el punto fuera de ahora); si el GPS ya lo tiene en su destino, dice "Ya llegó"; y
     // con el tramo de carretera ya hecho (entregado en puerto o en bodega) no hay plan que mostrar.
-    const est = estadoTrafico(v, g), gv = gpsDeViaje(v), fresco = !!g && !['sinGps', 'sinSenal'].includes((est.alertas[0] || {}).tipo);
+    const est = estadoTrafico(v, g, 0, salidaDe(v)), gv = gpsDeViaje(v), fresco = !!g && !['sinGps', 'sinSenal'].includes((est.alertas[0] || {}).tipo);
     const despues = paradas(v).some(p => ['Puerto', 'Bodega'].includes(p[0]) && p[2]), llego = enCarretera && !!gv && !!gv.al && gv.al.tipo === 'llegada';
     porPlaca.set(pl, {v, g, enRuta, est, enCarretera, despues, llego, plan: fresco && enCarretera && !llego ? planDeRuta(v, g) : null, gv});
   });
@@ -4292,10 +4307,47 @@ function reciboTf(f, llega){
   return llega + (h < RECIBO.desde ? RECIBO.desde - h : 24 - h + RECIBO.desde) * 36e5;
 }
 const avisoRecibo = (f, llega) => { const r = reciboTf(f, llega); return r ? `fuera del horario de recibo (${RECIBO.desde} a. m. a ${RECIBO.hasta - 12} p. m.): lo reciben ${horaTf(r)}` : ''; };
-const proximaTf = x => x.sub ? null : planParadas(x.v, x.g).find(f => !f.hecho) || null;
+/* ---------- salida programada del viaje (11-nov-2026) ----------
+ * Decisiones del usuario: se anota "en Tráfico, en la misma tarjeta"; fuera de 6 a. m. a 10 p. m. la aprueba Gerencia o Calidad ("con la
+ * misma" clave), con aviso por "correo y tablero como acción aprobar". Se guarda como marca del turno (turno.js marcarRevisado), que
+ * ya comparte todo el equipo: "sal|viaje|AAAA-MM-DDTHH:MM|motivo"; la aprobación, "salok|viaje|fecha" o "salno|viaje|fecha". El
+ * servidor conserva estas marcas varios días (Base.gs leerTurno_) y manda el correo (Reportes.gs avisarSalida_). */
+function salidaDe(v){
+  const R = revisados(), pre = 'sal|' + v.id + '|', L = [...R.values()].filter(x => x.clave.startsWith(pre)).map(x => { const [iso, ...m] = x.clave.slice(pre.length).split('|');
+    return {clave: x.clave, iso, motivo: m.join('|'), usuario: x.usuario, ms: Date.parse(iso + ':00-05:00')}; }).filter(s => !isNaN(s.ms) && s.ms > Date.now() - 24 * 36e5).sort((a, b) => b.ms - a.ms);
+  const s = L[0]; if (!s) return null;
+  const fuera = !enHorarioManejo(s.ms), ok = R.get('salok|' + v.id + '|' + s.iso), no = R.get('salno|' + v.id + '|' + s.iso);
+  return {...s, fuera, txt: horaTf(s.ms), aprobada: !fuera || !!ok, estado: !fuera ? 'ok' : no ? 'rechazada' : ok ? 'aprobada' : 'pendiente', quien: (ok || no || {}).usuario || '', todas: L.map(x => x.clave)};
+}
+function salidaHtml(x){
+  const v = x.v, s = salidaDe(v);
+  if (!s) return `<div class="tf-sal"><span class="sub">🕒 Salida programada</span> <input type="datetime-local" data-tf-cuando="${esc(v.id)}"> <input type="text" maxlength="80" placeholder="Motivo, si es fuera de ${TRAFICO.desde} a. m. a ${TRAFICO.hasta - 12} p. m." data-tf-motivo="${esc(v.id)}">
+    <button type="button" class="link" data-tf-guardar="${esc(v.id)}">Guardar</button></div>`;
+  const est = s.estado === 'ok' ? '' : s.estado === 'aprobada' ? ` · <b style="color:var(--ok)">aprobada por ${esc(s.quien)}</b>` : s.estado === 'rechazada' ? ` · <b style="color:var(--bad)">rechazada por ${esc(s.quien)}</b>`
+    : ' · <b style="color:var(--warn)">fuera del horario: pendiente de aprobación de Gerencia o Calidad</b>';
+  return `<div class="tf-sal"><span class="sub">🕒 Salida programada</span> <b>${esc(s.txt)}</b> <span class="sub">anotó ${esc(s.usuario)}${s.motivo ? ' · ' + esc(s.motivo) : ''}</span>${est}
+    ${s.estado === 'pendiente' ? botonesSalida(v, s) : ''}<button type="button" class="link" data-tf-quitar="${esc(v.id)}">Cambiar</button></div>`;
+}
+const botonesSalida = (v, s) => esGerencia() ? `<button type="button" class="link" data-tf-ok="${esc(v.id)}|${esc(s.iso)}">✓ Aprobar</button><button type="button" class="link" data-tf-no="${esc(v.id)}|${esc(s.iso)}">✖ Rechazar</button>`
+  : `<button type="button" class="link" data-tf-gerencia="1" title="Gerencia o Calidad, con la clave de Gerencia">Entrar para aprobar</button>`;
+document.addEventListener('click', async e => { const b = e.target.closest('[data-tf-guardar],[data-tf-quitar],[data-tf-ok],[data-tf-no],[data-tf-gerencia]'); if (!b) return;
+  const d = b.dataset, pinta = () => { renderTrafico(); if (typeof renderBandeja === 'function') renderBandeja(); };
+  if (d.tfGerencia) { await entrarGerencia(); return pinta(); }
+  if (d.tfOk || d.tfNo) { if (!esGerencia()) return toast('Solo Gerencia o Calidad, con la clave');
+    if (confirm(`¿${d.tfOk ? 'Aprobar' : 'Rechazar'} esta salida fuera del horario?\n\nQueda registrado con su nombre y la hora.`)) { await marcarRevisado((d.tfOk ? 'salok|' : 'salno|') + (d.tfOk || d.tfNo)); pinta(); } return; }
+  const id = d.tfGuardar || d.tfQuitar, v = viajes.find(y => y.id === id); if (!v) return;
+  const viejas = (salidaDe(v) || {todas: []}).todas;
+  if (d.tfQuitar) { if (!confirm('¿Quitar la salida programada para anotar otra?')) return; for (const k of viejas) await marcarRevisado(k); return pinta(); }
+  const caja = b.closest('.tf-sal'), iso = (caja.querySelector('[data-tf-cuando]').value || '').slice(0, 16), motivo = (caja.querySelector('[data-tf-motivo]').value || '').replace(/[|\s]+/g, ' ').trim().slice(0, 80);
+  const ms = Date.parse(iso + ':00-05:00'); if (!iso || isNaN(ms)) return toast('Escriba el día y la hora de salida');
+  if (ms < Date.now() - 36e5) return toast('Esa hora ya pasó: anote la salida que viene');
+  if (!enHorarioManejo(ms) && !motivo) return toast(`Salir fuera de ${TRAFICO.desde} a. m. a ${TRAFICO.hasta - 12} p. m. necesita aprobación: escriba el motivo`);
+  for (const k of viejas) await marcarRevisado(k);
+  await marcarRevisado('sal|' + id + '|' + iso + (motivo ? '|' + motivo : '')); pinta(); });
+const proximaTf = x => x.sub ? null : planParadas(x.v, x.g, 0, salidaDe(x.v)).find(f => !f.hecho) || null;
 function planViajeHtml(x){
   const {v, g, plan} = x; if (x.sub) return '';
-  const F = planParadas(v, g), sig = F.find(f => !f.hecho); if (!sig) return '';
+  const F = planParadas(v, g, 0, salidaDe(v)), sig = F.find(f => !f.hecho); if (!sig) return '';
   const R = rutaDeViaje(v), cuando = f => f.prog ? (f.prog === HOY ? 'hoy' : f.prog === addDias(HOY, 1) ? 'mañana' : fd(f.prog)) : 'sin fecha';
   const carretera = f => ['Puerto', 'Bodega'].includes(f.parada) && !!R;
   const filas = F.map(f => { if (f.hecho) return `<tr class="ok"><td>✔</td><td>${esc(f.parada)} · ${esc(f.lugar)}</td><td class="sub">hecho</td><td></td><td class="sub">${esc(f.prog ? fd(f.prog) : '')}</td></tr>`;
@@ -4316,6 +4368,7 @@ function planViajeHtml(x){
 }
 function renderTrafico(){
   const c = document.getElementById('trafico'), b = document.querySelector('#nav [data-v="trafico"]'); if (!c) return;
+  if (c.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return;   // alguien está anotando una salida: no se le borra lo escrito
   if (b) b.classList.toggle('hidden', !!window.MODO_CLIENTE);
   if (window.MODO_CLIENTE || !claveActual()) { c.innerHTML = ''; return; }
   const L = vehiculosTrafico(), nAl = L.filter(x => x.est.alertas.some(a => a.nivel === 'alta')).length, n = document.getElementById('nTraf');
@@ -4336,6 +4389,7 @@ function renderTrafico(){
         <div><span class="sub">Próxima parada</span>${(pp => !pp ? '<b>—</b>' : `<b>${esc(pp.parada)} · ${esc(pp.zona || pp.lugar)}</b>
           <span class="sub">${pp.aqui || x.llego ? 'ya llegó' : plan && !plan.puntos[plan.puntos.length - 1].paso ? `llega ${esc(horaTf(plan.llega))} · faltan ${plan.km} km` : pp.llega ? `llega ${esc(horaTf(pp.llega))} · a ${pp.km} km${reciboTf(pp, pp.llega) ? ' · ⚠ lo reciben ' + esc(horaTf(reciboTf(pp, pp.llega))) : ''}` : pp.prog ? 'programado ' + esc(fd(pp.prog)) : 'sin fecha'}${pp.zona ? '' : ' · ⚠ sin coordenadas'}</span>`)(proximaTf(x))}</div>
       </div>
+      ${x.sub ? '' : salidaHtml(x)}
       ${planViajeHtml(x)}
       ${plan ? `<div class="tf-ruta">${plan.puntos.map(p => `<span class="tf-p${p.paso ? ' ok' : p === sig ? ' ya' : ''}" title="${p.paso ? 'Ya pasó' : 'Estimado: ' + esc(horaTf(p.llega)) + ' · a ' + p.km + ' km'}"><i></i>${esc(p.nombre)}${!p.paso ? `<small>${esc(horaTf(p.llega))}</small>` : ''}</span>`).join('')}</div>` : ''}
     </div>`; };
@@ -6600,7 +6654,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '591b5d5eab';
+const VERSION_TABLERO = '8d6e01672f';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -8531,10 +8585,16 @@ function armarBandeja(){
       add(v, {b: 'gps', gpsTipo: al.tipo, k: 'gps|' + x.id + '|' + al.tipo + '|' + al.lugar,
         html: `${x.padre ? `${esc(nombreSub(x))} · ` : ''}<span class="placa">${esc(x.placa)}</span> · <b>${esc(al.texto)}</b>${g.quieto ? ' · detenido' : ''}<br><span class="sub">${al.parada ? `Siguiente paso del viaje: ${esc(al.parada)}. ` : ''}${al.tipo === 'llegada' ? 'Si ya se hizo, confírmelo en el viaje.' : al.tipo === 'cerca' ? 'Va llegando: avise a quien lo recibe.' : 'Ese lugar no es su siguiente parada: revise si está esperando o si hay novedad.'}</span>`,
         acc: `<a class="link" href="${esc(g.url)}" target="_blank" rel="noopener">📍 Ver en el GPS</a>` + btnT('Abrir el viaje', `data-b-abrir="${x.id}"`)}); });
+    // 11-nov (decisión del usuario: "correo y tablero como acción aprobar"): una salida fuera del horario de manejo espera la
+    // aprobación de Gerencia o Calidad (trafico.js salidaDe). Sale aquí como acción de hoy hasta que la aprueben o la rechacen.
+    { const s = v.placa ? salidaDe(v) : null;
+      if (s && s.estado === 'pendiente') add(v, {b: 'gps', gpsTipo: 'trafico', k: 'salap|' + v.id,
+        html: `<span class="placa">${esc(v.placa)}</span> · <b>Salida fuera del horario por aprobar: ${esc(s.txt)}</b><br><span class="sub">${s.motivo ? 'Motivo: ' + esc(s.motivo) + ' · ' : ''}la anotó ${esc(s.usuario)}. La aprueba Gerencia o Calidad, con la clave.</span>`,
+        acc: botonesSalida(v, s) + btnT('Abrir el viaje', `data-b-abrir="${v.id}"`)}); }
     // 11-nov (auditoría: "todo debe estar alineado"): las alertas altas de Tráfico (detención no planeada, manejo fuera de horario;
     // dominio estadoTrafico) también salen aquí, como acción de hoy. Antes solo se veían en la pestaña Tráfico.
     if (v.placa && viajeActivoDePlaca(v.placa, viajes) === v) { const gp = (window.GPS || []).find(q => q.placa === placaNorm(v.placa)), gl = gp && gpsDeViaje(v);
-      if (gp) estadoTrafico(v, gp).alertas.filter(a => a.nivel === 'alta').forEach(a => add(v, {b: 'gps', gpsTipo: 'trafico', k: 'traf|' + v.id + '|' + a.tipo,
+      if (gp) estadoTrafico(v, gp, 0, salidaDe(v)).alertas.filter(a => a.nivel === 'alta').forEach(a => add(v, {b: 'gps', gpsTipo: 'trafico', k: 'traf|' + v.id + '|' + a.tipo,
         html: `<span class="placa">${esc(v.placa)}</span> · <b style="color:var(--bad)">${esc(a.texto)}</b><br><span class="sub">Llame al conductor y deje la novedad en el viaje. Detalle en la pestaña Tráfico.</span>`,
         acc: (gl ? `<a class="link" href="${esc(gl.url)}" target="_blank" rel="noopener">📍 Ver en el GPS</a>` : '') + lnkT(ICONO_WA + 'Preguntar al conductor', waConductor(v, '¿todo bien? Confírmame dónde estás y por qué estás detenido o en movimiento a esta hora')) + btnT('Abrir el viaje', `data-b-abrir="${v.id}"`)})); }
     // 11-nov (decisión del usuario: "sí, una línea sencilla"): lo de MAÑANA de cada viaje (cita, retiro, llenado, urbano), con su
@@ -8555,7 +8615,7 @@ function armarBandeja(){
     // ¿Dónde va? (seguimiento de la ronda): vehículos en movimiento sin nada atrasado; "Sigue igual" lo marca revisado en esta ronda
     // 10-nov (corrección): antes esta fila solo salía si el viaje además tenía un paso por confirmar (un "else" de más); los vehículos
     // en movimiento sin nada pendiente contaban en la ronda pero no tenían dónde marcarse, y la ronda no se podía cerrar desde aquí
-    if (!sinActualizar(v).length && enSeguimiento([v]).length && !T.R.has(kSeg(v))) { const p = pulsoViaje(v);
+    if (!sinActualizar(v).length && enSeguimiento([v]).length && !gpsVivo(v) && !T.R.has(kSeg(v))) {   // con GPS vivo no se pregunta (turno.js gpsVivo) const p = pulsoViaje(v);
       add(v, {b: 'donde', k: kSeg(v), html: `📍 <b>${esc(p.donde)}</b>${p.quieto ? ' · ' + esc(p.quieto) : ''}${p.espera ? '<br>' + esc(p.espera) : ''}${p.app ? '<br>' + esc(p.app) : ''}${ultimoComentario(v) ? '<br><span class="sub">' + ultimoComentario(v) + '</span>' : ''}`,
         acc: btnT('✏️ Actualizar', `data-b-abrir="${v.id}"`) + (v.placa ? lnkT(ICONO_WA + 'Preguntar dónde va', waConductor(v, '¿dónde vas? Confírmame tu ubicación y a qué hora llegas')) : '')
           + btnT('📍 Sigue igual', `data-t-rev="${kSeg(v)}"`, 'Lo marca revisado en esta ronda para todo el equipo')}); }
