@@ -1040,13 +1040,13 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 .tf-id .placa{display:inline-block}.tf-id .sub{display:block;font-size:11.5px;margin-top:2px}
 .tf-linea{display:flex;align-items:flex-start;padding-top:18px;min-width:0}
 .tf-n{flex:1;min-width:0;position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center}
-.tf-n:before{content:'';position:absolute;top:7px;left:-50%;width:100%;height:3px;background:var(--border)}
-.tf-n:first-child:before{display:none}
+.tf-seg{position:absolute;top:7px;left:-50%;width:100%;height:3px;background:var(--border);overflow:hidden}
+.tf-seg i{display:block;height:100%;background:var(--ok)}
+.tf-n.rojo .tf-seg{background:color-mix(in srgb, var(--bad) 45%, var(--border))}
 .tf-dot{position:relative;z-index:1;width:16px;height:16px;border-radius:50%;background:var(--surface);border:3px solid var(--border);box-sizing:border-box}
-.tf-n.ok .tf-dot{background:var(--ok);border-color:var(--ok)}.tf-n.ok:before{background:var(--ok)}
-.tf-n.ya .tf-dot{background:var(--accent);border-color:var(--accent)}.tf-n.ya:before{background:var(--ok)}
+.tf-n.ok .tf-dot{background:var(--ok);border-color:var(--ok)}
+.tf-n.ya .tf-dot{background:var(--accent);border-color:var(--accent)}
 .tf-n.rojo .tf-dot{background:var(--bad);border-color:var(--bad);box-shadow:0 0 0 4px color-mix(in srgb, var(--bad) 25%, transparent);animation:tf-pulso 1.6s ease-in-out infinite}
-.tf-n.rojo:before{background:var(--bad)}
 .tf-n b{font-size:12px}.tf-n small{font-size:10.5px;color:var(--muted);line-height:1.25}
 .tf-n em{font-style:normal;font-size:10px;font-weight:800;color:var(--ok)}.tf-n.rojo em{color:var(--bad)}
 .tf-camion{position:absolute;top:-19px;left:0;transform:translateX(-50%);background:var(--accent);border-radius:7px;padding:0 4px;font-size:12px;line-height:17px;z-index:2}
@@ -1128,6 +1128,11 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 .g-fin{background:var(--accent);min-width:46px;text-align:center}
 .g-esp{color:#5b3a00}
 .g-leyenda i.g-b{position:static;display:inline-block;width:18px;height:12px;line-height:12px;min-width:0;border:0;vertical-align:middle;margin-right:4px}
+
+/* 11-nov · líneas de Tráfico: puntos de control entre paradas y el color que avanza con el camión */
+.tf-n.cp .tf-dot{width:10px;height:10px;border-width:2px;margin:3px 0}
+.tf-n.cp b{font-size:10.5px;font-weight:600;color:var(--muted)}
+.tf-n.cp small{font-size:10px}
 </style>
 </head>
 <body>
@@ -4457,13 +4462,33 @@ const TF_ABIERTOS = new Set(), TF_FILAS = new Set();
 // rojo... abrir el plan de viaje es el detalle, pero visualmente debe ser rápido identificar y alarma"): cada viaje es UNA línea con
 // sus paradas como puntos (verde = hecha, rosado = a la que va con el camión, gris = pendiente, rojo = retrasada o sin llegar a su
 // geozona) y, a la derecha, el motivo del rojo. Al abrirla sale el detalle: alertas, salida programada, plan de viaje.
-const nodoTf = f => { const cls = f.hecho ? 'ok' : f.estado === 'retraso' ? 'rojo' : f.sig ? 'ya' : 'pend';
-  const est = f.hecho ? '' : f.estado === 'retraso' ? 'retrasado' : f.estado === 'atiempo' ? 'a tiempo' : '';
-  const cuando = f.hecho ? '✔ ' + (f.prog ? fd(f.prog) : 'hecho') : f.aqui ? 'aquí desde ' + horaTf(f.llega) : f.llega ? (f.sig ? 'llega ' : '~') + horaTf(f.inicio || f.llega) : f.prog ? 'prog. ' + fd(f.prog) : 'sin fecha';
-  return `<div class="tf-n ${cls}" title="${esc(f.parada + ' · ' + (f.zona || f.lugar) + (f.retraso ? ' · ' + f.retraso : ''))}">${f.sig ? `<span class="tf-camion${f.aqui ? ' aqui' : ''}">🚚</span>` : ''}<i class="tf-dot"></i><b>${esc(f.parada)}</b><small>${esc(cuando)}</small>${est ? `<em>${est}</em>` : ''}</div>`; };
+// 11-nov ("en las líneas también los puntos de control y ver cómo se va desplazando el color"): la línea lleva las paradas Y los puntos
+// de control del tramo de carretera (Dagua, Loboguerrero…). El color verde avanza por la línea hasta donde va el camión: entre el último
+// punto que pasó y el siguiente se calcula con los km que le faltan al siguiente (de la ruta, o en línea recta entre paradas). Sin GPS el
+// camión queda en el último punto confirmado y los puntos de control en gris.
+function lineaTf(x){
+  const F = x.F, R = rutaDeViaje(x.v), plan = x.plan;
+  const zc = f => { const z = f.zona ? GEOZONAS.find(q => q[0] === f.zona) : null; return z ? [z[1], z[2]] : null; };
+  const N = [];
+  F.forEach(f => {
+    if (!f.hecho && R && ['Puerto', 'Bodega'].includes(f.parada)) R.puntos.slice(1, -1).forEach(p => { const q = plan && plan.puntos.find(y => y.nombre === p[0]);
+      N.push({c: true, nombre: p[0], listo: !!(q && q.paso), coord: [p[1], p[2]], km: q && !q.paso ? q.km : null, llega: q && !q.paso ? q.llega : null}); });
+    N.push({f, nombre: f.parada, listo: f.hecho || f.aqui, coord: zc(f), km: f.hecho ? null : f.km}); });
+  const front = N.findIndex(n => !n.listo);   // el primero que el camión todavía no alcanza
+  N.forEach((n, k) => { n.fill = k === 0 ? 0 : n.listo ? 100 : k === front ? 0 : 0;
+    if (k > 0 && k === front && n.km != null && N[k - 1].coord && n.coord) { const seg = kmVia(N[k - 1].coord[0], N[k - 1].coord[1], n.coord[0], n.coord[1]); n.fill = seg > 0 ? Math.max(3, Math.min(96, Math.round(100 * (1 - n.km / seg)))) : 0; } });
+  return N.map((n, k) => { const f = n.f;
+    const cls = n.c ? (n.listo ? 'ok' : 'pend') : f.hecho || f.aqui ? 'ok' : f.estado === 'retraso' ? 'rojo' : f.sig ? 'ya' : 'pend';
+    const est = !f || f.hecho ? '' : f.estado === 'retraso' ? 'retrasado' : f.estado === 'atiempo' ? 'a tiempo' : '';
+    const cuando = n.c ? (n.listo ? 'pasó' : n.llega ? horaTf(n.llega) : '')
+      : f.hecho ? '✔ ' + (f.prog ? fd(f.prog) : 'hecho') : f.aqui ? 'aquí desde ' + horaTf(f.llega) : f.llega ? (f.sig ? 'llega ' : '~') + horaTf(f.inicio || f.llega) + (f.sig && f.km != null ? ` · ${f.km} km` : '') : f.prog ? 'prog. ' + fd(f.prog) : 'sin fecha';
+    const camion = k === front ? `<span class="tf-camion${k === 0 ? ' aqui' : ''}"${k > 0 ? ` style="left:${n.fill - 50}%"` : ''}>🚚</span>` : '';
+    const seg = k > 0 ? `<span class="tf-seg"><i style="width:${n.fill}%"></i></span>` : '';
+    return `<div class="tf-n ${cls}${n.c ? ' cp' : ''}" title="${esc((f ? f.parada + ' · ' + (f.zona || f.lugar) + (f.retraso ? ' · ' + f.retraso : '') : 'Punto de control · ' + n.nombre))}">${seg}${camion}<i class="tf-dot"></i><b>${esc(n.nombre)}</b>${cuando ? `<small>${esc(cuando)}</small>` : ''}${est ? `<em>${est}</em>` : ''}</div>`; }).join('');
+}
 function filaLeanTf(x, detalle){ const v = x.v, pp = x.F.find(f => !f.hecho), nTiempo = x.F.some(f => !f.hecho && f.estado === 'atiempo');
   const badge = x.rojo ? `<span class="tf-b rojo">⛔ ${esc(x.motivos[0])}${x.motivos.length > 1 ? ` · +${x.motivos.length - 1} más` : ''}</span>` : x.ambar ? `<span class="tf-b ambar">⚠ ${esc(x.aviso)}</span>` : nTiempo ? '<span class="tf-b ok">✔ A tiempo</span>' : '<span class="tf-b">Sin fecha programada</span>';
-  const linea = x.F.length ? x.F.map(nodoTf).join('') : `<span class="sub">${x.sub ? esc(nombreSub(v)) + ' · urbano ' + (v.fechaUrbano ? esc(fd(v.fechaUrbano)) : 'sin fecha') : esc(v.estado || '')}</span>`;
+  const linea = x.F.length ? lineaTf(x) : `<span class="sub">${x.sub ? esc(nombreSub(v)) + ' · urbano ' + (v.fechaUrbano ? esc(fd(v.fechaUrbano)) : 'sin fecha') : esc(v.estado || '')}</span>`;
   return `<details class="tf-fila ${x.rojo ? 'rojo' : x.ambar ? 'ambar' : 'ok'}" data-tff="${esc(v.id)}"${TF_FILAS.has(v.id) ? ' open' : ''} ontoggle="this.open ? TF_FILAS.add(this.dataset.tff) : TF_FILAS.delete(this.dataset.tff)">
     <summary><div class="tf-id"><span class="placa">${esc(v.placa)}</span><span class="sub">${esc(String(v.conductor || 'Sin conductor').split(' ').slice(0, 2).join(' '))} · ${esc(v.operacion)} ${esc(v.pais || v.bodega || '')}</span></div>
       <div class="tf-linea">${linea}</div>${badge}</summary>${detalle}</details>`; }
@@ -6931,7 +6956,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '17e7c57a47';
+const VERSION_TABLERO = '3196d99996';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
