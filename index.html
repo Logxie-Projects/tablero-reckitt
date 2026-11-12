@@ -6512,7 +6512,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '99b48f5774';
+const VERSION_TABLERO = '6122eddb80';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -8558,7 +8558,11 @@ function armarBandeja(){
   const fechaAccion = t => {
     if (!t.v) { const d = t.items.map(i => i.desde).filter(Boolean).sort()[0]; return d || ''; }
     // también la fecha de lo que quedó sin actualizar (cita de ingreso, retiro o devolución ya pasada): la tarjeta sale "Atrasado desde"
-    const F = [t.v, ...hijosDe(t.v)].flatMap(x => pasosDe(x).map(p => p[0]).filter(k => fechaPaso(x, k) && !cumplido(x, k)).map(k => fechaPaso(x, k)))
+    // 11-nov ("aparece mié 25... ¿estás organizando por fechas de zarpe o es un error?"): era un error. Un viaje ya llenado y sin fecha de
+    // entrega en puerto saltaba a la fecha del zarpe y quedaba abajo, como si no pidiera nada hasta ese día. Si el paso que sigue es
+    // nuestro (no de la naviera), no tiene fecha y los anteriores ya están confirmados, la tarjeta es de hoy: falta programar ese paso.
+    const sigueSinFecha = x => { const P = pasosDe(x), i = P.findIndex(p => !cumplido(x, p[0])); return i > 0 && !P[i][2] && !fechaPaso(x, P[i][0]); };
+    const F = [t.v, ...hijosDe(t.v)].flatMap(x => sigueSinFecha(x) ? [HOY] : pasosDe(x).map(p => p[0]).filter(k => fechaPaso(x, k) && !cumplido(x, k)).map(k => fechaPaso(x, k)))
       .concat(t.items.some(i => i.b === 'sinact') ? sinActualizar(t.v).map(s => String(s.fecha || '').slice(0, 10)).filter(Boolean) : []).sort();
     return F[0] || String(primerEvento(t.v) || '').slice(0, 10);
   };
