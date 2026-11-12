@@ -7109,7 +7109,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '895c3fe555';
+const VERSION_TABLERO = 'eeafe4d838';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -8899,7 +8899,8 @@ const textoCampo = ([k, a, n]) => a === null ? `${esc(k)}: <b class="qh-n">${esc
 function htmlCambios(b){
   const c = cambiosDeAccion(b); if (!c || !c.filas.length) return '';
   const fila = f => `<tr><td><b>${esc(f.viaje)}</b>${f.nombre ? `<br><span class="sub">${esc(f.nombre)}</span>` : ''}</td><td>${f.campos.map(k => `<div>${textoCampo(k)}</div>`).join('')}</td></tr>`;
-  return `<details class="qh"${c.filas.length <= 8 ? ' open' : ''}><summary>🤖 LogxIA ya lo preparó · <b>${c.filas.length}</b> ${c.filas.length === 1 ? 'viaje' : 'viajes'} · lo que hay → lo nuevo</summary>`
+  // siempre abierta: quien aplica tiene que ver qué se aplica (12-nov, el usuario: "¿aplicar sin saber qué se aplica?")
+  return `<details class="qh" open><summary>🤖 LogxIA ya lo preparó · <b>${c.filas.length}</b> ${c.filas.length === 1 ? 'viaje' : 'viajes'} · lo que hay → lo nuevo</summary>`
     + `<table class="qh-tab"><tr><th>Viaje</th><th>Cambio</th></tr>${c.filas.map(fila).join('')}</table></details>`;
 }
 const botonAplicar = b => { const c = cambiosDeAccion(b); if (!c || !c.filas.length) return '';
@@ -8913,7 +8914,9 @@ async function aplicarConLogxIA(id){
   if (c.tipo === 'aplicar') { accionEnCurso = {id, tipo: 'aplicar', desde: Date.now()}; return aplicarAccion(b); }
   const usuario = usuarioGuardado(); if (!usuario) { elegirUsuario(); return toast('Primero elija quién es y vuelva a presionar'); }
   const nuevos = c.filas.filter(f => f.viaje === 'Nuevo').length;
-  const ok = await preguntarSiNo(`¿Aplicar la programación en ${c.filas.length} ${c.filas.length === 1 ? 'viaje' : 'viajes'}${nuevos ? ` (${nuevos} nuevos)` : ''}?\n\nLogxIA escribe los datos a nombre de ${usuario}, cada viaje guarda el cambio en su Historial y la acción se cierra. Los cambios de fecha quedan con la causa "Cliente (Reckitt)".`, 'Aplicar', 'Cancelar');
+  const resumen = c.filas.slice(0, 12).map(f => `• ${f.viaje}${f.nombre ? ' ' + f.nombre : ''}: ${f.campos.map(([k, a, n]) => a === null ? `${k} ${n}` : `${k} ${a || 'vacío'} → ${n}`).join(' · ')}`).join('\n')
+    + (c.filas.length > 12 ? `\n… y ${c.filas.length - 12} viajes más (están en la tarjeta)` : '');
+  const ok = await preguntarSiNo(`¿Aplicar la programación en ${c.filas.length} ${c.filas.length === 1 ? 'viaje' : 'viajes'}${nuevos ? ` (${nuevos} nuevos)` : ''}?\n\n${resumen}\n\nLogxIA escribe los datos a nombre de ${usuario}, cada viaje guarda el cambio en su Historial y la acción se cierra. Los cambios de fecha quedan con la causa "Cliente (Reckitt)".`, 'Aplicar', 'Cancelar');
   if (!ok) return;
   PROG = {c: c.c, ...c.R}; accionEnCurso = {id, tipo: 'programacion', desde: Date.now()};
   await aplicarProgramacion({rapido: true, usuario});
