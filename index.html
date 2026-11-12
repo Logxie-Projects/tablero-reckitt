@@ -3597,9 +3597,17 @@ const tipoExc = k => k.startsWith('ronda') ? 'ronda' : k.startsWith('reg|') ? 'r
 const selectorMotivo = k => `<div class="tr-motivo"><select data-t-motivo="${esc(k)}">${MOTIVOS[tipoExc(k)].map(m => `<option>${esc(m)}</option>`).join('')}</select>
   ${btnT('Enviar a Gerencia', `data-t-excok="${esc(k)}"`)} ${btnT('Cancelar', 'data-t-exccancel="1"')}</div>`;
 // Gerencia: excepciones del día por aprobar
+// 11-nov ("llegó el correo de aprobación pero no creó la acción de aprobar; al dar clic lleva a Acciones"): las salidas programadas
+// fuera del horario (trafico.js salidaDe) también salen aquí arriba, junto a las excepciones: es donde llega el enlace del correo y se
+// ve en todas las pestañas de operación. Antes solo estaban dentro de la tarjeta de cada viaje, mezcladas con 40 tarjetas.
+const salidasPorAprobar = () => viajes.filter(v => v.placa && !v.padre && vigente(v) && !esPrueba(v) && viajeActivoDePlaca(v.placa, viajes) === v)
+  .map(v => ({v, s: salidaDe(v)})).filter(x => x.s && x.s.estado === 'pendiente');
 function bloqueGerencia(T){
-  const P = T.excepciones.filter(x => x.estado === 'pendiente'); if (!P.length) return '';
-  return `<div class="tr-gerencia"><b>Por aprobar (Gerencia) · ${P.length}</b>${P.map(x => `<div class="tr-fila"><div class="tr-txt">${esc(x.motivo)}
+  const P = T.excepciones.filter(x => x.estado === 'pendiente'), S = salidasPorAprobar(); if (!P.length && !S.length) return '';
+  const salidas = S.map(({v, s}) => `<div class="tr-fila"><div class="tr-txt"><b>Salida fuera del horario: ${esc(v.placa)} · ${esc(s.txt)}</b>${s.motivo ? ' · ' + esc(s.motivo) : ''}
+    <div class="sub">${esc(v.operacion)} ${esc(v.pais || v.bodega || '')} · ${esc(refCorta(v) || v.id)} · anotada por ${esc(s.usuario)} · ${btnT('Abrir el viaje', `data-t-abrir="${esc(v.id)}"`)}</div></div>
+    <div class="tr-acc">${botonesSalida(v, s)}</div></div>`).join('');
+  return `<div class="tr-gerencia"><b>Por aprobar (Gerencia o Calidad) · ${P.length + S.length}</b>${salidas}${P.map(x => `<div class="tr-fila"><div class="tr-txt">${esc(x.motivo)}
     <div class="sub">${esc(x.k.replace(/^seg\d\|/, 'Seguimiento · ').replace(/^cob\|/, 'Sin vehículo · ').replace(/^conf\|/, 'Paso por confirmar · ').replace(/^a(LX-)/, 'Pedido del cliente $1').replace(/^ronda/, 'Saltar la ronda '))} · pedida por ${esc(x.usuario)} ${esc(x.hora)}</div></div>
     <div class="tr-acc">${esGerencia() ? btnT('✓ Aprobar', `data-t-aprobar="${esc(x.k)}"`) + btnT('✖ Rechazar', `data-t-rechazar="${esc(x.k)}"`) : '<span class="sub">Solo Gerencia aprueba (con su clave)</span>'}</div></div>`).join('')}</div>`;
 }
@@ -6670,7 +6678,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '62ef58181b';
+const VERSION_TABLERO = '20dc6cfce3';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
