@@ -1258,6 +1258,7 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 /* 12-nov · las tablas de las tarjetas (quien.js y decisiones.js) parten el texto: la regla general de td es no partir y empujaba la tabla sobre los botones */
 .qh-tab td,.qh-tab th{white-space:normal;overflow-wrap:anywhere}
 .qh{max-width:100%;min-width:0;overflow-x:auto}
+.qh-op{display:block;white-space:normal;margin:0 0 3px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -7139,7 +7140,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'd11412a841';
+const VERSION_TABLERO = '658eb2a419';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -8927,43 +8928,20 @@ function cambiosDeAccion(b){
   return null;
 }
 const textoCampo = ([k, a, n]) => a === null ? `${esc(k)}: <b class="qh-n">${esc(n)}</b>` : `<span class="sub">${esc(k)}:</span> <span class="qh-v">${esc(a || 'vacío')}</span> → <b class="qh-n">${esc(n)}</b>`;
-// selección en la tarjeta (12-nov, el usuario: "así de una vez está visible y se decide si se hace o no"): cada viaje trae su casilla, todas
-// marcadas, y un solo botón guarda los marcados, sin ventanas de por medio. Lo desmarcado se recuerda aquí para que el repintado de la
-// Bandeja no lo pierda
-const SIN_MARCAR_QH = {};   // id de la acción → posiciones de las filas sin marcar
-const marcadasQh = (id, n) => Array.from({length: n}, (_, i) => i).filter(i => !(SIN_MARCAR_QH[id] || new Set()).has(i));
-// tabla "Hoy → Quedará": una fila por dato y el viaje (con su casilla) solo en la primera de las suyas
-function tablaCambios(c, id){
-  const marc = id ? new Set(marcadasQh(id, c.filas.length)) : null;
-  const filas = c.filas.map((f, i) => f.campos.map(([k, a, n], j) => `<tr>${j ? '' : `${marc ? `<td rowspan="${f.campos.length}"><input type="checkbox" data-qsel="${id}|${i}"${marc.has(i) ? ' checked' : ''} aria-label="Guardar ${esc(f.viaje)}"></td>` : ''}`
-    + `<td rowspan="${f.campos.length}"><b>${esc(f.viaje === 'Nuevo' ? 'Viaje nuevo' : f.viaje)}</b>${f.nombre ? `<br><span class="sub">${esc(f.nombre)}</span>` : ''}</td>`}`
-    + `<td>${esc(k)}</td><td class="qh-v">${a === null ? 'no existe' : esc(a || 'vacío')}</td><td class="qh-n">${esc(n)}</td></tr>`).join('')).join('');
-  return `<table class="qh-tab"><tr>${marc ? `<th><input type="checkbox" data-qtodos="${id}"${marc.size === c.filas.length ? ' checked' : ''} title="Marcar o desmarcar todos" aria-label="Todos"></th>` : ''}<th>Viaje</th><th>Dato</th><th>Hoy</th><th>Quedará</th></tr>${filas}</table>`;
-}
+// la tarjeta de programación: tabla Hoy → Lo que llegó con una casilla por viaje (decisiones.js, tablaElegir: la misma de las tarjetas de datos)
+const unidadesDeCambios = c => c.filas.map((f, i) => ({key: String(i), viaje: f.viaje === 'Nuevo' ? 'Viaje nuevo' : f.viaje, nombre: f.nombre,
+  campos: f.campos.map(([k, a, n]) => [k, a, `<b class="qh-n">${esc(n)}</b>`])}));
 function htmlCambios(b){
   const c = cambiosDeAccion(b); if (!c || !c.filas.length) return '';
-  return `<details class="qh" open><summary>🤖 LogxIA ya lo preparó · <b>${c.filas.length}</b> ${c.filas.length === 1 ? 'viaje' : 'viajes'} · marque los que quiere guardar</summary>${tablaCambios(c, b.id)}</details>`;
+  return `<details class="qh" open><summary>🤖 LogxIA ya lo preparó · <b>${c.filas.length}</b> ${c.filas.length === 1 ? 'viaje' : 'viajes'} · marque los que quiere guardar</summary>${tablaElegir(b.id, unidadesDeCambios(c), 'marcar', true, 'prog')}</details>`;
 }
-const textoGuardar = n => n ? `Guardar ${n} ${n === 1 ? 'seleccionado' : 'seleccionados'}` : 'Marque al menos uno';
-const botonAplicar = b => { const c = cambiosDeAccion(b); if (!c || !c.filas.length) return '';
-  const n = marcadasQh(b.id, c.filas.length).length;
-  return `<button type="button" class="btn primary qh-btn" data-b-guardar="${b.id}"${n ? '' : ' disabled'} title="Se guardan en los viajes a su nombre; cada viaje anota el cambio en su Historial">${textoGuardar(n)}</button>`; };
-// una casilla cambió: se recuerda y se actualizan las casillas y el botón sin repintar la Bandeja
-function seleccionQh(el){
-  const id = el.dataset.qtodos || String(el.dataset.qsel).split('|')[0], b = accionPorId(id), c = b && cambiosDeAccion(b); if (!c) return;
-  if (el.dataset.qtodos) SIN_MARCAR_QH[id] = el.checked ? new Set() : new Set(c.filas.map((f, i) => i));
-  else { const s = SIN_MARCAR_QH[id] = SIN_MARCAR_QH[id] || new Set(), i = +String(el.dataset.qsel).split('|')[1]; if (el.checked) s.delete(i); else s.add(i); }
-  const m = new Set(marcadasQh(id, c.filas.length));
-  document.querySelectorAll(`[data-qsel^="${id}|"]`).forEach(x => { x.checked = m.has(+x.dataset.qsel.split('|')[1]); });
-  document.querySelectorAll(`[data-qtodos="${id}"]`).forEach(x => { x.checked = m.size === c.filas.length; });
-  document.querySelectorAll(`[data-b-guardar="${id}"]`).forEach(x => { x.disabled = !m.size; x.textContent = textoGuardar(m.size); });
-}
+const botonAplicar = b => { const c = cambiosDeAccion(b); return c && c.filas.length ? botonElegir(b.id) : ''; };
 async function guardarSeleccion(id){
   const b = accionPorId(id), c = b && cambiosDeAccion(b);
   if (!c) return toast('Todavía no tengo los datos de esta acción: intente en un momento');
   const usuario = usuarioGuardado(); if (!usuario) { elegirUsuario(); return toast('Primero elija quién es y vuelva a presionar'); }
-  const sel = marcadasQh(id, c.filas.length); if (!sel.length) return toast('Marque al menos un viaje');
-  delete SIN_MARCAR_QH[id];   // tras guardar, la tarjeta se arma de nuevo con lo que quede
+  const sel = marcadasElegir(id).map(Number); if (!sel.length) return toast('Marque al menos un viaje');
+  delete ELEC[id];   // tras guardar, la tarjeta se arma de nuevo con lo que quede
   if (c.tipo === 'aplicar') { accionEnCurso = {id, tipo: 'aplicar', desde: Date.now()}; return aplicarAccion(b, true, sel.map(i => c.filas[i].clave)); }   // true: ya vio los cambios
   PROG = {c: c.c, ...c.R}; accionEnCurso = {id, tipo: 'programacion', desde: Date.now()};
   await aplicarProgramacion({rapido: true, usuario, indices: sel.map(i => c.filas[i].idx)});
@@ -9045,70 +9023,77 @@ function resumenCierre(){
   const partes = [logxia ? `${logxia} con LogxIA` : '', sistema ? `${sistema} solas, porque el viaje ya lo mostraba` : '', mano > 0 ? `${mano} a mano` : '', noetp ? `${noetp} que no nos tocaban` : ''].filter(Boolean);
   return `<div class="bj-cierre sub">✔ Hoy se cerraron <b>${cer.length}</b> ${cer.length === 1 ? 'acción' : 'acciones'} (${partes.join(' · ')}). Quedan <b>${quedan}</b> pendientes.</div>`;
 }
-/* ---------- decisiones.js · "No coincide" y "Datos de correos": tabla Hoy → Lo que llegó y una elección por dato (12-nov-2026) ----------
- * Capa: pantalla. Pedido del usuario ("la idea es arreglar todo"): igual que las acciones de programación (quien.js), estas dos tarjetas
- * muestran lo que el viaje tiene hoy contra lo que llegó (correo, documento o conductor) y dejan decidir dato por dato, en la misma
- * tarjeta y con un solo botón:
- *   · Datos nuevos (el viaje no tenía nada distinto): una casilla por dato, todas marcadas. "Guardar N seleccionados" los escribe en el
- *     viaje; "No guardar los marcados" los descarta (no vuelven a salir). Lo desmarcado sigue pendiente.
- *   · No coincide (el viaje ya tenía otro valor): por cada dato dos opciones, "Usar lo que llegó" o "Dejar lo del viaje", sin ninguna
- *     marcada de antemano porque decide la persona. "Guardar mi elección" aplica lo elegido; lo que no se eligió sigue pendiente.
- * Quien guarda queda en el Historial del viaje; la acción de LogxIA que trajo los datos se cierra cuando ya no le queda ninguno. */
-const ELEC_DATOS = {};   // id de la tarjeta → {sin: Set de claves sin marcar (datos nuevos), eleg: {clave: 'nuevo' | 'viaje'} (choques)}
-const estadoElec = id => ELEC_DATOS[id] || (ELEC_DATOS[id] = {sin: new Set(), eleg: {}});
+/* ---------- decisiones.js · UNA sola forma de elegir: tabla "Hoy en el viaje / Lo que llegó" con casillas u opciones (12-nov-2026) ----------
+ * Capa: pantalla. La usan las tres tarjetas donde una persona decide qué se escribe en los viajes:
+ *   · 'prog'   (quien.js)  la programación de Reckitt: una casilla por viaje, todas marcadas;
+ *   · 'datos'  (aquí)      datos nuevos del correo: una casilla por dato, todas marcadas;
+ *   · 'choque' (aquí)      "No coincide": por dato, "Usar lo que llegó" o "Dejar lo del viaje", ninguna marcada de antemano.
+ * El usuario notó que había dos formas distintas de seleccionar y código repetido: ahora hay una tabla (tablaElegir), un estado
+ * (ELEC), un manejador (seleccionElegir) y un botón (botonElegir). Lo desmarcado o sin elegir sigue pendiente; quien guarda queda en
+ * el Historial del viaje y la acción de LogxIA que trajo los datos se cierra cuando ya no le queda ninguno. */
+const ELEC = {};   // id de la tarjeta → {tipo, modo: 'marcar' | 'elegir', keys, sin: Set de claves sin marcar, eleg: {clave: 'nuevo' | 'viaje'}}
+const estadoElec = id => ELEC[id] || (ELEC[id] = {tipo: '', modo: 'marcar', keys: null, sin: new Set(), eleg: {}});
+const marcadasElegir = id => { const E = estadoElec(id); return E.modo === 'marcar' ? (E.keys || []).filter(k => !E.sin.has(k)) : (E.keys || []).filter(k => E.eleg[k]); };
+const textoGuardar = n => n ? `Guardar ${n} ${n === 1 ? 'seleccionado' : 'seleccionados'}` : 'Marque al menos uno';
+const textoElegir = (E, n) => E.modo === 'marcar' ? textoGuardar(n) : n ? `Guardar mi elección (${n})` : 'Elija qué hacer con cada dato';
+const OPCIONES_ELEGIR = [['nuevo', 'Usar lo que llegó'], ['viaje', 'Dejar lo del viaje']];
+const selElegir = (atributo, id) => document.querySelectorAll(`[${atributo}="${String(id).replace(/"/g, '\\"')}"]`);
+
+// unidades: [{key, viaje, nombre, campos: [[dato, hoy (null = no existe), lo que llegó (HTML ya escapado)]]}]. modo 'marcar' = casilla por
+// unidad; 'elegir' = dos opciones por unidad. conViaje: columna con el viaje (programación); en las tarjetas de un viaje no hace falta.
+function tablaElegir(id, unidades, modo, conViaje, tipo){
+  const E = estadoElec(id); E.tipo = tipo; E.modo = modo; E.keys = unidades.map(u => u.key);
+  const marcada = u => !E.sin.has(u.key), nMarc = unidades.filter(marcada).length;
+  const control = u => modo === 'marcar'
+    ? `<input type="checkbox" data-el="${esc(id)}" data-u="${esc(u.key)}"${marcada(u) ? ' checked' : ''} aria-label="Guardar ${esc(u.viaje || u.campos[0][0])}">`
+    : OPCIONES_ELEGIR.map(([o, t]) => `<label class="qh-op"><input type="radio" name="el-${esc(id)}-${esc(u.key)}" data-el="${esc(id)}" data-u="${esc(u.key)}" value="${o}"${E.eleg[u.key] === o ? ' checked' : ''}> ${t}</label>`).join('');
+  const cab = `<tr><th>${modo === 'marcar' ? `<input type="checkbox" data-eltodos="${esc(id)}"${nMarc === unidades.length ? ' checked' : ''} title="Marcar o desmarcar todos" aria-label="Todos">` : 'Qué hago'}</th>${conViaje ? '<th>Viaje</th>' : ''}<th>Dato</th><th>Hoy en el viaje</th><th>Lo que llegó</th></tr>`;
+  const filas = unidades.map(u => u.campos.map(([dato, hoy, llego], j) => `<tr>${j ? '' : `<td rowspan="${u.campos.length}">${control(u)}</td>${conViaje ? `<td rowspan="${u.campos.length}"><b>${esc(u.viaje)}</b>${u.nombre ? `<br><span class="sub">${esc(u.nombre)}</span>` : ''}</td>` : ''}`}`
+    + `<td>${esc(dato)}</td><td class="qh-v">${hoy === null ? 'no existe' : esc(hoy || 'vacío')}</td><td>${llego}</td></tr>`).join('')).join('');
+  return `<table class="qh-tab">${cab}${filas}</table>`;
+}
+const botonElegir = id => { const E = estadoElec(id), n = marcadasElegir(id).length;
+  return `<button type="button" class="btn primary qh-btn" data-b-elegir="${esc(id)}"${n ? '' : ' disabled'} title="${E.modo === 'marcar' ? 'Se guardan en los viajes a su nombre; cada viaje anota el cambio en su Historial' : 'Se aplica lo elegido en cada dato, a su nombre; lo que no elija sigue pendiente'}">${textoElegir(E, n)}</button>`; };
+
+// una casilla u opción cambió: se recuerda y se actualizan las casillas y el botón sin repintar la Bandeja
+function seleccionElegir(el){
+  const id = el.dataset.eltodos || el.dataset.el, E = estadoElec(id);
+  if (el.dataset.eltodos) E.sin = el.checked ? new Set() : new Set(E.keys);
+  else if (el.type === 'radio') E.eleg[el.dataset.u] = el.value;
+  else if (el.checked) E.sin.delete(el.dataset.u); else E.sin.add(el.dataset.u);
+  refrescarElegir(id);
+}
+function refrescarElegir(id){
+  const E = estadoElec(id), n = marcadasElegir(id).length;
+  selElegir('data-el', id).forEach(x => { x.checked = E.modo === 'marcar' ? !E.sin.has(x.dataset.u) : E.eleg[x.dataset.u] === x.value; });
+  selElegir('data-eltodos', id).forEach(x => { x.checked = n === (E.keys || []).length; });
+  selElegir('data-b-elegir', id).forEach(b => { b.disabled = !n; b.textContent = textoElegir(E, n); });
+  selElegir('data-b-elegirno', id).forEach(b => { b.disabled = !n; });
+}
+const marcarTodosElegir = (id, que) => { const E = estadoElec(id); (E.keys || []).forEach(k => { E.eleg[k] = que; }); refrescarElegir(id); };
+// el botón principal de cualquiera de las tres tarjetas
+function guardarElegidos(id){ const E = estadoElec(id); return E.tipo === 'prog' ? guardarSeleccion(id) : E.tipo === 'datos' ? guardarDatosMarcados(id, false) : guardarEleccionChoques(id); }
+
+/* ---------- datos del correo de un viaje ---------- */
 const idDecision = (viajeId, area, tipo) => [viajeId, area, tipo].join('|');
 const propsDeTarjeta = (viajeId, area, tipo) => { const v = viajePorId(viajeId); if (!v) return [];
   const todos = [v, ...hijosDe(v)]; return PROP.filter(p => todos.some(x => x.id === p.viajeId) && areaProp(p) === area && (tipo === 'choque') === noCoincide(p)); };
 // qué se va a escribir, en palabras: la aprobación de extracostos la da Reckitt y se dice así
 const textoLlego = p => p.campo === 'aprobacionExtra' ? `Reckitt ${p.valor === 'Aprobado' ? 'aprobó' : p.valor === 'Rechazado' ? 'rechazó' : 'marcó «' + p.valor + '» en'} los extracostos` : fxDato(p.valor);
 const celdaLlego = p => `<b class="qh-n">${esc(textoLlego(p))}</b><br><span class="sub">${esc(fuenteChoque(p).replace(/^el /, ''))} · ${esc(String(p.evidencia || '').slice(0, 80))}${p.fecha ? ' · ' + esc(fxDato(String(p.fecha).slice(0, 10))) : ''}</span>${avisoDato(p)}`;
-const filaDecision = (p, control) => `<tr><td>${control}</td><td>${esc(p.etiqueta)}</td><td class="qh-v">${p.actual ? esc(fxDato(p.actual)) : 'vacío'}</td><td>${celdaLlego(p)}</td></tr>`;
+const unidadesDePropuestas = P => P.map(p => ({key: p.clave, viaje: '', campos: [[p.etiqueta, p.actual ? fxDato(p.actual) : '', celdaLlego(p)]]}));
+const htmlDatosNuevos = (P, tid) => tablaElegir(tid, unidadesDePropuestas(P), 'marcar', false, 'datos');
+const botonesDatosNuevos = tid => botonElegir(tid) + `<button type="button" class="btn" data-b-elegirno="${esc(tid)}"${marcadasElegir(tid).length ? '' : ' disabled'} title="Los datos marcados no se guardan y no vuelven a aparecer">No guardar los marcados</button>`;
+const htmlChoques = (P, tid) => tablaElegir(tid, unidadesDePropuestas(P), 'elegir', false, 'choque');
+const botonesChoques = (tid, viajeId) => botonElegir(tid)
+  + btnT('Marcar todos: usar lo que llegó', `data-b-ctodos="${esc(tid)}|nuevo"`) + btnT('Marcar todos: dejar lo del viaje', `data-b-ctodos="${esc(tid)}|viaje"`)
+  + btnT('Abrir el viaje', `data-b-abrir="${viajeId}"`, 'Si las dos cosas son ciertas porque algo cambió (otro vehículo, otra fecha), se cambia en el viaje con su causa');
 
-// datos nuevos: una casilla por dato
-function htmlDatosNuevos(P, tid){
-  const E = estadoElec(tid), n = P.filter(p => !E.sin.has(p.clave)).length;
-  return `<table class="qh-tab"><tr><th><input type="checkbox" data-qdtodos="${esc(tid)}"${n === P.length ? ' checked' : ''} aria-label="Todos" title="Marcar o desmarcar todos"></th><th>Dato</th><th>Hoy en el viaje</th><th>Lo que llegó</th></tr>`
-    + P.map(p => filaDecision(p, `<input type="checkbox" data-qd="${esc(tid)}" data-clave="${esc(p.clave)}"${E.sin.has(p.clave) ? '' : ' checked'} aria-label="Guardar ${esc(p.etiqueta)}">`)).join('') + '</table>';
-}
-const botonesDatosNuevos = (P, tid) => { const E = estadoElec(tid), n = P.filter(p => !E.sin.has(p.clave)).length;
-  return `<button type="button" class="btn primary qh-btn" data-b-dguardar="${esc(tid)}"${n ? '' : ' disabled'} title="Los datos marcados pasan al viaje, a su nombre">${textoGuardar(n)}</button>`
-    + `<button type="button" class="btn" data-b-dno="${esc(tid)}"${n ? '' : ' disabled'} title="Los datos marcados no se guardan y no vuelven a aparecer">No guardar los marcados</button>`; };
-
-// no coincide: por dato, "usar lo que llegó" o "dejar lo del viaje"
-function htmlChoques(P, tid){
-  const E = estadoElec(tid);
-  return `<table class="qh-tab"><tr><th>Qué hago</th><th>Dato</th><th>Hoy en el viaje</th><th>Lo que llegó</th></tr>`
-    + P.map((p, i) => filaDecision(p, ['nuevo', 'viaje'].map(o => `<label class="qh-op"><input type="radio" name="qe-${esc(tid)}-${i}" data-qe="${esc(tid)}" data-clave="${esc(p.clave)}" value="${o}"${E.eleg[p.clave] === o ? ' checked' : ''}> ${o === 'nuevo' ? 'Usar lo que llegó' : 'Dejar lo del viaje'}</label>`).join('<br>'))).join('') + '</table>';
-}
-const botonesChoques = (P, tid, viajeId) => { const E = estadoElec(tid), n = P.filter(p => E.eleg[p.clave]).length;
-  return `<button type="button" class="btn primary qh-btn" data-b-cguardar="${esc(tid)}"${n ? '' : ' disabled'} title="Se aplica lo elegido en cada dato, a su nombre; lo que no elija sigue pendiente">${n ? `Guardar mi elección (${n})` : 'Elija qué hacer con cada dato'}</button>`
-    + btnT('Marcar todos: usar lo que llegó', `data-b-ctodos="${esc(tid)}|nuevo"`) + btnT('Marcar todos: dejar lo del viaje', `data-b-ctodos="${esc(tid)}|viaje"`)
-    + btnT('Abrir el viaje', `data-b-abrir="${viajeId}"`, 'Si las dos cosas son ciertas porque algo cambió (otro vehículo, otra fecha), se cambia en el viaje con su causa'); };
-
-// una casilla o una opción cambió: se recuerda y se actualiza el botón sin repintar la Bandeja
-function seleccionDecision(el){
-  const tid = el.dataset.qdtodos || el.dataset.qd || el.dataset.qe, E = estadoElec(tid), [vid, area, tipo] = tid.split('|'), P = propsDeTarjeta(vid, area, tipo);
-  if (el.dataset.qdtodos) E.sin = el.checked ? new Set() : new Set(P.map(p => p.clave));
-  else if (el.dataset.qd) { if (el.checked) E.sin.delete(el.dataset.clave); else E.sin.add(el.dataset.clave); }
-  else E.eleg[el.dataset.clave] = el.value;
-  const q = s => document.querySelectorAll(s.replace('%', tid.replace(/"/g, '\\"')));
-  if (tipo === 'choque') { const n = P.filter(p => E.eleg[p.clave]).length;
-    q('[data-b-cguardar="%"]').forEach(b => { b.disabled = !n; b.textContent = n ? `Guardar mi elección (${n})` : 'Elija qué hacer con cada dato'; }); }
-  else { const n = P.filter(p => !E.sin.has(p.clave)).length;
-    q('[data-qd="%"]').forEach(x => { x.checked = !E.sin.has(x.dataset.clave); }); q('[data-qdtodos="%"]').forEach(x => { x.checked = n === P.length; });
-    q('[data-b-dguardar="%"]').forEach(b => { b.disabled = !n; b.textContent = textoGuardar(n); }); q('[data-b-dno="%"]').forEach(b => { b.disabled = !n; }); }
-}
-function marcarTodosChoques(tid, que){
-  const [vid, area, tipo] = tid.split('|'), E = estadoElec(tid); propsDeTarjeta(vid, area, tipo).forEach(p => { E.eleg[p.clave] = que; });
-  document.querySelectorAll('[data-qe]').forEach(x => { if (x.dataset.qe === tid) x.checked = E.eleg[x.dataset.clave] === x.value; });
-  const n = propsDeTarjeta(vid, area, tipo).length;
-  document.querySelectorAll(`[data-b-cguardar="${tid.replace(/"/g, '\\"')}"]`).forEach(b => { b.disabled = !n; b.textContent = `Guardar mi elección (${n})`; });
-}
 async function guardarDatosMarcados(tid, rechazar){
-  const [vid, area, tipo] = tid.split('|'), v = viajePorId(vid), E = estadoElec(tid), sel = propsDeTarjeta(vid, area, tipo).filter(p => !E.sin.has(p.clave));
+  const [vid, area, tipo] = tid.split('|'), v = viajePorId(vid), marc = new Set(marcadasElegir(tid)), sel = propsDeTarjeta(vid, area, tipo).filter(p => marc.has(p.clave));
   if (!v || !sel.length) return toast('Marque al menos un dato');
   const usuario = pedirUsuario(); if (!usuario) return;
-  delete ELEC_DATOS[tid];
+  delete ELEC[tid];
   await aplicarDecision(v, area, rechazar ? [] : sel, rechazar ? sel : [], usuario);
 }
 async function guardarEleccionChoques(tid){
@@ -9116,7 +9101,7 @@ async function guardarEleccionChoques(tid){
   const A = P.filter(p => E.eleg[p.clave] === 'nuevo'), R = P.filter(p => E.eleg[p.clave] === 'viaje');
   if (!v || !(A.length + R.length)) return toast('Elija qué hacer con al menos un dato');
   const usuario = pedirUsuario(); if (!usuario) return;
-  delete ELEC_DATOS[tid];
+  delete ELEC[tid];
   await aplicarDecision(v, area, A, R, usuario);
 }
 /* ---------- bandeja.js · Bandeja (prueba, desde 6-nov): todo lo que pide trabajo, una tarjeta por viaje ----------
@@ -9350,9 +9335,9 @@ function armarBandeja(){
       const choques = P.filter(noCoincide), nuevos = P.filter(p => !noCoincide(p)), vienen = deAcc.length ? `<br><span class="sub">Vienen de ${deAcc.map(esc).join(', ')}: al decidir todos, se cierran</span>` : '';
       // 12-nov (decisiones.js): tabla "Hoy en el viaje / Lo que llegó" con una elección por dato y un solo botón
       if (choques.length) { const tid = idDecision(v.id, area, 'choque');
-        add(v, {b: 'nocoincide', area, ks: nuevos.length ? [] : deAcc.map(id => 'a' + id), html: htmlChoques(choques, tid) + (nuevos.length ? '' : vienen), acc: botonesChoques(choques, tid, v.id)}); }
+        add(v, {b: 'nocoincide', area, ks: nuevos.length ? [] : deAcc.map(id => 'a' + id), html: htmlChoques(choques, tid) + (nuevos.length ? '' : vienen), acc: botonesChoques(tid, v.id)}); }
       if (nuevos.length) { const tid = idDecision(v.id, area, 'nuevo');
-        add(v, {b: 'datos', area, ks: deAcc.map(id => 'a' + id), html: htmlDatosNuevos(nuevos, tid) + vienen, acc: botonesDatosNuevos(nuevos, tid)}); }
+        add(v, {b: 'datos', area, ks: deAcc.map(id => 'a' + id), html: htmlDatosNuevos(nuevos, tid) + vienen, acc: botonesDatosNuevos(tid)}); }
     });
     // 7 · Falta (errores del viaje y de sus subviajes; sin los que ya salen arriba), solo si arranca en ≤ HORIZONTE_FALTA días o ya arrancó
     const pe = primerEvento(v), cerca = !pe || diffDias(pe) <= HORIZONTE_FALTA;
@@ -9561,8 +9546,7 @@ async function aplicarDecision(v, area, A, R, usuario){
 }
 
 $('#bandeja').onchange = e => { if (e.target.dataset.bAreasel) { bandejaArea = e.target.value; bandejaTodo = false; renderBandeja(); }
-  else if (e.target.dataset.qsel !== undefined || e.target.dataset.qtodos !== undefined) seleccionQh(e.target);   // quien.js: casillas de la tarjeta de cambios
-  else if (e.target.dataset.qd !== undefined || e.target.dataset.qdtodos !== undefined || e.target.dataset.qe !== undefined) seleccionDecision(e.target); };   // decisiones.js
+  else if (e.target.dataset.el !== undefined || e.target.dataset.eltodos !== undefined) seleccionElegir(e.target); };   // decisiones.js: casillas y opciones de las tarjetas
 $('#bandeja').onclick = e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   const d = b.dataset;
@@ -9574,11 +9558,9 @@ $('#bandeja').onclick = e => {
   else if (d.bOp !== undefined) elegirOperacion(d.bOp);
   else if (d.bCampo) abrirEnCampo(d.bCampo, d.campo);   // calidad.js: abre el viaje con el cursor en esa casilla
   else if (d.bAbrir) abrir(d.bAbrir);
-  else if (d.bGuardar) guardarSeleccion(d.bGuardar);
-  else if (d.bDguardar) guardarDatosMarcados(d.bDguardar, false);
-  else if (d.bDno) guardarDatosMarcados(d.bDno, true);
-  else if (d.bCguardar) guardarEleccionChoques(d.bCguardar);
-  else if (d.bCtodos) marcarTodosChoques(...d.bCtodos.split(/\|(?=[^|]*$)/));
+  else if (d.bElegir) guardarElegidos(d.bElegir);
+  else if (d.bElegirno) guardarDatosMarcados(d.bElegirno, true);
+  else if (d.bCtodos) marcarTodosElegir(...d.bCtodos.split(/\|(?=[^|]*$)/));
   else if (d.bCerrar) cerrarAccion(d.bCerrar);
   else if (d.bHecha) confirmarHecha(d.bHecha);
   else if (d.bNoetp) marcarHecha(d.bNoetp, true);
