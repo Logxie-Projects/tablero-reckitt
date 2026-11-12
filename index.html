@@ -7109,7 +7109,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'eeafe4d838';
+const VERSION_TABLERO = 'edb81141a3';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -8904,8 +8904,9 @@ function htmlCambios(b){
     + `<table class="qh-tab"><tr><th>Viaje</th><th>Cambio</th></tr>${c.filas.map(fila).join('')}</table></details>`;
 }
 const botonAplicar = b => { const c = cambiosDeAccion(b); if (!c || !c.filas.length) return '';
-  const n = c.filas.length, txt = c.tipo === 'aplicar' ? `Aplicar ${n} dato${n === 1 ? '' : 's'}` : `Aplicar en ${n} ${n === 1 ? 'viaje' : 'viajes'}`;
-  return `<button type="button" class="btn primary qh-btn" data-b-aplicar="${b.id}" title="LogxIA escribe estos datos en los viajes a su nombre y la acción se cierra">✓ ${txt}</button>`; };
+  // 12-nov (el usuario: "al ver Guardar en 10 viajes pensarán que tú lo harás"): el botón dice quién escribe y que lo autoriza quien pulsa
+  const n = c.filas.length, txt = c.tipo === 'aplicar' ? `guardar ${n} dato${n === 1 ? '' : 's'}` : `guardar en ${n} ${n === 1 ? 'viaje' : 'viajes'}`;
+  return `<button type="button" class="btn primary qh-btn" data-b-aplicar="${b.id}" title="LogxIA escribe estos cambios en los viajes con su autorización y a su nombre; se los muestra antes de escribir">🤖 Que LogxIA lo haga<small> · ${txt}</small></button>`; };
 
 // "✓ Aplicar": LogxIA escribe los cambios (con la lógica de siempre) y cierra la acción diciendo que fue así
 async function aplicarConLogxIA(id){
@@ -8916,7 +8917,7 @@ async function aplicarConLogxIA(id){
   const nuevos = c.filas.filter(f => f.viaje === 'Nuevo').length;
   const resumen = c.filas.slice(0, 12).map(f => `• ${f.viaje}${f.nombre ? ' ' + f.nombre : ''}: ${f.campos.map(([k, a, n]) => a === null ? `${k} ${n}` : `${k} ${a || 'vacío'} → ${n}`).join(' · ')}`).join('\n')
     + (c.filas.length > 12 ? `\n… y ${c.filas.length - 12} viajes más (están en la tarjeta)` : '');
-  const ok = await preguntarSiNo(`¿Aplicar la programación en ${c.filas.length} ${c.filas.length === 1 ? 'viaje' : 'viajes'}${nuevos ? ` (${nuevos} nuevos)` : ''}?\n\n${resumen}\n\nLogxIA escribe los datos a nombre de ${usuario}, cada viaje guarda el cambio en su Historial y la acción se cierra. Los cambios de fecha quedan con la causa "Cliente (Reckitt)".`, 'Aplicar', 'Cancelar');
+  const ok = await preguntarSiNo(`LogxIA va a guardar la programación en ${c.filas.length} ${c.filas.length === 1 ? 'viaje' : 'viajes'}${nuevos ? ` (${nuevos} nuevos)` : ''}?\n\n${resumen}\n\nLo hace LogxIA, con su autorización: los datos se escriben a nombre de ${usuario}, cada viaje guarda el cambio en su Historial y la acción se cierra. Los cambios de fecha quedan con la causa "Cliente (Reckitt)".\n\n¿Autoriza que LogxIA lo haga?`, 'Sí, que lo haga', 'No, volver');
   if (!ok) return;
   PROG = {c: c.c, ...c.R}; accionEnCurso = {id, tipo: 'programacion', desde: Date.now()};
   await aplicarProgramacion({rapido: true, usuario});
@@ -8929,7 +8930,7 @@ function preguntarQuien(c){
     const lista = c.filas.slice(0, 6).map(f => `<li><b>${esc(f.viaje)}</b>${f.nombre ? ' <span class="sub">' + esc(f.nombre) + '</span>' : ''}: ${f.campos.map(textoCampo).join(' · ')}</li>`).join('') + (c.filas.length > 6 ? `<li class="sub">… y ${c.filas.length - 6} más</li>` : '');
     document.body.insertAdjacentHTML('beforeend', `<div class="ov open" id="ovQuienHace" style="z-index:75"><div class="modal" role="dialog" aria-modal="true" style="width:min(540px,100%)">
       <h3>Aún no veo esto en los viajes</h3><div class="sub">Para cerrar la acción esperaba encontrar:</div><ul class="qh-lista">${lista}</ul>
-      <div class="qh-ops"><button type="button" class="btn primary" data-q="aplicar">Aplicar con LogxIA<small>LogxIA escribe los cambios ahora, a su nombre.</small></button>
+      <div class="qh-ops"><button type="button" class="btn primary" data-q="aplicar">🤖 Que LogxIA lo haga<small>Usted lo autoriza y LogxIA escribe los cambios ahora, a su nombre.</small></button>
       <button type="button" class="btn" data-q="igual">Ya los puse a mano, ciérrela igual<small>Queda anotado que se cerró sin verificar.</small></button>
       <button type="button" class="btn" data-q="volver">Volver<small>No cierra nada.</small></button></div></div></div>`);
     $('#ovQuienHace').onclick = e => { const x = e.target.closest('[data-q]'); if (!x && e.target.id !== 'ovQuienHace') return; $('#ovQuienHace').remove(); ok(x ? x.dataset.q : 'volver'); };
@@ -9219,7 +9220,7 @@ function armarBandeja(){
     if (areaDe(b) === 'Operaciones' && !pareceHecha(b) && (esProgramacionNueva(b) || esReprogramacion(b))) {
       add(null, {b: 'programacion', k: 'a' + b.id, area: 'Operaciones', prog: true,
         html: `${desdeCuando(b.fechaCorreo || b.registrado)}<b>${esProgramacionNueva(b) ? 'Programación nueva' : 'Cambio de fecha'}</b>${v ? ' · ' + esc(nombreTurno(v)) : ''}<br>${esc(String(b.accion).replace(/^Operaciones:\s*/i, ''))}${b.resumen ? `<br><span class="sub">${esc(b.resumen)}</span>` : ''}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>${htmlCambios(b)}`,
-        acc: botonAplicar(b) + (esProgramacionNueva(b) ? `<button type="button" class="link" onclick="hacerAqui('${b.id}')" title="Abre el cuadro de Reckitt comparado con el tablero; usted marca qué se crea y qué se cambia">${botonAplicar(b) ? '📋 Elegir cuáles' : esc(textoBotonProgramacion(b))}</button>` : botonAtajo(b)) + (v ? btnT('Abrir el viaje', `data-b-abrir="${v.id}"`) : '') + verCorreo(b) + accHecha(b)}, TITULO_PROGRAMACION, b);
+        acc: botonAplicar(b) + (esProgramacionNueva(b) ? `<button type="button" class="link" onclick="hacerAqui('${b.id}')" title="Abre el cuadro de Reckitt comparado con el tablero; usted marca qué se crea y qué se cambia">${botonAplicar(b) ? '✋ Lo hago yo, eligiendo cuáles' : esc(textoBotonProgramacion(b))}</button>` : botonAtajo(b)) + (v ? btnT('Abrir el viaje', `data-b-abrir="${v.id}"`) : '') + verCorreo(b) + accHecha(b)}, TITULO_PROGRAMACION, b);
       tarjetas.get(TITULO_PROGRAMACION).prog = true; usadas.add(b.id); return; }
     add(v && vivos.includes(v) ? v : null, {b: 'pedido', k: 'a' + b.id, area: areaDe(b),
       html: `${desdeCuando(b.fechaCorreo || b.registrado)}${areaDe(b) !== 'Operaciones' ? `<span class="tg">${esc(areaDe(b))}</span> ` : ''}${esc(b.accion)}${pista(b)}${queHacer(b)}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>${htmlCambios(b)}`,
