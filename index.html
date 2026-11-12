@@ -4468,7 +4468,7 @@ const TF_ABIERTOS = new Set(), TF_FILAS = new Set();
 // camión queda en el último punto confirmado y los puntos de control en gris.
 function lineaTf(x){
   const F = x.F, R = rutaDeViaje(x.v), plan = x.plan;
-  const zc = f => { const z = f.zona ? GEOZONAS.find(q => q[0] === f.zona) : null; return z ? [z[1], z[2]] : null; };
+  const zc = f => { const z = f.zona ? GEOZONAS.find(q => q[0] === f.zona) : geozonasDe(f.lugar)[0]; return z ? [z[1], z[2]] : null; };   // una parada ya hecha no trae zona: se busca por su lugar
   const N = [];
   F.forEach(f => {
     if (!f.hecho && R && ['Puerto', 'Bodega'].includes(f.parada)) R.puntos.slice(1, -1).forEach(p => { const q = plan && plan.puntos.find(y => y.nombre === p[0]);
@@ -6956,7 +6956,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '3196d99996';
+const VERSION_TABLERO = 'e10622d15c';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
