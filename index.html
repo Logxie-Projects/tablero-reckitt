@@ -1031,7 +1031,7 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
   <div class="bar">
     <div class="brand"><div class="logo">▲</div><div>LogxView · Reckitt<small>Operación nacional · IMPO · EXPO</small></div></div>
     <nav id="nav">
-      <button data-v="bandeja" title="Todo lo que pide trabajo, una tarjeta por viaje: de arriba hacia abajo, lo rojo primero. Al final del día, el cierre y la nota de entrega de turno">Acciones para hoy <span class="badge" id="nBandeja"></span></button>
+      <button data-v="bandeja" title="Todo lo que pide trabajo, una tarjeta por viaje: de arriba hacia abajo, lo rojo primero.">Acciones para hoy <span class="badge" id="nBandeja"></span></button>
       <!-- 7-nov: Acciones sale del menú (su trabajo está en la Bandeja); se abre como bitácora desde el pie de la Bandeja -->
       <button data-v="tablero" class="on">Torre de Control</button>
       <button data-v="trafico" title="Monitoreo de los vehículos en ruta: dónde van, detenciones no planeadas, manejo fuera de horario y llegada estimada">Tráfico <span class="badge" id="nTraf"></span></button>
@@ -1061,7 +1061,7 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
   <section id="v-bandeja" class="hidden">
     <div class="card">
       <h2 style="margin:0">Acciones para hoy</h2>
-      <div class="sub bj-como"><b>Cómo se usa:</b> 1 · Arriba está lo de hoy; lo atrasado también se hace hoy. 2 · Cada renglón dice <b>qué hacer</b> y trae su botón. 3 · Abajo, lo de los próximos días, para ir adelantando. Al terminar, el cierre con la nota de entrega de turno.</div>
+      <div class="sub bj-como"><b>Cómo se usa:</b> 1 · Arriba está lo de hoy; lo atrasado también se hace hoy. 2 · Cada renglón dice <b>qué hacer</b> y trae su botón. 3 · Abajo, lo de los próximos días, para ir adelantando.</div>
       <div id="bandeja" style="margin-top:10px"></div>
     </div>
   </section>
@@ -3422,6 +3422,9 @@ function excepcionDe(k, R){
 
 // las filas de cada paso del turno (seguimiento, cobertura, cliente, datos y, en la última ronda, el cierre del día): las usan
 // estadoTurno (líneas rojas) y la Bandeja (bandeja.js: claves de las marcas, cierre del día, "solo en otra pantalla")
+// 11-nov (pedido del usuario: "no está siendo útil el cierre del día, por ahora podemos eliminarlo"): apagado. Con false no sale la
+// tarjeta "Cierre del día" de Acciones para hoy (lo de mañana listo y la nota de entrega de turno). Para volverlo a prender: true.
+const CIERRE_DIA = false;
 function menusTurno(r){
   const V = viajes.filter(v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre);   // los de prueba no cuentan
   const SEV = e => e.sev === 'Alta' ? 0 : 1;
@@ -3437,7 +3440,7 @@ function menusTurno(r){
        .map(b => ({k: 'a' + b.id, tipo: 'accion', b, v: viajeDeAccion(b), roja: pedidoRojo(b)}))},
     {id: 'dat', filas: V.map(v => ({k: 'd' + v.id, tipo: 'dato', v, e: validar(v).filter(e => e.tipo !== 'Alerta' && e.campo !== 'Seguimiento').sort((a, b) => SEV(a) - SEV(b))}))
        .filter(x => x.e.length)},
-    ...(r && r.n === RONDAS.length ? [{id: 'cie', filas: [...V.map(v => ({k: 'man|' + v.id, tipo: 'man', v, h: hitosDe(v).filter(h => diffDias(h.f) === 1 && h.que !== 'Cierre documental')})).filter(x => x.h.length),
+    ...(CIERRE_DIA && r && r.n === RONDAS.length ? [{id: 'cie', filas: [...V.map(v => ({k: 'man|' + v.id, tipo: 'man', v, h: hitosDe(v).filter(h => diffDias(h.f) === 1 && h.que !== 'Cierre documental')})).filter(x => x.h.length),
        {k: 'nota', tipo: 'nota'}]}] : []),
   ];
 }
@@ -6509,7 +6512,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'fd0246e2a0';
+const VERSION_TABLERO = '99b48f5774';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
