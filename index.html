@@ -3175,6 +3175,7 @@ async function cargar(){
   try{
     const r = await fetch(CFG.SHEETS_API_URL + '?formato=json&clave=' + encodeURIComponent(clave));
     const texto = await r.text(), j = JSON.parse(texto);
+    if (!j.ok && j.error !== 'clave') { toast('El servidor no pudo responder (' + (j.error || 'sin detalle') + '). Espere un momento y recargue.', 9000); return false; }   // 12-nov: un error del servidor ya no borra la clave guardada
     if (!j.ok) { try { localStorage.removeItem('rkt-clave'); } catch(e) {} borrarUltimaCarga(); pedirClave(true); return false; }   // la clave cambió: se pide de nuevo
     guardarUltimaCarga(clave, texto);
     aplicarDatos(j, clave);
@@ -3197,6 +3198,7 @@ async function refrescarFondo(clave){
     try {
       const r = await fetch(CFG.SHEETS_API_URL + '?formato=json&clave=' + encodeURIComponent(clave));
       const texto = await r.text(), j = JSON.parse(texto);
+      if (!j.ok && j.error !== 'clave') throw new Error(j.error || 'sin respuesta');   // 12-nov: un error del servidor se reintenta; solo la clave equivocada la borra
       if (!j.ok) { try { localStorage.removeItem('rkt-clave'); } catch(e) {} borrarUltimaCarga(); pedirClave(true); return; }
       guardarUltimaCarga(clave, texto);
       aplicarDatos(j, clave);
@@ -7088,7 +7090,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '70a3840459';
+const VERSION_TABLERO = '0276da17ad';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -9493,11 +9495,13 @@ if ($('#tbl')) new MutationObserver(anotarTabla).observe($('#tbl'), {childList: 
 // los enlaces de los correos (?viaje=, ?vista=, ?area=, ?usuario=). Se carga de último.
 function render(){ pintarSugerencias(); pintarPreguntas(); renderGbar(); renderBandeja(); renderLean(); renderTrafico(); renderErrores(); renderAcciones(); renderKpis(); renderChartDias(); renderChartEstados(); renderChartPais(); renderChartMix(); renderAlertas(); renderProximos(); renderFeed(); renderChips(); renderTabla(); renderMotonaves(); }
 // pantalla de acceso cuando la página trae los datos de la hoja con clave
+const sinAlmacenamiento = () => { try { localStorage.setItem('rkt-t', '1'); localStorage.removeItem('rkt-t'); return false; } catch(e) { return true; } };
 function pedirClave(errada){
   document.body.insertAdjacentHTML('beforeend', `<div class="ov open" style="background:var(--bg)"><form class="modal" style="width:min(380px,100%)" onsubmit="event.preventDefault(); const u = new window.URL(location.href); u.searchParams.set('clave', this.clave.value.trim()); location.replace(u)">
     <h3>LogxView · Reckitt</h3><div class="sub" style="margin-bottom:14px">Ingrese la clave de acceso para ver el tablero.</div>
     <input name="clave" type="password" placeholder="Clave" required autofocus style="width:100%;border:1px solid var(--border);background:var(--surface);padding:10px 12px;border-radius:8px">
     ${errada ? '<div class="missing" style="margin-top:8px">Clave incorrecta, intente de nuevo.</div>' : ''}
+    ${sinAlmacenamiento() ? '<div class="missing" style="margin-top:8px">Este navegador no puede guardar la clave (ventana privada o navegador de otra app): se la pedirá cada vez. Ábralo en Chrome normal.</div>' : ''}
     <div class="mfoot"><button class="btn primary" style="width:100%">Entrar</button></div></form></div>`);
 }
 // la página publicada para el cliente (Reckitt) es de solo lectura
