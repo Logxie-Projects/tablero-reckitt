@@ -1250,6 +1250,10 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 .qh-n{font-weight:700}
 .qh-tab input[type=checkbox]{width:18px;height:18px;cursor:pointer;accent-color:var(--accent)}
 .qh-btn:disabled{opacity:.5;cursor:not-allowed}
+/* 12-nov · fase 1 de las acciones (quien.js): "Cómo va" y resumen del día */
+.qh-va{margin:8px 0 2px;padding:8px 11px;background:var(--surface-2,var(--surface));border-radius:10px;font-size:13px;line-height:1.65}
+.qh-va .si{color:var(--ok)}.qh-va .no{color:var(--bad)}
+.bj-cierre{margin:6px 0 10px}
 </style>
 </head>
 <body>
@@ -7120,7 +7124,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'b4e039a691';
+const VERSION_TABLERO = '2386c70d66';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -8986,6 +8990,46 @@ async function confirmarHecha(id){
   if (q === 'aplicar') { document.querySelector(`[data-b-guardar="${id}"]`)?.scrollIntoView({block: 'center', behavior: 'smooth'}); return; }
   if (q === 'igual') return marcarHecha(id, false, `cerrada sin verificar: ${c.filas.length === 1 ? 'faltaba 1 viaje' : 'faltaban ' + c.filas.length + ' viajes'} por actualizar`);
 }
+
+/* ---------- clases de acción (fase 1 del recorrido, 12-nov): qué hay que hacer, quién lo hace y cómo va ----------
+ * Se deduce del texto de la acción; mientras LogxIA no mande la clase (fase 2), es una regla simple y fácil de ajustar. */
+const destinatarioDe = t => { const m = String(t).replace(/^(Operaciones|Facturación|Gerencia):\s*/i, '').match(/\b(?:a|con)\s+((?:[A-ZÁÉÍÓÚÑ][\wáéíóúñ.]*)(?:\s+[A-ZÁÉÍÓÚÑ][\wáéíóúñ.]*){0,2})/); return m ? m[1] : ''; };
+function claseAccion(b){
+  const t = minus(String(b.accion || '').replace(/^(Operaciones|Facturación|Gerencia):\s*/i, ''));
+  if (/emitir (la )?factura/.test(t)) return {k: 'factura', pill: 'Emitir factura', hacer: 'Emita la factura y anote su número en el viaje', quien: 'Una persona'};
+  if (areaDe(b) === 'Gerencia') return {k: 'gerencia', pill: 'Decisión de Gerencia', hacer: 'Decida y responda: lo que pidió el cliente está en el correo', quien: 'Una persona'};
+  if (/^(coordinar|programar|reprogramar|retirar|entregar|descargar|llevar|recoger|cargar)/.test(t) || /vehiculo|conductor|placa/.test(t))
+    return {k: 'coordinar', pill: 'Coordinar transporte', hacer: 'Coordine esto y deje el viaje al día', quien: 'Una persona, con datos del viaje'};
+  if (/^(confirmar|enviar|reenviar|responder|informar|avisar|notificar|aclarar|escribir|llamar)/.test(t)) { const d = destinatarioDe(b.accion);
+    return {k: 'comunicar', pill: 'Escribir o llamar', hacer: d ? `Escriba o llame a ${d}` : 'Escriba o llame a quien corresponda', quien: 'Una persona'}; }
+  if (/^(registrar|anotar|actualizar|corregir|incluir|documentar|cambiar)/.test(t)) return {k: 'anotar', pill: 'Anotar en el viaje', hacer: 'Anote el dato en el viaje', quien: 'Una persona'};
+  return {k: 'otro', pill: 'Pedido', hacer: 'Atienda lo que pide el correo', quien: 'Una persona'};
+}
+// "Cómo va": lo que el viaje ya tiene y lo que falta de lo que pide la acción (solo compara; no escribe nada)
+function comoVa(b, v){
+  if (!v) return '';
+  const cl = claseAccion(b), t = minus(b.accion), L = [];
+  if (cl.k === 'coordinar') {
+    if (/vehiculo|conductor|placa|coordinar|programar/.test(t)) L.push(v.placa && v.conductor ? [1, `Vehículo y conductor asignados: ${v.placa} · ${v.conductor}`] : [0, `Falta asignar ${v.placa ? 'el conductor' : v.conductor ? 'el vehículo' : 'vehículo y conductor'}`]);
+    if (/retiro|retirar|recoger/.test(t)) L.push(v.fechaRetiro ? [1, `Retiro en el viaje: ${fd(v.fechaRetiro)}`] : [0, 'El viaje no tiene fecha de retiro']);
+    if (/entrega|entregar|descarg|llevar/.test(t)) L.push(v.fechaCargue ? [1, `Entrega o descargue en el viaje: ${fd(v.fechaCargue)}`] : [0, 'El viaje no tiene fecha de entrega o descargue']);
+  } else if (cl.k === 'factura') {
+    L.push(/aprobad/i.test(v.facturacion || '') ? [1, 'Reckitt aprobó la relación'] : [0, 'No veo la aprobación de Reckitt en el viaje']);
+    L.push(v.numFactura ? [1, `Factura registrada en el viaje: ${v.numFactura}`] : [0, 'El viaje no tiene N° de factura']);
+  }
+  if (!L.length) return '';
+  return `<div class="qh-va"><b>Cómo va</b>${L.map(([ok, x]) => `<div class="${ok ? 'si' : 'no'}">${ok ? '✔' : '✖'} ${esc(x)}</div>`).join('')}${L.every(x => x[0]) ? '<div class="sub">Parece que ya está todo: si es así, ciérrela con <b>Cerrar acción</b>.</div>' : ''}</div>`;
+}
+// resumen corto del día: lo cerrado primero (con cuántas las hizo el tablero y cuántas a mano) y lo que queda
+function resumenCierre(){
+  const hoy = ahoraBogota().fecha, B = (window.BITACORA || []).filter(b => !/^sin acci/i.test(b.accion || ''));
+  const cer = B.filter(b => b.estadoAccion === 'Hecha' && b.resueltoEn && fechaLocal(b.resueltoEn).slice(0, 10) === hoy);
+  if (!cer.length) return '';
+  const sistema = cer.filter(b => String(b.resueltoPor || '').startsWith(POR_SISTEMA)).length, logxia = cer.filter(b => /LogxIA aplic/i.test(b.resueltoPor || '')).length,
+    noetp = cer.filter(noEsEtp).length, mano = cer.length - sistema - logxia - noetp, quedan = B.filter(b => b.estadoAccion !== 'Hecha').length;
+  const partes = [logxia ? `${logxia} con LogxIA` : '', sistema ? `${sistema} solas, porque el viaje ya lo mostraba` : '', mano > 0 ? `${mano} a mano` : '', noetp ? `${noetp} que no nos tocaban` : ''].filter(Boolean);
+  return `<div class="bj-cierre sub">✔ Hoy se cerraron <b>${cer.length}</b> ${cer.length === 1 ? 'acción' : 'acciones'} (${partes.join(' · ')}). Quedan <b>${quedan}</b> pendientes.</div>`;
+}
 /* ---------- bandeja.js · Bandeja (prueba, desde 6-nov): todo lo que pide trabajo, una tarjeta por viaje ----------
  * Capa: pantalla. No tiene reglas ni datos propios: junta lo que ya calculan Mi turno, Acciones, Llenar datos y Errores
  * (dominio.js: sinCobertura, pasosPorConfirmar, sinActualizar, validar, pareceHecha, yaCreado; acciones.js BITACORA;
@@ -9262,9 +9306,10 @@ function armarBandeja(){
         html: `${desdeCuando(b.fechaCorreo || b.registrado)}<b>${esProgramacionNueva(b) ? 'Programación nueva' : 'Cambio de fecha'}</b>${v ? ' · ' + esc(nombreTurno(v)) : ''}<br>${esc(String(b.accion).replace(/^Operaciones:\s*/i, ''))}${b.resumen ? `<br><span class="sub">${esc(b.resumen)}</span>` : ''}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>${htmlCambios(b)}`,
         acc: (botonAplicar(b) || (esProgramacionNueva(b) ? `<button type="button" class="link" onclick="hacerAqui('${b.id}')" title="Abre el cuadro de Reckitt comparado con el tablero; usted marca qué se crea y qué se cambia">${esc(textoBotonProgramacion(b))}</button>` : botonAtajo(b))) + (v ? btnT('Abrir el viaje', `data-b-abrir="${v.id}"`) : '') + verCorreo(b) + accHecha(b)}, TITULO_PROGRAMACION, b);
       tarjetas.get(TITULO_PROGRAMACION).prog = true; usadas.add(b.id); return; }
-    add(v && vivos.includes(v) ? v : null, {b: 'pedido', k: 'a' + b.id, area: areaDe(b),
-      html: `${desdeCuando(b.fechaCorreo || b.registrado)}${areaDe(b) !== 'Operaciones' ? `<span class="tg">${esc(areaDe(b))}</span> ` : ''}${esc(b.accion)}${pista(b)}${queHacer(b)}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>${htmlCambios(b)}`,
-      acc: verCorreo(b) + (botonAplicar(b) || botonAtajo(b)) + accHecha(b)}, v && vivos.includes(v) ? '' : 'Pedidos sin viaje', b);
+    const cl = claseAccion(b);   // quien.js: qué hay que hacer y quién lo hace
+    add(v && vivos.includes(v) ? v : null, {b: 'pedido', k: 'a' + b.id, area: areaDe(b), pill: cl.pill, hacer: cl.hacer,
+      html: `${desdeCuando(b.fechaCorreo || b.registrado)}<span class="tg" title="Quién hace esto">${esc(cl.quien)}</span> ${areaDe(b) !== 'Operaciones' ? `<span class="tg">${esc(areaDe(b))}</span> ` : ''}<b>${esc(String(b.accion).replace(/^(Operaciones|Facturación|Gerencia):\s*/i, ''))}</b>${pista(b)}${queHacer(b)}${comoVa(b, v)}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>${htmlCambios(b)}`,
+      acc: (botonAplicar(b) || botonAtajo(b)) + (v && vivos.includes(v) ? btnT('Abrir el viaje', `data-b-abrir="${v.id}"`) : '') + verCorreo(b) + accHecha(b)}, v && vivos.includes(v) ? '' : 'Pedidos sin viaje', b);
     usadas.add(b.id); });
   // 9 · Base de conductores y vehículos (7-nov): lo que hay que corregir en el registro (dominio problemasConductores /
   // problemasVehiculos, las mismas reglas de Despacho → Conductores): datos vacíos o mal escritos, posibles duplicados. Una sola
@@ -9385,9 +9430,9 @@ function renderBandeja(){
   const hoyL = ver.filter(t => t.hoy), proxL = ver.filter(t => !t.hoy);
   const seccion = (titulo, n, nota) => `<div class="bj-sec"><b>${titulo}</b> <span class="bj-secn">${n}</span> <span class="sub">${nota}</span></div>`;
   const pintarTarjeta = t => `<div class="bj-card${t.roja ? ' roja' : ''}"><div class="bj-h">${fechaTarjeta(t)}<b>${esc(t.titulo)}</b>${t.v ? ` <span class="sub">${esc([t.v.contenedor, t.v.estado].filter(Boolean).join(' · '))}</span> ${btnT('Abrir viaje', `data-b-abrir="${t.v.id}"`)}` : ''}</div>`
-      + BLOQUES.flatMap(([k, nombre, cls]) => t.items.filter(i => i.b === k && (!bandejaFiltro || bandejaFiltro === k)).map(i => plegar(i, `<div class="bj-item${i.roja ? ' roja' : ''}"><span class="pill ${cls}">${nombre}</span><div class="bj-txt">${QUE_HACER[k] ? `<div class="bj-hacer">${QUE_HACER[k]}</div>` : ''}${i.html}${extra(i)}</div><div class="tr-acc">${i.acc || ''}${accExc(i)}</div></div>`))).join('')
+      + BLOQUES.flatMap(([k, nombre, cls]) => t.items.filter(i => i.b === k && (!bandejaFiltro || bandejaFiltro === k)).map(i => plegar(i, `<div class="bj-item${i.roja ? ' roja' : ''}"><span class="pill ${cls}">${i.pill || nombre}</span><div class="bj-txt">${i.hacer || QUE_HACER[k] ? `<div class="bj-hacer">${i.hacer || QUE_HACER[k]}</div>` : ''}${i.html}${extra(i)}</div><div class="tr-acc">${i.acc || ''}${accExc(i)}</div></div>`))).join('')
       + '</div>';
-  cont.innerHTML = `<div class="bj-ronda sub">${ronda}${bloqueo}${llave}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}</div>` + bloqueGerencia(T) + bloqueCalifGerencia() + avisoAuto + barraOp
+  cont.innerHTML = `<div class="bj-ronda sub">${ronda}${bloqueo}${llave}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}</div>` + bloqueGerencia(T) + bloqueCalifGerencia() + avisoAuto + resumenCierre() + barraOp
     + `<div class="bj-resumen"><div><b>Para hoy: ${R.L.filter(t => t.hoy).length}</b>${(n => n ? ` · <span style="color:var(--bad)">${n} atrasado${n === 1 ? '' : 's'}</span>` : '')(R.L.filter(t => t.hoy && t.fecha && diffDias(t.fecha) < 0).length)} · próximos días: ${R.L.filter(t => !t.hoy).length}
       · <label class="sub">Área <select class="bj-area" data-b-areasel="1">${[['', 'Todas'], ...AREAS.map(a => [a, a])].map(([a, t]) => `<option value="${a}" ${bandejaArea === a ? 'selected' : ''}>${t} (${porArea(a)})</option>`).join('')}</select></label></div>
       <div class="chips">${`<button type="button" class="chip ${!bandejaFiltro ? 'on' : ''}" data-b-filtro="">Todo · ${R.L.length}</button>`}${BLOQUES.map(([k, t]) => cuenta(k) ? `<button type="button" class="chip ${bandejaFiltro === k ? 'on' : ''}" data-b-filtro="${k}" title="${esc(BLOQUES.find(x => x[0] === k)[3])}">${t} · ${cuenta(k)}</button>` : '').join('')}</div></div>`
