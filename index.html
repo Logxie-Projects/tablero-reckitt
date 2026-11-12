@@ -1133,6 +1133,17 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 .tf-n.cp .tf-dot{width:10px;height:10px;border-width:2px;margin:3px 0}
 .tf-n.cp b{font-size:10.5px;font-weight:600;color:var(--muted)}
 .tf-n.cp small{font-size:10px}
+
+/* 11-nov · líneas de Tráfico a escala de km (trafico.js geomTf / lineaTf): cada punto va en su lugar y los nombres juntos se alternan */
+.tf-linea{position:relative;display:block;height:98px;margin:0 56px;padding:0;min-width:0}
+.tf-n{position:absolute;top:19px;width:0;flex:none;display:flex;flex-direction:column;align-items:center;gap:0}
+.tf-l{display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center;margin-top:4px}
+.tf-l b,.tf-l small,.tf-l em{width:104px}
+.tf-n.alt .tf-l{margin-top:30px}
+.tf-n.alt:after{content:'';position:absolute;top:34px;height:26px;border-left:1px dotted var(--muted)}
+.tf-linea > .tf-seg{top:25px}
+.tf-linea > .tf-camion{top:0;transform:translateX(-50%)}
+@media (max-width:640px){.tf-linea{margin:0 40px}.tf-l b,.tf-l small,.tf-l em{width:84px}}
 </style>
 </head>
 <body>
@@ -4466,29 +4477,50 @@ const TF_ABIERTOS = new Set(), TF_FILAS = new Set();
 // de control del tramo de carretera (Dagua, Loboguerrero…). El color verde avanza por la línea hasta donde va el camión: entre el último
 // punto que pasó y el siguiente se calcula con los km que le faltan al siguiente (de la ruta, o en línea recta entre paradas). Sin GPS el
 // camión queda en el último punto confirmado y los puntos de control en gris.
-function lineaTf(x){
-  const F = x.F, R = rutaDeViaje(x.v), plan = x.plan;
-  const zc = f => { const z = f.zona ? GEOZONAS.find(q => q[0] === f.zona) : geozonasDe(f.lugar)[0]; return z ? [z[1], z[2]] : null; };   // una parada ya hecha no trae zona: se busca por su lugar
-  const N = [];
-  F.forEach(f => {
-    if (!f.hecho && R && ['Puerto', 'Bodega'].includes(f.parada)) R.puntos.slice(1, -1).forEach(p => { const q = plan && plan.puntos.find(y => y.nombre === p[0]);
-      N.push({c: true, nombre: p[0], listo: !!(q && q.paso), coord: [p[1], p[2]], km: q && !q.paso ? q.km : null, llega: q && !q.paso ? q.llega : null}); });
-    N.push({f, nombre: f.parada, listo: f.hecho || f.aqui, coord: zc(f), km: f.hecho ? null : f.km}); });
+// 11-nov ("que se vean a escala, en función de los km, escala log o algo así, para no tener desfase entre Yumbo–Buenaventura y
+// Yumbo–Cartagena o los urbanos"): cada punto va en su lugar según los km desde la primera parada, con escala logarítmica
+// (escalaKm) y la MISMA para todos los viajes: la línea de un viaje a Cartagena es más larga que la de uno a Buenaventura, y un
+// urbano de pocos km es corto. Los nombres que quedan muy juntos se alternan arriba y abajo.
+const escalaKm = km => Math.log1p(Math.max(0, km) / 15);
+function geomTf(x){
+  const v = x.v, zc = f => { const z = f.zona ? GEOZONAS.find(q => q[0] === f.zona) : geozonasDe(f.lugar)[0]; return z ? [z[1], z[2]] : null; };
+  const N = [], g = x.g, fresco = !!g && g.lat != null && !!g.fecha && (Date.now() - new Date(g.fecha)) / 60e3 <= TRAFICO.sinSenalMin;
+  if (x.sub) {
+    const o = geozonasDe(v.patioSub)[0], d = geozonasDe(v.bodega && v.bodega !== v.patioSub ? v.bodega : v.destino)[0];
+    N.push({nombre: 'Bodega de paso', det: v.patioSub || '', listo: true, coord: o ? [o[1], o[2]] : null});
+    N.push({nombre: 'Urbano', det: v.fechaUrbano ? fd(v.fechaUrbano) : 'sin fecha', listo: !!cumplido(v, 'fechaUrbano'), coord: d ? [d[1], d[2]] : null, km: fresco && d ? Math.round(kmVia(Number(g.lat), Number(g.lng), d[1], d[2])) : null});
+  } else {
+    const R = rutaDeViaje(v), plan = x.plan;
+    x.F.forEach(f => {
+      if (!f.hecho && R && ['Puerto', 'Bodega'].includes(f.parada)) R.puntos.slice(1, -1).forEach(p => { const q = plan && plan.puntos.find(y => y.nombre === p[0]);
+        N.push({c: true, nombre: p[0], listo: !!(q && q.paso), coord: [p[1], p[2]], km: q && !q.paso ? q.km : null, llega: q && !q.paso ? q.llega : null}); });
+      N.push({f, nombre: f.parada, listo: f.hecho || f.aqui, coord: zc(f), km: f.hecho ? null : f.km}); });
+  }
+  let cum = 0;
+  N.forEach((n, k) => { if (k > 0) { const a = N[k - 1].coord, b = n.coord; cum += a && b ? kmVia(a[0], a[1], b[0], b[1]) : 15; } n.cum = cum; });
   const front = N.findIndex(n => !n.listo);   // el primero que el camión todavía no alcanza
-  N.forEach((n, k) => { n.fill = k === 0 ? 0 : n.listo ? 100 : k === front ? 0 : 0;
-    if (k > 0 && k === front && n.km != null && N[k - 1].coord && n.coord) { const seg = kmVia(N[k - 1].coord[0], N[k - 1].coord[1], n.coord[0], n.coord[1]); n.fill = seg > 0 ? Math.max(3, Math.min(96, Math.round(100 * (1 - n.km / seg)))) : 0; } });
-  return N.map((n, k) => { const f = n.f;
-    const cls = n.c ? (n.listo ? 'ok' : 'pend') : f.hecho || f.aqui ? 'ok' : f.estado === 'retraso' ? 'rojo' : f.sig ? 'ya' : 'pend';
-    const est = !f || f.hecho ? '' : f.estado === 'retraso' ? 'retrasado' : f.estado === 'atiempo' ? 'a tiempo' : '';
-    const cuando = n.c ? (n.listo ? 'pasó' : n.llega ? horaTf(n.llega) : '')
-      : f.hecho ? '✔ ' + (f.prog ? fd(f.prog) : 'hecho') : f.aqui ? 'aquí desde ' + horaTf(f.llega) : f.llega ? (f.sig ? 'llega ' : '~') + horaTf(f.inicio || f.llega) + (f.sig && f.km != null ? ` · ${f.km} km` : '') : f.prog ? 'prog. ' + fd(f.prog) : 'sin fecha';
-    const camion = k === front ? `<span class="tf-camion${k === 0 ? ' aqui' : ''}"${k > 0 ? ` style="left:${n.fill - 50}%"` : ''}>🚚</span>` : '';
-    const seg = k > 0 ? `<span class="tf-seg"><i style="width:${n.fill}%"></i></span>` : '';
-    return `<div class="tf-n ${cls}${n.c ? ' cp' : ''}" title="${esc((f ? f.parada + ' · ' + (f.zona || f.lugar) + (f.retraso ? ' · ' + f.retraso : '') : 'Punto de control · ' + n.nombre))}">${seg}${camion}<i class="tf-dot"></i><b>${esc(n.nombre)}</b>${cuando ? `<small>${esc(cuando)}</small>` : ''}${est ? `<em>${est}</em>` : ''}</div>`; }).join('');
+  N.forEach((n, k) => { n.fill = k > 0 && n.listo ? 100 : 0;
+    if (k > 0 && k === front && n.km != null) { const seg = n.cum - N[k - 1].cum; n.fill = seg > 0 ? Math.max(3, Math.min(96, Math.round(100 * (1 - n.km / seg)))) : 0; } });
+  return {N, front, total: cum};
 }
-function filaLeanTf(x, detalle){ const v = x.v, pp = x.F.find(f => !f.hecho), nTiempo = x.F.some(f => !f.hecho && f.estado === 'atiempo');
+function lineaTf(x, G, maxF){
+  const {N, front} = G;
+  let ant = -99, antAlt = false;
+  N.forEach(n => { const f = n.f;
+    n.cls = n.c ? (n.listo ? 'ok' : 'pend') : n.listo ? 'ok' : f && f.estado === 'retraso' ? 'rojo' : f && f.sig ? 'ya' : n.f ? 'pend' : 'pend';
+    n.pos = maxF > 0 ? escalaKm(n.cum) / maxF * 100 : 0; n.alt = n.pos - ant < 17 && !antAlt; antAlt = n.alt; ant = n.pos; });
+  const segs = N.slice(1).map((n, k) => `<span class="tf-seg ${n.cls === 'rojo' ? 'rojo' : ''}" style="left:${N[k].pos.toFixed(2)}%;width:${(n.pos - N[k].pos).toFixed(2)}%"><i style="width:${n.fill}%"></i></span>`).join('');
+  const nodos = N.map(n => { const f = n.f;
+    const est = !f || f.hecho ? '' : f.estado === 'retraso' ? 'retrasado' : f.estado === 'atiempo' ? 'a tiempo' : '';
+    const cuando = n.det != null ? n.det : n.c ? (n.listo ? 'pasó' : n.llega ? horaTf(n.llega) : '')
+      : f.hecho ? '✔ ' + (f.prog ? fd(f.prog) : 'hecho') : f.aqui ? 'aquí desde ' + horaTf(f.llega) : f.llega ? (f.sig ? 'llega ' : '~') + horaTf(f.inicio || f.llega) + (f.sig && f.km != null ? ` · ${f.km} km` : '') : f.prog ? 'prog. ' + fd(f.prog) : 'sin fecha';
+    return `<div class="tf-n ${n.cls}${n.c ? ' cp' : ''}${n.alt ? ' alt' : ''}" style="left:${n.pos.toFixed(2)}%" title="${esc(f ? f.parada + ' · ' + (f.zona || f.lugar) + (f.retraso ? ' · ' + f.retraso : '') : n.c ? 'Punto de control · ' + n.nombre : n.nombre)}"><i class="tf-dot"></i><div class="tf-l"><b>${esc(n.nombre)}</b>${cuando ? `<small>${esc(cuando)}</small>` : ''}${est ? `<em>${est}</em>` : ''}</div></div>`; }).join('');
+  const cam = front < 0 ? '' : `<span class="tf-camion" style="left:${(front === 0 ? N[0].pos : N[front - 1].pos + N[front].fill / 100 * (N[front].pos - N[front - 1].pos)).toFixed(2)}%">🚚</span>`;
+  return segs + nodos + cam;
+}
+function filaLeanTf(x, detalle, ctx){ const v = x.v, pp = x.F.find(f => !f.hecho), nTiempo = x.F.some(f => !f.hecho && f.estado === 'atiempo');
   const badge = x.rojo ? `<span class="tf-b rojo">⛔ ${esc(x.motivos[0])}${x.motivos.length > 1 ? ` · +${x.motivos.length - 1} más` : ''}</span>` : x.ambar ? `<span class="tf-b ambar">⚠ ${esc(x.aviso)}</span>` : nTiempo ? '<span class="tf-b ok">✔ A tiempo</span>' : '<span class="tf-b">Sin fecha programada</span>';
-  const linea = x.F.length ? lineaTf(x) : `<span class="sub">${x.sub ? esc(nombreSub(v)) + ' · urbano ' + (v.fechaUrbano ? esc(fd(v.fechaUrbano)) : 'sin fecha') : esc(v.estado || '')}</span>`;
+  const linea = ctx && ctx.G.get(x) && ctx.G.get(x).N.length ? lineaTf(x, ctx.G.get(x), ctx.maxF) : `<span class="sub">${x.sub ? esc(nombreSub(v)) + ' · urbano ' + (v.fechaUrbano ? esc(fd(v.fechaUrbano)) : 'sin fecha') : esc(v.estado || '')}</span>`;
   return `<details class="tf-fila ${x.rojo ? 'rojo' : x.ambar ? 'ambar' : 'ok'}" data-tff="${esc(v.id)}"${TF_FILAS.has(v.id) ? ' open' : ''} ontoggle="this.open ? TF_FILAS.add(this.dataset.tff) : TF_FILAS.delete(this.dataset.tff)">
     <summary><div class="tf-id"><span class="placa">${esc(v.placa)}</span><span class="sub">${esc(String(v.conductor || 'Sin conductor').split(' ').slice(0, 2).join(' '))} · ${esc(v.operacion)} ${esc(v.pais || v.bodega || '')}</span></div>
       <div class="tf-linea">${linea}</div>${badge}</summary>${detalle}</details>`; }
@@ -4675,6 +4707,7 @@ function renderTrafico(){
   const L = vehiculosTrafico(), nAl = L.filter(x => x.rojo).length, n = document.getElementById('nTraf');
   if (n) n.textContent = nAl || '';
   const conGps = L.filter(x => x.g).length;
+  const G = new Map(L.map(x => [x, geomTf(x)])), maxF = Math.max(0.5, ...[...G.values()].map(g => escalaKm(g.total)));   // misma escala de km para todas las líneas
   const fila = x => { const {v, g, est, plan, gv} = x, sig = plan && plan.puntos.find(p => !p.paso);
     return `<div class="tf-card${est.alertas.some(a => a.nivel === 'alta') ? ' alta' : est.alertas.length ? ' media' : ''}">
       <div class="tf-cab"><span class="placa">${esc(v.placa)}</span><b>${esc(v.conductor || 'Sin conductor')}</b>${telTarjeta(v)}
@@ -4695,9 +4728,9 @@ function renderTrafico(){
       ${plan ? `<div class="tf-ruta">${plan.puntos.map(p => `<span class="tf-p${p.paso ? ' ok' : p === sig ? ' ya' : ''}" title="${p.paso ? 'Ya pasó' : 'Estimado: ' + esc(horaTf(p.llega)) + ' · a ' + p.km + ' km'}"><i></i>${esc(p.nombre)}${!p.paso ? `<small>${esc(horaTf(p.llega))}</small>` : ''}</span>`).join('')}</div>` : ''}
     </div>`; };
   c.innerHTML = `<div class="tf-top"><b>${L.length} ${L.length === 1 ? 'vehículo' : 'vehículos'} en seguimiento</b> · ${conGps} con GPS${nAl ? ` · <b style="color:var(--bad)">${nAl} en rojo: atender</b>` : ' · <b style="color:var(--ok)">ninguno en rojo</b>'}
-      <span class="sub">Horario de manejo ${TRAFICO.desde} a. m. a ${TRAFICO.hasta - 12} p. m. · detención no planeada desde ${TRAFICO.detenidoMin} min · el GPS se lee cada 10 minutos · los tiempos son estimados</span></div>
+      <span class="sub">Horario de manejo ${TRAFICO.desde} a. m. a ${TRAFICO.hasta - 12} p. m. · detención no planeada desde ${TRAFICO.detenidoMin} min · el GPS se lee cada 10 minutos · los tiempos son estimados · las líneas están a escala de kilómetros (logarítmica): la de un viaje largo es más larga</span></div>
     <div class="tf-vista"><button type="button" class="${TF_VISTA === 'lineas' ? 'on' : ''}" data-tf-vista="lineas">Líneas</button><button type="button" class="${TF_VISTA === 'crono' ? 'on' : ''}" data-tf-vista="crono">Cronograma</button><button type="button" class="${TF_VISTA === 'mapa' ? 'on' : ''}" data-tf-vista="mapa">Mapa</button></div>
-    ${!L.length ? '<p class="sub">No hay vehículos en ruta ni con GPS en este momento.</p>' : TF_VISTA === 'crono' ? cronogramaTf(L) : TF_VISTA === 'mapa' ? mapaTf(L) : L.map(x => filaLeanTf(x, fila(x))).join('')}`;
+    ${!L.length ? '<p class="sub">No hay vehículos en ruta ni con GPS en este momento.</p>' : TF_VISTA === 'crono' ? cronogramaTf(L) : TF_VISTA === 'mapa' ? mapaTf(L) : (ctx => L.map(x => filaLeanTf(x, fila(x), ctx)).join(''))({G, maxF})}`;
 }
 /* ---------- novedades del viaje: la bitácora con hora y autor (fase 1) y la línea de tiempo única (fase 2) ----------
  * Cada novedad es una fila de la pestaña "Novedades del viaje" (Base.gs): cuándo, viaje, quién, tipo, texto y origen. No se
@@ -6956,7 +6989,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'e10622d15c';
+const VERSION_TABLERO = '3d468e5013';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
