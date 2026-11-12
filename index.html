@@ -4279,7 +4279,10 @@ const TF_ABIERTOS = new Set();
 // monitorear"): el plan es el viaje COMPLETO del vehículo, parada por parada (dominio planParadas): patio, planta, puerto (EXPO) o
 // puerto, bodega, patio (IMPO). La siguiente parada lleva distancia y hora estimada desde el GPS; el tramo de carretera, sus puntos de
 // control. Cada parada dice si tiene coordenadas: sin ellas el sistema no puede avisar la llegada.
-const proximaTf = x => x.sub ? null : planParadas(x.v, x.g).find(f => !f.hecho) || null;
+// 11-nov ("en Tráfico aparece en etapa Llenado y en la Torre de Control camino a puerto... los 2 lugares deben estar interconectados"):
+// era el mismo dato dicho de dos maneras. Tráfico mostraba el último paso confirmado ("Llenado") y la Torre de Control lo que eso
+// significa ("Lleno, en camino a puerto"). Ahora Tráfico usa el mismo texto de la Torre (turno.js pulsoViaje) y debajo el último paso.
+const proximaTf =x => x.sub ? null : planParadas(x.v, x.g).find(f => !f.hecho) || null;
 function planViajeHtml(x){
   const {v, g, plan} = x; if (x.sub) return '';
   const F = planParadas(v, g), sig = F.find(f => !f.hecho); if (!sig) return '';
@@ -4318,7 +4321,7 @@ function renderTrafico(){
         <div><span class="sub">Dónde</span><b>${gv ? `<a href="${esc(gv.url)}" target="_blank" rel="noopener">📍 ${esc(gv.al ? gv.al.texto : (gv.donde || 'Ver en el mapa'))}</a>` : '—'}</b>
           <span class="sub">${g && g.fecha && !isNaN(new Date(g.fecha)) ? 'punto de ' + esc(haceCuanto(fechaLocal(g.fecha))) : 'sin GPS'}</span></div>
         <div><span class="sub">Estado</span><b>${esc(est.movimiento)}</b><span class="sub">${est.min ? esc(duracionTxt(est.min)) : g && Number(g.velocidad) >= 3 ? Math.round(g.velocidad) + ' km/h' : ''}</span></div>
-        <div><span class="sub">Etapa del viaje</span><b>${esc(v.estado || '—')}</b><span class="sub">${plan ? esc(plan.de + ' → ' + plan.a) : ''}</span></div>
+        <div><span class="sub">Etapa del viaje</span><b>${esc((x.sub ? pulsoSubviaje(v) : pulsoViaje(v)).donde || v.estado || '—')}</b><span class="sub">último paso confirmado: ${esc(v.estado || '—')}${plan ? ' · ' + esc(plan.de + ' → ' + plan.a) : ''}</span></div>
         <div><span class="sub">Próxima parada</span>${(pp => !pp ? '<b>—</b>' : `<b>${esc(pp.parada)} · ${esc(pp.zona || pp.lugar)}</b>
           <span class="sub">${pp.aqui || x.llego ? 'ya llegó' : plan && !plan.puntos[plan.puntos.length - 1].paso ? `llega ${esc(horaTf(plan.llega))} · faltan ${plan.km} km` : pp.llega ? `llega ${esc(horaTf(pp.llega))} · a ${pp.km} km` : pp.prog ? 'programado ' + esc(fd(pp.prog)) : 'sin fecha'}${pp.zona ? '' : ' · ⚠ sin coordenadas'}</span>`)(proximaTf(x))}</div>
       </div>
@@ -6586,7 +6589,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '453fbc2763';
+const VERSION_TABLERO = 'b5d7975d3f';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
