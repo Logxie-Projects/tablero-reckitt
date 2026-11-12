@@ -1242,6 +1242,12 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 .qh-ops{display:flex;flex-direction:column;gap:8px;margin-top:12px}
 .qh-ops .btn{display:block;width:100%;text-align:left;padding:10px 12px}
 .qh-ops .btn small{display:block;font-weight:400;opacity:.8;margin-top:2px}
+
+/* 12-nov · vista previa "Hoy → Quedará" de quien.js */
+.qh-prev{max-height:50vh;overflow:auto;border:1px solid var(--border);border-radius:10px}
+.qh-prev .qh-tab{margin:0}
+.qh-tab td[rowspan]{border-right:1px solid var(--border)}
+.qh-n{font-weight:700}
 </style>
 </head>
 <body>
@@ -6025,10 +6031,10 @@ $('#propRechazar').onclick = () => decidirPropuestas(false);
 // "Aplicar" en una acción de LogxIA: los datos que trajo su correo (origen "Correo LX-…") se guardan en el viaje y la acción se
 // cierra, sin abrir el viaje ni pasar por la ventana de revisión
 const datosDeAccion = b => PROP.filter(p => p.origen === 'Correo ' + b.id);
-async function aplicarAccion(b){
+async function aplicarAccion(b, previa){   // previa: quien.js ya mostró los cambios y se autorizó
   const P = datosDeAccion(b); if (!P.length) return;
   const fx = x => /^\d{4}-\d{2}-\d{2}$/.test(x) ? fd(x) : x;
-  if (!confirm(`¿Guardar en ${P[0].viajeId} (${P[0].placa || 'sin placa'}) estos datos del correo y cerrar la acción?\n\n${P.map(p => `• ${p.etiqueta}: ${p.actual ? fx(p.actual) : 'vacío'} → ${fx(p.valor)}`).join('\n')}`)) return;
+  if (!previa && !confirm(`¿Guardar en ${P[0].viajeId} (${P[0].placa || 'sin placa'}) estos datos del correo y cerrar la acción?\n\n${P.map(p => `• ${p.etiqueta}: ${p.actual ? fx(p.actual) : 'vacío'} → ${fx(p.valor)}`).join('\n')}`)) return;
   const usuario = pedirUsuario('¿Quién eres? Queda como quien aprobó los datos'); if (!usuario) return;
   try {
     const j = await api('decidir', {usuario, aprobar: P.map(({clave, viajeId, campo, valor, evidencia, origen}) => ({clave, viajeId, campo, valor, evidencia, origen})), rechazar: []});
@@ -7109,7 +7115,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'edb81141a3';
+const VERSION_TABLERO = '7e358b0a6d';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -8896,12 +8902,30 @@ function cambiosDeAccion(b){
   return null;
 }
 const textoCampo = ([k, a, n]) => a === null ? `${esc(k)}: <b class="qh-n">${esc(n)}</b>` : `<span class="sub">${esc(k)}:</span> <span class="qh-v">${esc(a || 'vacío')}</span> → <b class="qh-n">${esc(n)}</b>`;
+// tabla "Hoy → Quedará": una fila por dato y el viaje solo en la primera de las suyas. La usan la tarjeta y la vista previa antes de escribir
+function tablaCambios(c){
+  const filas = c.filas.map(f => f.campos.map(([k, a, n], i) => `<tr>${i ? '' : `<td rowspan="${f.campos.length}"><b>${esc(f.viaje === 'Nuevo' ? 'Viaje nuevo' : f.viaje)}</b>${f.nombre ? `<br><span class="sub">${esc(f.nombre)}</span>` : ''}</td>`}`
+    + `<td>${esc(k)}</td><td class="qh-v">${a === null ? 'no existe' : esc(a || 'vacío')}</td><td class="qh-n">${esc(n)}</td></tr>`).join('')).join('');
+  return `<table class="qh-tab"><tr><th>Viaje</th><th>Dato</th><th>Hoy</th><th>Quedará</th></tr>${filas}</table>`;
+}
 function htmlCambios(b){
   const c = cambiosDeAccion(b); if (!c || !c.filas.length) return '';
-  const fila = f => `<tr><td><b>${esc(f.viaje)}</b>${f.nombre ? `<br><span class="sub">${esc(f.nombre)}</span>` : ''}</td><td>${f.campos.map(k => `<div>${textoCampo(k)}</div>`).join('')}</td></tr>`;
-  // siempre abierta: quien aplica tiene que ver qué se aplica (12-nov, el usuario: "¿aplicar sin saber qué se aplica?")
-  return `<details class="qh" open><summary>🤖 LogxIA ya lo preparó · <b>${c.filas.length}</b> ${c.filas.length === 1 ? 'viaje' : 'viajes'} · lo que hay → lo nuevo</summary>`
-    + `<table class="qh-tab"><tr><th>Viaje</th><th>Cambio</th></tr>${c.filas.map(fila).join('')}</table></details>`;
+  // siempre abierta: quien aprueba tiene que ver qué se escribe (12-nov, el usuario: "que no sea a ciegas")
+  return `<details class="qh" open><summary>🤖 LogxIA ya lo preparó · <b>${c.filas.length}</b> ${c.filas.length === 1 ? 'viaje' : 'viajes'} · lo que hay hoy y cómo quedará</summary>${tablaCambios(c)}</details>`;
+}
+// vista previa antes de escribir: todos los cambios, hoy contra cómo quedará, y la autorización de quien pulsa
+function vistaPrevia(c, usuario){
+  return new Promise(ok => {
+    $('#ovPrevia')?.remove();
+    const n = c.filas.length, nuevos = c.filas.filter(f => f.viaje === 'Nuevo').length;
+    document.body.insertAdjacentHTML('beforeend', `<div class="ov open" id="ovPrevia" style="z-index:75"><div class="modal" role="dialog" aria-modal="true" style="width:min(720px,100%)">
+      <h3>Así quedarán los viajes</h3>
+      <div class="sub" style="margin-bottom:8px">LogxIA va a guardar estos cambios en ${n} ${n === 1 ? 'viaje' : 'viajes'}${nuevos ? ` (${nuevos} nuevos)` : ''}, con su autorización y a nombre de <b>${esc(usuario)}</b>. En "Hoy" está lo que hay ahora; en "Quedará", cómo van a quedar.</div>
+      <div class="qh-prev">${tablaCambios(c)}</div>
+      <div class="sub" style="margin-top:8px">${c.tipo === 'programacion' ? 'Los cambios de fecha quedan con la causa "Cliente (Reckitt)". ' : ''}Cada viaje guarda el cambio en su Historial y la acción se cierra.</div>
+      <div class="mfoot"><button type="button" class="btn" data-pv="0">No, volver</button><button type="button" class="btn primary" data-pv="1">Sí, que LogxIA lo haga</button></div></div></div>`);
+    $('#ovPrevia').onclick = e => { const x = e.target.closest('[data-pv]'); if (!x && e.target.id !== 'ovPrevia') return; $('#ovPrevia').remove(); ok(!!x && x.dataset.pv === '1'); };
+  });
 }
 const botonAplicar = b => { const c = cambiosDeAccion(b); if (!c || !c.filas.length) return '';
   // 12-nov (el usuario: "al ver Guardar en 10 viajes pensarán que tú lo harás"): el botón dice quién escribe y que lo autoriza quien pulsa
@@ -8912,13 +8936,9 @@ const botonAplicar = b => { const c = cambiosDeAccion(b); if (!c || !c.filas.len
 async function aplicarConLogxIA(id){
   const b = (window.BITACORA || []).find(x => x.id === id), c = b && cambiosDeAccion(b);
   if (!c) return toast('Todavía no tengo los datos de esta acción: intente en un momento');
-  if (c.tipo === 'aplicar') { accionEnCurso = {id, tipo: 'aplicar', desde: Date.now()}; return aplicarAccion(b); }
   const usuario = usuarioGuardado(); if (!usuario) { elegirUsuario(); return toast('Primero elija quién es y vuelva a presionar'); }
-  const nuevos = c.filas.filter(f => f.viaje === 'Nuevo').length;
-  const resumen = c.filas.slice(0, 12).map(f => `• ${f.viaje}${f.nombre ? ' ' + f.nombre : ''}: ${f.campos.map(([k, a, n]) => a === null ? `${k} ${n}` : `${k} ${a || 'vacío'} → ${n}`).join(' · ')}`).join('\n')
-    + (c.filas.length > 12 ? `\n… y ${c.filas.length - 12} viajes más (están en la tarjeta)` : '');
-  const ok = await preguntarSiNo(`LogxIA va a guardar la programación en ${c.filas.length} ${c.filas.length === 1 ? 'viaje' : 'viajes'}${nuevos ? ` (${nuevos} nuevos)` : ''}?\n\n${resumen}\n\nLo hace LogxIA, con su autorización: los datos se escriben a nombre de ${usuario}, cada viaje guarda el cambio en su Historial y la acción se cierra. Los cambios de fecha quedan con la causa "Cliente (Reckitt)".\n\n¿Autoriza que LogxIA lo haga?`, 'Sí, que lo haga', 'No, volver');
-  if (!ok) return;
+  if (!await vistaPrevia(c, usuario)) return;
+  if (c.tipo === 'aplicar') { accionEnCurso = {id, tipo: 'aplicar', desde: Date.now()}; return aplicarAccion(b, true); }   // true: ya vio la vista previa, no pregunta de nuevo
   PROG = {c: c.c, ...c.R}; accionEnCurso = {id, tipo: 'programacion', desde: Date.now()};
   await aplicarProgramacion({rapido: true, usuario});
 }
