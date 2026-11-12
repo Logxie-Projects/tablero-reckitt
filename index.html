@@ -1056,6 +1056,39 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 @keyframes tf-pulso{50%{box-shadow:0 0 0 8px transparent}}
 @media (prefers-reduced-motion:reduce){.tf-n.rojo .tf-dot{animation:none}}
 @media (max-width:640px){.tf-fila > summary{grid-template-columns:1fr;gap:8px}.tf-n b{font-size:11px}}
+
+/* 11-nov · Tráfico: cronograma (trafico.js cronogramaTf) y el botón Líneas | Cronograma */
+.tf-vista{display:flex;gap:0;margin:10px 0 4px}
+.tf-vista button{font:inherit;font-size:13px;font-weight:700;padding:6px 16px;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer}
+.tf-vista button:first-child{border-radius:9px 0 0 9px}.tf-vista button:last-child{border-radius:0 9px 9px 0;border-left:0}
+.tf-vista button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.g-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:11px;background:var(--surface)}
+.g-in{min-width:820px;padding:8px 12px 10px}
+.g-leyenda{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11px;color:var(--muted);padding:0 0 8px 142px;align-items:center}
+.g-leyenda i.g-b{position:static;display:inline-block;width:16px;height:9px;vertical-align:middle;margin-right:4px}
+.g-leyenda .g-lm{display:inline-block;height:12px;border-left:2px dashed var(--text);margin-right:5px;vertical-align:middle}
+.g-noteleyenda{margin-left:auto}
+.g-fila{display:grid;grid-template-columns:130px 1fr;gap:12px;align-items:center;border-top:1px solid var(--border)}
+.g-fila.rojo{background:color-mix(in srgb, var(--bad) 7%, transparent)}
+.g-fila.g-cab{border-top:0}
+.g-id{cursor:pointer;display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;padding:4px 0}
+.g-id small{flex-basis:100%;font-size:10.5px;color:var(--muted);margin-left:15px}
+.g-pt{width:9px;height:9px;border-radius:50%;background:var(--ok);display:inline-block}
+.g-fila.rojo .g-pt{background:var(--bad)}.g-fila.ambar .g-pt{background:var(--warn)}
+.g-track,.g-eje{position:relative;height:34px}.g-eje{height:24px}
+.g-track{border-left:1px solid var(--border);border-right:1px solid var(--border)}
+.g-noche{position:absolute;top:0;bottom:0;background:color-mix(in srgb, var(--muted) 14%, transparent)}
+.g-b{position:absolute;top:7px;height:17px;border-radius:4px;font-size:10px;line-height:17px;color:#fff;overflow:hidden;white-space:nowrap;padding:0 4px;box-sizing:border-box;min-width:3px}
+.g-man{background:#7c8aa0}.g-car{background:#0d9488}.g-llen{background:#7c3aed}
+.g-esp{background:repeating-linear-gradient(45deg,#f59e0b 0 4px,#fcd34d 4px 8px)}
+.g-real{top:25px;height:6px;background:var(--ok);border-radius:3px}
+.g-rojo.g-b{box-shadow:0 0 0 2px var(--bad)}
+.g-m{position:absolute;top:8px;transform:translateX(-50%);font-size:15px;line-height:17px;color:var(--accent)}.g-m.g-rojo{color:var(--bad)}
+.g-meta{position:absolute;top:2px;bottom:2px;border-left:2px dashed var(--text);opacity:.7;z-index:1}.g-meta.g-rojo{border-left-color:var(--bad);opacity:1}
+.g-ahora{position:absolute;top:0;bottom:0;width:2px;background:var(--accent);z-index:2;margin-left:-1px}
+.g-ahoralb{position:absolute;top:0;transform:translateX(-50%);font-size:10px;font-weight:800;color:#fff;background:var(--accent);border-radius:5px;padding:0 5px}
+.g-t{position:absolute;top:10px;transform:translateX(-50%);font-size:10px;color:var(--muted);white-space:nowrap}.g-t.dia{font-weight:800;color:var(--text)}
+.g-sin{position:absolute;left:8px;top:9px;font-size:11px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -4466,6 +4499,54 @@ function planViajeHtml(x){
     <p class="sub">${sig.desdeGps ? 'La siguiente parada se calcula desde el último punto del GPS. ' : 'Sin un punto reciente del GPS no hay hora estimada. '}${porSalir ? 'Las horas cuentan desde la salida programada (' + esc(sal.txt) + ')' + (sal.estado === 'pendiente' ? ', que aún espera aprobación' : sal.estado === 'rechazada' ? ', que fue rechazada: se cuenta desde que abre el horario de manejo' : '') + '. ' : ''}Las horas encadenan todo el viaje: llega, espera a que abra el recibo si hace falta, permanece ${TRAFICO.cargueH} h en el patio (cargue del contenedor) y ${TRAFICO.llenadoH} h en la planta (llenado), y maneja a la siguiente. Una parada está \"a tiempo\" si la atienden el día programado o antes. El sistema avisa la llegada a cada parada que tenga coordenadas. Patios, planta y bodegas reciben de ${RECIBO.desde} a. m. a ${RECIBO.hasta - 12} p. m.; los puertos, las 24 horas. Estimado a ${TRAFICO.kmh} km/h, manejando solo entre ${TRAFICO.desde} a. m. y ${TRAFICO.hasta - 12} p. m.; la distancia es la línea recta aumentada un ${Math.round((TRAFICO.factorVia - 1) * 100)} %.</p>
   </details>`;
 }
+/* ---------- cronograma (11-nov-2026) ----------
+ * Pedido del usuario (con la imagen de una flota en tablet: mapa y cuadrícula de barras de colores): "o así..." → segunda vista de
+ * Tráfico, botón "Líneas | Cronograma". Una fila por vehículo y un eje de tiempo de 36 horas (desde 6 h antes de ahora). Las barras son
+ * el plan de planParadas encadenado: manejo (solo dentro del horario, o desde una salida nocturna aprobada), espera a que abra el
+ * recibo, cargue del contenedor en el patio (2 h) y llenado en la planta (6 h); un rombo es llegar a una parada sin permanencia
+ * (puerto); la raya punteada es el final del día programado de la parada; la barra verde delgada es lo que el GPS ya midió. En rojo
+ * lo que va retrasado contra su fecha. Es de lectura: el clic en un vehículo abre su detalle en Líneas. */
+let TF_VISTA = 'lineas'; try { TF_VISTA = sessionStorage.getItem('tf-vista') === 'crono' ? 'crono' : 'lineas'; } catch (e) {}
+const TF_GANTT_H = 36;
+function cronogramaTf(L){
+  const ya = Date.now(), W0 = Math.floor((ya - 6 * 36e5) / 36e5) * 36e5, W1 = W0 + TF_GANTT_H * 36e5, span = W1 - W0;
+  const pos = ms => (ms - W0) / span * 100, dentro = (a, b) => b > W0 && a < W1, izq = ms => Math.max(0, pos(ms));
+  const d0 = ms => Date.parse(new Date(ms - 5 * 36e5).toISOString().slice(0, 10) + 'T00:00:00-05:00');
+  const dias = []; for (let d = d0(W0) - 24 * 36e5; d < W1 + 24 * 36e5; d += 24 * 36e5) dias.push(d);
+  const manejo = dias.map(d => [d + TRAFICO.desde * 36e5, d + TRAFICO.hasta * 36e5]);   // ventanas en que se maneja
+  const noche = dias.map(d => [d - (24 - TRAFICO.hasta) * 36e5, d + TRAFICO.desde * 36e5]);
+  const bar = (a, b, cls, txt, tip) => !(b > a) || !dentro(a, b) ? '' : `<span class="g-b ${cls}" style="left:${izq(a).toFixed(2)}%;width:${(Math.min(100, pos(b)) - izq(a)).toFixed(2)}%" title="${esc(tip || txt || '')}">${txt ? esc(txt) : ''}</span>`;
+  const piezas = (a, b, sal) => { const V = manejo.slice();
+    if (sal && sal.libre && !enHorarioManejo(sal.ms)) { const h = horaColombia(sal.ms); V.push([sal.ms, sal.ms + (h < TRAFICO.desde ? TRAFICO.desde - h : 24 - h + TRAFICO.desde) * 36e5]); }
+    return V.map(([p, q]) => [Math.max(a, p), Math.min(b, q)]).filter(([p, q]) => q > p); };
+  const sitio = f => `${f.parada} · ${f.zona || f.lugar}`;
+  const fila = x => { const v = x.v, P = x.F.filter(f => !f.hecho), cls = x.rojo ? 'rojo' : x.ambar ? 'ambar' : 'ok'; let o = '', hay = false;
+    (window.GPS_PARADAS || []).filter(r => r.viaje === v.id && r.llego && r.salio).forEach(r => { const a = Date.parse(r.llego), b = Date.parse(r.salio);
+      o += bar(a, b, 'g-real', '', `${r.parada} · ${r.lugar}: estuvo ${duracionTxt((b - a) / 60e3)} (medido por el GPS)`); });
+    P.forEach((f, i) => { const rojo = f.estado === 'retraso' ? ' g-rojo' : '', ant = i === 0 ? (x.sal && x.sal.ms > ya ? x.sal.ms : ya) : P[i - 1].fin;
+      if (f.prog) { const m = Date.parse(f.prog + 'T23:59:00-05:00'); if (m >= W0 && m <= W1) o += `<span class="g-meta${rojo}" style="left:${pos(m).toFixed(2)}%" title="${esc(sitio(f) + ' · programado ' + fd(f.prog))}"></span>`; }
+      if (f.llega == null) return;
+      hay = true;
+      if (!f.aqui && ant != null) piezas(ant, f.llega, x.sal).forEach(([p, q]) => { o += bar(p, q, 'g-man' + rojo, '', `Manejo hacia ${sitio(f)}: llega ${horaTf(f.llega)}`); });
+      if (f.inicio > f.llega) o += bar(f.llega, f.inicio, 'g-esp', '', `${sitio(f)}: llega ${horaTf(f.llega)} y espera a que abra el recibo (${horaTf(f.inicio)})`);
+      if (f.dur && f.fin) o += bar(f.inicio, f.fin, (f.parada === 'Patio' ? 'g-car' : 'g-llen') + rojo, f.parada === 'Patio' ? 'cargue' : 'llenado',
+        `${sitio(f)}: ${f.parada === 'Patio' ? 'cargue del contenedor' : 'llenado'} ${f.dur} h, de ${horaTf(f.inicio)} a ${horaTf(f.fin)}${f.retraso ? ' · ' + f.retraso : ''}`);
+      else if (dentro(f.llega, f.llega + 1)) o += `<span class="g-m${rojo}" style="left:${pos(f.llega).toFixed(2)}%" title="${esc(sitio(f) + ': llega ' + horaTf(f.llega) + (f.retraso ? ' · ' + f.retraso : ''))}">◆</span>`; });
+    if (!hay && !x.sub) o += `<span class="g-sin">${P.length ? 'sin GPS reciente: no hay hora estimada' : 'sin paradas pendientes'}</span>`;
+    if (x.sub) o += `<span class="g-sin">subviaje · urbano ${v.fechaUrbano ? esc(fd(v.fechaUrbano)) : 'sin fecha'}</span>`;
+    return `<div class="g-fila ${cls}"><div class="g-id" data-tf-ir="${esc(v.id)}" title="Abrir el detalle de ${esc(v.placa)}"><i class="g-pt"></i><span class="placa">${esc(v.placa)}</span><small>${esc(String(v.conductor || 'Sin conductor').split(' ').slice(0, 2).join(' '))}</small></div>
+      <div class="g-track">${noche.map(([a, b]) => dentro(a, b) ? `<span class="g-noche" style="left:${izq(a).toFixed(2)}%;width:${(Math.min(100, pos(b)) - izq(a)).toFixed(2)}%"></span>` : '').join('')}${o}<span class="g-ahora" style="left:${pos(ya).toFixed(2)}%"></span></div></div>`; };
+  let eje = ''; for (let m = Math.ceil(W0 / (3 * 36e5)) * 3 * 36e5; m < W1; m += 3 * 36e5) { const f = fechaLocal(new Date(m).toISOString()), H = Number(f.slice(11, 13)), medianoche = H === 0;
+    eje += `<span class="g-t${medianoche ? ' dia' : ''}" style="left:${pos(m).toFixed(2)}%">${medianoche ? (f.slice(0, 10) === HOY ? 'hoy' : f.slice(0, 10) === addDias(HOY, 1) ? 'mañana' : fd(f.slice(0, 10))) + ' · ' : ''}${H % 12 || 12} ${H < 12 ? 'a. m.' : 'p. m.'}</span>`; }
+  return `<div class="g-wrap"><div class="g-in">
+    <div class="g-leyenda"><span><i class="g-b g-man"></i>manejo</span><span><i class="g-b g-esp"></i>espera del recibo</span><span><i class="g-b g-car"></i>cargue del contenedor</span><span><i class="g-b g-llen"></i>llenado</span><span>◆ llegada</span><span><i class="g-lm"></i>fin del día programado</span><span><i class="g-b g-real"></i>medido por el GPS</span><span class="g-noteleyenda">franja gris = no se maneja (10 p. m. a 6 a. m.) · rojo = retrasado</span></div>
+    <div class="g-fila g-cab"><div></div><div class="g-eje">${eje}<span class="g-ahoralb" style="left:${pos(ya).toFixed(2)}%">ahora</span></div></div>
+    ${L.map(fila).join('')}</div></div>`;
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-tf-vista],[data-tf-ir]'); if (!b) return;
+  if (b.dataset.tfVista) TF_VISTA = b.dataset.tfVista === 'crono' ? 'crono' : 'lineas'; else { TF_VISTA = 'lineas'; TF_FILAS.add(b.dataset.tfIr); }
+  try { sessionStorage.setItem('tf-vista', TF_VISTA); } catch (x) {}
+  renderTrafico(); });
 function renderTrafico(){
   const c = document.getElementById('trafico'), b = document.querySelector('#nav [data-v="trafico"]'); if (!c) return;
   if (c.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return;   // alguien está anotando una salida: no se le borra lo escrito
@@ -4495,7 +4576,8 @@ function renderTrafico(){
     </div>`; };
   c.innerHTML = `<div class="tf-top"><b>${L.length} ${L.length === 1 ? 'vehículo' : 'vehículos'} en seguimiento</b> · ${conGps} con GPS${nAl ? ` · <b style="color:var(--bad)">${nAl} en rojo: atender</b>` : ' · <b style="color:var(--ok)">ninguno en rojo</b>'}
       <span class="sub">Horario de manejo ${TRAFICO.desde} a. m. a ${TRAFICO.hasta - 12} p. m. · detención no planeada desde ${TRAFICO.detenidoMin} min · el GPS se lee cada 10 minutos · los tiempos son estimados</span></div>
-    ${L.length ? L.map(x => filaLeanTf(x, fila(x))).join('') : '<p class="sub">No hay vehículos en ruta ni con GPS en este momento.</p>'}`;
+    <div class="tf-vista"><button type="button" class="${TF_VISTA === 'lineas' ? 'on' : ''}" data-tf-vista="lineas">Líneas</button><button type="button" class="${TF_VISTA === 'crono' ? 'on' : ''}" data-tf-vista="crono">Cronograma</button></div>
+    ${!L.length ? '<p class="sub">No hay vehículos en ruta ni con GPS en este momento.</p>' : TF_VISTA === 'crono' ? cronogramaTf(L) : L.map(x => filaLeanTf(x, fila(x))).join('')}`;
 }
 /* ---------- novedades del viaje: la bitácora con hora y autor (fase 1) y la línea de tiempo única (fase 2) ----------
  * Cada novedad es una fila de la pestaña "Novedades del viaje" (Base.gs): cuándo, viaje, quién, tipo, texto y origen. No se
@@ -6754,7 +6836,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'e31b072b53';
+const VERSION_TABLERO = '7aa942bec5';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
