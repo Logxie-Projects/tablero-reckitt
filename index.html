@@ -4533,7 +4533,7 @@ function lineaTf(x, G, maxF){
     else { n.alt = n.pos - antS < 11; if (n.alt) hayAlt = true; else antS = n.pos; } });
   const segs = N.slice(1).map((n, k) => `<span class="tf-seg ${n.cls === 'rojo' ? 'rojo' : ''}" style="left:${N[k].pos.toFixed(2)}%;width:${(n.pos - N[k].pos).toFixed(2)}%"><i style="width:${n.fill}%"></i></span>`).join('');
   const nodos = N.map((n, k) => { const f = n.f, p = n.pos.toFixed(2);
-    if (n.c) return `<div class="tf-n cp ${n.cls}" style="left:${p}%" title="${esc('Punto de control · ' + n.nombre + (n.llega ? ' · ' + horaTf(n.llega) : n.listo ? ' · ya pasó' : ''))}"><i class="tf-dot"></i><div class="tf-lc nv${n.nivel}"><b>${esc(n.nombre)}</b>${k === front && n.llega ? `<small>${esc(horaTf(n.llega))}</small>` : ''}</div></div>`;
+    if (n.c) return `<div class="tf-n cp ${n.cls}" style="left:${p}%" title="${esc('Punto de control · ' + n.nombre + (n.llega ? ' · ' + horaTf(n.llega) : n.listo ? ' · ya pasó' : ''))}"><i class="tf-dot"></i><div class="tf-lc nv${n.nivel}"><b>${esc(n.nombre)}</b>${k === front && n.llega && (!N[k + 1] || N[k + 1].pos - n.pos >= 12) ? `<small>${esc(horaTf(n.llega))}</small>` : ''}</div></div>`;
     const est = !f || f.hecho ? '' : f.estado === 'retraso' ? 'retrasado' : f.estado === 'atiempo' ? 'a tiempo' : '';
     const cuando = n.det != null ? n.det : f.hecho ? '✔ ' + (f.prog ? fd(f.prog) : 'hecho') : f.aqui ? 'aquí desde ' + horaTf(f.llega) : f.llega ? (f.sig ? 'llega ' : '~') + horaTf(f.inicio || f.llega) + (f.sig && f.km != null ? ` · ${f.km} km` : '') : f.prog ? 'prog. ' + fd(f.prog) : 'sin fecha';
     return `<div class="tf-n ${n.cls}${n.alt ? ' alt' : ''}" style="left:${p}%" title="${esc(f ? f.parada + ' · ' + (f.zona || f.lugar) + (f.retraso ? ' · ' + f.retraso : '') : n.nombre)}"><i class="tf-dot"></i><div class="tf-l"><b>${esc(n.nombre)}</b>${cuando ? `<small>${esc(cuando)}</small>` : ''}${est ? `<em>${est}</em>` : ''}</div></div>`; }).join('');
@@ -7012,7 +7012,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'b5186dc4ce';
+const VERSION_TABLERO = '6ef5b32138';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
