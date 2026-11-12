@@ -4536,7 +4536,8 @@ function cronogramaTf(L){
     if (x.sub) o += `<span class="g-sin">subviaje · urbano ${v.fechaUrbano ? esc(fd(v.fechaUrbano)) : 'sin fecha'}</span>`;
     return `<div class="g-fila ${cls}"><div class="g-id" data-tf-ir="${esc(v.id)}" title="Abrir el detalle de ${esc(v.placa)}"><i class="g-pt"></i><span class="placa">${esc(v.placa)}</span><small>${esc(String(v.conductor || 'Sin conductor').split(' ').slice(0, 2).join(' '))}</small></div>
       <div class="g-track">${noche.map(([a, b]) => dentro(a, b) ? `<span class="g-noche" style="left:${izq(a).toFixed(2)}%;width:${(Math.min(100, pos(b)) - izq(a)).toFixed(2)}%"></span>` : '').join('')}${o}<span class="g-ahora" style="left:${pos(ya).toFixed(2)}%"></span></div></div>`; };
-  let eje = ''; for (let m = Math.ceil(W0 / (3 * 36e5)) * 3 * 36e5; m < W1; m += 3 * 36e5) { const f = fechaLocal(new Date(m).toISOString()), H = Number(f.slice(11, 13)), medianoche = H === 0;
+  let eje = ''; for (let m = Math.ceil((W0 - 5 * 36e5) / (3 * 36e5)) * 3 * 36e5 + 5 * 36e5; m < W1; m += 3 * 36e5) {   // cada 3 h en hora de Colombia, con la medianoche como marca del día
+    const f = fechaLocal(new Date(m).toISOString()), H = Number(f.slice(11, 13)), medianoche = H === 0;
     eje += `<span class="g-t${medianoche ? ' dia' : ''}" style="left:${pos(m).toFixed(2)}%">${medianoche ? (f.slice(0, 10) === HOY ? 'hoy' : f.slice(0, 10) === addDias(HOY, 1) ? 'mañana' : fd(f.slice(0, 10))) + ' · ' : ''}${H % 12 || 12} ${H < 12 ? 'a. m.' : 'p. m.'}</span>`; }
   return `<div class="g-wrap"><div class="g-in">
     <div class="g-leyenda"><span><i class="g-b g-man"></i>manejo</span><span><i class="g-b g-esp"></i>espera del recibo</span><span><i class="g-b g-car"></i>cargue del contenedor</span><span><i class="g-b g-llen"></i>llenado</span><span>◆ llegada</span><span><i class="g-lm"></i>fin del día programado</span><span><i class="g-b g-real"></i>medido por el GPS</span><span class="g-noteleyenda">franja gris = no se maneja (10 p. m. a 6 a. m.) · rojo = retrasado</span></div>
@@ -6836,7 +6837,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '7aa942bec5';
+const VERSION_TABLERO = '80604951da';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
