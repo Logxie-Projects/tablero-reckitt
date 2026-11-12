@@ -3503,8 +3503,12 @@ const CIERRE_DIA = false;
 // 11-nov ("este tipo de acción ya no aplicaría porque se toma del GPS"): con un punto reciente del GPS (el mismo plazo de "sin señal"
 // de Tráfico) ya se sabe dónde va el vehículo: no se le pregunta al equipo en la ronda ni cuenta para cerrarla. Si el GPS se
 // queda sin señal, la pregunta vuelve. Lo que está sin actualizar (rojo) se sigue pidiendo siempre.
+// 11-nov (2.ª vez: "siguen apareciendo las acciones a pesar que se usa el GPS"): el plazo era 60 min, pero un vehículo detenido
+// reporta cada 30 a 70 min y la pregunta aparecía y desaparecía. Ahora es GPS_PREGUNTA_MIN (3 h): la pregunta vuelve solo si el
+// vehículo lleva más de 3 h sin un punto nuevo o no tiene enlace. (Tráfico sigue avisando "sin señal" a los 60 min.)
+const GPS_PREGUNTA_MIN = 180;
 const gpsVivo = v => { const g = v && v.placa ? (window.GPS || []).find(x => x.placa === placaNorm(v.placa)) : null;
-  return !!g && !!g.fecha && g.lat != null && (Date.now() - new Date(g.fecha)) / 60e3 <= TRAFICO.sinSenalMin; };
+  return !!g && !!g.fecha && g.lat != null && (Date.now() - new Date(g.fecha)) / 60e3 <= GPS_PREGUNTA_MIN; };
 function menusTurno(r){
   const V = viajes.filter(v => vigente(v) && !esPrueba(v) && v.estado !== 'Cancelado' && !v.padre);   // los de prueba no cuentan
   const SEV = e => e.sev === 'Alta' ? 0 : 1;
@@ -6666,7 +6670,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '928cf14649';
+const VERSION_TABLERO = '62ef58181b';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
