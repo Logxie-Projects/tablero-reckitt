@@ -4587,24 +4587,24 @@ document.addEventListener('click', e => { const b = e.target.closest('[data-tf-v
  * va bien, ámbar aviso, rojo retrasado o con alerta; gris sin señal), una línea punteada lo une con la parada a la que va, y a la
  * derecha están las tarjetas de lo que hay que atender, los rojos primero. Dos encuadres: Colombia y el Valle (Cali – Buenaventura),
  * donde van casi todos los viajes. El vehículo sin GPS no se inventa: queda en la lista "sin ubicación". */
-const TF_VALLE = {W: 520, H: 400, O: -77.25, E: -75.95, N: 4.15, S: 3.2};
+const TF_VALLE = {W: 520, H: 390, O: -77.2, E: -76.2, N: 4.05, S: 3.3}, TF_CALI = {W: 400, H: 540, O: -76.62, E: -76.4, N: 3.68, S: 3.38};   // encuadres: el Valle (Cali – Buenaventura) y Cali, donde se amontonan patios, planta y bodegas
 let TF_MAPA = 'auto'; try { TF_MAPA = sessionStorage.getItem('tf-mapa') || 'auto'; } catch (e) {}
 function mapaTf(L){
   const num = (g, k) => g && g[k] != null && isFinite(Number(g[k])) ? Number(g[k]) : null;
   const pos = L.map(x => ({x, lat: num(x.g, 'lat'), lng: num(x.g, 'lng')})).filter(o => o.lat != null && o.lng != null);
-  const enValle = o => o.lat > TF_VALLE.S && o.lat < TF_VALLE.N && o.lng > TF_VALLE.O && o.lng < TF_VALLE.E;
-  const vista = TF_MAPA === 'valle' || TF_MAPA === 'col' ? TF_MAPA : (pos.length && pos.filter(enValle).length / pos.length >= .6 ? 'valle' : 'col');
-  const B = vista === 'valle' ? TF_VALLE : KM, xy = (lat, lng) => [(lng - B.O) / (B.E - B.O) * B.W, (B.N - lat) / (B.N - B.S) * B.H];
+  const en = (E, o) => o.lat > E.S && o.lat < E.N && o.lng > E.O && o.lng < E.E, ENC = {cali: TF_CALI, valle: TF_VALLE, col: KM};
+  const vista = ENC[TF_MAPA] ? TF_MAPA : (pos.length && pos.filter(o => en(TF_CALI, o)).length / pos.length >= .6 ? 'cali' : pos.length && pos.filter(o => en(TF_VALLE, o)).length / pos.length >= .6 ? 'valle' : 'col');
+  const B = ENC[vista], xy = (lat, lng) => [(lng - B.O) / (B.E - B.O) * B.W, (B.N - lat) / (B.N - B.S) * B.H];
   const dentro = (lat, lng) => lat > B.S && lat < B.N && lng > B.O && lng < B.E, f1 = n => n.toFixed(1), pt = (lat, lng) => xy(lat, lng).map(f1).join(',');
   const cls = x => x.rojo ? 'rojo' : x.ambar ? 'ambar' : 'ok';
   const sinSenal = x => x.est.alertas.some(a => a.tipo === 'sinSenal');
   const sig = x => x.F.find(f => !f.hecho) || null;
   // capas fijas: país, rutas con el cliente y lugares
   let capas = `<polygon class="tm-pais" points="${KM_BORDE.map(([lng, lat]) => pt(lat, lng)).join(' ')}"/>`;
-  capas += RUTAS_TRAFICO.map(r => `<polyline class="tm-ruta" points="${r[2].map(p => pt(p[1], p[2])).join(' ')}"/>`).join('');
+  capas += RUTAS_TRAFICO.filter(r => vista === 'col' || (r[0] === 'Cali' && r[1] === 'Buenaventura')).map(r => `<polyline class="tm-ruta" points="${r[2].map(p => pt(p[1], p[2])).join(' ')}"/>`).join('');
   const rotulados = [], rotular = (nom, lat, lng, dx) => { const [x, y] = xy(lat, lng); if (!dentro(lat, lng) || rotulados.some(q => Math.hypot(q[0] - x, q[1] - y) < 13)) return '';
     rotulados.push([x, y]); return `<circle class="tm-lugar" cx="${f1(x)}" cy="${f1(y)}" r="3.5"/><text class="tm-nom" x="${f1(x + (dx || 7))}" y="${f1(y + 3)}">${esc(nom)}</text>`; };
-  if (vista === 'valle') capas += GEOZONAS.map(z => rotular(z[0], z[1], z[2])).join('') + RUTAS_TRAFICO.flatMap(r => r[2]).filter(p => ['Dagua', 'Loboguerrero', 'Buga'].includes(p[0])).map(p => rotular(p[0], p[1], p[2])).join('');
+  if (vista !== 'col') capas += GEOZONAS.map(z => rotular(z[0], z[1], z[2])).join('') + RUTAS_TRAFICO.flatMap(r => r[2]).filter(p => ['Dagua', 'Loboguerrero', 'Buga'].includes(p[0])).map(p => rotular(p[0], p[1], p[2])).join('');
   else capas += KM_LUGARES.map(l => rotular(l[1], l[2], l[3])).join('');
   // separar los puntos que caen encima: primero los rojos
   const puestos = [], libre = (x, y) => puestos.every(q => Math.hypot(q[0] - x, q[1] - y) >= 16);
@@ -4631,7 +4631,7 @@ function mapaTf(L){
     <div class="tm-sec"><h4>✔ Van bien · ${bien.length}</h4>${bien.map(chip).join('') || '<p class="sub">—</p>'}</div>
     ${sinPos.length ? `<div class="tm-sec"><h4>Sin ubicación en el mapa · ${sinPos.length}</h4><p class="sub">No tienen GPS: no se inventa su posición.</p>${sinPos.map(chip).join('')}</div>` : ''}
     ${fuera.length ? `<div class="tm-sec"><h4>Fuera de este encuadre · ${fuera.length}</h4>${fuera.map(o => chip(o.x)).join('')}</div>` : ''}</div>`;
-  return `<div class="tm"><div class="tm-mapa"><div class="tm-ctl"><button type="button" class="${vista === 'valle' ? 'on' : ''}" data-tf-mapa="valle">Cali – Buenaventura</button><button type="button" class="${vista === 'col' ? 'on' : ''}" data-tf-mapa="col">Colombia</button>
+  return `<div class="tm"><div class="tm-mapa"><div class="tm-ctl"><button type="button" class="${vista === 'cali' ? 'on' : ''}" data-tf-mapa="cali">Cali</button><button type="button" class="${vista === 'valle' ? 'on' : ''}" data-tf-mapa="valle">Cali – Buenaventura</button><button type="button" class="${vista === 'col' ? 'on' : ''}" data-tf-mapa="col">Colombia</button>
     <span class="tm-ley"><i class="ok"></i>va bien <i class="ambar"></i>aviso <i class="rojo"></i>retrasado o alerta <i class="sinsenal"></i>sin señal · línea punteada = hacia su próxima parada</span></div>${mapa}</div>${panel}</div>`;
 }
 function renderTrafico(){
@@ -6923,7 +6923,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '0fd34551cf';
+const VERSION_TABLERO = '1cd9817398';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
