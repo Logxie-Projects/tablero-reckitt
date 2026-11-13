@@ -6507,7 +6507,8 @@ async function crearDesdeCorreo(c){
     empresa:c.empresa, solicitante: c.solicitante || (/diana/i.test(c.firma) ? 'Diana Carolina Toro' : ''),
     fechaLevante: c.tipo==='Orden de retiro' ? c.fecha.slice(0,10) : '',
     // la base no tiene columnas de peso ni de fecha del levante: van en la observación, con la carga suelta
-    observacion: `Correo ${c.tipo} ${c.fecha.slice(0,10)}: ${[lcl && 'carga suelta (LCL)', D.bultos, D.peso, c.levante && 'levante '+fd(c.levante), c.lugar, c.fechaDescargue && fd(c.fechaDescargue), c.hora, c.terminal && 'terminal '+c.terminal, c.devolucion && 'devolución '+c.devolucion].filter(Boolean).join(' · ')}`};
+    observacion: `Correo ${c.tipo} ${c.fecha.slice(0,10)}: ${[lcl && 'carga suelta (LCL)', D.bultos, D.peso, c.levante && 'levante '+fd(c.levante), c.lugar, c.fechaDescargue && fd(c.fechaDescargue), c.hora, c.terminal && 'terminal '+c.terminal, c.devolucion && 'devolución '+c.devolucion,
+      c.entregaEstimada && 'entrega estimada ' + c.entregaEstimada + ' (aún sin cita)'].filter(Boolean).join(' · ')}`};
   Object.keys(campos).forEach(k => { if (campos[k] === '') delete campos[k]; });
   try {
     const j = await api('nuevo', {operacion:'IMPO', campos, usuario: usuario + ' (desde correo)'});
@@ -6516,6 +6517,8 @@ async function crearDesdeCorreo(c){
     toast(`Viaje ${j.id} creado: queda arriba como NUEVO hasta que alguien lo tome`);
     await cargar(); render();
     cerrarAccionEnCurso('viaje', `viaje ${j.id} creado en el tablero`);
+    // 13-nov: "su solicitud ha sido procesada": vista previa del aviso a quien lo pidió (con Gallego y ETP en copia); no sale sin revisarlo
+    $('#ovBarrido').classList.remove('open'); abrirDevolucion(j.id, true, 'viaje');
   } catch(e) { toast('No se pudo crear el viaje: ' + e.message); }
 }
 $('#btnBarrido').onclick = abrirBarrido;
@@ -7052,7 +7055,7 @@ function montarDevolucion(){
     catch (e) { $('#devArchivoTxt').textContent = 'No se pudo leer el archivo'; } };
   $('#devGuardar').onclick = guardarDevolucion;
   $('#devHilo').onchange = pintarParaDevolucion;
-  document.addEventListener('click', e => { const b = e.target.closest('[data-dev]'); if (b) abrirDevolucion(b.dataset.dev, !!b.dataset.solo); });
+  document.addEventListener('click', e => { const b = e.target.closest('[data-dev]'); if (b) abrirDevolucion(b.dataset.dev, !!b.dataset.solo, b.dataset.modo); });
 }
 // las fotos grandes se reducen (como en Despacho); el PDF va tal cual
 function leerTirilla(file){
@@ -7068,22 +7071,28 @@ function leerTirilla(file){
     const r = new FileReader(); r.onload = () => ok({nombre: file.name, tipo: file.type, base64: r.result}); r.onerror = mal; r.readAsDataURL(file);
   });
 }
-async function abrirDevolucion(id, solo){
+// modo 'viaje' (13-nov): el aviso de "su solicitud ha sido procesada" al crear una importación desde un correo. Misma ventana y mismos
+// destinatarios que el aviso de la tirilla, sin archivo ni fecha; solo envía lo que el equipo vio y marcó (Cliente.gs enviarAvisoViajeNuevo_)
+let DEV_MODO = '';
+async function abrirDevolucion(id, solo, modo){
   const v = viajePorId(id); if (!v) return;
   if (!pedirUsuario()) return;
+  DEV_MODO = modo || ''; solo = !!solo || DEV_MODO === 'viaje';
   DEV_ID = id; DEV_ARCHIVO = null; DEV_SOLO = !!solo;
-  const expo = esTirillaExpo(v), fv = expo ? v.fechaEntregaPuerto : v.fechaDevolucion;
-  $('#devTitulo').textContent = solo ? '✉ Aviso con la tirilla ya guardada' : expo ? '📎 Entregado en puerto · tirilla y aviso' : '📎 Vacío devuelto · tirilla y aviso';
+  const expo = esTirillaExpo(v), fv = expo ? v.fechaEntregaPuerto : v.fechaDevolucion, nuevo = DEV_MODO === 'viaje';
+  $('#devTitulo').textContent = nuevo ? '✉ Avisar que el viaje ya está creado' : solo ? '✉ Aviso con la tirilla ya guardada' : expo ? '📎 Entregado en puerto · tirilla y aviso' : '📎 Vacío devuelto · tirilla y aviso';
+  $('#devCerrar').textContent = nuevo ? 'Ahora no' : 'Cancelar';
   $('#devSubida').style.display = $('#devEnviarLbl').style.display = solo ? 'none' : '';
   $('#devFechaLbl').textContent = expo ? 'Fecha de entrega en puerto' : 'Fecha de devolución';
-  $('#devViaje').textContent = `${refCorta(v) || v.id} · contenedor ${v.contenedor || '—'} · ${expo ? 'puerto ' + (v.puerto || 'sin dato') + (v.pais ? ' · ' + v.pais : '') : v.patio || 'patio sin dato'}`;
+  $('#devViaje').textContent = nuevo ? `${refCorta(v) || v.id} · pedido ${v.pedido || '—'} · DO ${v.do || '—'} · ${v.empresa || 'sin empresa'}`
+    : `${refCorta(v) || v.id} · contenedor ${v.contenedor || '—'} · ${expo ? 'puerto ' + (v.puerto || 'sin dato') + (v.pais ? ' · ' + v.pais : '') : v.patio || 'patio sin dato'}`;
   $('#devFecha').value = fv && fv <= HOY ? fv : HOY; $('#devFecha').max = HOY;
   $('#devArchivo').value = ''; $('#devArchivoTxt').textContent = ''; $('#devGuardar').disabled = true;
   $('#devEnviar').checked = true; $('#devEnviar').onchange(); if (solo) $('#devGuardar').textContent = 'Enviar aviso';
   $('#devHilo').innerHTML = '<option>Buscando los correos del pedido…</option>'; $('#devHilo').disabled = true; $('#devPara').textContent = ''; $('#devTexto').value = '';
   $('#ovDev').classList.add('open');
   try {
-    const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=avisoDevolucion&id=' + encodeURIComponent(id) + '&clave=' + encodeURIComponent(claveActual()))).json();
+    const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=' + (nuevo ? 'avisoViajeNuevo' : 'avisoDevolucion') + '&id=' + encodeURIComponent(id) + '&clave=' + encodeURIComponent(claveActual()))).json();
     if (!j.ok) throw new Error(j.error || 'error');
     // 8-nov (pedido del usuario: "que el correo se envíe sobre la secuencia o título del correo de ese proceso"): se responde en el
     // hilo del proceso (instrucción, orden de retiro, revalidación…) que el equipo elija; el más probable va primero. Al final, correo nuevo
@@ -7118,10 +7127,11 @@ async function guardarDevolucion(){
     const d = DEV_DEST[+$('#devHilo').value] || {id: ''};
     const dest = destinatariosDevolucion();
     if (enviar && !dest.length) { b.disabled = false; $('#devEnviar').onchange(); return toast('Marque al menos un destinatario'); }
-    const j = await api('devolucion', DEV_SOLO ? {id: DEV_ID, soloAviso: true, texto: $('#devTexto').value, enviar: true, hiloId: d.id || '', destinatarios: dest, usuario}
+    const j = DEV_MODO === 'viaje' ? await api('avisoViajeNuevo', {id: DEV_ID, texto: $('#devTexto').value, hiloId: d.id || '', destinatarios: dest, usuario})
+      : await api('devolucion', DEV_SOLO ? {id: DEV_ID, soloAviso: true, texto: $('#devTexto').value, enviar: true, hiloId: d.id || '', destinatarios: dest, usuario}
       : {id: DEV_ID, fecha: $('#devFecha').value, archivo: DEV_ARCHIVO, texto: $('#devTexto').value, enviar, hiloId: d.id || '', destinatarios: dest, usuario});
     if (!j.ok) throw new Error(j.error || 'error');
-    if (DEV_SOLO) { if (!j.envio || !j.envio.ok) throw new Error(j.envio ? j.envio.error : 'no salió'); $('#ovDev').classList.remove('open'); toast('✓ Aviso enviado con la tirilla', 6000); await cargar(); render(); if (editId === DEV_ID) abrir(DEV_ID); b.disabled = false; return; }
+    if (DEV_SOLO) { if (!j.envio || !j.envio.ok) throw new Error(j.envio ? j.envio.error : 'no salió'); $('#ovDev').classList.remove('open'); toast(DEV_MODO === 'viaje' ? '✓ Aviso enviado: el viaje quedó creado y avisado' : '✓ Aviso enviado con la tirilla', 6000); await cargar(); render(); if (editId === DEV_ID) abrir(DEV_ID); b.disabled = false; return; }
     $('#ovDev').classList.remove('open');
     const hecho = esTirillaExpo(viajePorId(DEV_ID) || {}) ? 'Entregado en puerto' : 'Vacío devuelto';
     toast(j.envio ? (j.envio.ok ? `✓ ${hecho} y aviso enviado` + (j.envio.hilo ? ' en el correo del proceso' : '') : '✓ Guardado, pero el aviso no salió: ' + j.envio.error) : `✓ ${hecho} con su tirilla`, 6000);
@@ -7139,7 +7149,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'bed32256db';
+const VERSION_TABLERO = 'a034166d14';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
