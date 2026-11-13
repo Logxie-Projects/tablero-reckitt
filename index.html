@@ -7152,7 +7152,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '78b0fd8f36';
+const VERSION_TABLERO = 'f6ae59bc0f';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -9247,11 +9247,32 @@ function armarBandeja(){
   const accHecha = b => btnT('Cerrar acción', `data-b-cerrar="${b.id}"`, 'Cerrarla porque ya la hizo o porque no le toca a Entrapetrol: el tablero pregunta por qué');
   const pista = b => { const p = pareceHecha(b); return p ? ` <span class="ok-txt">✔ Ya hecha según el viaje: ${esc(p)}</span>` : ''; };
 
+  // 13-nov (LX-0492 · LX-0503 · LX-0504, Coral Vision y Agecoldex): los correos siguientes de un pedido que aún no tiene viaje (coordinar el retiro,
+  // placa y conductor…) quedaban sueltos en "Pedidos sin viaje" y sin botón de crear. Ahora se agrupan por el mismo pedido (DO, booking, RBHY, pedido
+  // o contenedor) bajo UNA línea de "Viajes por crear": la acción de LogxIA que pide crearlo o, si LogxIA no la registró, una línea que arma el
+  // tablero con el botón "＋ Crear viaje". Nada se crea solo; al crear el viaje, esas acciones pasan a su tarjeta.
+  const claveSinViaje = b => { const d = datoDeAccion(b); return compacto(d.do) || compacto(d.booking) || compacto(d.rbhy) || pedidosDe(d.pedido)[0] || compacto(d.contenedor) || ''; };
+  const sueltaSinViaje = b => !pideCrearViaje(b) && areaDe(b) === 'Operaciones' && !(atajoDe(b) || [])[0] && operacionAccion(b) !== 'NACIONAL' && !!claveSinViaje(b) && !viajeDeAccion(b);
+  const GRUPOS = new Map();   // clave del pedido → {crear: [acciones que piden crear], sueltas: [acciones que esperan el viaje]}
+  const grupo = k => { if (!GRUPOS.has(k)) GRUPOS.set(k, {crear: [], sueltas: []}); return GRUPOS.get(k); };
+  B.forEach(b => { if (pideCrearViaje(b) && !yaCreado(b)) { const k = claveSinViaje(b); if (k) grupo(k).crear.push(b); } else if (sueltaSinViaje(b)) grupo(claveSinViaje(b)).sueltas.push(b); });
+  const lineaEspera = b => `<br><span class="sub">↳ espera el viaje · ${esc(b.id)} · ${esc(String(b.accion).replace(/^(Operaciones|Facturación|Gerencia):\s*/i, ''))} · ${esc(b.remitente || '')} ${verCorreo(b)} ${accHecha(b)}</span>`;
+
   // 1 · Por crear: el correo pide un viaje que no existe (acción "Crear viaje" o "Crear viaje nacional" sin viaje)
   B.filter(b => (pideCrearViaje(b) && !yaCreado(b)) || ((atajoDe(b) || [])[0] === 'nacional')).forEach(b => {
     usadas.add(b.id);
-    add(null, {b: 'crear', k: 'a' + b.id, area: areaDe(b), html: `${desdeCuando(b.fechaCorreo || b.registrado)}<b>${esc(b.accion)}</b><br><span class="sub">${esc(b.resumen || '')} · ${esc(b.remitente || '')}</span>`,
-      acc: botonAtajo(b) + accHecha(b), roja: pedidoRojo(b)}, 'Viajes por crear', b);
+    const g = GRUPOS.get(claveSinViaje(b)), esperan = g && g.crear[0] === b ? g.sueltas : [];   // las que esperan van bajo la primera acción de crear del pedido
+    esperan.forEach(s => usadas.add(s.id));
+    add(null, {b: 'crear', k: 'a' + b.id, area: areaDe(b), html: `${desdeCuando(b.fechaCorreo || b.registrado)}<b>${esc(b.accion)}</b><br><span class="sub">${esc(b.resumen || '')} · ${esc(b.remitente || '')}</span>${esperan.map(lineaEspera).join('')}`,
+      acc: botonAtajo(b) + accHecha(b), roja: pedidoRojo(b) || esperan.some(s => pedidoRojo(s))}, 'Viajes por crear', b);
+  });
+  // …y los pedidos sin viaje cuya acción de crear LogxIA no registró: línea armada por el tablero, con el mismo botón
+  GRUPOS.forEach((g, k) => { if (g.crear.length || !g.sueltas.length) return;
+    const s0 = g.sueltas[0], d = datoDeAccion(s0), op = g.sueltas.map(operacionAccion).find(Boolean) || 'IMPO', quien = [...new Set(g.sueltas.map(s => s.remitente).filter(Boolean))].join(' · ');
+    const dato = [d.pedido && 'pedido ' + d.pedido, d.do && 'DO ' + d.do, d.booking && 'booking ' + d.booking, d.rbhy, d.contenedor && 'contenedor ' + d.contenedor, d.empresa].filter(Boolean).join(' · ');
+    g.sueltas.forEach(s => usadas.add(s.id));
+    add(null, {b: 'crear', k: 'sv|' + k, area: 'Operaciones', html: `<b>Crear viaje ${esc(op)} · ${esc(dato)}</b><br><span class="sub">Hay ${g.sueltas.length === 1 ? 'una acción' : g.sueltas.length + ' acciones'} de este pedido y el viaje no está en la base · ${esc(quien)}</span>${g.sueltas.map(lineaEspera).join('')}`,
+      acc: `<button type="button" class="link" onclick="abrirBarrido()" title="Abre los correos recientes: busque este pedido y pulse Crear importación">＋ Crear viaje</button>`, roja: g.sueltas.some(s => pedidoRojo(s))}, 'Viajes por crear', s0);
   });
   // 11-nov (decisión del usuario: "vigilarlos igual"): el viaje principal quedó Cerrado con el urbano de un subviaje todavía pendiente.
   // Antes ese subviaje desaparecía de aquí (solo se recorrían los viajes abiertos).
