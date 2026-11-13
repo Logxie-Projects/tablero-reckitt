@@ -6518,6 +6518,9 @@ async function crearDesdeCorreo(c){
     await cargar(); render();
     cerrarAccionEnCurso('viaje', `viaje ${j.id} creado en el tablero`);
     // 13-nov: "su solicitud ha sido procesada": vista previa del aviso a quien lo pidió (con Gallego y ETP en copia); no sale sin revisarlo
+    // 13-nov (primer envío real): la hoja tarda unos segundos en devolver el viaje recién creado; sin esperarlo, la vista previa no se abría
+    for (let i = 0; i < 6 && !viajePorId(j.id); i++) { await new Promise(r => setTimeout(r, 1500)); await cargar(); render(); }
+    if (!viajePorId(j.id)) return toast(`Viaje ${j.id} creado, pero el tablero aún no lo muestra: recargue la página y avise a quien lo pidió a mano`);
     $('#ovBarrido').classList.remove('open'); abrirDevolucion(j.id, true, 'viaje');
   } catch(e) { toast('No se pudo crear el viaje: ' + e.message); }
 }
@@ -7075,7 +7078,7 @@ function leerTirilla(file){
 // destinatarios que el aviso de la tirilla, sin archivo ni fecha; solo envía lo que el equipo vio y marcó (Cliente.gs enviarAvisoViajeNuevo_)
 let DEV_MODO = '';
 async function abrirDevolucion(id, solo, modo){
-  const v = viajePorId(id); if (!v) return;
+  const v = viajePorId(id); if (!v) return toast('El tablero aún no muestra ese viaje: recargue la página e intente de nuevo');
   if (!pedirUsuario()) return;
   DEV_MODO = modo || ''; solo = !!solo || DEV_MODO === 'viaje';
   DEV_ID = id; DEV_ARCHIVO = null; DEV_SOLO = !!solo;
@@ -7084,7 +7087,7 @@ async function abrirDevolucion(id, solo, modo){
   $('#devCerrar').textContent = nuevo ? 'Ahora no' : 'Cancelar';
   $('#devSubida').style.display = $('#devEnviarLbl').style.display = solo ? 'none' : '';
   $('#devFechaLbl').textContent = expo ? 'Fecha de entrega en puerto' : 'Fecha de devolución';
-  $('#devViaje').textContent = nuevo ? `${refCorta(v) || v.id} · pedido ${v.pedido || '—'} · DO ${v.do || '—'} · ${v.empresa || 'sin empresa'}`
+  $('#devViaje').textContent = nuevo ? `${v.id} · pedido ${v.pedido || '—'} · DO ${v.do || '—'} · ${v.empresa || 'sin empresa'}`
     : `${refCorta(v) || v.id} · contenedor ${v.contenedor || '—'} · ${expo ? 'puerto ' + (v.puerto || 'sin dato') + (v.pais ? ' · ' + v.pais : '') : v.patio || 'patio sin dato'}`;
   $('#devFecha').value = fv && fv <= HOY ? fv : HOY; $('#devFecha').max = HOY;
   $('#devArchivo').value = ''; $('#devArchivoTxt').textContent = ''; $('#devGuardar').disabled = true;
@@ -7149,7 +7152,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'a034166d14';
+const VERSION_TABLERO = '78b0fd8f36';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
