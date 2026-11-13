@@ -6427,11 +6427,13 @@ function cambiosDeCorreo(c){
     if (bod && !b.bodega) ch.bodega = bod;
     if (c.contenedor && !b.contenedor) ch.contenedor = c.contenedor;
     if (c.do && !b.do) ch.do = c.do;
-    if (c.devolucion === 'CLO' && !b.ciudadDevolucion) ch.ciudadDevolucion = 'Cali';
+    if (!b.ciudadDevolucion && ciudadDevolucionDe(c.devolucion)) ch.ciudadDevolucion = ciudadDevolucionDe(c.devolucion);
   }
   return ch;
 }
 const NOMBRES_CAMPO = {fechaCargue:'entrega en bodega', fechaLevante:'entrega de documentos', bodega:'bodega', contenedor:'contenedor', do:'DO', ciudadDevolucion:'ciudad de devolución'};
+// ciudad donde se devuelve el vacío según el correo: "CLO" = Cali; "Devolución de vacío: Bogotá" (13-nov, instrucciones de Agecoldex) = Bogotá
+const ciudadDevolucionDe = d => d === 'CLO' ? 'Cali' : /^bogot/i.test(d || '') ? 'Bogotá' : '';
 const bodegaDeCorreo = lugar => lugar ? ((BODEGAS_CORREO.find(([re]) => re.test(lugar)) || [null, lugar])[1]) : '';
 const fmtCambio = (k, x) => /^fecha/.test(k) ? fd(x) : x;
 function pintarBarrido(){
@@ -6503,7 +6505,7 @@ async function crearDesdeCorreo(c){
   const contenedor = c.contenedor || (!lcl && (D.contenedores || []).length === 1 ? D.contenedores[0] : '');
   const campos = {situacion:'Abierto', estado:'Sin asignar', pedido:c.pedido, do:c.do, contenedor, puerto, bodega,
     unidad: D.unidad || '', booking: c.docTrans || D.bl || '',
-    destino: /cortijo|agecolda/i.test(bodega) ? 'Yumbo' : '', fechaCargue:c.fechaDescargue, ciudadDevolucion: c.devolucion==='CLO' ? 'Cali' : '',
+    destino: /cortijo|agecolda/i.test(bodega) ? 'Yumbo' : '', fechaCargue:c.fechaDescargue, ciudadDevolucion: ciudadDevolucionDe(c.devolucion),
     empresa:c.empresa, solicitante: c.solicitante || (/diana/i.test(c.firma) ? 'Diana Carolina Toro' : ''),
     fechaLevante: c.tipo==='Orden de retiro' ? c.fecha.slice(0,10) : '',
     // la base no tiene columnas de peso ni de fecha del levante: van en la observación, con la carga suelta
@@ -7152,7 +7154,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'f6ae59bc0f';
+const VERSION_TABLERO = '65fa9664cc';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
