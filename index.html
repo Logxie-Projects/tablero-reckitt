@@ -2216,9 +2216,10 @@ function vehiculoRepetido(v){
 }
 // otros viajes con exactamente el mismo peso (no cuentan los del mismo booking o pedido: dos contenedores iguales pueden pesar igual)
 function pesoRepetido(v){
-  const p = String(v && v.peso || '').replace(/[^\d.,]/g, ''); if (!v || v.padre || p.length < 5 || !enRutaAbierto(v)) return [];
+  const abierto = o => situacion(o) === 'Abierto' && !esPrueba(o);   // el peso se aprueba después de entregar: cuenta hasta que el viaje se cierre
+  const p = String(v && v.peso || '').replace(/[^\d.,]/g, ''); if (!v || v.padre || p.length < 5 || !abierto(v)) return [];
   const mismo = o => !!(v.booking && limpioId(o.booking) === limpioId(v.booking)) || (!!v.pedido && limpioId(o.pedido) === limpioId(v.pedido));
-  return viajes.filter(o => o.id !== v.id && !o.padre && o.operacion === v.operacion && String(o.peso || '').replace(/[^\d.,]/g, '') === p && enRutaAbierto(o) && !mismo(o));
+  return viajes.filter(o => o.id !== v.id && !o.padre && o.operacion === v.operacion && String(o.peso || '').replace(/[^\d.,]/g, '') === p && abierto(o) && !mismo(o));
 }
 // lo que debe ser cierto para recibir una tirilla: sin contenedor o sin el retiro y el llenado hechos no hay entrega
 function incoherenciaTirilla(v, contenedorEnTirilla){
@@ -2253,7 +2254,9 @@ function revisarRelacion(texto){
   const reales = viajes.filter(o => situacion(o) !== 'Cancelado' && !esPrueba(o) && !o.padre), filas = [];
   const claves = ['booking', 'rbhy', 'obd', 'contenedor', 'pedido', 'do'];
   let lineas = 0;
-  String(texto || '').split(/\n|;/).forEach(l => {
+  const lineasTxt = String(texto || '').split(/\n|;/);
+  const nombrados = lineasTxt.flatMap(l => { const T = tokensDe(l); return reales.filter(o => claves.some(k => { const x = limpioId(o[k]); return (x.length >= 8 || (k === 'pedido' && x.length >= 5)) && T.has(x); })); });
+  lineasTxt.forEach(l => {
     const T = tokensDe(l), N = numerosDeTexto(l);
     const duenos = reales.filter(o => claves.some(k => { const x = limpioId(o[k]); return (x.length >= 8 || (k === 'pedido' && x.length >= 5)) && T.has(x); }));
     const datos = [['placa', 'Placa', N.placa], ['contenedor', 'Contenedor', N.contenedor], ['sello', 'Sello', N.sello]].filter(([, , xs]) => xs.length);
@@ -2266,7 +2269,8 @@ function revisarRelacion(texto){
       if (k === 'contenedor' && !contenedorValido(x) && !propios.includes(x)) return filas.push({campo: k, dato: nombre, viaje: duenos.map(o => o[k] || '—').join(' / '), texto: x, nivel: 'amarillo', msg: `${x} no pasa el dígito de control del contenedor`});
       if (propios.includes(x)) return filas.push({campo: k, dato: nombre, viaje: duenos.map(o => o[k]).filter(Boolean).join(' / '), texto: x, nivel: 'verde', otro: duenos[0].id});
       if (!propios.length) return filas.push({campo: k, dato: nombre, viaje: '—', texto: x, nivel: 'amarillo', otro: duenos[0].id, msg: `${duenos.map(o => o.id).join(' / ')} todavía no tiene ${nombre.toLowerCase()}; el texto dice ${x}`});
-      const deOtro = otrosViajesCon(duenos[0], k, x)[0];
+      const candidatos = otrosViajesCon(duenos[0], k, x);   // el que el mismo texto nombra en otra línea; si no, uno abierto; si no, ninguno (un viaje viejo con la misma placa confunde)
+      const deOtro = candidatos.find(o => nombrados.includes(o)) || candidatos.find(enRutaAbierto);
       filas.push({campo: k, dato: nombre, viaje: propios.join(' / '), texto: x, nivel: 'rojo', otro: deOtro ? deOtro.id : '',
         msg: `${duenos.map(o => o.id).join(' / ')} (${[...refs][0]}) tiene ${nombre.toLowerCase()} ${duenos.map(o => o[k]).filter(Boolean).join(' / ')}, no ${x}${deOtro ? `; ${x} es de ${deOtro.id}` : ''}`});
     }));
@@ -7493,7 +7497,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'c67c847e98';
+const VERSION_TABLERO = '2894a426bd';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
