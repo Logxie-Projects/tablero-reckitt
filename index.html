@@ -2081,7 +2081,7 @@ function datosEquivocados(v, ch){
 // lo dudoso: textos para que la persona confirme antes de guardar (puede ser cierto: la naviera extendió el cierre)
 // un zarpe que se corre más de estos días frente al estimado que había no es un ajuste normal de la naviera: se pregunta
 const DIAS_ZARPE_RARO = 10;
-function avisosAntesDeGuardar(v, ch){
+function avisosAntesDeGuardar(v, ch, op = {}){
   const out = [], queda = k => (k in ch ? ch[k] : v[k]) || '', toca = (...ks) => ks.some(k => k in ch && ch[k]);
   const f = k => /^\d{4}-\d{2}-\d{2}/.test(String(queda(k))) ? String(queda(k)).slice(0, 10) : '';
   const antes = (a, b, texto) => { if (toca(a, b) && f(a) && f(b) && f(a) < f(b)) out.push(texto + ` (${fd(f(a))} y ${fd(f(b))})`); };
@@ -2103,12 +2103,19 @@ function avisosAntesDeGuardar(v, ch){
     antes('fechaCargue', 'fechaRetiro', 'La entrega en bodega queda antes del retiro en puerto');
     antes('fechaDevolucion', 'fechaCargue', 'La devolución del vacío queda antes de la entrega en bodega');
   }
-  // el mismo dato en otro viaje (no cuenta su subviaje ni su viaje padre, que llevan el mismo contenedor)
+  // el mismo dato en otro viaje. op.sinNumeros: ese aviso lo da el control de números (controles.js, revisarEscritura) y no se repite aquí
+  if (!op.sinNumeros) datosEnOtroViaje(v, ch).forEach(d =>
+    out.push(`Ese ${d.nombre} (${d.valor}) ya está en el viaje ${d.otro.id}${d.otro.contenedor && d.campo !== 'contenedor' ? ' · ' + d.otro.contenedor : ''}`));
+  return out;
+}
+// el mismo dato en otro viaje (no cuenta su subviaje ni su viaje padre, que llevan el mismo contenedor): [{campo, nombre, valor, otro}]
+function datosEnOtroViaje(v, ch){
+  const out = [];
   [['contenedor', 'contenedor'], ['obd', 'OBD'], ['rbhy', 'RBHY'], ['sello', 'sello']].forEach(([k, nombre]) => {
-    if (!toca(k)) return; const x = limpioId(ch[k]); if (x.length < 5 || x === limpioId(v[k])) return;
+    if (!(k in ch) || !ch[k]) return; const x = limpioId(ch[k]); if (x.length < 5 || x === limpioId(v[k])) return;
     const otro = viajes.find(o => o.id !== v.id && o.padre !== v.id && v.padre !== o.id && !(v.padre && o.padre === v.padre)
       && situacion(o) !== 'Cancelado' && limpioId(o[k]) === x);
-    if (otro) out.push(`Ese ${nombre} (${String(ch[k]).trim()}) ya está en el viaje ${otro.id}${otro.contenedor && k !== 'contenedor' ? ' · ' + otro.contenedor : ''}`);
+    if (otro) out.push({campo: k, nombre, valor: String(ch[k]).trim(), otro});
   });
   return out;
 }
@@ -2222,6 +2229,25 @@ function pesoRepetido(v){
   const p = String(v && v.peso || '').replace(/[^\d.,]/g, ''); if (!v || v.padre || p.length < 5 || !abierto(v)) return [];
   const mismo = o => !!(v.booking && limpioId(o.booking) === limpioId(v.booking)) || (!!v.pedido && limpioId(o.pedido) === limpioId(v.pedido));
   return viajes.filter(o => o.id !== v.id && !o.padre && o.operacion === v.operacion && String(o.peso || '').replace(/[^\d.,]/g, '') === p && abierto(o) && !mismo(o));
+}
+/* ---------- control de lo que llega sin pasar por la ventana del viaje (14-nov, cierre de huecos de la fase 1) ----------
+ * Un correo ("Actualizar viaje"), el chat de LogxIA, la aprobación de datos de correos, el cuadro de programación: escriben contenedor, sello,
+ * RBHY, OBD o placa sin que nadie vea el documento. Aquí se compara lo que se va a escribir con los demás viajes. Solo AVISA.
+ * rojo: ese dato ya es de otro viaje que sigue abierto · amarillo: ya es de un viaje terminado, o la placa ya está en otro viaje abierto
+ * a pocos días · verde: nadie más lo tiene. filas vacías = no hay nada que revisar (solo fechas, observaciones...). */
+const NOMBRE_DATO_ESCRITURA = {contenedor: 'Contenedor', sello: 'Sello', rbhy: 'RBHY', obd: 'OBD', placa: 'Placa'};
+function revisarEscritura(v, cambios){
+  const filas = [];
+  datosEnOtroViaje(v, cambios).forEach(d => { const abierto = situacion(d.otro) === 'Abierto', nombre = NOMBRE_DATO_ESCRITURA[d.campo];
+    filas.push({campo: d.campo, dato: nombre, viaje: v[d.campo] || '—', texto: d.valor, nivel: abierto ? 'rojo' : 'amarillo', otro: d.otro.id,
+      msg: `${nombre} ${d.valor} ya es de ${d.otro.id}${abierto ? ', que sigue abierto' : ' (viaje ya ' + situacion(d.otro).toLowerCase() + ')'}`}); });
+  if ('placa' in cambios && limpioId(cambios.placa) && limpioId(cambios.placa) !== limpioId(v.placa)) {
+    const rep = vehiculoRepetido(Object.assign({}, v, {placa: limpioId(cambios.placa)}));
+    if (rep.length) filas.push({campo: 'placa', dato: 'Placa', viaje: v.placa || '—', texto: String(cambios.placa).trim(), nivel: 'amarillo', otro: rep[0].id,
+      msg: `Placa ${String(cambios.placa).trim()} ya está asignada a ${rep.map(o => o.id).join(' y ')}, que sigue${rep.length > 1 ? 'n' : ''} abierto${rep.length > 1 ? 's' : ''} a pocos días`}); }
+  Object.keys(NOMBRE_DATO_ESCRITURA).forEach(k => { if (k in cambios && limpioId(cambios[k]) && limpioId(cambios[k]) !== limpioId(v[k]) && !filas.some(f => f.campo === k))
+    filas.push({campo: k, dato: NOMBRE_DATO_ESCRITURA[k], viaje: v[k] || '—', texto: String(cambios[k]).trim(), nivel: 'verde'}); });
+  return {nivel: peorNivel(filas), filas, propone: ''};
 }
 // lo que debe ser cierto para recibir una tirilla: sin contenedor o sin el retiro y el llenado hechos no hay entrega
 function incoherenciaTirilla(v, contenedorEnTirilla){
@@ -3529,8 +3555,11 @@ async function guardarCambio(id, cambios, usuario, opciones = {}){
   if (cambios.do) cambios.do = limpiarDO(cambios.do);
   const eq = datosEquivocados(v, cambios);
   if (eq.length) { toast('No se guardó: ' + eq.map(x => x.msg).join(' · '), 9000); return false; }
-  if (!opciones.revisado) { const avisos = avisosAntesDeGuardar(v, cambios);
-    if (avisos.length && !confirm('Revise antes de guardar:\n\n• ' + avisos.join('\n• ') + '\n\n¿Guardar de todas formas?')) return false; }
+  // lo que llega de un correo o del chat no pasa por la ventana del viaje: los números se comparan con los demás viajes (controles.js,
+  // controlarEscritura: verde sigue, amarillo pregunta, rojo pide nombre y motivo); aquí solo quedan los avisos de fechas
+  if (!opciones.revisado) { const avisos = avisosAntesDeGuardar(v, cambios, {sinNumeros: true});
+    if (avisos.length && !confirm('Revise antes de guardar:\n\n• ' + avisos.join('\n• ') + '\n\n¿Guardar de todas formas?')) return false;
+    if (!(await controlarEscritura(v, cambios, usuario, opciones.origen || 'El tablero'))) return false; }
   if (cambios.contenedor) cambios.contenedor = limpioId(cambios.contenedor);
   const anterior = v.estado, previo = Object.fromEntries(Object.keys(cambios).map(k => [k, v[k]]));   // para deshacer si la base no lo acepta
   Object.assign(v, cambios, {actualizado: new Date().toISOString()});
@@ -6241,6 +6270,7 @@ async function decidirPropuestas(aprobar){
   if (!usuario) { $('#propUsuario').focus(); return toast('Escriba su nombre'); }
   guardarUsuario(usuario);
   const datos = sel.map(({clave, viajeId, campo, valor, evidencia, origen}) => ({clave, viajeId, campo, valor, evidencia, origen}));
+  if (aprobar && !(await controlarAprobacion(datos, usuario, 'Los datos de los correos'))) return;   // controles.js: números contra los demás viajes
   $('#propAprobar').disabled = $('#propRechazar').disabled = true;
   try {
     const j = await api('decidir', {usuario, aprobar: aprobar ? datos : [], rechazar: aprobar ? [] : datos});
@@ -6270,6 +6300,7 @@ async function aplicarAccion(b, previa, claves){   // previa: quien.js ya mostr�
   const fx = fxDato;
   if (!previa && !confirm(`¿Guardar en ${P[0].viajeId} (${P[0].placa || 'sin placa'}) estos datos del correo y cerrar la acción?\n\n${P.map(p => `• ${p.etiqueta}: ${p.actual ? fx(p.actual) : 'vacío'} → ${fx(p.valor)}`).join('\n')}`)) return;
   const usuario = pedirUsuario('¿Quién eres? Queda como quien aprobó los datos'); if (!usuario) return;
+  if (!(await controlarAprobacion(P, usuario, 'La acción de LogxIA'))) return;   // controles.js: números contra los demás viajes
   try {
     const j = await api('decidir', {usuario, aprobar: P.map(({clave, viajeId, campo, valor, evidencia, origen}) => ({clave, viajeId, campo, valor, evidencia, origen})), rechazar: []});
     if (!j.ok) throw new Error(j.error || 'error');
@@ -6580,6 +6611,7 @@ async function aplicarProgramacion(op){
   const c = PROG.c, mesTxt = MES[Number(c.programacion[0].fechaCargue.slice(5, 7)) - 1], quien = `${usuario} (programación ${mesTxt}, correo ${c.fecha.slice(0, 10)})`;
   const post = b => api(b.action, {...b, usuario: quien});
   const btnAplicar = $('#progAplicar'); if (btnAplicar) btnAplicar.disabled = true;
+  let omitidas = 0;   // filas que la persona dejó sin aplicar al volver en la revisión de números
   try {
     const crear = sel.filter(f => f.accion==='crear');
     if (crear.length) {
@@ -6596,6 +6628,8 @@ async function aplicarProgramacion(op){
       let ch = filaMarcada ? {...f.cambios} : {};
       (docSel[i] || []).forEach(k => { ch[k] = f.doc[k].cuadro; });
       if (!Object.keys(ch).length) continue;
+      // controles.js: los números del cuadro (contenedor, placa…) contra los demás viajes; si la persona vuelve, esa fila queda sin aplicar
+      if (!(await controlarEscritura(f.v, ch, usuario, 'El cuadro de programación'))) { omitidas++; continue; }
       const mov = fechasMovidas(f.v, ch);
       // respaldo: el propio correo de la programación de Reckitt (causa Cliente); las otras causas quedan como se eligieron
       if (mov.length) ch = conCausa(f.v, ch, mov, causa, `Programación ${mesTxt} actualizada (correo ${c.fecha.replace('T', ' ')})`, usuario, '', '',
@@ -6604,9 +6638,9 @@ async function aplicarProgramacion(op){
       const j = await post({action:'update', id: f.v.id, cambios: ch, fuente: 'programacion'});
       if (!j.ok) throw new Error(`${f.v.id}: ${j.error || 'error'}`);
     }
-    toast(`Programación aplicada: ${crear.length} creados, ${sel.length - crear.length} actualizados`);
+    toast(`Programación aplicada: ${crear.length} creados, ${sel.length - crear.length - omitidas} actualizados${omitidas ? ` · ${omitidas} sin aplicar por la revisión de números` : ''}`);
     await cargar(); render();
-    if (quedan) { accionEnCurso = null; toast(`Quedan ${quedan} ${quedan === 1 ? 'viaje' : 'viajes'} por actualizar: la acción sigue pendiente`, 6000); }
+    if (quedan + omitidas) { accionEnCurso = null; toast(`Quedan ${quedan + omitidas} ${quedan + omitidas === 1 ? 'viaje' : 'viajes'} por actualizar: la acción sigue pendiente`, 6000); }
     else cerrarAccionEnCurso('programacion', `${rapido ? 'LogxIA aplicó la programación' : 'programación aplicada en el tablero'} (${crear.length} creados, ${sel.length - crear.length} actualizados)`);
     PROG = {c, ...compararProgramacion(c)}; pintarProgramacion();
   } catch(e) { toast('No se pudo aplicar: ' + e.message); }
@@ -6688,7 +6722,8 @@ async function aplicarDesdeCorreo(c){
   guardarUsuario(usuario);
   const ch = cambiosDeCorreo(c);
   // la fecha de descargue del correo es una cita (plan): no confirma que el paso se hizo
-  await guardarCambio(c.viajeId, ch, usuario + ' (desde correo ' + c.tipo + ')', {confirma: false});
+  const ok = await guardarCambio(c.viajeId, ch, usuario + ' (desde correo ' + c.tipo + ')', {confirma: false, origen: 'El correo ' + c.tipo});
+  if (ok === false) return;   // la revisión de números o la base no lo aceptaron: el correo sigue con sus cambios por aplicar
   Object.assign(c.enBase, ch); pintarBarrido();
 }
 async function crearExpoDesdeCorreo(c){
@@ -6873,8 +6908,11 @@ async function guardarSubirDoc(){
   const usuario = pedirUsuario(); if (!usuario || !SUBIR_ARCHIVO) return;
   const bk = $('#sdBooking').value.trim().toUpperCase(), fila = DOCS.porBooking.find(r => r.booking.toUpperCase() === bk);
   if (bk.length < 6) return toast('Escriba el booking');
-  const b = $('#sdGuardar'); b.disabled = true; b.textContent = 'Guardando…';
+  const b = $('#sdGuardar'); b.disabled = true; b.textContent = 'Leyendo y comparando…';
   try {
+    // controles.js: el booking se teclea; el documento se lee y se compara con el viaje de ese booking antes de guardarlo
+    if (!(await controlarDocumento(bk, SUBIR_ARCHIVO, $('#sdTipo').value, usuario))) { b.textContent = 'Guardar'; b.disabled = !SUBIR_ARCHIVO; return; }
+    b.textContent = 'Guardando…';
     const j = await api('subirDocumento', {booking: bk, tipo: $('#sdTipo').value, mes: fila ? fila.mes : $('#ovSubirDoc').dataset.mes, archivo: SUBIR_ARCHIVO, nota: $('#sdNota').value, usuario});
     if (!j.ok) throw new Error(j.error || 'error');
     DOCS.archivos.push(j.doc); $('#ovSubirDoc').classList.remove('open'); pintarDocumentos();
@@ -7452,6 +7490,90 @@ function htmlCargaConfirmada(v){
 }
 document.addEventListener('click', e => { const b = e.target.closest('[data-confirmar-carga]'); if (b) confirmarCargaViaje(b.dataset.confirmarCarga); });
 
+/* ---------- un solo control para todo dato que llega sin pasar por la ventana del viaje (14-nov, cierre de huecos de la fase 1) ----------
+ * Pasan por aquí: "Actualizar viaje" de un correo y el chat de LogxIA (guardarCambio, datos.js), la aprobación de datos de correos
+ * (propuestas.js y bandeja.js), el cuadro de programación (programacion.js) y 📎 Subir documento (documentos.js). Todos usan la misma
+ * ventana: verde sigue sin preguntar; amarillo pide "Guardar de todas formas"; rojo pide nombre y motivo. Cada revisión se anota en
+ * Controles. Solo AVISA: nunca cambia el dato. */
+const PUERTA_ESCRITURA = 'Anotar contenedor o sello', PUERTA_DOCUMENTO = 'Tirilla al subirla';
+let ESC = null;   // la revisión abierta: {v, res, titulo, sub, fuente, sujeto, guardar, resolver}
+function montarEscritura(){
+  if ($('#ovEsc')) return;
+  document.body.insertAdjacentHTML('beforeend', `<div class="ov" id="ovEsc" style="z-index:70"><div class="modal" role="dialog" aria-modal="true" style="width:min(720px,100%)">
+    <h3 id="escTitulo"></h3><div class="sub" id="escSub"></div>
+    <div id="escCuerpo" style="margin-top:10px"></div>
+    <div class="mfoot"><button class="btn" id="escVolver">Volver sin guardar</button><button class="btn primary" id="escSeguir">Guardar</button></div>
+  </div></div>`);
+  $('#escVolver').onclick = () => cerrarEscritura(false);
+  $('#ovEsc').onclick = e => { if (e.target.id === 'ovEsc') cerrarEscritura(false); };
+  $('#escSeguir').onclick = () => cerrarEscritura(true);
+}
+function pintarEscritura(){
+  const E = ESC; if (!E) return;
+  $('#escTitulo').textContent = E.titulo; $('#escSub').innerHTML = E.sub;
+  $('#escCuerpo').innerHTML = htmlRevision(E.res, {viaje: E.v, fuente: E.fuente, sujeto: E.sujeto, saltar: true, nota: E.nota || ''});
+  const rojo = E.res.nivel === 'rojo', b = $('#escSeguir'), bloqueado = rojo && !REV_SALTO;
+  b.disabled = bloqueado; b.textContent = rojo ? 'Guardar con el aviso saltado' : E.guardar;
+  b.title = bloqueado ? 'Hay un dato que no coincide: pulse "Seguir con mi nombre y motivo" o vuelva sin guardar' : '';
+}
+// abre la ventana y devuelve una promesa: {salto} si la persona siguió (salto = {motivo, detalle} solo si había rojo), null si volvió
+function pedirControl(o){
+  return new Promise(resolve => { montarEscritura(); ESC = Object.assign({resolver: resolve}, o); REV_SALTO = null; REV_REPINTAR = pintarEscritura; pintarEscritura(); $('#ovEsc').classList.add('open'); });
+}
+function cerrarEscritura(sigue){
+  const E = ESC; if (!E) return;
+  const salto = sigue && E.res.nivel === 'rojo' ? REV_SALTO : null;
+  ESC = null; REV_SALTO = null; REV_REPINTAR = null; $('#ovEsc').classList.remove('open');
+  E.resolver(sigue ? {salto} : null);
+}
+const resumenFilas = res => (res.filas || []).filter(f => f.nivel !== 'verde').map(f => f.msg || `${f.dato} ${f.texto}`).join(' · ') || 'Todo coincide';
+// anota la revisión (la pestaña Controles); si se siguió con un rojo, también quién y por qué (el servidor lo deja en el Historial del viaje)
+function anotarControlPantalla(puerta, v, res, usuario, origen, salto){
+  api('control', {puerta, nivel: res.nivel, resumen: `${origen}: ${resumenFilas(res)}`, viajeId: v ? v.id : '', usuario, ...(salto ? {salto} : {})}).catch(() => {});
+}
+/** Revisa lo que se va a escribir en un viaje sin pasar por su ventana. Devuelve true si se puede seguir. origen = de dónde viene el dato. */
+async function controlarEscritura(v, cambios, usuario, origen){
+  if (window.MODO_CLIENTE || !v) return true;
+  const res = revisarEscritura(v, cambios); if (!res.filas.length) return true;   // solo fechas, notas…: nada que comparar
+  if (res.nivel === 'verde') { anotarControlPantalla(PUERTA_ESCRITURA, v, res, usuario, origen, null); return true; }
+  const datos = res.filas.map(f => `${f.dato.toLowerCase()} <b>${esc(f.texto)}</b>`).join(' · ');
+  const r = await pedirControl({v, res, titulo: `Revise antes de guardar en ${v.id}`, sub: `${esc(origen)} quiere guardar: ${datos}`, fuente: 'Lo que se va a guardar', sujeto: 'El dato',
+    guardar: 'Guardar de todas formas', nota: res.nivel === 'rojo' ? 'Puede que el viaje esté bien y el correo mal, o al revés: confirme con el documento (carta de retiro, EIR, naviera). Nada se ha guardado.' : ''});
+  if (!r) return false;
+  anotarControlPantalla(PUERTA_ESCRITURA, v, res, usuario, origen, r.salto);
+  return true;
+}
+/** Lo mismo para datos aprobados de correos: P = [{viajeId, campo, valor}]. Una ventana por viaje que tenga algo que revisar. */
+async function controlarAprobacion(P, usuario, origen){
+  const por = {};
+  P.forEach(p => { if (NOMBRE_DATO_ESCRITURA[p.campo]) (por[p.viajeId] = por[p.viajeId] || {})[p.campo] = p.valor; });
+  for (const id of Object.keys(por)) if (!(await controlarEscritura(viajePorId(id), por[id], usuario, origen))) return false;
+  return true;
+}
+/** 📎 Subir documento: el booking se teclea, así que el documento se lee y se compara con el viaje de ESE booking antes de guardarlo. */
+const TIPOS_CON_VARIAS_RESERVAS = ['Order List', 'Orden logística', 'Otro'];   // listas: pueden nombrar otras reservas sin que sea un error
+async function controlarDocumento(booking, archivo, tipo, usuario){
+  if (window.MODO_CLIENTE) return true;
+  const bk = limpioId(booking), v = viajes.find(x => x.operacion === 'EXPO' && !x.padre && limpioId(x.booking) === bk) || viajes.find(x => x.operacion === 'EXPO' && limpioId(x.booking) === bk);
+  if (!v) return true;   // un booking que todavía no tiene viaje: no hay con qué comparar
+  let arch;
+  try { const j = await api('verificarArchivo', {id: v.id, archivo, soloLeer: true}); if (!j.ok) throw new Error(j.error || 'error');
+    arch = {nombre: j.nombre || archivo.nombre, texto: j.texto || '', leido: !!j.leido, yaGuardado: j.yaGuardado || ''}; }
+  catch (e) { arch = {nombre: archivo.nombre, texto: '', leido: false, yaGuardado: ''}; toast('No se pudo leer el documento en el servidor: se comparó solo el nombre del archivo', 5000); }
+  const res = revisarRespaldo(v, {}, {nombre: arch.nombre, texto: arch.texto, leido: arch.leido});
+  if (arch.yaGuardado && !new RegExp('booking\\s+' + bk + '$', 'i').test(arch.yaGuardado)) res.filas.push({campo: 'archivo', dato: 'Archivo', viaje: v.booking, texto: 'ya guardado en ' + arch.yaGuardado, nivel: 'rojo', msg: `Este mismo archivo ya está guardado en ${arch.yaGuardado}`});
+  if (arch.leido && !res.filas.some(f => f.campo === 'booking'))   // leyó el documento y la reserva no aparece (ni la propia ni la de otro viaje)
+    res.filas.push({campo: 'booking', dato: 'Booking', viaje: v.booking, texto: 'no aparece', nivel: 'amarillo', msg: `El documento no menciona la reserva ${v.booking}: confirme que es de ese booking`});
+  if (TIPOS_CON_VARIAS_RESERVAS.includes(tipo)) res.filas.forEach(f => { if (f.nivel === 'rojo' && f.campo !== 'archivo') { f.nivel = 'amarillo'; f.msg += ' (este tipo de documento puede traer varias reservas)'; } });
+  res.nivel = peorNivel(res.filas);
+  if (res.nivel === 'verde') { anotarControlPantalla(PUERTA_DOCUMENTO, v, res, usuario, 'Subir documento', null); return true; }
+  const r = await pedirControl({v, res, titulo: `Revise el documento antes de guardarlo en la reserva ${v.booking}`, sub: `${esc(tipo)} · ${esc(arch.nombre)} · viaje ${esc(v.id)}`, fuente: 'El documento dice', sujeto: 'El documento',
+    guardar: 'Guardar el documento de todas formas', nota: arch.leido ? '' : 'Solo se comparó el nombre del archivo: el contenido no se pudo leer. Confirme a mano la reserva.'});
+  if (!r) return false;
+  anotarControlPantalla(PUERTA_DOCUMENTO, v, res, usuario, 'Subir documento', r.salto);
+  return true;
+}
+
 /* ---------- puerta D (fase 2): la relación para el patio se arma desde los viajes ---------- */
 // "✉ Relación para el patio": reserva · placa · conductor de cada viaje que se retira ese día en ese patio. Los números no se teclean: salen
 // de los viajes. Se copia y se pega en el correo; no se envía desde aquí.
@@ -7696,7 +7818,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '6f631886e9';
+const VERSION_TABLERO = 'f1151e8528';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -9273,8 +9395,9 @@ async function confirmarChat(btn){
   }
   caja.querySelectorAll('button,input,select').forEach(x => x.disabled = true);
   // lo que propone el chat se guarda como plan: confirmar que un paso se hizo es un clic aparte (confirmar.js)
-  const ok = await guardarCambio(v.id, ch, usuario + ' (chat LogxIA)', {confirma: false});
-  if (ok !== false && causaSel && causaSel.texto) enviarCambio(v, mov, causaSel, usuario);
+  const ok = await guardarCambio(v.id, ch, usuario + ' (chat LogxIA)', {confirma: false, origen: 'El chat de LogxIA'});
+  if (ok === false) return burbuja('No guardé nada: el cambio no se aceptó o usted volvió en la revisión. Puede intentarlo de nuevo.', 'bot');
+  if (causaSel && causaSel.texto) enviarCambio(v, mov, causaSel, usuario);
   burbuja(`✅ Guardado en <b>${esc(v.placa || v.id)}</b>: ${Object.keys(ch).filter(k => k!=='reprog' && !/^plan/.test(k)).map(k => esc(etiquetaCampo(v, k))).join(', ')}${causaSel ? ` (causa: ${esc(causaSel.causa)})` : ''}. Queda en el Historial a nombre de ${esc(usuario)}.`, 'bot');
 }
 function cancelarChat(btn){ btn.closest('.pc').querySelectorAll('button,input,select').forEach(x => x.disabled = true); burbuja('Listo, no cambié nada.', 'bot'); }
@@ -10098,6 +10221,7 @@ async function decidirBandeja(id, aprobar, area, solo){
 // núcleo común (12-nov): escribe lo aprobado A, descarta lo rechazado R, y cierra la acción de LogxIA que trajo los datos si ya no le quedan
 async function aplicarDecision(v, area, A, R, usuario){
   const todos = [v, ...hijosDe(v)], P = [...A, ...R], limpio = ({clave, viajeId, campo, valor, evidencia, origen}) => ({clave, viajeId, campo, valor, evidencia, origen});
+  if (A.length && !(await controlarAprobacion(A, usuario, 'Los datos del correo'))) return;   // controles.js: números contra los demás viajes
   try {
     const j = await api('decidir', {usuario, aprobar: A.map(limpio), rechazar: R.map(limpio)});
     if (!j.ok) throw new Error(j.error || 'error');
