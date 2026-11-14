@@ -1258,6 +1258,21 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 /* 12-nov · las tablas de las tarjetas (quien.js y decisiones.js) parten el texto: la regla general de td es no partir y empujaba la tabla sobre los botones */
 .qh-tab td,.qh-tab th{white-space:normal;overflow-wrap:anywhere}
 .qh{max-width:100%;min-width:0;overflow-x:auto}
+
+/* ---------- controles.js · anticipación de errores: la revisión de números contra los documentos (14-nov-2026) ---------- */
+.ctl-box{border:1px solid var(--border);border-left:4px solid var(--warn);border-radius:10px;padding:10px 12px;background:var(--surface)}
+.ctl-box.ctl-rojo{border-left-color:var(--bad)}.ctl-box.ctl-verde{border-left-color:var(--ok)}
+.ctl-h{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.ctl-tag{display:inline-block;color:#fff;font-size:10.5px;font-weight:800;border-radius:6px;padding:2px 7px;letter-spacing:.02em;white-space:nowrap}
+.ctl-tab{border-collapse:collapse;width:100%;font-size:12.5px}
+.ctl-tab th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);text-align:left;padding:5px 7px;white-space:normal}
+.ctl-tab td{padding:6px 7px;border-top:1px solid var(--border);vertical-align:top;white-space:normal}
+.ctl-tab td.ctl-mal{font-weight:700;color:var(--bad)}
+.ctl-acc{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:flex-start}
+.ctl-salto{flex-basis:100%;display:grid;gap:6px;margin-top:4px;padding:8px;border:1px dashed var(--border);border-radius:8px}
+.ctl-salto.hidden{display:none}
+.ctl-salto select,.ctl-salto input{width:100%;border:1px solid var(--border);background:var(--surface);padding:7px 8px;border-radius:8px}
+
 </style>
 </head>
 <body>
@@ -1360,7 +1375,7 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
     <div class="card">
       <div class="toolbar" style="justify-content:space-between">
         <div><h2 style="margin:0">Calidad de datos</h2><div class="sub" id="errResumen"></div></div>
-        <div class="chips"><button class="btn solo-interno" id="btnBarrido" title="Herramienta de Calidad y Gerencia: lee ya mismo el buzón de calidad@ (últimos 2 días), sin esperar la lectura de cada hora; sirve para algo urgente o si LogxIA se atrasó">⟳ Buscar correos ahora</button><button class="btn" id="btnCopiarRep">Copiar reporte para correo</button><button class="btn" id="btnVerRep">Ver texto del reporte</button></div>
+        <div class="chips"><button class="btn solo-interno" id="btnBarrido" title="Herramienta de Calidad y Gerencia: lee ya mismo el buzón de calidad@ (últimos 2 días), sin esperar la lectura de cada hora; sirve para algo urgente o si LogxIA se atrasó">⟳ Buscar correos ahora</button><button class="btn" id="btnCopiarRep">Copiar reporte para correo</button><button class="btn" id="btnVerRep">Ver texto del reporte</button><button class="btn solo-interno" data-rev-texto="1" title="Pegue un correo o una relación antes de enviarlo: compara cada placa, contenedor y sello con el viaje. No envía ni cambia nada">🔎 Revisar un texto antes de enviarlo</button><button class="btn solo-interno" data-rev-medicion="1" title="Cuántas revisiones de tirillas y textos hubo, cuántos rojos y cuántos avisos se saltaron">📊 Control de números</button></div>
       </div>
       <div class="chips" id="errFiltros" style="margin:8px 0 12px"></div>
       <textarea id="repTexto" class="hidden" readonly style="width:100%;min-height:220px;font:12px/1.5 ui-monospace,Consolas,monospace;border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--surface-2);margin-bottom:12px"></textarea>
@@ -2117,6 +2132,150 @@ function notaHermanos(v){
   return 'ojo: ' + Object.values(por).map(({h, n}) => `${h.id}${h.contenedor ? ' (' + h.contenedor + ')' : ''}, ${v.operacion === 'EXPO' ? 'del mismo booking' : 'del mismo pedido'}, ya tiene ${n.join(' y ')}`).join(' · ');
 }
 
+/* ---------- verificación de números contra documentos (14-nov-2026, módulo de anticipación de errores, fase 1) ----------
+ * Dos casos reales: (1) Argentina, 7-nov: las placas de dos reservas del mismo embarque salieron al revés en el correo al patio y el
+ * sistema siguió con el plan; (2) EXPO-016, 12-nov: se subió la tirilla de un booking al viaje de otro booking casi
+ * igual y salió el aviso. Aquí se comparan los números de un texto (cuerpo de un correo, nombre y lectura de una tirilla, asunto
+ * del hilo) con el viaje y con los demás viajes. Solo AVISA: devuelve filas y un nivel; no cambia ningún dato.
+ * nivel: 'verde' coincide · 'amarillo' dudoso o no se pudo comprobar · 'rojo' el texto dice otra cosa. */
+// ISO 6346: dígito de control del contenedor; descarta lecturas malas de una foto
+function contenedorValido(c){
+  c = limpioId(c); if (!/^[A-Z]{4}\d{7}$/.test(c)) return false;
+  const v = ch => /\d/.test(ch) ? Number(ch) : [10, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 34, 35, 36, 37, 38]['ABCDEFGHIJKLMNOPQRSTUVWXYZ'.indexOf(ch)];
+  let s = 0; for (let i = 0; i < 10; i++) s += v(c[i]) * Math.pow(2, i);
+  return (s % 11) % 10 === Number(c[10]);
+}
+// los datos de un texto que parecen contenedor, placa, RBHY o sello (se escriben como los reconoce el equipo: mayúsculas, sin espacios)
+function numerosDeTexto(texto){
+  const T = String(texto || '').toUpperCase(), un = (re, f) => [...new Set([...T.matchAll(re)].map(f || (m => limpioId(m[0]))).filter(Boolean))];
+  return {
+    contenedor: un(/\b[A-Z]{4}[\s-]?\d{6}[\s-]?\d\b/g),
+    placa: un(/\b[A-Z]{3}[\s-]?\d{3}\b/g).filter(p => !/^(REM|BKG|NIT|SAE|VGM|OBD|DAE|CPE|DO)/.test(p) && !/^[A-Z]{4}\d/.test(p)),
+    rbhy: un(/\bRBHY[\s-]?\d{4,6}\b/g),
+    sello: un(/\bCO\d{7}\b/g),
+  };
+}
+// las "palabras" alfanuméricas de un texto, para comparar números enteros y no pedazos de otros números
+// y los pedazos separados por espacios sin guiones ni puntos ("02338261-1" → 023382611)
+const tokensDe = texto => new Set([...(String(texto || '').toUpperCase().match(/[A-Z0-9]+/g) || []), ...String(texto || '').split(/\s+/).map(limpioId).filter(Boolean)]);
+const CAMPOS_NUMERO = {EXPO: [['booking', 'Booking'], ['contenedor', 'Contenedor'], ['rbhy', 'RBHY'], ['sello', 'Sello'], ['placa', 'Placa']],
+  IMPO: [['pedido', 'Pedido'], ['do', 'DO'], ['contenedor', 'Contenedor'], ['placa', 'Placa']]};
+// el viaje abierto y real (no cancelado, no de prueba) con ese dato en esa casilla; los subviajes y el padre comparten datos: no cuentan
+function otrosViajesCon(v, campo, valor){
+  const x = limpioId(valor); if (x.length < 4) return [];
+  return viajes.filter(o => o.id !== v.id && o.operacion === v.operacion && situacion(o) !== 'Cancelado' && !esPrueba(o)
+    && o.padre !== v.id && v.padre !== o.id && !(v.padre && o.padre === v.padre) && limpioId(o[campo]) === x);
+}
+const NOMBRE_NIVEL = {verde: 'Coincide', amarillo: 'Revisar', rojo: 'No coincide'};
+const peorNivel = filas => filas.some(f => f.nivel === 'rojo') ? 'rojo' : filas.some(f => f.nivel === 'amarillo') ? 'amarillo' : 'verde';
+/** Compara los números de `texto` con el viaje v. op.fuente = qué es el texto ('la tirilla', 'el texto del correo', 'el asunto del hilo').
+ *  Devuelve {nivel, filas: [{campo, dato, viaje, texto, nivel, otro, msg}], propone}. propone = el viaje al que sí pertenece lo que
+ *  dice el texto (el que más datos suyos aparecen), solo cuando hay un rojo. */
+function revisarNumeros(v, texto, op = {}){
+  const fuente = op.fuente || 'el texto', filas = [], T = tokensDe(texto), N = numerosDeTexto(texto), votos = {};
+  const campos = CAMPOS_NUMERO[v.operacion] || [];
+  campos.forEach(([k, nombre]) => {
+    const mio = limpioId(v[k]);
+    // lo que el texto trae de ESA casilla: los pedazos del texto que son el dato de otro viaje, o que tienen su forma
+    const delOtro = [];
+    if (k !== 'placa') viajes.forEach(o => { const x = limpioId(o[k]);
+      if (x && x !== mio && (x.length >= 8 || (k === 'pedido' && x.length >= 5)) && T.has(x) && otrosViajesCon(v, k, x).some(z => z.id === o.id) && !delOtro.some(d => d.valor === x)) delOtro.push({valor: x, o}); });
+    const forma = N[k] || [];
+    if (mio && (T.has(mio) || forma.includes(mio))) {
+      filas.push({campo: k, dato: nombre, viaje: v[k], texto: v[k], nivel: 'verde'});
+      return;
+    }
+    delOtro.forEach(({valor, o}) => { votos[o.id] = (votos[o.id] || 0) + 1;
+      filas.push({campo: k, dato: nombre, viaje: v[k] || '—', texto: valor, nivel: 'rojo', otro: o.id, msg: `${valor} es ${nombre === 'Booking' ? 'el booking' : 'el dato'} de ${o.id}, no de ${v.id}`}); });
+    if (delOtro.length) return;
+    // un dato con la forma de esa casilla que no es el del viaje ni el de otro viaje conocido
+    const ajenos = forma.filter(x => x !== mio);
+    ajenos.forEach(x => {
+      if (k === 'contenedor' && !contenedorValido(x)) filas.push({campo: k, dato: nombre, viaje: v[k] || '—', texto: x, nivel: 'amarillo', msg: `${x} no pasa el dígito de control: puede ser una lectura mala de la foto`});
+      else if (mio) filas.push({campo: k, dato: nombre, viaje: v[k], texto: x, nivel: k === 'placa' ? 'amarillo' : 'rojo', msg: `${fuente} dice ${nombre.toLowerCase()} ${x} y el viaje tiene ${v[k]}`});
+      else filas.push({campo: k, dato: nombre, viaje: '—', texto: x, nivel: 'amarillo', msg: `${fuente} trae ${nombre.toLowerCase()} ${x} y el viaje todavía no tiene ninguno`});
+    });
+  });
+  // un booking (EXPO) o un pedido o DO (IMPO) escrito con la forma de uno que no está en ningún viaje conocido
+  if (v.operacion === 'EXPO') { const bk = limpioId(v.booking);
+    [...String(texto || '').toUpperCase().matchAll(/\b[A-Z]{4}\d{8}\b/g)].map(m => m[0]).filter((x, i, a) => a.indexOf(x) === i && x !== bk && !contenedorValido(x) && !filas.some(f => f.texto === x)).forEach(x => {
+      filas.push({campo: 'booking', dato: 'Booking', viaje: v.booking || '—', texto: x, nivel: bk ? 'rojo' : 'amarillo', msg: `${fuente} dice booking ${x} y el viaje tiene ${v.booking || 'ninguno'}`}); }); }
+  const rojas = filas.filter(f => f.nivel === 'rojo'), mejor = Object.keys(votos).sort((a, b) => votos[b] - votos[a])[0];
+  return {nivel: peorNivel(filas), filas, propone: rojas.length && mejor ? mejor : ''};
+}
+// un viaje abierto, ya asignado y que todavía no entregó: dos así con el mismo vehículo a pocos días es raro (EXPO-014 y EXPO-016: 4 días)
+const DIAS_VEHICULO_REPETIDO = 5;
+const enRutaAbierto = o => situacion(o) === 'Abierto' && !fueraDeRuta(o) && !esPrueba(o);
+const fechaClave = o => fechaPaso(o, 'fechaRetiro') || fechaPaso(o, 'fechaCargue') || fechaPaso(o, 'planCargue') || '';
+const diasEntre = (a, b) => Math.abs(Math.round((new Date(a + 'T12:00') - new Date(b + 'T12:00')) / 864e5));
+// otros viajes abiertos con el mismo vehículo y fechas a menos de DIAS_VEHICULO_REPETIDO días (o sin fecha): [viaje]
+function vehiculoRepetido(v){
+  if (!v || v.padre || !limpioId(v.placa) || !enRutaAbierto(v)) return [];
+  return viajes.filter(o => o.id !== v.id && !o.padre && o.operacion === v.operacion && limpioId(o.placa) === limpioId(v.placa) && enRutaAbierto(o)
+    && o.padre !== v.id && (!fechaClave(v) || !fechaClave(o) || diasEntre(fechaClave(v), fechaClave(o)) <= DIAS_VEHICULO_REPETIDO));
+}
+// otros viajes con exactamente el mismo peso (no cuentan los del mismo booking o pedido: dos contenedores iguales pueden pesar igual)
+function pesoRepetido(v){
+  const p = String(v && v.peso || '').replace(/[^\d.,]/g, ''); if (!v || v.padre || p.length < 5 || !enRutaAbierto(v)) return [];
+  const mismo = o => !!(v.booking && limpioId(o.booking) === limpioId(v.booking)) || (!!v.pedido && limpioId(o.pedido) === limpioId(v.pedido));
+  return viajes.filter(o => o.id !== v.id && !o.padre && o.operacion === v.operacion && String(o.peso || '').replace(/[^\d.,]/g, '') === p && enRutaAbierto(o) && !mismo(o));
+}
+// lo que debe ser cierto para recibir una tirilla: sin contenedor o sin el retiro y el llenado hechos no hay entrega
+function incoherenciaTirilla(v, contenedorEnTirilla){
+  const out = [];
+  if (!limpioId(v.contenedor) && !contenedorEnTirilla) out.push({campo: 'contenedor', dato: 'Contenedor', viaje: '—', texto: '—', nivel: v.operacion === 'EXPO' ? 'rojo' : 'amarillo', msg: `${v.id} no tiene contenedor: no se puede recibir una ${v.operacion === 'EXPO' ? 'entrega en puerto' : 'devolución'} sin él`});
+  // rojo si ese paso no pudo haber pasado (sin fecha o con fecha futura); amarillo si la fecha ya pasó pero nadie lo confirmó en el sistema
+  if (v.operacion === 'EXPO') [['fechaRetiro', 'el retiro del vacío'], ['fechaCargue', 'el llenado']].forEach(([c, n]) => {
+    const f = fechaPaso(v, c); if (cumplido(v, c)) return;
+    const imposible = !f || f > HOY;
+    out.push({campo: c, dato: 'Lógica del viaje', viaje: f ? `${fd(f)}, ${imposible ? 'todavía no llega' : 'sin confirmar'}` : 'sin fecha', texto: 'entrega en puerto', nivel: imposible ? 'rojo' : 'amarillo',
+      msg: imposible ? `Para entregar en puerto ya debieron pasar ${n}, y ${f ? 'su fecha es futura' : 'no tiene fecha'}` : `Falta confirmar ${n} en el viaje (la fecha ya pasó, pero nadie lo confirmó)`}); });
+  return out;
+}
+// la tirilla (o cualquier documento): su nombre y su texto contra el viaje y contra el hilo donde se responderá. hilo = asunto del hilo ('' = correo nuevo)
+function revisarTirilla(v, {nombre = '', texto = '', hilo = '', leido = true} = {}){
+  const doc = revisarNumeros(v, nombre + '\n' + texto, {fuente: 'La tirilla'}), filas = doc.filas.slice();
+  const nums = numerosDeTexto(nombre + '\n' + texto), contDoc = nums.contenedor.find(contenedorValido) || nums.contenedor[0] || '';
+  incoherenciaTirilla(v, contDoc).forEach(f => filas.push(f));
+  let propone = doc.propone;
+  // el hilo: el asunto debe nombrar algo de ESTE viaje, no de otro
+  if (hilo) { const h = revisarNumeros(v, hilo, {fuente: 'El hilo'});
+    h.filas.filter(f => f.nivel === 'rojo' && f.otro).forEach(f => filas.push({campo: 'hilo', dato: 'Hilo elegido', viaje: v.booking || v.pedido || v.id, texto: f.texto, nivel: 'rojo', otro: f.otro, msg: `El correo donde va a responder es de ${f.otro} (${f.texto}), no de ${v.id}`})); }
+  const rep = vehiculoRepetido(v);
+  if (rep.length) filas.push({campo: 'placa', dato: 'Vehículo', viaje: v.placa, texto: 'también en ' + rep.map(o => o.id).join(', '), nivel: 'amarillo', msg: `${v.placa} está asignada a ${rep.map(o => o.id).join(' y ')} al mismo tiempo`});
+  if (!leido && !filas.some(f => f.nivel === 'verde')) filas.unshift({campo: 'lectura', dato: 'Lectura', viaje: '', texto: 'no se pudo leer', nivel: 'amarillo', msg: 'No se pudo leer el archivo: confirme a mano el booking y el contenedor de la tirilla'});
+  return {nivel: peorNivel(filas), filas, propone};
+}
+/** Un texto cualquiera (relación al patio, correo al cliente, cuadro): línea por línea, qué viaje nombra y si la placa, el contenedor y
+ *  el sello que trae son los de ESE viaje. Un caso resuelto: "Reserva 11111111 con placa XYZ789" cuando el viaje tiene ABC123.
+ *  Una línea con dos reservas no se puede emparejar: sale amarillo y pide una reserva por línea. {nivel, filas, lineas} */
+function revisarRelacion(texto){
+  const reales = viajes.filter(o => situacion(o) !== 'Cancelado' && !esPrueba(o) && !o.padre), filas = [];
+  const claves = ['booking', 'rbhy', 'obd', 'contenedor', 'pedido', 'do'];
+  let lineas = 0;
+  String(texto || '').split(/\n|;/).forEach(l => {
+    const T = tokensDe(l), N = numerosDeTexto(l);
+    const duenos = reales.filter(o => claves.some(k => { const x = limpioId(o[k]); return (x.length >= 8 || (k === 'pedido' && x.length >= 5)) && T.has(x); }));
+    const datos = [['placa', 'Placa', N.placa], ['contenedor', 'Contenedor', N.contenedor], ['sello', 'Sello', N.sello]].filter(([, , xs]) => xs.length);
+    if (!duenos.length || !datos.length) return;
+    lineas++;
+    const refs = new Set(duenos.map(o => limpioId(o.booking || o.pedido || o.id)));
+    if (refs.size > 1) { filas.push({campo: 'linea', dato: 'Línea', viaje: [...refs].join(' / '), texto: l.trim().slice(0, 90), nivel: 'amarillo', msg: `La línea nombra ${refs.size} reservas o pedidos a la vez; no se puede saber qué placa va con cuál. Escriba una por línea`}); return; }
+    datos.forEach(([k, nombre, xs]) => xs.forEach(x => {
+      const propios = duenos.map(o => limpioId(o[k])).filter(Boolean);
+      if (k === 'contenedor' && !contenedorValido(x) && !propios.includes(x)) return filas.push({campo: k, dato: nombre, viaje: duenos.map(o => o[k] || '—').join(' / '), texto: x, nivel: 'amarillo', msg: `${x} no pasa el dígito de control del contenedor`});
+      if (propios.includes(x)) return filas.push({campo: k, dato: nombre, viaje: duenos.map(o => o[k]).filter(Boolean).join(' / '), texto: x, nivel: 'verde', otro: duenos[0].id});
+      if (!propios.length) return filas.push({campo: k, dato: nombre, viaje: '—', texto: x, nivel: 'amarillo', otro: duenos[0].id, msg: `${duenos.map(o => o.id).join(' / ')} todavía no tiene ${nombre.toLowerCase()}; el texto dice ${x}`});
+      const deOtro = otrosViajesCon(duenos[0], k, x)[0];
+      filas.push({campo: k, dato: nombre, viaje: propios.join(' / '), texto: x, nivel: 'rojo', otro: deOtro ? deOtro.id : '',
+        msg: `${duenos.map(o => o.id).join(' / ')} (${[...refs][0]}) tiene ${nombre.toLowerCase()} ${duenos.map(o => o[k]).filter(Boolean).join(' / ')}, no ${x}${deOtro ? `; ${x} es de ${deOtro.id}` : ''}`});
+    }));
+  });
+  return {nivel: peorNivel(filas), filas, lineas};
+}
+// 'La marca' del dato: el texto corto de una fila para la lista de revisión
+const textoFila = f => f.msg || `${f.dato}: ${f.texto}`;
+
 // IMPO: el patio de devolución (donde se entrega el contenedor VACÍO: patio de la naviera o del puerto) no es la bodega donde se
 // descarga la mercancía (confirmado por Entrapetrol el 4-nov: IMPO-006/007 quedaron con "AGV bodega 11", el sitio de descargue)
 const BODEGAS_CONOCIDAS = /\bbodega\b|solistica|suppla|cortijo|agecolda/i;
@@ -2261,6 +2420,13 @@ function validar(v){
   if (!sa.length && expo && v.etd && v.etd < HOY && !v.fechaEntregaPuerto && !['Cerrado','Cancelado'].includes(sit)) add('Media','Fecha de entrega en puerto',`ETD vencido (${fd(v.etd)}) y falta la fecha de entrega en puerto`, 'Error', `El buque zarpó el ${fd(v.etd)}: el contenedor ya debió entregarse en puerto${v.tirillaEntrega ? ' (hay tirilla: la fecha está en ella)' : ''}`);
   if (primerEvento(v) && primerEvento(v) <= HOY){
     if (!v.observacion) add('Media',C.obs,'Viaje en curso sin observación de status', 'Error', `El viaje empezó el ${fd(primerEvento(v))}`);
+  }
+  // 14-nov (anticipación de errores): el mismo vehículo o el mismo peso exacto en dos viajes abiertos (dos viajes casi gemelos con la misma
+  // placa; dos viajes con el mismo peso exacto). Puede ser cierto: por eso es una alerta para revisar, no un error
+  if (!['Cerrado', 'Cancelado'].includes(sit)) {
+    const rv = vehiculoRepetido(v), rp = pesoRepetido(v);
+    if (rv.length) add('Media', 'Placa', `Revise: el vehículo ${v.placa} está también en ${rv.map(o => o.id).join(' y ')} (abierto, fechas muy cercanas)`, 'Alerta', 'Un mismo vehículo no hace dos viajes abiertos el mismo día: puede ser un dato en el viaje equivocado');
+    if (rp.length) add('Media', 'Peso bruto', `Revise: el peso ${v.peso} kg es exactamente el mismo de ${rp.map(o => o.id).join(' y ')}`, 'Alerta', 'Dos cargas con el mismo peso exacto pueden ser dos viajes con los datos cruzados: confirme con la planilla de cada uno');
   }
   return e;
 }
@@ -7010,6 +7176,121 @@ async function imagenEnVivo(){
   finally { b.disabled = false; b.textContent = antes; }
 }
 montarEnVivo();
+/* ---------- controles.js · anticipación de errores: la revisión de números contra los documentos (14-nov-2026, fase 1) ----------
+ * Capa: pantalla (solo el equipo). Dos casos reales (docs/ANTICIPACION-ERRORES.md): las placas de las reservas de Argentina salieron al revés
+ * en un correo al patio, y la tirilla de EXPO-014 se subió a EXPO-016. Aquí vive lo que se ve: la tabla "el viaje dice / el documento
+ * dice" con su semáforo (verde coincide · amarillo revisar · rojo no coincide), el salto del aviso con nombre y motivo, la ventana
+ * "Revisar un texto antes de enviarlo" (para lo que se escribe en Gmail) y la medición. Las reglas están en el dominio (revisarTirilla,
+ * revisarRelacion); el servidor (Controles.gs) lee el archivo y anota cada revisión en la pestaña Controles.
+ * FASE 1 = SOLO AVISA: un rojo se salta con nombre y motivo (queda en el Historial del viaje); nada se bloquea sin que alguien lo decida
+ * con las cifras de la medición. Nunca cambia un dato: propone, y una persona elige. */
+const COLOR_NIVEL = {verde: 'var(--ok)', amarillo: '#b7791f', rojo: 'var(--bad)'};
+const MOTIVOS_CONTROL = ['El documento tiene el error', 'El sistema leyó mal el documento', 'Cambio acordado con el patio o la naviera', 'Otro motivo'];
+const nivelTag = n => `<span class="ctl-tag" style="background:${COLOR_NIVEL[n] || COLOR_NIVEL.amarillo}">${esc(NOMBRE_NIVEL[n] || n).toUpperCase()}</span>`;
+// el salto del aviso en curso (uno por ventana abierta): {motivo, detalle} cuando la persona decidió seguir con su nombre
+let REV_SALTO = null;
+
+// la tabla de una revisión. res = {nivel, filas, propone}; o.viaje = el viaje que se está revisando; o.fuente = de dónde viene el texto
+function htmlRevision(res, o = {}){
+  if (!res) return '';
+  const filas = res.filas || [], v = o.viaje || {};
+  const dato = f => f.nivel === 'verde' ? '' : `<div class="sub">${esc(f.msg || '')}</div>`;
+  const cuerpo = filas.length ? `<table class="ctl-tab"><tr><th></th><th>Qué se revisó</th><th>El viaje dice</th><th>${esc(o.fuente || 'El texto dice')}</th></tr>${filas.map(f => `<tr>
+      <td>${nivelTag(f.nivel)}</td><td>${esc(f.dato)}${dato(f)}</td><td>${esc(f.viaje || '—')}</td><td${f.nivel === 'rojo' ? ' class="ctl-mal"' : ''}>${esc(f.texto || '—')}</td></tr>`).join('')}</table>`
+    : '<div class="sub">No se encontró ningún número para comparar.</div>';
+  const titulo = {verde: 'Todo coincide con el viaje', amarillo: 'Revise antes de seguir', rojo: `${o.sujeto || 'El texto'} no coincide con ${v.id || 'el viaje'}`}[res.nivel] || '';
+  const pasar = res.propone && o.pasar ? `<button type="button" class="btn primary" data-rev-pasar="${esc(res.propone)}">${esc(o.pasar(res.propone))}</button>` : '';
+  const saltar = res.nivel === 'rojo' && o.saltar ? (REV_SALTO ? `<div class="sub" style="margin-top:8px">✓ Va a seguir con el aviso saltado por <b>${esc(usuarioActual() || 'usted')}</b> · ${esc(REV_SALTO.motivo)}${REV_SALTO.detalle ? ' · ' + esc(REV_SALTO.detalle) : ''} <button type="button" class="link" data-rev-salto-no="1">Quitar el salto</button></div>`
+    : `<button type="button" class="btn" data-rev-saltar="1">Seguir con mi nombre y motivo</button>
+      <div class="ctl-salto hidden" id="revSaltoForm"><div class="sub">Quién lo hace: <b>${esc(usuarioActual() || 'elija quién es')}</b> (queda en el Historial del viaje y en la medición)</div>
+        <select id="revMotivo">${MOTIVOS_CONTROL.map(m => `<option>${esc(m)}</option>`).join('')}</select>
+        <input id="revDetalle" placeholder="Explique en una línea (obligatorio)" maxlength="200">
+        <button type="button" class="btn primary" data-rev-salto-ok="1">Seguir con este motivo</button> <button type="button" class="btn" data-rev-salto-no="1">Volver</button></div>`) : '';
+  return `<div class="ctl-box ctl-${res.nivel}"><div class="ctl-h">${nivelTag(res.nivel)} <b>${esc(titulo)}</b></div>${cuerpo}
+    ${o.nota ? `<div class="sub" style="margin-top:6px">${o.nota}</div>` : ''}
+    ${pasar || saltar ? `<div class="ctl-acc">${pasar}${saltar}</div>` : ''}</div>`;
+}
+// lo que se anota en Controles (Controles.gs registrarControl_): nivel, resumen corto y, si hubo, el salto
+function controlParaGuardar(res, puerta){
+  if (!res) return null;
+  const mal = (res.filas || []).filter(f => f.nivel !== 'verde').map(f => f.msg || `${f.dato} ${f.texto}`).join(' · ');
+  return {puerta, nivel: res.nivel, resumen: mal || 'Todo coincide', salto: res.nivel === 'rojo' && REV_SALTO ? REV_SALTO : null};
+}
+// los botones comunes a toda revisión mostrada en pantalla: saltar el aviso con motivo (guardado de la ventana que la use en alSalto)
+let REV_ALCAMBIAR = null;
+document.addEventListener('click', e => {
+  const t = e.target;
+  if (t.closest('[data-rev-saltar]')) { const f = $('#revSaltoForm'); if (f) { f.classList.remove('hidden'); t.closest('[data-rev-saltar]').classList.add('hidden'); const d = $('#revDetalle'); if (d) d.focus(); } return; }
+  if (t.closest('[data-rev-salto-ok]')) {
+    const detalle = ($('#revDetalle').value || '').trim();
+    if (!pedirUsuario()) return;
+    if (detalle.length < 4) return toast('Escriba en una línea por qué sigue');
+    REV_SALTO = {motivo: $('#revMotivo').value, detalle}; if (REV_ALCAMBIAR) REV_ALCAMBIAR(); return;
+  }
+  if (t.closest('[data-rev-salto-no]')) { REV_SALTO = null; if (REV_ALCAMBIAR) REV_ALCAMBIAR(); }
+});
+
+/* ---------- 🔎 Revisar un texto antes de enviarlo (puerta para lo que se escribe a mano: relación al patio, cuadros, correos) ---------- */
+function montarRevisarTexto(){
+  if ($('#ovRevTexto')) return;
+  document.body.insertAdjacentHTML('beforeend', `<div class="ov" id="ovRevTexto"><div class="modal" role="dialog" aria-modal="true" style="width:min(760px,100%)">
+    <h3>🔎 Revisar un texto antes de enviarlo</h3>
+    <div class="sub">Pegue el texto del correo o del WhatsApp (por ejemplo la relación de placas para el patio). El sistema compara cada placa, contenedor y sello con el viaje de esa reserva o pedido. No envía ni cambia nada.</div>
+    <textarea id="rtTexto" style="width:100%;min-height:150px;margin-top:10px;box-sizing:border-box" placeholder="Reserva 11111111 con placa ABC123&#10;Reserva 22222222 con placa XYZ789"></textarea>
+    <div class="sub">Una reserva o pedido por línea. Si una línea nombra dos reservas no se puede saber qué placa va con cuál.</div>
+    <div id="rtResultado" style="margin-top:10px"></div>
+    <div class="mfoot"><button class="btn" id="rtCerrar">Cerrar</button><button class="btn primary" id="rtRevisar">Revisar los números</button></div>
+  </div></div>`);
+  $('#rtCerrar').onclick = () => $('#ovRevTexto').classList.remove('open');
+  $('#ovRevTexto').onclick = e => { if (e.target.id === 'ovRevTexto') $('#ovRevTexto').classList.remove('open'); };
+  $('#rtRevisar').onclick = revisarTextoPegado;
+}
+function revisarTextoPegado(){
+  const texto = $('#rtTexto').value.trim(), usuario = pedirUsuario(); if (!usuario) return;
+  if (!texto) return toast('Pegue el texto que va a enviar');
+  const r = revisarRelacion(texto);   // las reglas del dominio, con los viajes que ya tiene el tablero
+  $('#rtResultado').innerHTML = r.filas.length ? htmlRevision(r, {fuente: 'El texto dice', sujeto: 'El texto', nota: r.nivel === 'rojo' ? 'Puede que el viaje esté mal y el texto esté bien: compare con el documento (carta de retiro, EIR) y corrija el viaje o el texto. Nada se cambió.' : ''})
+    : '<div class="ctl-box ctl-amarillo"><div class="ctl-h">' + nivelTag('amarillo') + ' <b>No se encontró ninguna reserva o pedido de un viaje con placas, contenedores o sellos en la misma línea</b></div><div class="sub">El texto no se pudo comparar: revise a mano, o escriba la reserva y la placa en la misma línea.</div></div>';
+  // se anota para la medición (no guarda el texto)
+  const mal = r.filas.filter(f => f.nivel !== 'verde').map(f => f.msg || `${f.dato} ${f.texto}`).join(' · ');
+  api('control', {puerta: 'Revisar un texto', nivel: r.filas.length ? r.nivel : 'amarillo', resumen: mal || (r.filas.length ? 'Todo coincide' : 'No se pudo comparar'), viajeId: (r.filas.find(f => f.otro) || {}).otro || '', usuario}).catch(() => {});
+}
+document.addEventListener('click', e => { if (e.target.closest('[data-rev-texto]')) { montarRevisarTexto(); $('#ovRevTexto').classList.add('open'); $('#rtTexto').focus(); } });
+
+/* ---------- 📊 Control de números · medición (Calidad de datos) ---------- */
+const lunesDe = f => { const d = new Date(String(f).slice(0, 10) + 'T12:00'); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.toISOString().slice(0, 10); };
+function resumenControles(filas){
+  const sem = {};
+  filas.forEach(f => { const k = lunesDe(f.fecha), s = sem[k] || (sem[k] = {revisadas: 0, amarillos: 0, rojos: 0, saltos: 0, falsas: 0, puertas: {}});
+    s.revisadas++; if (f.nivel === 'amarillo') s.amarillos++; if (f.nivel === 'rojo') s.rojos++; if (f.salto) s.saltos++; if (f.salto && /ley[oó] mal/i.test(f.motivo)) s.falsas++;
+    const p = s.puertas[f.puerta] || (s.puertas[f.puerta] = {revisadas: 0, rojos: 0, falsas: 0}); p.revisadas++; if (f.nivel === 'rojo') p.rojos++; if (f.salto && /ley[oó] mal/i.test(f.motivo)) p.falsas++; });
+  return sem;
+}
+function montarMedicionControles(){
+  if ($('#ovMedControles')) return;
+  document.body.insertAdjacentHTML('beforeend', `<div class="ov" id="ovMedControles"><div class="modal" role="dialog" aria-modal="true" style="width:min(780px,100%)">
+    <h3>📊 Control de números · lo que se atrapó</h3>
+    <div class="sub">Cada revisión de una tirilla o de un texto queda anotada. Con estas cifras se decide qué se bloquea: un rojo se bloquea solo si casi nunca es falsa alarma.</div>
+    <div id="mcCuerpo" style="margin-top:10px">Cargando…</div>
+    <div class="mfoot"><button class="btn" id="mcCerrar">Cerrar</button></div></div></div>`);
+  $('#mcCerrar').onclick = () => $('#ovMedControles').classList.remove('open');
+  $('#ovMedControles').onclick = e => { if (e.target.id === 'ovMedControles') $('#ovMedControles').classList.remove('open'); };
+}
+async function abrirMedicionControles(){
+  montarMedicionControles(); $('#ovMedControles').classList.add('open'); $('#mcCuerpo').textContent = 'Cargando…';
+  try {
+    const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=controles&dias=60&clave=' + encodeURIComponent(claveActual()))).json();
+    if (!j.ok) throw new Error(j.error || 'error');
+    if (!j.filas.length) { $('#mcCuerpo').innerHTML = '<div class="sub">Todavía no hay revisiones anotadas. Salen cuando se sube una tirilla con 📎, se envía un aviso o se usa "Revisar un texto".</div>'; return; }
+    const sem = resumenControles(j.filas), semanas = Object.keys(sem).sort().reverse();
+    $('#mcCuerpo').innerHTML = `<table class="ctl-tab"><tr><th>Semana del</th><th>Revisiones</th><th>Amarillos</th><th>Rojos</th><th>Saltados</th><th>Falsas alarmas</th></tr>${semanas.map(k => { const s = sem[k];
+      return `<tr><td>${esc(fd(k))}</td><td>${s.revisadas}</td><td>${s.amarillos}</td><td>${s.rojos}</td><td>${s.saltos}</td><td>${s.falsas}</td></tr>`; }).join('')}</table>
+      <div class="sub" style="margin-top:6px">Falsa alarma = alguien siguió con el motivo "el sistema leyó mal el documento".</div>
+      <h4 style="margin:14px 0 4px">Últimos avisos en rojo</h4>
+      ${j.filas.filter(f => f.nivel === 'rojo').slice(-8).reverse().map(f => `<div class="sub" style="margin:3px 0"><b>${esc(f.fecha.slice(5, 16).replace('T', ' '))}</b> · ${esc(f.puerta)} · ${esc(f.viaje || '—')} · ${esc(f.resultado)}${f.salto ? ` <b>→ lo saltó ${esc(f.quien)}: ${esc(f.motivo)}${f.detalle ? ' — ' + esc(f.detalle) : ''}</b>` : ''}</div>`).join('') || '<div class="sub">Ninguno.</div>'}`;
+  } catch (e) { $('#mcCuerpo').innerHTML = `<div class="sub">No se pudo cargar: ${esc(e.message)}</div>`; }
+}
+document.addEventListener('click', e => { if (e.target.closest('[data-rev-medicion]')) abrirMedicionControles(); });
 /* ---------- devolucion.js · 📎 Tirilla y aviso: devolución del vacío (IMPO) y entrega del lleno en puerto (EXPO) (8-nov-2026) ----------
  * Capa: pantalla (solo el equipo). Antes, Mogollón respondía el correo del pedido con la tirilla y el sistema lo leía; ahora es al
  * revés: en el viaje (debajo de "Fecha de devolución", confirmar.js estadoPaso) se sube la tirilla (foto o PDF) con la fecha y el
@@ -7041,6 +7322,7 @@ function montarDevolucion(){
     <div class="fgrid3" id="devSubida" style="margin-top:10px"><div><label id="devFechaLbl">Fecha de devolución</label><input type="date" id="devFecha"></div>
       <div style="grid-column:span 2"><label>Tirilla (foto o PDF)</label><input type="file" id="devArchivo" accept="image/*,application/pdf"></div></div>
     <div class="sub" id="devArchivoTxt"></div>
+    <div id="devRev" style="margin-top:10px"></div>
     <label id="devEnviarLbl" style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="devEnviar" checked> <b>Enviar el aviso con la tirilla</b></label>
     <div id="devCorreo" style="margin-top:6px"><label style="margin:0">Responder en el correo del proceso</label>
       <select id="devHilo" style="width:100%;margin-top:4px"><option>Buscando los correos del pedido…</option></select>
@@ -7054,12 +7336,14 @@ function montarDevolucion(){
   $('#devCerrar').onclick = () => $('#ovDev').classList.remove('open');
   $('#ovDev').onclick = e => { if (e.target.id === 'ovDev') $('#ovDev').classList.remove('open'); };
   $('#devEnviar').onchange = () => { $('#devCorreo').style.display = $('#devEnviar').checked ? '' : 'none'; $('#devGuardar').textContent = $('#devEnviar').checked ? 'Guardar y enviar' : 'Solo guardar'; };
-  $('#devArchivo').onchange = async () => { const f = $('#devArchivo').files[0]; DEV_ARCHIVO = null; $('#devGuardar').disabled = true;
+  $('#devArchivo').onchange = async () => { const f = $('#devArchivo').files[0]; DEV_ARCHIVO = null; DEV_ARCH = null; REV_SALTO = null; actualizarBotonDev(); pintarRevisionDev();
     if (!f) return;
-    try { DEV_ARCHIVO = await leerTirilla(f); $('#devArchivoTxt').textContent = `✓ ${DEV_ARCHIVO.nombre} · ${Math.round(DEV_ARCHIVO.base64.length * 0.75 / 1024)} KB`; $('#devGuardar').disabled = false; }
-    catch (e) { $('#devArchivoTxt').textContent = 'No se pudo leer el archivo'; } };
+    try { DEV_ARCHIVO = await leerTirilla(f); $('#devArchivoTxt').textContent = `✓ ${DEV_ARCHIVO.nombre} · ${Math.round(DEV_ARCHIVO.base64.length * 0.75 / 1024)} KB`; verificarTirillaDev(); }
+    catch (e) { $('#devArchivoTxt').textContent = 'No se pudo leer el archivo'; } actualizarBotonDev(); };
+  let _t; $('#devTexto').oninput = () => { clearTimeout(_t); _t = setTimeout(pintarRevisionDev, 350); };
+  REV_ALCAMBIAR = () => { pintarRevisionDev(); };
   $('#devGuardar').onclick = guardarDevolucion;
-  $('#devHilo').onchange = pintarParaDevolucion;
+  $('#devHilo').onchange = () => { pintarParaDevolucion(); pintarRevisionDev(); };
   document.addEventListener('click', e => { const b = e.target.closest('[data-dev]'); if (b) abrirDevolucion(b.dataset.dev, !!b.dataset.solo, b.dataset.modo); });
 }
 // las fotos grandes se reducen (como en Despacho); el PDF va tal cual
@@ -7079,11 +7363,11 @@ function leerTirilla(file){
 // modo 'viaje' (13-nov): el aviso de "su solicitud ha sido procesada" al crear una importación desde un correo. Misma ventana y mismos
 // destinatarios que el aviso de la tirilla, sin archivo ni fecha; solo envía lo que el equipo vio y marcó (Cliente.gs enviarAvisoViajeNuevo_)
 let DEV_MODO = '';
-async function abrirDevolucion(id, solo, modo){
+async function abrirDevolucion(id, solo, modo, conservar){
   const v = viajePorId(id); if (!v) return toast('El tablero aún no muestra ese viaje: recargue la página e intente de nuevo');
   if (!pedirUsuario()) return;
   DEV_MODO = modo || ''; solo = !!solo || DEV_MODO === 'viaje';
-  DEV_ID = id; DEV_ARCHIVO = null; DEV_SOLO = !!solo;
+  DEV_ID = id; DEV_ARCHIVO = null; DEV_ARCH = null; DEV_LEYENDO = false; REV_SALTO = null; DEV_SOLO = !!solo;
   const expo = esTirillaExpo(v), fv = expo ? v.fechaEntregaPuerto : v.fechaDevolucion, nuevo = DEV_MODO === 'viaje';
   $('#devTitulo').textContent = nuevo ? '✉ Avisar que el viaje ya está creado' : solo ? '✉ Aviso con la tirilla ya guardada' : expo ? '📎 Entregado en puerto · tirilla y aviso' : '📎 Vacío devuelto · tirilla y aviso';
   $('#devCerrar').textContent = nuevo ? 'Ahora no' : 'Cancelar';
@@ -7092,7 +7376,7 @@ async function abrirDevolucion(id, solo, modo){
   $('#devViaje').textContent = nuevo ? `${v.id} · pedido ${v.pedido || '—'} · DO ${v.do || '—'} · ${v.empresa || 'sin empresa'}`
     : `${refCorta(v) || v.id} · contenedor ${v.contenedor || '—'} · ${expo ? 'puerto ' + (v.puerto || 'sin dato') + (v.pais ? ' · ' + v.pais : '') : v.patio || 'patio sin dato'}`;
   $('#devFecha').value = fv && fv <= HOY ? fv : HOY; $('#devFecha').max = HOY;
-  $('#devArchivo').value = ''; $('#devArchivoTxt').textContent = ''; $('#devGuardar').disabled = true;
+  $('#devArchivo').value = ''; $('#devArchivoTxt').textContent = ''; $('#devRev').innerHTML = ''; actualizarBotonDev();
   $('#devEnviar').checked = true; $('#devEnviar').onchange(); if (solo) $('#devGuardar').textContent = 'Enviar aviso';
   $('#devHilo').innerHTML = '<option>Buscando los correos del pedido…</option>'; $('#devHilo').disabled = true; $('#devPara').textContent = ''; $('#devTexto').value = '';
   $('#ovDev').classList.add('open');
@@ -7106,7 +7390,8 @@ async function abrirDevolucion(id, solo, modo){
     $('#devHilo').innerHTML = DEV_DEST.map((d, i) => `<option value="${i}">${esc(d.etiqueta)}</option>`).join(''); $('#devHilo').disabled = false;
     pintarParaDevolucion();
     $('#devTexto').value = j.texto;
-    if (DEV_SOLO) $('#devGuardar').disabled = false;
+    if (conservar) { DEV_ARCHIVO = conservar.archivo; DEV_ARCH = conservar.arch; $('#devArchivoTxt').textContent = `✓ ${DEV_ARCHIVO.nombre} · pasada desde otro viaje (vuelva a elegir el archivo si quiere cambiarla)`; }
+    pintarRevisionDev(); actualizarBotonDev();
   } catch (e) { $('#devHilo').innerHTML = '<option>No se pudo buscar el correo</option>'; $('#devPara').textContent = 'No se pudo armar el aviso: ' + e.message + '. Puede guardar sin enviar.'; $('#devEnviar').checked = false; $('#devEnviar').onchange(); }
 }
 let DEV_DEST = [];
@@ -7130,11 +7415,12 @@ async function guardarDevolucion(){
   b.disabled = true; b.textContent = enviar ? 'Guardando y enviando…' : 'Guardando…';
   try {
     const d = DEV_DEST[+$('#devHilo').value] || {id: ''};
-    const dest = destinatariosDevolucion();
+    const dest = destinatariosDevolucion(), rev = revisionDev(), control = controlParaGuardar(rev, DEV_ARCHIVO ? 'Tirilla al subirla' : 'Texto antes de enviar');
+    if (rev && rev.nivel === 'rojo' && !REV_SALTO) { b.disabled = false; actualizarBotonDev(); return toast('El control dice que no coincide: pase la tirilla al viaje correcto o siga con su nombre y motivo'); }
     if (enviar && !dest.length) { b.disabled = false; $('#devEnviar').onchange(); return toast('Marque al menos un destinatario'); }
-    const j = DEV_MODO === 'viaje' ? await api('avisoViajeNuevo', {id: DEV_ID, texto: $('#devTexto').value, hiloId: d.id || '', destinatarios: dest, usuario})
-      : await api('devolucion', DEV_SOLO ? {id: DEV_ID, soloAviso: true, texto: $('#devTexto').value, enviar: true, hiloId: d.id || '', destinatarios: dest, usuario}
-      : {id: DEV_ID, fecha: $('#devFecha').value, archivo: DEV_ARCHIVO, texto: $('#devTexto').value, enviar, hiloId: d.id || '', destinatarios: dest, usuario});
+    const j = DEV_MODO === 'viaje' ? await api('avisoViajeNuevo', {id: DEV_ID, texto: $('#devTexto').value, hiloId: d.id || '', destinatarios: dest, usuario, control})
+      : await api('devolucion', DEV_SOLO ? {id: DEV_ID, soloAviso: true, texto: $('#devTexto').value, enviar: true, hiloId: d.id || '', destinatarios: dest, usuario, control}
+      : {id: DEV_ID, fecha: $('#devFecha').value, archivo: DEV_ARCHIVO, texto: $('#devTexto').value, enviar, hiloId: d.id || '', destinatarios: dest, usuario, control});
     if (!j.ok) throw new Error(j.error || 'error');
     if (DEV_SOLO) { if (!j.envio || !j.envio.ok) throw new Error(j.envio ? j.envio.error : 'no salió'); $('#ovDev').classList.remove('open'); toast(DEV_MODO === 'viaje' ? '✓ Aviso enviado: el viaje quedó creado y avisado' : '✓ Aviso enviado con la tirilla', 6000); await cargar(); render(); if (editId === DEV_ID) abrir(DEV_ID); b.disabled = false; return; }
     $('#ovDev').classList.remove('open');
@@ -7142,8 +7428,61 @@ async function guardarDevolucion(){
     toast(j.envio ? (j.envio.ok ? `✓ ${hecho} y aviso enviado` + (j.envio.hilo ? ' en el correo del proceso' : '') : '✓ Guardado, pero el aviso no salió: ' + j.envio.error) : `✓ ${hecho} con su tirilla`, 6000);
     await cargar(); render(); if (editId === DEV_ID) abrir(DEV_ID);
   } catch (e) { toast('No se pudo guardar: ' + e.message, 6000); }
-  b.disabled = false; $('#devEnviar').onchange();
+  b.disabled = false; $('#devEnviar').onchange(); actualizarBotonDev();
 }
+/* ---------- anticipación de errores (controles.js, 14-nov): la revisión de la tirilla y del texto antes de guardar y enviar ----------
+ * Fase 1: solo avisa. Un rojo se salta con nombre y motivo; un amarillo no frena. Ver docs/ANTICIPACION-ERRORES.md. */
+let DEV_ARCH = null;   // lo que dijo el servidor al leer el archivo: {nombre, texto, leido, extra: filas del archivo repetido} (null = aún no)
+let DEV_LEYENDO = false;
+const asuntoHiloDev = () => { const d = DEV_DEST[+$('#devHilo').value]; return d && d.id ? d.hilo : ''; };
+// la revisión de ahora: la tirilla (nombre y texto leído) contra el viaje y el hilo, más los números del texto del aviso
+function revisionDev(){
+  const v = viajePorId(DEV_ID); if (!v) return null;
+  const txt = $('#devTexto') ? $('#devTexto').value : '';
+  let res;
+  if (DEV_ARCHIVO && DEV_ARCH) { res = revisarTirilla(v, {nombre: DEV_ARCH.nombre, texto: DEV_ARCH.texto, hilo: asuntoHiloDev(), leido: DEV_ARCH.leido}); (DEV_ARCH.extra || []).forEach(f => res.filas.push(f)); }
+  else if (DEV_ARCHIVO) res = revisarTirilla(v, {nombre: DEV_ARCHIVO.nombre, texto: '', hilo: asuntoHiloDev(), leido: false});
+  else res = {nivel: 'verde', filas: [], propone: ''};
+  if (txt.trim()) { const t = revisarNumeros(v, txt, {fuente: 'El texto del aviso'});
+    t.filas.filter(f => f.nivel !== 'verde' && !res.filas.some(g => g.texto === f.texto && g.campo === f.campo)).forEach(f => res.filas.push({...f, dato: 'Texto del aviso · ' + f.dato}));
+    if (!res.propone) res.propone = t.propone; }
+  if (DEV_ARCH && DEV_ARCH.extra && DEV_ARCH.extra.some(f => f.otro) && !res.propone) res.propone = DEV_ARCH.extra.find(f => f.otro).otro;
+  res.nivel = peorNivel(res.filas);
+  return res;
+}
+function pintarRevisionDev(){
+  const cont = $('#devRev'); if (!cont) return;
+  if (DEV_LEYENDO) { cont.innerHTML = '<div class="sub">⏳ Leyendo la tirilla y comparándola con el viaje…</div>'; return; }
+  const v = viajePorId(DEV_ID), res = revisionDev();
+  if (!v || !res || (!res.filas.length && !DEV_ARCHIVO)) { cont.innerHTML = ''; actualizarBotonDev(); return; }
+  if (res.nivel !== 'rojo') REV_SALTO = null;
+  const sinLeer = DEV_ARCHIVO && DEV_ARCH && !DEV_ARCH.leido;
+  cont.innerHTML = htmlRevision(res, {viaje: v, fuente: DEV_ARCHIVO ? 'La tirilla dice' : 'El texto dice', sujeto: DEV_ARCHIVO ? 'La tirilla' : 'El texto del aviso', saltar: true,
+    pasar: id => `Pasar la tirilla a ${id}`,
+    nota: sinLeer ? 'Solo se comparó el nombre del archivo: el contenido no se pudo leer (foto borrosa o cortada). Confirme a mano el booking y el contenedor de la tirilla.' : ''});
+  actualizarBotonDev();
+}
+async function verificarTirillaDev(){
+  const id = DEV_ID, archivo = DEV_ARCHIVO; DEV_LEYENDO = true; pintarRevisionDev(); actualizarBotonDev();
+  try {
+    const j = await api('verificarArchivo', {id, archivo, hilo: asuntoHiloDev()});
+    if (id !== DEV_ID || archivo !== DEV_ARCHIVO) return;   // cambió de viaje o de archivo mientras se leía
+    if (!j.ok) throw new Error(j.error || 'error');
+    DEV_ARCH = {nombre: j.nombre || archivo.nombre, texto: j.texto || '', leido: !!j.leido, extra: (j.filas || []).filter(f => f.campo === 'archivo')};
+  } catch (e) { if (id !== DEV_ID || archivo !== DEV_ARCHIVO) return; DEV_ARCH = {nombre: archivo.nombre, texto: '', leido: false, extra: []}; toast('No se pudo leer la tirilla en el servidor: se comparó solo el nombre del archivo', 5000); }
+  DEV_LEYENDO = false; pintarRevisionDev(); actualizarBotonDev();
+}
+// el botón de guardar: hay archivo (o solo aviso), terminó de leer, y un rojo ya fue resuelto o saltado con nombre y motivo
+function actualizarBotonDev(){
+  const b = $('#devGuardar'); if (!b) return;
+  const res = DEV_ID ? revisionDev() : null, rojo = !!res && res.nivel === 'rojo' && !REV_SALTO;
+  b.disabled = !(DEV_SOLO || DEV_ARCHIVO) || DEV_LEYENDO || rojo;
+  b.title = rojo ? 'El control dice que no coincide: pase la tirilla al viaje correcto o siga con su nombre y motivo' : DEV_LEYENDO ? 'Leyendo la tirilla' : '';
+}
+// "Pasar la tirilla a EXPO-014": cambia el viaje de la ventana conservando el archivo, y la compara de nuevo con ese viaje
+document.addEventListener('click', e => { const b = e.target.closest('[data-rev-pasar]'); if (!b || !$('#ovDev').classList.contains('open')) return;
+  const archivo = DEV_ARCHIVO, arch = DEV_ARCH, id = b.dataset.revPasar;
+  abrirDevolucion(id, false, DEV_MODO, archivo ? {archivo, arch} : null).then(() => { if (archivo) verificarTirillaDev(); }); });
 montarDevolucion();
 /* ---------- version.js · el tablero se actualiza solo cuando se publica una versión nueva ---------- */
 // Capa: pantalla. generar_publico.py pone en VERSION_TABLERO la huella de esta publicación y escribe publico/version.json con la
@@ -7154,7 +7493,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '65fa9664cc';
+const VERSION_TABLERO = 'c67c847e98';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
