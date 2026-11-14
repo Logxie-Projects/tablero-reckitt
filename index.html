@@ -1272,6 +1272,8 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 .ctl-salto{flex-basis:100%;display:grid;gap:6px;margin-top:4px;padding:8px;border:1px dashed var(--border);border-radius:8px}
 .ctl-salto.hidden{display:none}
 .ctl-salto select,.ctl-salto input{width:100%;border:1px solid var(--border);background:var(--surface);padding:7px 8px;border-radius:8px}
+.ctl-pieza-fila{display:flex;gap:6px 14px;flex-wrap:wrap;margin:4px 0 6px}
+.ctl-pieza{display:inline-flex;gap:5px;align-items:baseline;background:var(--surface-2);border-radius:8px;padding:3px 8px}
 
 </style>
 </head>
@@ -1375,7 +1377,7 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
     <div class="card">
       <div class="toolbar" style="justify-content:space-between">
         <div><h2 style="margin:0">Calidad de datos</h2><div class="sub" id="errResumen"></div></div>
-        <div class="chips"><button class="btn solo-interno" id="btnBarrido" title="Herramienta de Calidad y Gerencia: lee ya mismo el buzón de calidad@ (últimos 2 días), sin esperar la lectura de cada hora; sirve para algo urgente o si LogxIA se atrasó">⟳ Buscar correos ahora</button><button class="btn" id="btnCopiarRep">Copiar reporte para correo</button><button class="btn" id="btnVerRep">Ver texto del reporte</button><button class="btn solo-interno" data-rev-texto="1" title="Pegue un correo o una relación antes de enviarlo: compara cada placa, contenedor y sello con el viaje. No envía ni cambia nada">🔎 Revisar un texto antes de enviarlo</button><button class="btn solo-interno" data-rev-medicion="1" title="Cuántas revisiones de tirillas y textos hubo, cuántos rojos y cuántos avisos se saltaron">📊 Control de números</button></div>
+        <div class="chips"><button class="btn solo-interno" id="btnBarrido" title="Herramienta de Calidad y Gerencia: lee ya mismo el buzón de calidad@ (últimos 2 días), sin esperar la lectura de cada hora; sirve para algo urgente o si LogxIA se atrasó">⟳ Buscar correos ahora</button><button class="btn" id="btnCopiarRep">Copiar reporte para correo</button><button class="btn" id="btnVerRep">Ver texto del reporte</button><button class="btn solo-interno" data-rev-texto="1" title="Pegue un correo o una relación antes de enviarlo: compara cada placa, contenedor y sello con el viaje. No envía ni cambia nada">🔎 Revisar un texto antes de enviarlo</button><button class="btn solo-interno" data-relacion-patio="" title="Arma la relación de reservas, placas y conductores de un día para el patio, desde los viajes">✉ Relación para el patio</button><button class="btn solo-interno" data-rev-medicion="1" title="Cuántas revisiones de tirillas y textos hubo, cuántos rojos y cuántos avisos se saltaron">📊 Control de números</button></div>
       </div>
       <div class="chips" id="errFiltros" style="margin:8px 0 12px"></div>
       <textarea id="repTexto" class="hidden" readonly style="width:100%;min-height:220px;font:12px/1.5 ui-monospace,Consolas,monospace;border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--surface-2);margin-bottom:12px"></textarea>
@@ -2276,6 +2278,38 @@ function revisarRelacion(texto){
     }));
   });
   return {nivel: peorNivel(filas), filas, lineas};
+}
+/* ---------- puerta B (fase 2): el documento que respalda el contenedor, el sello, la placa y el booking (14-nov-2026) ----------
+ * Al anotar un contenedor o un sello en un viaje EXPO se pide el documento de donde salen (EIR del patio, planilla de ingreso, tirilla o
+ * carta de retiro): el sistema lo lee y comprueba que el dato aparece junto a ESTA reserva y no junto a la de otro viaje. Cambiar la placa
+ * o el booking de una carga ya confirmada también lo pide. Sin documento no se frena: amarillo y se sigue con nombre y motivo.
+ * confirmada = la última carga confirmada del viaje ({contenedor, placa, sello, booking}) o null. */
+const CAMPOS_RESPALDO = [['contenedor', 'Contenedor'], ['sello', 'Sello'], ['placa', 'Placa'], ['booking', 'Booking']];
+function necesitaRespaldo(v, cambios, confirmada){
+  if (!v || v.padre || v.operacion !== 'EXPO') return [];
+  const nuevo = k => k in cambios && limpioId(cambios[k]) && limpioId(cambios[k]) !== limpioId(v[k]);
+  return CAMPOS_RESPALDO.map(([k]) => k).filter(k => ['contenedor', 'sello'].includes(k) ? nuevo(k) : !!confirmada && nuevo(k));
+}
+// el documento (nombre y texto leído) contra el viaje CON los cambios que se van a guardar. {nivel, filas, propone}
+function revisarRespaldo(v, cambios, {nombre = '', texto = '', leido = true} = {}){
+  const vv = Object.assign({}, v, ...Object.keys(cambios).filter(k => limpioId(cambios[k])).map(k => ({[k]: limpioId(cambios[k])})));
+  const r = revisarNumeros(vv, nombre + '\n' + texto, {fuente: 'El documento'}), filas = r.filas.slice();
+  CAMPOS_RESPALDO.map(([k]) => k).filter(k => k in cambios && limpioId(cambios[k]) && limpioId(cambios[k]) !== limpioId(v[k])).forEach(k => {
+      const nombreK = (CAMPOS_RESPALDO.find(c => c[0] === k) || [k, k])[1];
+      if (!filas.some(f => f.campo === k && f.nivel === 'verde') && !filas.some(f => f.campo === k && f.nivel === 'rojo'))
+        filas.push({campo: k, dato: nombreK, viaje: vv[k], texto: 'no aparece', nivel: 'amarillo', msg: `El documento no menciona el ${nombreK.toLowerCase()} ${vv[k]}`}); });
+  if (!leido && !filas.some(f => f.nivel === 'verde')) filas.unshift({campo: 'lectura', dato: 'Lectura', viaje: '', texto: 'no se pudo leer', nivel: 'amarillo', msg: 'No se pudo leer el documento: confirme a mano lo que dice o suba otra foto'});
+  return {nivel: peorNivel(filas), filas, propone: r.propone};
+}
+/* ---------- puerta D (fase 2): la relación al patio se arma desde los viajes, sin teclear números ---------- */
+// los viajes EXPO que se retiran en ese patio ese día, con vehículo y sin retirar todavía: [viaje]
+const viajesParaPatio = (patio, dia) => viajes.filter(v => v.operacion === 'EXPO' && !v.padre && situacion(v) === 'Abierto' && !esPrueba(v) && !fueraDeRuta(v)
+  && limpioId(v.patio) === limpioId(patio) && fechaPaso(v, 'fechaRetiro') === dia && limpioId(v.placa) && v.booking);
+// una línea de la relación: reserva · placa · conductor (el contenedor y el sello los da el patio al retirar)
+const lineaPatio = v => `Reserva ${v.booking} · placa ${v.placa}${v.conductor ? ' · conductor ' + v.conductor : ''}${v.unidad ? ' · ' + v.unidad : ''}`;
+function textoPatio(lista, patio, dia, saludo){
+  const f = String(dia).slice(8, 10) + '-' + String(dia).slice(5, 7) + '-' + String(dia).slice(0, 4);
+  return `${saludo || 'Buenos días'}.\n\nConfirmo los retiros de contenedores vacíos para el ${f}${patio ? ' en ' + patio : ''}:\n\n${lista.map(lineaPatio).join('\n')}\n\nCada reserva va con la placa indicada en su línea.`;
 }
 // 'La marca' del dato: el texto corto de una fila para la lista de revisión
 const textoFila = f => f.msg || `${f.dato}: ${f.texto}`;
@@ -3426,6 +3460,7 @@ function aplicarDatos(j, clave, guardadoEn){
     window.MODO_CLIENTE = !j.interno;
     window.BITACORA = j.bitacora || [];
     window.TURNO = j.turno || [];
+    window.CARGAS = j.cargas || [];   // la última carga confirmada de cada viaje EXPO, con su documento (controles.js)
     window.NOVEDADES = j.novedades || [];   // novedades de cada viaje, con hora y autor (novedades.js)
     window.PREGUNTAS = j.preguntas || [];   // preguntas al agente LogxIA (preguntas.js)
     window.TURNOS_C = j.turnosConductores || [];   // conductores enturnados y disponibles (app Viajes ETP)
@@ -5387,6 +5422,7 @@ function abrir(id){
   editId = id; estadoSel = MARCAS.some(m=>m.k===v.estadoHoja) ? v.estadoHoja : '';
   $('#mCausa').classList.add('hidden'); $('#mCausaCaja').innerHTML = '';   // causa del cambio de fecha con su respaldo (causa.js)
   pintarGpsViaje(v);
+  pintarCargaViaje(v);   // controles.js: carga confirmada con su documento (solo EXPO y solo el equipo)
   $('#mTitle').textContent = `${v.placa || 'Sin vehículo'} · ${v.operacion} ${v.pais||''}`;
   $('#mSub').textContent = `${v.id} · ${v.fechaRetiro?`Retiro en patio ${fd(v.fechaRetiro)} · Llenado planta ${fd(v.fechaCargue)}`:`Cargue ${fd(v.fechaCargue)}`} · Última actualización ${new Date(v.actualizado).toLocaleString('es-CO')}`;
   // 10-nov: los otros contenedores de la misma referencia, con lo que cada uno ya tiene (dominio.js hermanosDe); solo el equipo
@@ -5559,6 +5595,11 @@ function marcarCambios(){
   $('#mForm').querySelectorAll('[data-k]').forEach(el => el.classList.toggle('cambio', el.dataset.k in c));
   $('#mNCambios').textContent = n ? `${n} dato${n===1?'':'s'} por guardar` : '';
 }
+// la tarjeta "Carga confirmada" debajo del subtítulo de la ventana y el botón de la relación para el patio (controles.js)
+function pintarCargaViaje(v){
+  let c = $('#mCarga'); if (!c) { $('#mSub').insertAdjacentHTML('afterend', '<div id="mCarga" style="margin-top:8px"></div>'); c = $('#mCarga'); }
+  c.innerHTML = htmlCargaConfirmada(v) + (!window.MODO_CLIENTE && v.operacion === 'EXPO' && !v.padre && v.patio ? `<div style="margin-top:6px"><button type="button" class="btn" data-relacion-patio="${esc(v.id)}" title="Arma la relación de reservas, placas y conductores del día para el patio, desde los viajes">✉ Relación para el patio</button></div>` : '');
+}
 function cerrar(){ $('#ov').classList.remove('open'); editId=null; }
 $('#mStates').onclick = e => { const b=e.target.closest('button'); if(!b) return;
   if (b.dataset.enlace) return enviarEnlaceConductor(editId);   // asignacion.js
@@ -5600,10 +5641,13 @@ $('#mSave').onclick = () => {
   if (eq) { $(`#mForm [data-k=${eq.campo}]`)?.focus(); return toast('No se guardó: ' + eq.msg, 9000); }
   const avisos = avisosAntesDeGuardar(v, cambios);
   if (avisos.length && !confirm('Revise antes de guardar:\n\n• ' + avisos.join('\n• ') + '\n\n¿Guardar de todas formas?')) return;
+  // 14-nov (anticipación de errores, puerta B): contenedor o sello nuevos piden el documento que los respalda (controles.js); al resolverlo se vuelve a guardar
+  if (pedirRespaldo(v, cambios, usuario, () => $('#mSave').click())) return;
   // placa o conductor nuevos: solo con sus datos completos en el registro (registro.js); al completarlos se vuelve a guardar
   if (!registroCompleto(cambios.placa, cambios.conductor, () => $('#mSave').click())) return;
   guardarUsuario(usuario);
-  if (Object.keys(cambios).length) guardarCambio(editId, cambios, usuario, {revisado: true}).then(ok => { if (ok !== false && causaSel && causaSel.texto) enviarCambio(v, mov, causaSel, usuario); });
+  const idGuardado = editId, cambiosGuardados = {...cambios};
+  if (Object.keys(cambios).length) guardarCambio(editId, cambios, usuario, {revisado: true}).then(ok => { if (ok !== false && causaSel && causaSel.texto) enviarCambio(v, mov, causaSel, usuario); if (ok !== false) anotarCargaTrasGuardar(idGuardado, cambiosGuardados, usuario); });
   cerrar();
 };
 $('#mForm').addEventListener('change', e => { if (e.target.closest('#mExtras')) { syncExtras(); marcarCambios(); } });
@@ -7204,10 +7248,10 @@ function htmlRevision(res, o = {}){
     : '<div class="sub">No se encontró ningún número para comparar.</div>';
   const titulo = {verde: 'Todo coincide con el viaje', amarillo: 'Revise antes de seguir', rojo: `${o.sujeto || 'El texto'} no coincide con ${v.id || 'el viaje'}`}[res.nivel] || '';
   const pasar = res.propone && o.pasar ? `<button type="button" class="btn primary" data-rev-pasar="${esc(res.propone)}">${esc(o.pasar(res.propone))}</button>` : '';
-  const saltar = res.nivel === 'rojo' && o.saltar ? (REV_SALTO ? `<div class="sub" style="margin-top:8px">✓ Va a seguir con el aviso saltado por <b>${esc(usuarioActual() || 'usted')}</b> · ${esc(REV_SALTO.motivo)}${REV_SALTO.detalle ? ' · ' + esc(REV_SALTO.detalle) : ''} <button type="button" class="link" data-rev-salto-no="1">Quitar el salto</button></div>`
+  const saltar = (res.nivel === 'rojo' || (o.saltarAmarillo && res.nivel !== 'verde')) && o.saltar ? (REV_SALTO ? `<div class="sub" style="margin-top:8px">✓ Va a seguir con el aviso saltado por <b>${esc(usuarioActual() || 'usted')}</b> · ${esc(REV_SALTO.motivo)}${REV_SALTO.detalle ? ' · ' + esc(REV_SALTO.detalle) : ''} <button type="button" class="link" data-rev-salto-no="1">Quitar el salto</button></div>`
     : `<button type="button" class="btn" data-rev-saltar="1">Seguir con mi nombre y motivo</button>
       <div class="ctl-salto hidden" id="revSaltoForm"><div class="sub">Quién lo hace: <b>${esc(usuarioActual() || 'elija quién es')}</b> (queda en el Historial del viaje y en la medición)</div>
-        <select id="revMotivo">${MOTIVOS_CONTROL.map(m => `<option>${esc(m)}</option>`).join('')}</select>
+        <select id="revMotivo">${(o.motivos || MOTIVOS_CONTROL).map(m => `<option>${esc(m)}</option>`).join('')}</select>
         <input id="revDetalle" placeholder="Explique en una línea (obligatorio)" maxlength="200">
         <button type="button" class="btn primary" data-rev-salto-ok="1">Seguir con este motivo</button> <button type="button" class="btn" data-rev-salto-no="1">Volver</button></div>`) : '';
   return `<div class="ctl-box ctl-${res.nivel}"><div class="ctl-h">${nivelTag(res.nivel)} <b>${esc(titulo)}</b></div>${cuerpo}
@@ -7221,7 +7265,8 @@ function controlParaGuardar(res, puerta){
   return {puerta, nivel: res.nivel, resumen: mal || 'Todo coincide', salto: res.nivel === 'rojo' && REV_SALTO ? REV_SALTO : null};
 }
 // los botones comunes a toda revisión mostrada en pantalla: saltar el aviso con motivo (guardado de la ventana que la use en alSalto)
-let REV_ALCAMBIAR = null;
+let REV_ALCAMBIAR = null;   // la ventana de la tirilla (devolucion.js)
+let REV_REPINTAR = null;    // la ventana de respaldo, mientras esté abierta (más abajo)
 document.addEventListener('click', e => {
   const t = e.target;
   if (t.closest('[data-rev-saltar]')) { const f = $('#revSaltoForm'); if (f) { f.classList.remove('hidden'); t.closest('[data-rev-saltar]').classList.add('hidden'); const d = $('#revDetalle'); if (d) d.focus(); } return; }
@@ -7229,9 +7274,9 @@ document.addEventListener('click', e => {
     const detalle = ($('#revDetalle').value || '').trim();
     if (!pedirUsuario()) return;
     if (detalle.length < 4) return toast('Escriba en una línea por qué sigue');
-    REV_SALTO = {motivo: $('#revMotivo').value, detalle}; if (REV_ALCAMBIAR) REV_ALCAMBIAR(); return;
+    REV_SALTO = {motivo: $('#revMotivo').value, detalle}; (REV_REPINTAR || REV_ALCAMBIAR || (() => {}))(); return;
   }
-  if (t.closest('[data-rev-salto-no]')) { REV_SALTO = null; if (REV_ALCAMBIAR) REV_ALCAMBIAR(); }
+  if (t.closest('[data-rev-salto-no]')) { REV_SALTO = null; (REV_REPINTAR || REV_ALCAMBIAR || (() => {}))(); }
 });
 
 /* ---------- 🔎 Revisar un texto antes de enviarlo (puerta para lo que se escribe a mano: relación al patio, cuadros, correos) ---------- */
@@ -7295,6 +7340,160 @@ async function abrirMedicionControles(){
   } catch (e) { $('#mcCuerpo').innerHTML = `<div class="sub">No se pudo cargar: ${esc(e.message)}</div>`; }
 }
 document.addEventListener('click', e => { if (e.target.closest('[data-rev-medicion]')) abrirMedicionControles(); });
+
+/* ---------- puerta B (fase 2): el documento que respalda el contenedor y el sello · carga confirmada ----------
+ * Al guardar en un viaje EXPO un contenedor o un sello nuevos (o la placa o el booking de una carga ya confirmada) se pide el documento
+ * (EIR del patio, planilla de ingreso, carta de retiro o tirilla): el sistema lo lee y compara con lo que se va a guardar. Sin documento
+ * no se frena: se sigue con nombre y motivo. Después de guardar, el servidor anota la "carga confirmada" (Controles.gs confirmarCarga_).
+ * La tarjeta de la carga confirmada se ve en la ventana del viaje. Fase 1 de esta puerta = solo avisa. */
+const TIPOS_RESPALDO = ['EIR de salida del vacío', 'Planilla de ingreso', 'Carta de retiro', 'Tirilla de entrega', 'Otro'];
+const MOTIVOS_SIN_DOC = ['El documento llega después', 'Lo confirmó el patio o la naviera por teléfono o correo', 'No tengo el documento a la mano', 'Otro motivo'];
+const cargaDe = id => (window.CARGAS || []).find(c => c.viaje === id) || null;
+let RESP = null;      // la ventana de respaldo abierta: {v, cambios, usuario, claves, archivo, arch, res, leyendo, tipo, soloConfirmar}
+let RESP_OK = null;   // lo resuelto y pendiente de anotar tras guardar: {id, firma, archivo, tipo, control}
+const firmaCambios = c => JSON.stringify(Object.keys(c).sort().map(k => [k, c[k]]));
+function montarRespaldo(){
+  if ($('#ovResp')) return;
+  document.body.insertAdjacentHTML('beforeend', `<div class="ov" id="ovResp"><div class="modal" role="dialog" aria-modal="true" style="width:min(720px,100%)">
+    <h3 id="rpTitulo">Respaldo de los datos</h3><div class="sub" id="rpSub"></div>
+    <div id="rpCuerpo" style="margin-top:10px"></div>
+    <div class="mfoot"><button class="btn" id="rpCerrar">Volver sin guardar</button><button class="btn primary" id="rpGuardar" disabled>Guardar</button></div>
+  </div></div>`);
+  $('#rpCerrar').onclick = cerrarRespaldo;
+  $('#ovResp').onclick = e => { if (e.target.id === 'ovResp') cerrarRespaldo(); };
+  $('#rpGuardar').onclick = resolverRespaldo;
+}
+function cerrarRespaldo(){ $('#ovResp').classList.remove('open'); RESP = null; REV_REPINTAR = null; REV_SALTO = null; }
+// ¿el viaje necesita respaldo para lo que se va a guardar? Abre la ventana y devuelve true (quien llama espera: al resolver se guarda de nuevo)
+function pedirRespaldo(v, cambios, usuario, alListo){
+  if (window.MODO_CLIENTE) return false;
+  const claves = necesitaRespaldo(v, cambios, cargaDe(v.id));
+  if (!claves.length) return false;
+  if (RESP_OK && RESP_OK.id === v.id && RESP_OK.firma === firmaCambios(cambios) && Date.now() - RESP_OK.t < 6e5) return false;   // ya resuelto: que siga el guardado
+  abrirRespaldo({v, cambios, usuario, claves, alListo});
+  return true;
+}
+function abrirRespaldo(o){
+  montarRespaldo(); RESP = Object.assign({archivo: null, arch: null, res: null, leyendo: false, tipo: TIPOS_RESPALDO[0], soloConfirmar: false}, o); REV_SALTO = null; REV_REPINTAR = pintarRespaldo;
+  pintarRespaldo(); $('#ovResp').classList.add('open');
+}
+// confirmar la carga que el viaje ya tiene (sin guardar nada): desde la tarjeta de la ventana del viaje
+function confirmarCargaViaje(id){
+  const v = viajePorId(id), usuario = pedirUsuario(); if (!v || !usuario) return;
+  abrirRespaldo({v, cambios: {}, usuario, claves: ['contenedor', 'sello'].filter(k => limpioId(v[k])), soloConfirmar: true});
+}
+function respRevision(){
+  const R = RESP; if (!R) return null;
+  if (R.arch) { const res = revisarRespaldo(R.v, R.cambios, {nombre: R.arch.nombre, texto: R.arch.texto, leido: R.arch.leido});
+    if (R.arch.yaGuardado && !new RegExp('booking\\s+' + limpioId(R.v.booking) + '$', 'i').test(R.arch.yaGuardado)) { res.filas.push({campo: 'archivo', dato: 'Archivo', viaje: R.v.booking || R.v.id, texto: 'ya guardado en ' + R.arch.yaGuardado, nivel: 'rojo', msg: `Este mismo archivo ya está guardado en ${R.arch.yaGuardado}`}); res.nivel = 'rojo'; }
+    return res; }
+  return {nivel: 'amarillo', propone: '', filas: [{dato: 'Documento', viaje: R.claves.map(k => `${k} ${R.cambios[k] || R.v[k]}`).join(' · '), texto: 'sin documento', nivel: 'amarillo', msg: 'Falta el documento que respalda este dato: ninguno muestra el contenedor o el sello junto a la reserva ' + (R.v.booking || '')}]};
+}
+function pintarRespaldo(){
+  const R = RESP; if (!R) return;
+  const v = R.v, res = respRevision(), ver = R.claves.map(k => `${k === 'contenedor' ? 'contenedor' : k} <b>${esc(R.cambios[k] || v[k])}</b>`).join(' · ');
+  $('#rpTitulo').textContent = R.soloConfirmar ? `Confirmar la carga de ${v.id}` : `Respaldo de los datos de ${v.id}`;
+  $('#rpSub').innerHTML = `${R.soloConfirmar ? 'Va a confirmar' : 'Va a guardar'}: ${ver} · reserva <b>${esc(v.booking || '—')}</b>`;
+  const tipos = TIPOS_RESPALDO.map(t => `<option${t === R.tipo ? ' selected' : ''}>${esc(t)}</option>`).join('');
+  $('#rpCuerpo').innerHTML = `<div class="fgrid3"><div><label>Tipo de documento</label><select id="rpTipo">${tipos}</select></div>
+      <div style="grid-column:span 2"><label>Documento (foto o PDF): EIR, planilla de ingreso, carta de retiro o tirilla</label><input type="file" id="rpArchivo" accept="image/*,application/pdf"></div></div>
+    <div class="sub" id="rpArchTxt" style="margin:4px 0 8px">${R.leyendo ? '⏳ Leyendo el documento y comparándolo con el viaje…' : R.archivo ? `✓ ${esc(R.archivo.nombre)}` : ''}</div>
+    ${R.leyendo ? '' : htmlRevision(res, {viaje: v, fuente: 'El documento dice', sujeto: 'El documento', saltar: true, saltarAmarillo: !R.archivo, motivos: R.archivo ? MOTIVOS_CONTROL : MOTIVOS_SIN_DOC,
+      nota: R.arch && !R.arch.leido ? 'Solo se comparó el nombre del archivo: no se pudo leer el contenido.' : R.archivo ? '' : 'Puede subir el documento ahora o seguir sin él con su nombre y su motivo: queda anotado como carga sin documento.'})}`;
+  const rojo = res && res.nivel === 'rojo' && !REV_SALTO;
+  const listo = !R.leyendo && (R.archivo ? !rojo : !!REV_SALTO);
+  const b = $('#rpGuardar'); b.disabled = !listo; b.textContent = R.soloConfirmar ? (R.archivo ? 'Confirmar la carga con este documento' : 'Anotar la carga sin documento') : (R.archivo ? 'Guardar con este documento' : 'Guardar sin documento');
+  b.title = listo ? '' : R.leyendo ? 'Leyendo el documento' : R.archivo ? 'El documento dice otra cosa: pase al viaje correcto o siga con su nombre y motivo' : 'Suba el documento o siga con su nombre y motivo';
+  $('#rpTipo').onchange = () => { R.tipo = $('#rpTipo').value; };
+  $('#rpArchivo').onchange = async () => { const f = $('#rpArchivo').files[0]; R.archivo = null; R.arch = null; REV_SALTO = null; if (!f) return pintarRespaldo();
+    try { R.archivo = await leerTirilla(f); } catch (e) { toast('No se pudo leer el archivo'); return pintarRespaldo(); }   // leerTirilla: devolucion.js
+    R.leyendo = true; pintarRespaldo();
+    try { const j = await api('verificarArchivo', {id: v.id, archivo: R.archivo, soloLeer: true}); if (RESP !== R) return; if (!j.ok) throw new Error(j.error || 'error');
+      R.arch = {nombre: j.nombre || R.archivo.nombre, texto: j.texto || '', leido: !!j.leido, yaGuardado: j.yaGuardado || ''}; }
+    catch (e) { if (RESP !== R) return; R.arch = {nombre: R.archivo.nombre, texto: '', leido: false, yaGuardado: ''}; toast('No se pudo leer el documento en el servidor: se comparó solo el nombre del archivo', 5000); }
+    R.leyendo = false; pintarRespaldo(); };
+}
+// resolver: sin guardar (confirmar la carga que ya está) o guardar; el guardado lo hace la ventana del viaje al repetir su botón
+async function resolverRespaldo(){
+  const R = RESP; if (!R) return; const res = respRevision();
+  const control = {nivel: res.nivel, resumen: (res.filas || []).filter(f => f.nivel !== 'verde').map(f => f.msg).join(' · ') || 'Todo coincide', salto: res.nivel === 'verde' || (res.nivel === 'amarillo' && R.archivo) ? null : REV_SALTO};
+  const dato = {archivo: R.archivo, tipo: R.tipo, control};
+  if (R.soloConfirmar) { const b = $('#rpGuardar'); b.disabled = true; b.textContent = 'Anotando…';
+    try { const j = await api('confirmarCarga', {id: R.v.id, archivo: R.archivo, tipoDoc: R.tipo, control, usuario: R.usuario}); if (!j.ok) throw new Error(j.error || 'error');
+      window.CARGAS = (window.CARGAS || []).filter(c => c.viaje !== R.v.id).concat(j.carga ? [j.carga] : []); cerrarRespaldo(); toast(R.archivo ? '✓ Carga confirmada con el documento' : '✓ Carga anotada sin documento', 5000); if (editId === R.v.id) abrir(R.v.id); }
+    catch (e) { toast('No se pudo anotar: ' + e.message, 6000); pintarRespaldo(); }
+    return; }
+  RESP_OK = Object.assign({id: R.v.id, firma: firmaCambios(R.cambios), t: Date.now()}, dato); const seguir = R.alListo; cerrarRespaldo(); if (seguir) seguir();
+}
+// después de guardar los datos en el viaje: el servidor anota la carga con lo que el viaje tiene ahora (viaje.js)
+async function anotarCargaTrasGuardar(id, cambios, usuario){
+  const ok = RESP_OK; if (!ok || ok.id !== id || ok.firma !== firmaCambios(cambios) || Date.now() - ok.t > 6e5) return; RESP_OK = null;
+  try { const j = await api('confirmarCarga', {id, archivo: ok.archivo, tipoDoc: ok.tipo, control: ok.control, usuario}); if (!j.ok) throw new Error(j.error || 'error');
+    window.CARGAS = (window.CARGAS || []).filter(c => c.viaje !== id).concat(j.carga ? [j.carga] : []); toast(ok.archivo ? '✓ Guardado y carga confirmada con el documento' : '✓ Guardado; carga anotada sin documento', 6000); }
+  catch (e) { toast('Se guardó el dato, pero no se pudo anotar la carga: ' + e.message, 7000); }
+}
+// la tarjeta de la ventana del viaje (solo EXPO y solo el equipo): confirmada (verde), sin documento o cambiada (amarillo), o sin confirmar
+function htmlCargaConfirmada(v){
+  if (window.MODO_CLIENTE || v.operacion !== 'EXPO' || v.padre || !limpioId(v.contenedor) || situacion(v) !== 'Abierto') return '';   // un viaje ya cerrado o cancelado no se confirma
+  const c = cargaDe(v.id), campos = [['booking', 'Reserva'], ['contenedor', 'Contenedor'], ['placa', 'Placa'], ['sello', 'Sello']];
+  const bloque = x => campos.map(([k, n]) => `<span class="ctl-pieza"><span class="sub">${n}</span> <b>${esc(x[k] || '—')}</b></span>`).join('');
+  if (!c) return `<div class="ctl-box ctl-amarillo"><div class="ctl-h">${nivelTag('amarillo')} <b>Carga sin confirmar</b></div><div class="ctl-pieza-fila">${bloque(v)}</div>
+    <div class="sub">Ningún documento liga este contenedor con la reserva ${esc(v.booking || '')}.</div><div class="ctl-acc"><button type="button" class="btn primary" data-confirmar-carga="${esc(v.id)}">Subir el documento y confirmar la carga</button></div></div>`;
+  const cambio = campos.filter(([k]) => limpioId(c[k]) !== limpioId(v[k]));
+  if (cambio.length) return `<div class="ctl-box ctl-amarillo"><div class="ctl-h">${nivelTag('amarillo')} <b>La carga cambió desde que se confirmó</b></div>
+    <div class="ctl-pieza-fila">${bloque(v)}</div><div class="sub">Confirmada el ${esc(c.fecha.slice(0, 10))} por ${esc(c.quien)}: ${cambio.map(([k, n]) => `${n.toLowerCase()} ${esc(c[k] || '—')} → ${esc(v[k] || '—')}`).join(' · ')}</div>
+    <div class="ctl-acc"><button type="button" class="btn primary" data-confirmar-carga="${esc(v.id)}">Confirmar de nuevo con documento</button></div></div>`;
+  if (c.sinDocumento) return `<div class="ctl-box ctl-amarillo"><div class="ctl-h">${nivelTag('amarillo')} <b>Carga anotada sin documento</b></div><div class="ctl-pieza-fila">${bloque(v)}</div>
+    <div class="sub">${esc(c.quien)} · ${esc(c.fecha.slice(0, 10))} · motivo: ${esc(c.motivo)}</div><div class="ctl-acc"><button type="button" class="btn primary" data-confirmar-carga="${esc(v.id)}">Subir el documento ahora</button></div></div>`;
+  if (c.motivo) return `<div class="ctl-box ctl-rojo"><div class="ctl-h">${nivelTag('rojo')} <b>Carga confirmada saltando un aviso: el documento decía otra cosa</b></div><div class="ctl-pieza-fila">${bloque(v)}</div>
+    <div class="sub">${c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.tipo || 'Documento')}</a>` : esc(c.tipo)} · ${esc(c.quien)} siguió el ${esc(c.fecha.slice(0, 10))} · motivo: ${esc(c.motivo)}. Calidad o Gerencia deben confirmar con el patio.</div></div>`;
+  return `<div class="ctl-box ctl-verde"><div class="ctl-h">${nivelTag('verde')} <b>Carga confirmada</b></div><div class="ctl-pieza-fila">${bloque(v)}</div>
+    <div class="sub">${c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.tipo || 'Documento')}</a>` : esc(c.tipo)} · confirmó ${esc(c.quien)} el ${esc(c.fecha.slice(0, 10))}. Cambiar un dato de la carga pide un documento nuevo o su motivo.</div></div>`;
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-confirmar-carga]'); if (b) confirmarCargaViaje(b.dataset.confirmarCarga); });
+
+/* ---------- puerta D (fase 2): la relación para el patio se arma desde los viajes ---------- */
+// "✉ Relación para el patio": reserva · placa · conductor de cada viaje que se retira ese día en ese patio. Los números no se teclean: salen
+// de los viajes. Se copia y se pega en el correo; no se envía desde aquí.
+function montarRelacionPatio(){
+  if ($('#ovPatio')) return;
+  document.body.insertAdjacentHTML('beforeend', `<div class="ov" id="ovPatio"><div class="modal" role="dialog" aria-modal="true" style="width:min(720px,100%)">
+    <h3>✉ Relación para el patio</h3>
+    <div class="sub">Reserva, placa y conductor de cada viaje que se retira ese día, tomados de los viajes: nadie teclea los números. Cópiela y péguela en el correo al patio. Si el patio cambia un vehículo, cámbielo primero en el viaje y vuelva a armar la relación.</div>
+    <div class="fgrid3" style="margin-top:10px"><div><label>Patio de retiro</label><select id="rpaPatio"></select></div><div><label>Día del retiro</label><input type="date" id="rpaDia"></div></div>
+    <div id="rpaLista" style="margin-top:10px"></div>
+    <textarea id="rpaTexto" style="width:100%;min-height:150px;margin-top:10px;box-sizing:border-box" readonly></textarea>
+    <div id="rpaRevision" style="margin-top:8px"></div>
+    <div class="mfoot"><button class="btn" id="rpaCerrar">Cerrar</button><button class="btn primary" id="rpaCopiar">Copiar la relación</button></div></div></div>`);
+  $('#rpaCerrar').onclick = () => $('#ovPatio').classList.remove('open');
+  $('#ovPatio').onclick = e => { if (e.target.id === 'ovPatio') $('#ovPatio').classList.remove('open'); };
+  $('#rpaPatio').onchange = $('#rpaDia').onchange = pintarRelacionPatio;
+  $('#rpaLista').onchange = pintarRelacionPatio;
+  $('#rpaCopiar').onclick = async () => { const t = $('#rpaTexto'); if (!t.value) return toast('No hay viajes para esa relación');
+    try { await navigator.clipboard.writeText(t.value); toast('Relación copiada: péguela en el correo al patio'); } catch (e) { t.removeAttribute('readonly'); t.select(); toast('Seleccione el texto y cópielo (Ctrl+C)'); }
+    api('control', {puerta: 'Texto antes de enviar', nivel: 'verde', resumen: 'Relación al patio armada desde los viajes', viajeId: '', usuario: usuarioActual()}).catch(() => {}); };
+}
+const saludoHora = () => { const h = new Date().getHours(); return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches'; };
+function abrirRelacionPatio(id){
+  montarRelacionPatio(); const v = id ? viajePorId(id) : null;
+  const patios = [...new Set(viajes.filter(x => x.operacion === 'EXPO' && !x.padre && situacion(x) === 'Abierto' && x.patio && fechaPaso(x, 'fechaRetiro') >= HOY).map(x => x.patio))].sort();
+  $('#rpaPatio').innerHTML = patios.map(p => `<option${v && limpioId(v.patio) === limpioId(p) ? ' selected' : ''}>${esc(p)}</option>`).join('') || '<option value="">Ningún viaje con patio de retiro</option>';
+  $('#rpaDia').value = (v && fechaPaso(v, 'fechaRetiro') >= HOY ? fechaPaso(v, 'fechaRetiro') : '') || HOY;
+  pintarRelacionPatio(); $('#ovPatio').classList.add('open');
+}
+let RPA_SIN = new Set();   // viajes desmarcados de la relación
+function pintarRelacionPatio(e){
+  if (e && e.target && e.target.dataset && e.target.dataset.rpaV) { e.target.checked ? RPA_SIN.delete(e.target.dataset.rpaV) : RPA_SIN.add(e.target.dataset.rpaV); }
+  const patio = $('#rpaPatio').value, dia = $('#rpaDia').value, todos = patio ? viajesParaPatio(patio, dia) : [], lista = todos.filter(x => !RPA_SIN.has(x.id));
+  $('#rpaLista').innerHTML = todos.length ? todos.map(x => `<label style="display:flex;gap:6px;align-items:center;margin:2px 0"><input type="checkbox" data-rpa-v="${esc(x.id)}"${RPA_SIN.has(x.id) ? '' : ' checked'}> <b>${esc(x.id)}</b> <span class="sub">${esc(lineaPatio(x))}</span></label>`).join('')
+    : '<div class="sub">No hay viajes con vehículo que se retiren ese día en ese patio. Revise la fecha de retiro y la placa en cada viaje.</div>';
+  $('#rpaTexto').value = lista.length ? textoPatio(lista, patio, dia, saludoHora()) : '';
+  // la relación armada se revisa con la misma regla de "Revisar un texto": debe salir verde
+  const r = lista.length ? revisarRelacion($('#rpaTexto').value) : null;
+  $('#rpaRevision').innerHTML = r ? (r.nivel === 'verde' ? `<div class="sub">${nivelTag('verde')} Los números de la relación coinciden con los ${lista.length} viajes.</div>` : htmlRevision(r, {fuente: 'El texto dice', sujeto: 'La relación'})) : '';
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-relacion-patio]'); if (b) { RPA_SIN = new Set(); abrirRelacionPatio(b.dataset.relacionPatio); } });
+
 /* ---------- devolucion.js · 📎 Tirilla y aviso: devolución del vacío (IMPO) y entrega del lleno en puerto (EXPO) (8-nov-2026) ----------
  * Capa: pantalla (solo el equipo). Antes, Mogollón respondía el correo del pedido con la tirilla y el sistema lo leía; ahora es al
  * revés: en el viaje (debajo de "Fecha de devolución", confirmar.js estadoPaso) se sube la tirilla (foto o PDF) con la fecha y el
@@ -7497,7 +7696,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '2894a426bd';
+const VERSION_TABLERO = '6f631886e9';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
