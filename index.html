@@ -2286,7 +2286,10 @@ function revisarRelacion(texto){
   const nombrados = lineasTxt.flatMap(l => { const T = tokensDe(l); return reales.filter(o => claves.some(k => { const x = limpioId(o[k]); return (x.length >= 8 || (k === 'pedido' && x.length >= 5)) && T.has(x); })); });
   lineasTxt.forEach(l => {
     const T = tokensDe(l), N = numerosDeTexto(l);
-    const duenos = reales.filter(o => claves.some(k => { const x = limpioId(o[k]); return (x.length >= 8 || (k === 'pedido' && x.length >= 5)) && T.has(x); }));
+    // de quién es la línea: la reserva, el RBHY, el OBD o el pedido que nombra; el contenedor solo si no hay ninguno de esos. Así "reserva A con el
+    // contenedor de B" es de A y el contenedor sale rojo (si el contenedor también contara, la línea parecería de dos viajes y solo saldría amarillo)
+    const nombra = ks => reales.filter(o => ks.some(k => { const x = limpioId(o[k]); return (x.length >= 8 || (k === 'pedido' && x.length >= 5)) && T.has(x); }));
+    const duenos = nombra(['booking', 'rbhy', 'obd', 'pedido', 'do']).length ? nombra(['booking', 'rbhy', 'obd', 'pedido', 'do']) : nombra(['contenedor']);
     const datos = [['placa', 'Placa', N.placa], ['contenedor', 'Contenedor', N.contenedor], ['sello', 'Sello', N.sello]].filter(([, , xs]) => xs.length);
     if (!duenos.length || !datos.length) return;
     lineas++;
@@ -7818,7 +7821,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'f1151e8528';
+const VERSION_TABLERO = 'a05ec81d6a';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
