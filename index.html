@@ -1275,6 +1275,19 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 .ctl-pieza-fila{display:flex;gap:6px 14px;flex-wrap:wrap;margin:4px 0 6px}
 .ctl-pieza{display:inline-flex;gap:5px;align-items:baseline;background:var(--surface-2);border-radius:8px;padding:3px 8px}
 
+/* conexiones de GPS (gps-conexiones.js) */
+.gc-card{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px;background:var(--surface)}
+.gc-nueva{border:2px solid var(--accent)}
+.gc-cab{display:flex;gap:10px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap}
+.gc-tag{font-size:12px;font-weight:700;padding:3px 10px;border-radius:10px;white-space:nowrap;background:var(--surface-2);color:var(--muted)}
+.gc-tag.ok{background:#e7f6ef;color:#12805c}.gc-tag.warn{background:#fff4e5;color:#b54708}.gc-tag.bad{background:#fdecea;color:#b42318}
+.gc-campos{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin:10px 0 8px}
+.gc-campos label{display:grid;gap:4px;font-size:13px;color:var(--muted)}
+.gc-campos input{width:100%;border:1px solid var(--border);background:var(--surface);padding:8px 9px;border-radius:8px;min-width:0;font:inherit;color:var(--text)}
+.gc-acc{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 6px}
+.gc-res{border-radius:9px;padding:9px 12px;font-size:13px;line-height:1.5;margin-top:10px}
+.gc-res.ok{background:#e7f6ef;color:#0b5e43}.gc-res.warn{background:#fff4e5;color:#8a3f06}.gc-res.bad{background:#fdecea;color:#8f1d12}
+.tf-top .btn{margin-top:6px}
 </style>
 </head>
 <body>
@@ -5108,10 +5121,94 @@ function renderTrafico(){
       ${plan ? `<div class="tf-ruta">${plan.puntos.map(p => `<span class="tf-p${p.paso ? ' ok' : p === sig ? ' ya' : ''}" title="${p.paso ? 'Ya pasó' : 'Estimado: ' + esc(horaTf(p.llega)) + ' · a ' + p.km + ' km'}"><i></i>${esc(p.nombre)}${!p.paso ? `<small>${esc(horaTf(p.llega))}</small>` : ''}</span>`).join('')}</div>` : ''}
     </div>`; };
   c.innerHTML = `<div class="tf-top"><b>${L.length} ${L.length === 1 ? 'vehículo' : 'vehículos'} en seguimiento</b> · ${conGps} con GPS${nAl ? ` · <b style="color:var(--bad)">${nAl} en rojo: atender</b>` : ' · <b style="color:var(--ok)">ninguno en rojo</b>'}
-      <span class="sub">Horario de manejo ${TRAFICO.desde} a. m. a ${TRAFICO.hasta - 12} p. m. · detención no planeada desde ${TRAFICO.detenidoMin} min · el GPS se lee cada 10 minutos · los tiempos son estimados · las líneas están a escala de kilómetros (logarítmica): la de un viaje largo es más larga</span></div>
+      <span class="sub">Horario de manejo ${TRAFICO.desde} a. m. a ${TRAFICO.hasta - 12} p. m. · detención no planeada desde ${TRAFICO.detenidoMin} min · el GPS se lee cada 10 minutos · los tiempos son estimados · las líneas están a escala de kilómetros (logarítmica): la de un viaje largo es más larga</span>
+      <button type="button" class="btn" data-gc-abrir title="Guardar el usuario y la clave de un GPS (Simon GPS) o ver cómo va cada conexión">Conexiones de GPS</button></div>
     <div class="tf-vista"><button type="button" class="${TF_VISTA === 'lineas' ? 'on' : ''}" data-tf-vista="lineas">Líneas</button><button type="button" class="${TF_VISTA === 'crono' ? 'on' : ''}" data-tf-vista="crono">Cronograma</button><button type="button" class="${TF_VISTA === 'mapa' ? 'on' : ''}" data-tf-vista="mapa">Mapa</button></div>
     ${!L.length ? '<p class="sub">No hay vehículos en ruta ni con GPS en este momento.</p>' : TF_VISTA === 'crono' ? cronogramaTf(L) : TF_VISTA === 'mapa' ? mapaTf(L) : (ctx => L.map(x => filaLeanTf(x, fila(x), ctx)).join(''))({G, maxF})}`;
 }
+/* ---------- gps-conexiones.js · Conexiones de GPS (15-nov-2026) ----------
+ * Capa: pantalla. Pedido del usuario: una empresa de GPS (Simon GPS, de Visualsat) que no comparte enlaces: "crean un módulo que escriba
+ * claves". Se abre desde Tráfico → "Conexiones de GPS". Aquí se escribe el usuario y la clave de la cuenta; el servidor (Gps.gs
+ * gpsConexion_) las guarda en las propiedades del script y NUNCA las devuelve: la pantalla solo ve si hay conexión, el usuario con
+ * asteriscos, quién la guardó y el resultado de la última lectura. Guardar, probar y quitar piden la clave de Gerencia (entrarGerencia,
+ * turno.js); ver el estado, solo la del equipo. La clave escrita se borra de la casilla apenas se envía. Solo el equipo. Prefijo: gc-. */
+let GC = null;   // lo último que dijo el servidor: {simon: {conectado, usuario, guardo, cuando, estado}, prueba}
+function montarConexiones(){
+  if ($('#ovGc')) return;
+  document.body.insertAdjacentHTML('beforeend', `<div class="ov" id="ovGc" style="z-index:70"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="gcTitulo" style="width:min(640px,100%)">
+    <h3 id="gcTitulo">Conexiones de GPS</h3><div class="sub">Solo Gerencia o Calidad guardan o cambian una conexión, con la clave de Gerencia. La clave de la cuenta de GPS queda en el servidor y nunca se vuelve a mostrar.</div>
+    <div id="gcCuerpo" style="margin-top:12px"></div>
+    <div class="mfoot"><button class="btn" id="gcCerrar" type="button">Cerrar</button></div>
+  </div></div>`);
+  $('#gcCerrar').onclick = cerrarConexiones;
+  $('#ovGc').onclick = e => { if (e.target.id === 'ovGc') cerrarConexiones(); };
+  $('#gcCuerpo').addEventListener('click', manejarConexiones);
+}
+function cerrarConexiones(){ const c = $('#gcClave'); if (c) c.value = ''; $('#ovGc').classList.remove('open'); }
+async function abrirConexiones(){
+  montarConexiones(); $('#ovGc').classList.add('open'); $('#gcCuerpo').innerHTML = '<p class="sub">Leyendo cómo está la conexión…</p>';
+  try { const j = await api('gpsConexion', {op: 'estado'}); if (!j.ok) throw new Error(j.error === 'clave' ? 'clave incorrecta' : (j.error || 'no respondió')); GC = j; }
+  catch(e) { GC = null; $('#gcCuerpo').innerHTML = `<p class="sub" style="color:var(--bad)">No se pudo leer el estado: ${esc(e.message)}</p>`; return; }
+  pintarConexiones();
+}
+function estadoSimon(S){
+  const e = S.estado;
+  if (!S.conectado) return {txt: 'Sin conectar', cls: 'warn'};
+  if (!e) return {txt: 'Guardada, sin probar', cls: 'warn'};
+  if (!e.ok) return {txt: e.pausado ? 'En pausa: usuario o clave rechazados' : 'Con error', cls: 'bad'};
+  const min = e.cuando ? (Date.now() - new Date(e.cuando)) / 60e3 : 999;
+  return min > 40 ? {txt: 'Sin leer hace ' + Math.round(min) + ' min', cls: 'warn'} : {txt: 'Funcionando', cls: 'ok'};
+}
+function resultadoSimon(r){
+  if (!r) return '';
+  if (!r.ok) return `<div class="gc-res bad">⛔ ${esc(r.error || 'No conectó')}${r.pausado ? '<br><span class="sub">La lectura automática queda en pausa hasta que guarde la clave otra vez, para no bloquear la cuenta con intentos repetidos.</span>' : ''}</div>`;
+  const ej = r.ejemplo ? `<br><span class="sub">Hora que dice Simon GPS para ${esc(r.ejemplo.placa)}: ${esc(r.ejemplo.crudo)} · la leímos como ${esc(r.ejemplo.leido ? fechaLocal(r.ejemplo.leido).replace('T', ' ') : 'no se entendió')}</span>` : '';
+  if (!r.coinciden) return `<div class="gc-res warn">⚠ Conectó y ve ${r.vehiculos} ${r.vehiculos === 1 ? 'vehículo' : 'vehículos'}, pero ninguno tiene un viaje en el sistema.${r.visibles && r.visibles.length ? `<br><span class="sub">Placas que ve: ${esc(r.visibles.join(', '))}${r.vehiculos > r.visibles.length ? ' y más' : ''}</span>` : ''}${ej}</div>`;
+  return `<div class="gc-res ok">✔ Conectó · ve ${r.vehiculos} ${r.vehiculos === 1 ? 'vehículo' : 'vehículos'} de la cuenta${r.companias && r.companias.length ? ' (' + esc(r.companias.join(', ')) + ')' : ''} · ${r.coinciden} ${r.coinciden === 1 ? 'tiene' : 'tienen'} viaje en el sistema: ${esc(r.placas.join(', '))}${r.coinciden > r.placas.length ? ' y más' : ''}${ej}</div>`;
+}
+function pintarConexiones(){
+  const S = (GC && GC.simon) || {}, st = estadoSimon(S), nSat = (window.GPS || []).filter(g => g.enlace).length;
+  $('#gcCuerpo').innerHTML = `
+    <div class="gc-card"><div><b>Satrack</b><div class="sub">Por enlaces de “Compartir ubicación” que llegan por correo o se pegan en el viaje · ${nSat} ${nSat === 1 ? 'placa con enlace activo' : 'placas con enlace activo'} · vencen en cerca de un día</div></div><span class="gc-tag ${nSat ? 'ok' : 'warn'}">${nSat ? 'Funcionando' : 'Sin enlaces activos'}</span></div>
+    <div class="gc-card gc-nueva"><div style="flex:1;min-width:0">
+      <div class="gc-cab"><div><b>Simon GPS</b> <span class="sub">(Visualsat)</span><div class="sub">Con usuario y clave: el sistema entra solo, cada 10 minutos, sin enlaces que venzan.</div></div><span class="gc-tag ${st.cls}">${esc(st.txt)}</span></div>
+      ${S.conectado ? `<div class="sub" style="margin-top:6px">Usuario guardado: <b>${esc(S.usuario)}</b> · lo guardó ${esc(S.guardo || '—')}${S.cuando ? ' · ' + esc(haceCuanto(fechaLocal(S.cuando))) : ''}${S.estado && S.estado.cuando ? ' · última lectura ' + esc(haceCuanto(fechaLocal(S.estado.cuando))) : ''}</div>` : ''}
+      <div class="gc-campos"><label>Usuario de Simon GPS<input id="gcUsuario" type="text" autocomplete="off" placeholder="${S.conectado ? 'escriba otro para cambiar la cuenta' : 'correo del usuario'}" maxlength="120"></label>
+        <label>Clave de Simon GPS<input id="gcClave" type="password" autocomplete="new-password" placeholder="${S.conectado ? 'escríbala de nuevo para cambiarla' : 'clave del usuario'}" maxlength="120"></label></div>
+      <div class="sub">🔒 La clave se guarda en el servidor (propiedades del script). No va en el código, en una hoja ni en un correo, y esta ventana no la vuelve a mostrar.</div>
+      <div class="gc-acc"><button class="btn primary" type="button" data-gc="guardar">Guardar y probar la conexión</button>
+        ${S.conectado ? '<button class="btn" type="button" data-gc="probar">Probar de nuevo con lo guardado</button><button class="btn" type="button" data-gc="quitar">Quitar esta conexión</button>' : ''}</div>
+      <div class="sub">Guardar pide la clave de Gerencia, entra a Simon GPS y dice cuántos vehículos ve. Solo se leen las placas que tienen viaje en el sistema.${S.conectado ? ' Quitar borra el usuario y la clave del servidor; las posiciones ya leídas se quedan.' : ''}</div>
+      <div id="gcRes">${resultadoSimon(GC && GC.prueba ? GC.prueba : (S.estado && (S.estado.ok || S.estado.error) ? S.estado : null))}</div>
+    </div></div>
+    <div class="sub" style="margin-top:8px">Las placas de esta cuenta salen en Tráfico, el mapa, el cronograma y los avisos de llegada, igual que las de Satrack. Si la conexión falla, el tablero sigue con el último reporte del conductor.</div>`;
+}
+// la clave de Gerencia: la misma de "Mi turno" (entrarGerencia, turno.js); si no está en esta pestaña, se pide
+async function claveGerenciaParaGps(){
+  if (!esGerencia() || !claveGerenciaSesion) { await entrarGerencia(); }
+  return esGerencia() && claveGerenciaSesion ? claveGerenciaSesion : '';
+}
+async function manejarConexiones(e){
+  const b = e.target.closest('[data-gc]'); if (!b || b.disabled) return;
+  const op = b.dataset.gc, usuario = usuarioActual() || pedirUsuario(); if (!usuario) return;
+  const datos = {op, proveedor: 'simon', por: usuario};
+  if (op === 'guardar') {
+    datos.usuario = $('#gcUsuario').value.trim(); datos.clave2 = $('#gcClave').value;
+    if (!datos.usuario) { $('#gcUsuario').focus(); return toast('Escriba el usuario de Simon GPS'); }
+    if (!datos.clave2) { $('#gcClave').focus(); return toast('Escriba la clave de Simon GPS'); }
+  }
+  if (op === 'quitar' && !confirm('¿Quitar la conexión con Simon GPS?\n\nSe borran el usuario y la clave del servidor. Las posiciones ya leídas se quedan, y para volver a conectar habrá que escribirlas otra vez.')) return;
+  const codigo = await claveGerenciaParaGps(); if (!codigo) return;
+  datos.codigo = codigo;
+  const txt = b.textContent; b.disabled = true; b.textContent = op === 'quitar' ? 'Quitando…' : 'Entrando a Simon GPS…';
+  try {
+    const j = await api('gpsConexion', datos);
+    if (!j.ok) throw new Error(j.error === 'clave' ? 'clave del equipo incorrecta' : (j.error || 'no se pudo'));
+    if (op === 'guardar') $('#gcClave').value = '';   // la clave ya viajó: no se queda en la casilla
+    GC = j; pintarConexiones();
+    toast(op === 'quitar' ? 'Conexión con Simon GPS quitada' : j.prueba && j.prueba.ok ? 'Conectó con Simon GPS' : 'No conectó: vea el motivo en la ventana');  } catch(err) { b.disabled = false; b.textContent = txt; toast('No se pudo: ' + err.message); if (/Gerencia/.test(err.message)) { try { sessionStorage.removeItem('rkt-gerencia'); } catch(x) {} claveGerenciaSesion = ''; } }
+}
+document.addEventListener('click', e => { if (e.target.closest('[data-gc-abrir]')) abrirConexiones(); });
 /* ---------- novedades del viaje: la bitácora con hora y autor (fase 1) y la línea de tiempo única (fase 2) ----------
  * Cada novedad es una fila de la pestaña "Novedades del viaje" (Base.gs): cuándo, viaje, quién, tipo, texto y origen. No se
  * editan ni se borran: así queda el seguimiento. El campo Observación sigue siendo la nota fija del viaje (programación,
@@ -5708,6 +5805,7 @@ function pintarGpsViaje(v){
   if (window.MODO_CLIENTE || !claveActual()) { c.innerHTML = ''; return; }
   const g = gpsDeViaje(v), pl = String(v.placa || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), fila = pl && (window.GPS || []).find(x => x.placa === pl);
   const estado = g ? `<a class="btn" href="${esc(g.url)}" target="_blank" rel="noopener">📍 ${g.satrack ? 'Ver en el GPS' : 'Ver el último punto'}</a> <span class="sub">${esc(g.titulo.replace(/^Ver en el GPS( \(último punto, en el mapa\))?( · )?/, ''))}</span>`
+    : fila && fila.estadoEnlace === 'Simon GPS' ? '<span class="sub">Esta placa se lee por la conexión con Simon GPS, pero no ha reportado un punto reciente.</span>'
     : fila ? `<span class="sub">El enlace de esta placa ${fila.estadoEnlace === 'Vencido' ? 'venció' : 'no está activo'}${fila.nota ? ' (' + esc(fila.nota) + ')' : ''}: pegue uno nuevo.</span>`
     : `<span class="sub">Esta placa no tiene enlace de GPS todavía.</span>`;
   c.innerHTML = `<div class="gps-caja"><b>📍 GPS del vehículo</b>${pl ? ' · ' + esc(v.placa) : ''}<div class="gps-est">${estado}</div>
@@ -7821,7 +7919,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'a05ec81d6a';
+const VERSION_TABLERO = 'c492755fc6';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
