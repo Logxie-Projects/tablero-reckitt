@@ -1659,7 +1659,8 @@ const conceptosFueraDeLista = v => itemsExtra(v).filter(([c, x]) => x && !ES_RET
 function itemsExtra(v){
   const L = String(v.conceptoExtra||'').split(';').map(s=>s.trim()).filter(Boolean).map(s=>{
     const m = s.match(/^(.*?)[:=]\s*\$?\s*([\d.,]+)$/);
-    return m ? [m[1].trim(), Number(m[2].replace(/[.,]/g,''))||0] : [s, 0];
+    // 19-nov (revisión): "560.5" valía 5605. Con 1 o 2 cifras tras el último separador es decimal; con 3, de miles ("560.000", "1.250.000")
+    return m ? [m[1].trim(), (/[.,]\d{1,2}$/.test(m[2]) ? Math.round(Number(m[2].replace(/[.,](?=\d{3}\b)/g, '').replace(',', '.'))) : Number(m[2].replace(/[.,]/g, ''))) || 0] : [s, 0];
   });
   // dato viejo: un concepto sin valor y el total en Extracostos
   if (L.length===1 && !L[0][1] && Number(v.extracostos)) L[0][1] = Number(v.extracostos);
@@ -1996,7 +1997,8 @@ function sinActualizar(v){
 // 5-nov (usuario): "CARGANDO CONTENEDOR VACIO" proponía la fecha de llenado. Un verbo en curso ("cargando", "llenando",
 // "descargando") no confirma que el paso se hizo (regla: no se da por hecho sin confirmación), y "vacío" habla del retiro del
 // contenedor vacío, no del llenado. Solo cuentan los verbos terminados (cargado, llenado, entregado, terminó de…).
-const NOVEDAD_EN_CURSO = /\b\w+(ando|iendo)\b/;
+// 19-nov (revisión): el patrón genérico tomaba "cuando", "Fernando" o "Armando" por un verbo en curso y anulaba la propuesta
+const NOVEDAD_EN_CURSO = /\b(?!(?:cuando|fernando|armando|orlando|rolando|hernando|comando|mando|bando)\b)\w+(?:ando|iendo)\b/;
 const LECTURA_NOVEDAD = {
   EXPO: [['fechaRetiro', /(retirad|recogid)\w*\s+(el\s+|del\s+)?(vacio|contenedor)|vacio\s+(retirad|recogid|cargad)|cargad\w*\s+(el\s+)?(contenedor\s+)?vacio/, 'Vacío retirado'],
     ['fechaCargue', /^(?!.*\bvacio\b).*(\b(cargad|llenad)|termin\w*\s+(de\s+)?(cargar|llenar))/, 'Llenado en planta'],
@@ -2009,7 +2011,8 @@ const LECTURA_NOVEDAD = {
 };
 const NOVEDAD_NIEGA = /\b(no|sin|falta|faltan|aun no|todavia no|pendiente|manana|esperando)\b|programad|reprogram/;
 function interpretarNovedad(v, tipo, texto, fecha){
-  const t = minus(texto), dia = String(fecha || HOY).slice(0, 10), cuando = /\bayer\b/.test(t) ? addDias(dia, -1) : dia;
+  // los saltos de línea se vuelven espacio: los regex de LECTURA_NOVEDAD con ^…. solo miraban la primera línea
+  const t = minus(texto).replace(/\s+/g, ' '), dia = String(fecha || HOY).slice(0, 10), cuando = /\bayer\b/.test(t) ? addDias(dia, -1) : dia;
   const fechas = tipo === 'Interna' || tipo === 'Cambio' || NOVEDAD_NIEGA.test(t) || NOVEDAD_EN_CURSO.test(t) ? [] : (LECTURA_NOVEDAD[v.operacion] || [])
     .filter(([k, re]) => re.test(t) && (!v[k] || String(v[k]).slice(0, 10) > cuando))
     .map(([campo, , etiqueta]) => ({campo, valor: cuando, etiqueta}));
@@ -2611,9 +2614,11 @@ function coincide(v, d){
   if (!v || !d) return false;
   if (d.viajeId && v.id === d.viajeId) return true;
   const ped = pedidosDe(v.pedido), pedD = [...pedidosDe(d.pedido), ...pedidosDe(d.booking)];
-  if (CLAVES_VIAJE.some(k => mismoDato(v[k], d[k])) || pedD.some(p => ped.includes(p))) return true;
-  const fuerte = d.viajeId || compacto(d.pedido) || CLAVES_VIAJE.some(k => compacto(d[k]));
-  return !fuerte && mismoDato(v.placa, d.placa);
+  // 19-nov (revisión): "PEND" o "Sin info" en los dos lados, o un "1", no son un dato que ligue una acción con un viaje
+  const liga = (a, b) => mismoDato(a, b) && textoReal(a) && !/^pte/i.test(String(a).trim()) && compacto(a).length >= 4;
+  if (CLAVES_VIAJE.some(k => liga(v[k], d[k])) || pedD.some(p => ped.includes(p))) return true;
+  const fuerte = d.viajeId || compacto(d.pedido) || CLAVES_VIAJE.some(k => textoReal(d[k]) && compacto(d[k]));
+  return !fuerte && liga(v.placa, d.placa);
 }
 // viajes del dato: primero los vigentes (con el mismo booking puede haber una versión cerrada y la vigente)
 const vigente = v => !['Cerrado','Cancelado'].includes(situacion(v));
@@ -2766,9 +2771,11 @@ function distancia(a, b){
   return d[a.length][b.length];
 }
 // mes (0-11) de una palabra: "nov", "noviembre", "sept" o mal escrita ("cotubre"); -1 si no es un mes
+// 19-nov (revisión): "5 mayoria de contenedores" daba el 5 de mayo y "3 abrir la puerta" el 3 de abril. La palabra debe ser el mes o una
+// abreviatura suya (prefijo, nunca más larga que el mes); el parecido solo vale desde 6 letras ("cotubre", "septiebre"), no "abrir"/"abril"
 function mesDePalabra(p){
-  const i = MESES_LARGO.findIndex(m => p.length >= 3 && m.startsWith(p.slice(0, Math.min(p.length, m.length))));
-  if (i >= 0 || p.length < 5) return i;
+  const i = MESES_LARGO.findIndex(m => p.length >= 3 && p.length <= m.length && m.startsWith(p));
+  if (i >= 0 || p.length < 6) return i;
   let mejor = -1, dist = 3;
   MESES_LARGO.forEach((m, j) => { const x = distancia(p, m); if (x < dist) { dist = x; mejor = j; } });
   return mejor;
@@ -2779,7 +2786,9 @@ function mesDePalabra(p){
 function fechaDeTexto(texto, ref){
   const t = minus(texto), r = String(ref || hoyISO()).slice(0, 10), mr = Number(r.slice(5, 7));
   const anio = (mes, a) => a ? (a.length === 2 ? '20' + a : a) : String(Number(r.slice(0, 4)) + (mes < mr - 6 ? 1 : mes > mr + 6 ? -1 : 0));
-  const iso = (d, mes, a) => d >= 1 && d <= 31 && mes >= 1 && mes <= 12 ? `${anio(mes, a)}-${String(mes).padStart(2, '0')}-${String(d).padStart(2, '0')}` : '';
+  // el día debe existir en ese mes ("31 de febrero" no es fecha) y el año traer 2 o 4 cifras ("9/11/202" no es 202-11-09)
+  const iso = (d, mes, a) => { if (a && a.length !== 2 && a.length !== 4) return ''; const y = anio(mes, a);
+    return d >= 1 && mes >= 1 && mes <= 12 && d <= new Date(Date.UTC(+y, mes, 0)).getUTCDate() ? `${y}-${String(mes).padStart(2, '0')}-${String(d).padStart(2, '0')}` : ''; };
   let m;
   if ((m = t.match(/\b\d{4}-\d{2}-\d{2}\b/))) return m[0];
   if ((m = t.match(/(?:^|\s)(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?(?=\s|$|[,.])/)) && iso(+m[1], +m[2], m[3])) return iso(+m[1], +m[2], m[3]);
@@ -3321,7 +3330,11 @@ const ESTADOS = [
 ];
 const colorEstado = k => ([...ESTADOS, ...MARCAS].find(e=>e.k===k)||ESTADOS[0]).c;
 // fecha de Colombia (en UTC después de las 7 p. m. ya sería mañana)
-const HOY = CFG.FECHA_REFERENCIA || new Date().toLocaleDateString('en-CA', {timeZone:'America/Bogota'});
+const diaColombia = () => new Date().toLocaleDateString('en-CA', {timeZone:'America/Bogota'});
+let HOY = CFG.FECHA_REFERENCIA || diaColombia();
+// 19-nov (revisión): un tablero abierto de noche seguía con el día anterior (pasos, atrasos, "hoy"); al cruzar la medianoche se actualiza
+// y se repinta (no si el tablero se abrió con una fecha de referencia fija, que es la de las pruebas)
+if (!CFG.FECHA_REFERENCIA) setInterval(() => { const d = diaColombia(); if (d !== HOY) { HOY = d; try { render(); } catch (e) {} } }, 60000);
 
 let viajes = [], historial = [], filtroEstado = '', orden = {k:'', asc:true}, editId = null, estadoSel = null;
 // ayudantes de búsqueda (12-nov, auditoría): antes cada módulo repetía estas líneas (31 veces el viaje por su id, 6 la acción por su id)
@@ -3373,6 +3386,9 @@ const claveActual = () => window.CLAVE || new URLSearchParams(location.search).g
 function salirTablero(){ if (!confirm('¿Salir del tablero en este equipo? La próxima vez le pedirá la clave.')) return;
   try { localStorage.removeItem('rkt-clave'); localStorage.removeItem('rkt-ultima'); localStorage.removeItem('rkt-ultima-d'); sessionStorage.removeItem('rkt-quien'); } catch(e) {}
   const u = new URL(location.href); u.searchParams.delete('clave'); location.replace(u); }
+// una sola ejecución a la vez por clave: un segundo clic mientras la primera sigue en curso no hace nada (los botones que escriben en el servidor)
+const ENCURSO = new Set();
+async function unaVez(clave, fn){ if (ENCURSO.has(clave)) return; ENCURSO.add(clave); try { return await fn(); } finally { ENCURSO.delete(clave); } }
 // POST al Apps Script con la clave del equipo; devuelve la respuesta (JSON)
 async function api(action, datos = {}){
   const r = await fetch(CFG.SHEETS_API_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'},
@@ -3809,11 +3825,15 @@ async function marcarHecha(id, noEtp, nota, ya){   // ya: la ventana de "Cerrar 
   nota = nota || (!noEtp && pareceHecha(b) ? 'el viaje ya muestra que ' + pareceHecha(b) : '');
   const yo = usuarioActual();
   const usuario = noEtp ? `${NO_ETP} · ${yo}` : nota ? `${yo} · ${nota}` : yo;
+  // 19-nov (revisión): se marcaba hecha y se avisaba "marcada" aunque el servidor respondiera error (clave, hoja ocupada): al recargar volvía
+  // a salir. Ahora se revisa la respuesta y, si falla, la acción vuelve a pendiente
+  const antes = {estadoAccion: b.estadoAccion, resueltoEn: b.resueltoEn, resueltoPor: b.resueltoPor};
   b.estadoAccion = 'Hecha'; b.resueltoEn = new Date().toISOString(); b.resueltoPor = usuario;
   if (claveActual()){
-    try { await api('resolver', {id, usuario});
+    try { const j = await api('resolver', {id, usuario});
+      if (!j || !j.ok) throw new Error((j && j.error) || 'sin respuesta');
       toast(noEtp ? 'Acción cerrada: no es para Entrapetrol' : 'Acción marcada como hecha'); }
-    catch(e){ toast('No se pudo guardar en la bitácora'); }
+    catch(e){ Object.assign(b, antes); toast('No se pudo cerrar la acción: ' + (e.message || e) + '. Sigue pendiente.', 6000); }
   }
   if (editId) abrir(editId);
   render();
@@ -3865,7 +3885,7 @@ const ATAJOS = [
   // pedido de la operación NACIONAL (estibas de ERCOL…): formulario del viaje nacional con lo que dice el correo (nacional.js)
   ['nacional', '＋ Crear viaje nacional', b => operacionAccion(b) === 'NACIONAL' && !viajeDeAccion(b) && !viajeNacionalDe(b) && !/^sin acci/i.test(b.accion || ''), b => nuevoNacional(b)],
   ['viaje', '＋ Crear viaje', b => pideCrearViaje(b) && !yaCreado(b), () => abrirBarrido()],   // si ya existe, no (yaCreado)
-  ['subviaje', '↪ Crear subviaje', b => /crear subviaje de [A-Z]+-[\w-]+/i.test(b.accion), b => nuevoSubviaje(b.accion.match(/crear subviaje de ([A-Z]+-[\w-]+?)(?=[:,\s]|$)/i)[1])],
+  ['subviaje', '↪ Crear subviaje', b => /crear subviaje de [A-Z]+-\d+/i.test(b.accion), b => nuevoSubviaje(b.accion.match(/crear subviaje de ([A-Z]+-\d+)/i)[1])],   // 19-nov: una sola regex (con punto final, la 2.ª daba null)
 ];
 const atajoDe = b => b.estadoAccion==='Hecha' || window.MODO_CLIENTE ? null : ATAJOS.find(a => a[2](b));
 const botonAtajo = b => { const a = atajoDe(b); return a ? `<button type="button" class="link" onclick="hacerAqui('${b.id}')" title="${a[0] === 'aplicar' ? esc(datosDeAccion(b).map(p => p.etiqueta + ': ' + p.valor).join(' · ')) : 'Lo hace el tablero; al terminar, la acción se cierra sola'}">${typeof a[1] === 'function' ? a[1](b) : a[1]}</button>` : ''; };
@@ -5401,13 +5421,14 @@ async function agregarNovedad(id){
     window.NOVEDADES = j.novedades || window.NOVEDADES;
     const v = viajePorId(id);
     v.ultimaNovedad = ahoraBogota().fecha + 'T' + ahoraBogota().hhmm;   // "sin actualizar" (dominio) ya la cuenta
-    $('#mNovedades').innerHTML = bloqueNovedades(v);
+    // 19-nov (revisión): si mientras tanto abrió otro viaje, la novedad no se pinta en el modal del otro
+    const abierto = editId === id && $('#mNovedades'); if (abierto) abierto.innerHTML = bloqueNovedades(v);
     // fase 3: lo que LogxIA dedujo de la novedad (Correos.gs propuestasDeNovedad_): fechas por aprobar y acción abierta
     const lx = j.logxia || {}, fechas = lx.fechas || [];
     const dijo = [fechas.length && `propone ${fechas.map(f => `${f.etiqueta.toLowerCase()} el ${fd(f.valor)}`).join(' y ')} (apruébalo en ✉ Llenar datos desde correos)`,
       lx.accion && `abrió una acción: ${lx.accion.accion.replace(/^Operaciones: /, '')}`].filter(Boolean);
     render(); toast(dijo.length ? 'Novedad guardada · LogxIA ' + dijo.join(' · ') : 'Novedad guardada');
-    if (dijo.length) { $('#novLista').insertAdjacentHTML('beforebegin', `<div class="nov-lx">🤖 <b>LogxIA</b> ${esc(dijo.join(' · '))}</div>`);
+    if (dijo.length) { if (abierto && $('#novLista')) $('#novLista').insertAdjacentHTML('beforebegin', `<div class="nov-lx">🤖 <b>LogxIA</b> ${esc(dijo.join(' · '))}</div>`);
       if (lx.accion && await cargar() !== false) render();   // trae la acción nueva (Acciones y Mi turno)
       if (fechas.length) { await cargarPropuestas(1); render(); } }   // propuestas.js: el contador del botón
   } catch(e) { toast('No se guardó la novedad: ' + e.message); btn.disabled = false; btn.textContent = 'Agregar novedad'; }
@@ -6504,9 +6525,15 @@ let CUADROS_PROG = null, cuadrosProgPidiendo = false;   // {correos, t}
 const CUADROS_PROG_MIN = 10;
 const cuadroDeAccion = (correos, b) => { const nMes = MESES_LARGO.findIndex(m => minus(b.asunto + ' ' + b.accion).includes(m));
   return correos.find(p => Number(String(p.programacion[0].fechaCargue || '').slice(5, 7)) === nMes + 1) || correos[0]; };
-async function pedirCuadrosProg(){
-  if (cuadrosProgPidiendo || window.MODO_CLIENTE || !claveActual()) return;
+let cuadrosProgPromesa = null;
+// 19-nov (revisión): quien llega mientras hay una consulta en curso espera esa misma (antes recibía undefined al instante y seguía sin cuadros)
+function pedirCuadrosProg(){
+  if (cuadrosProgPidiendo) return cuadrosProgPromesa || Promise.resolve();
+  if (window.MODO_CLIENTE || !claveActual()) return Promise.resolve();
   cuadrosProgPidiendo = true;
+  return cuadrosProgPromesa = pedirCuadrosProgYa();
+}
+async function pedirCuadrosProgYa(){
   try { const j = await traerCuadrosProg();
     if (j && j.ok && Array.isArray(j.correos) && j.correos.every(x => x.programacion && x.programacion.length)) { CUADROS_PROG = {correos: j.correos, t: Date.now()};
       // se repinta la Bandeja cuando no haya una ventana abierta (19-nov: con "¿Quién eres?" abierta no se repintaba y los cancelados no salían hasta el siguiente cambio)
@@ -6842,7 +6869,12 @@ async function aplicarProgramacion(op){
     if (quedan + omitidas) { accionEnCurso = null; toast(`Quedan ${quedan + omitidas} ${quedan + omitidas === 1 ? 'viaje' : 'viajes'} por actualizar: la acción sigue pendiente`, 6000); }
     else cerrarAccionEnCurso('programacion', `${rapido ? 'LogxIA aplicó la programación' : 'programación aplicada en el tablero'} (${crear.length} creados, ${sel.length - crear.length} actualizados)`);
     PROG = {c, ...compararProgramacion(c)}; pintarProgramacion();
-  } catch(e) { toast('No se pudo aplicar: ' + e.message); }
+  } catch(e) {
+    toast('No se pudo aplicar: ' + e.message + '. Se recargó el tablero: revise qué quedó pendiente.', 7000);
+    // 19-nov (revisión): si ya se habían creado viajes y falló un update, la ventana seguía con esas filas como "crear" y al reintentar se
+    // creaban otra vez. Se recarga y se vuelve a comparar con lo que quedó guardado.
+    try { await cargar(); render(); PROG = {c, ...compararProgramacion(c)}; pintarProgramacion(); } catch (e2) {}
+  }
   if (btnAplicar) btnAplicar.disabled = false;
 }
 /* ---------- buscar correos ahora: lectura directa del buzón de calidad@ (reglas fijas) ---------- */
@@ -8017,7 +8049,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '0094cbb0de';
+const VERSION_TABLERO = 'b886e510bd';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -9855,6 +9887,8 @@ async function confirmarHecha(id){
   const b = accionPorId(id); if (!b) return;
   const a = atajoDe(b);
   if (a && a[0] === 'programacion' && !CUADROS_PROG) await pedirCuadrosProg();   // sin los cuadros no hay con qué comparar
+  // 19-nov (revisión): si no llegaron, no se cierra "a ciegas" una acción que pide verificar contra el cuadro de Reckitt
+  if (a && a[0] === 'programacion' && !CUADROS_PROG && !window.MODO_CLIENTE) return toast('No pude traer el cuadro de Reckitt para verificar. Intente en un momento o use "Revisar programación".', 6000);
   const c = cambiosDeAccion(b);
   if (!c || !c.filas.length) return marcarHecha(id);
   const q = await preguntarQuien(c);
@@ -10364,6 +10398,8 @@ function soloEnOtra(R){
 
 function renderBandeja(){
   const cont = $('#bandeja'); if (!cont || window.MODO_CLIENTE) return;
+  // 19-nov (revisión): un repintado automático (correos, propuestas, ronda) borraba lo que la persona estaba escribiendo en una tarjeta
+  const f = document.activeElement; if (f && cont.contains(f) && (f.tagName === 'TEXTAREA' || (f.tagName === 'INPUT' && /^(text|search|number|tel)$/.test(f.type))) && f.value) return;
   const R = armarBandeja(), F = soloEnOtra(R);
   if (bandejaArea === null) bandejaArea = areaInicial();
   // filtro por área: cada tarjeta muestra solo las tareas de esa área (y desaparece si no le queda ninguna)
@@ -10474,16 +10510,18 @@ $('#bandeja').onclick = e => {
   else if (d.bOp !== undefined) elegirOperacion(d.bOp);
   else if (d.bCampo) abrirEnCampo(d.bCampo, d.campo);   // calidad.js: abre el viaje con el cursor en esa casilla
   else if (d.bAbrir) abrir(d.bAbrir);
-  else if (d.bCancelar) cancelarPorReckitt(d.bCancelar);   // programacion.js
+  // 19-nov (revisión): las acciones que escriben en el servidor se atienden una a la vez por tarjeta; un segundo clic mientras tanto se ignora
+  // (antes un doble clic repetía la decisión o la cancelación y daba un aviso de error espurio)
+  else if (d.bCancelar) unaVez('canc|' + d.bCancelar, () => cancelarPorReckitt(d.bCancelar));   // programacion.js
   else if (d.bCuadro) abrirCuadroDeViaje(d.bCuadro);
-  else if (d.bCancelartodos) cancelarTodosPorReckitt();
-  else if (d.bElegir) guardarElegidos(d.bElegir);
-  else if (d.bElegirno) guardarDatosMarcados(d.bElegirno, true);
+  else if (d.bCancelartodos) unaVez('canc|todos', () => cancelarTodosPorReckitt());
+  else if (d.bElegir) unaVez('elegir|' + d.bElegir, () => guardarElegidos(d.bElegir));
+  else if (d.bElegirno) unaVez('elegir|' + d.bElegirno, () => guardarDatosMarcados(d.bElegirno, true));
   else if (d.bCerrar) cerrarAccion(d.bCerrar);
-  else if (d.bHecha) confirmarHecha(d.bHecha);
-  else if (d.bNoetp) marcarHecha(d.bNoetp, true);
-  else if (d.bAprobar) decidirBandeja(d.bAprobar, true, d.area, d.solo);
-  else if (d.bRechazar) decidirBandeja(d.bRechazar, false, d.area, d.solo);
+  else if (d.bHecha) unaVez('hecha|' + d.bHecha, () => confirmarHecha(d.bHecha));
+  else if (d.bNoetp) unaVez('hecha|' + d.bNoetp, () => marcarHecha(d.bNoetp, true));
+  else if (d.bAprobar) unaVez('decidir|' + d.bAprobar, () => decidirBandeja(d.bAprobar, true, d.area, d.solo));
+  else if (d.bRechazar) unaVez('decidir|' + d.bRechazar, () => decidirBandeja(d.bRechazar, false, d.area, d.solo));
   else if (d.bProp) abrirPropuestas();
   else if (d.bBitacora) document.querySelector('#nav [data-v="acciones"]')?.click();
   else if (d.bInvitar) { if (!sinVehiculoGrupo().length) return toast('No hay viajes sin vehículo para invitar'); window.open(waLink('', mensajeGrupo()), '_blank', 'noopener'); }
