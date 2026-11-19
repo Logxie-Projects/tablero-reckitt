@@ -8017,7 +8017,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '68e56f721f';
+const VERSION_TABLERO = '0094cbb0de';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -10249,7 +10249,7 @@ function armarBandeja(){
       const E = todos.flatMap(x => validar(x).map(e => ({...e, x}))).filter(e => e.tipo !== 'Alerta' && e.campo !== 'Seguimiento'
         && !(sinCobertura(v) && e.x === v && /veh[ií]culo/i.test(e.msg)));
       if (E.length) add(v, {b: 'falta', html: E.map(e => `${e.x.padre ? `${esc(nombreSub(e.x))} · ` : ''}${esc(e.msg)}`).join('<br>'),
-        acc: btnT('Abrir el viaje y completar', `data-b-abrir="${v.id}"`) + clavesBusqueda(v).slice(0, 1).map(([k, c]) => lnkT(`🔎 Buscar el correo (${esc(k)} ${esc(c)})`, urlBusqueda(c))).join('')});
+        acc: btnT('Abrir el viaje y completar', `data-b-abrir="${v.id}"`)});
     }
   });
   // 10-nov · Por hacer ("pida la cita no es un error: es algo muy importante por hacer"): las alertas de lo que viene (pedir la cita
@@ -10260,7 +10260,7 @@ function armarBandeja(){
       && !(sinCobertura(v) && e.x === v && /veh[ií]culo/i.test(e.msg))).forEach(e => {
         const limite = String((/cita de ingreso/i.test(e.campo) ? e.x.cierreDoc : primerEvento(e.x)) || '').slice(0, 10);
         add(v, {b: 'hacer', hoy: !limite || diffDias(limite) <= 1, html: `${e.x.padre ? `${esc(nombreSub(e.x))} · ` : ''}<b>${esc(textoHacer(e))}</b>${e.porque ? `<br><span class="sub">${esc(e.porque)}</span>` : ''}`,
-          acc: btnT('Completar este dato en el viaje', `data-b-campo="${e.x.id}" data-campo="${esc(e.campo)}"`, 'Abre el viaje en esa casilla') + clavesBusqueda(v).slice(0, 1).map(([k, c]) => lnkT(`🔎 Buscar el correo (${esc(k)} ${esc(c)})`, urlBusqueda(c))).join('')}); }); });
+          acc: btnT('Completar este dato en el viaje', `data-b-campo="${e.x.id}" data-campo="${esc(e.campo)}"`, 'Abre el viaje en esa casilla')}); }); });
   // datos de correos de viajes que no están abiertos (ej. la aprobación de extracostos de un viaje ya cerrado, que es de Facturación)
   [...new Set(PROP.filter(p => !propUsadas.has(p.clave)).map(p => p.viajeId))].forEach(id => {
     const v = viajePorId(id), P = PROP.filter(p => p.viajeId === id && !propUsadas.has(p.clave));
