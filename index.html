@@ -6498,7 +6498,9 @@ async function pedirCuadrosProg(){
   cuadrosProgPidiendo = true;
   try { const j = await traerCuadrosProg();
     if (j && j.ok && Array.isArray(j.correos) && j.correos.every(x => x.programacion && x.programacion.length)) { CUADROS_PROG = {correos: j.correos, t: Date.now()};
-      if (!document.querySelector('.ov.open') && typeof renderBandeja === 'function') renderBandeja(); } } catch(x) {}
+      // se repinta la Bandeja cuando no haya una ventana abierta (19-nov: con "¿Quién eres?" abierta no se repintaba y los cancelados no salían hasta el siguiente cambio)
+      const repintar = n => { if (typeof renderBandeja !== 'function') return; if (!document.querySelector('.ov.open')) renderBandeja(); else if (n < 40) setTimeout(() => repintar(n + 1), 3000); };
+      repintar(0); } } catch(x) {}
   setTimeout(() => { cuadrosProgPidiendo = false; }, CUADROS_PROG_MIN * 60e3);   // no más de una consulta cada 10 minutos
 }
 // cuántos viajes por crear y cuántos con cambios (de fecha y de otro dato) trae el cuadro de esa acción; null si aún no se sabe
@@ -7984,7 +7986,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '0ba0fe9d37';
+const VERSION_TABLERO = '334b512b49';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
