@@ -6544,6 +6544,26 @@ async function cancelarPorReckitt(id){
     toast(`${id} cancelado`); await cargar(); render();
   } catch(e) { toast('No se pudo cancelar: ' + e.message); }
 }
+// 19-nov ("no veo que el sistema pida cancelar los otros 2"): el aviso rojo de arriba de la Bandeja cancela de una vez todos los que Reckitt canceló
+// y no tienen vehículo ni se ejecutaron (los que sí, se confirman uno por uno desde su tarjeta)
+async function cancelarTodosPorReckitt(){
+  const lista = [...canceladosEnCuadro().entries()].filter(([, can]) => !can.x.conMovimiento);
+  if (!lista.length) return toast('No hay viajes por cancelar sin revisar');
+  if (!await preguntarSiNo(`¿Cancelar ${lista.length === 1 ? 'este viaje' : 'estos ' + lista.length + ' viajes'}?\n\nReckitt los marcó CANCELADO en su programación:\n\n${lista.map(([id, can]) => `• ${id} · ${[can.x.v.pais, can.x.v.booking].filter(Boolean).join(' · ')}`).join('\n')}`, `Sí, cancelar ${lista.length === 1 ? 'el viaje' : 'los ' + lista.length}`)) return;
+  const usuario = pedirUsuario('¿Quién eres? Queda como quien canceló los viajes'); if (!usuario) return;
+  let hechos = 0;
+  try {
+    for (const [id, can] of lista) {
+      const c = can.c, mesTxt = MES[Number(c.programacion[0].fechaCargue.slice(5, 7)) - 1];
+      const j = await api('update', {id, cambios: {situacion: 'Cancelado', estado: 'Cancelado', observacion: observacionCancelado(can.x.v, c, mesTxt)}, fuente: 'programacion',
+        usuario: `${usuario} (cancelado por Reckitt, programación ${mesTxt}, correo ${c.fecha.slice(0, 10)})`});
+      if (!j.ok) throw new Error(`${id}: ${j.error || 'error'}`);
+      hechos++;
+    }
+    toast(`${hechos} cancelado${hechos === 1 ? '' : 's'}`);
+  } catch(e) { toast(`Se cancelaron ${hechos} de ${lista.length}: ${e.message}`, 8000); }
+  await cargar(); render();
+}
 const abrirCuadroDeViaje = id => { const can = canceladosEnCuadro().get(id); if (can) abrirProgramacion(can.c); };
 
 // programación mensual: busca el cuadro del mes en los correos; si ya está aplicado, ofrece cerrar la acción
@@ -7986,7 +8006,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '334b512b49';
+const VERSION_TABLERO = '8339d3952c';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -10313,8 +10333,8 @@ function armarBandeja(){
     return F[0] || (pe >= HOY ? pe : HOY);
   };
   // una tarjeta es de hoy si cualquiera de sus acciones lo es (accionDeHoy); primero las de hoy, luego las de los próximos días
-  const L = [...tarjetas.values()].map(t => ({...t, rango: rango(t), roja: t.items.some(i => i.roja), fecha: fechaAccion(t), hoy: t.items.some(accionDeHoy)}))
-    .sort((a, b) => (b.prog ? 1 : 0) - (a.prog ? 1 : 0) || b.hoy - a.hoy || b.roja - a.roja || (a.fecha || '9').localeCompare(b.fecha || '9') || a.rango - b.rango);
+  const L = [...tarjetas.values()].map(t => ({...t, rango: rango(t), roja: t.items.some(i => i.roja), fecha: fechaAccion(t), hoy: t.items.some(accionDeHoy), canc: t.items.some(i => i.urgente)}))
+    .sort((a, b) => (b.canc ? 1 : 0) - (a.canc ? 1 : 0) || (b.prog ? 1 : 0) - (a.prog ? 1 : 0) || b.hoy - a.hoy || b.roja - a.roja || (a.fecha || '9').localeCompare(b.fecha || '9') || a.rango - b.rango);
   return {L, usadas, propUsadas, hoyViajes, B, vivos, T};
 }
 
@@ -10378,7 +10398,13 @@ function renderBandeja(){
   const pintarTarjeta = t => `<div class="bj-card${t.roja ? ' roja' : ''}"><div class="bj-h">${fechaTarjeta(t)}<b>${esc(t.titulo)}</b>${t.v ? ` <span class="sub">${esc([t.v.contenedor, t.v.estado].filter(Boolean).join(' · '))}</span> ${btnT('Abrir el viaje', `data-b-abrir="${t.v.id}"`)}` : ''}</div>`
       + BLOQUES.flatMap(([k, nombre, cls]) => t.items.filter(i => i.b === k && (!bandejaFiltro || bandejaFiltro === k)).map(i => plegar(i, `<div class="bj-item${i.roja ? ' roja' : ''}"><span class="pill ${cls}">${i.pill || nombre}</span><div class="bj-txt">${i.hacer || QUE_HACER[k] ? `<div class="bj-hacer">${i.hacer || QUE_HACER[k]}</div>` : ''}${i.html}${extra(i)}</div><div class="tr-acc">${i.acc || ''}${accExc(i)}</div></div>`))).join('')
       + '</div>';
-  cont.innerHTML = `<div class="bj-ronda sub">${ronda}${bloqueo}${llave}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}</div>` + bloqueGerencia(T) + bloqueCalifGerencia() + avisoAuto + resumenCierre() + barraOp
+  // 19-nov: lo que Reckitt canceló en la programación, arriba de todo y sin importar el área ni la operación elegidas
+  const CAN = canceladosEnCuadro(), sinMov = [...CAN.values()].filter(c => !c.x.conMovimiento).length;
+  const avisoCancelados = !CAN.size ? '' : `<div class="bj-ronda" style="border:1px solid var(--bad);border-radius:8px;padding:8px 12px;margin-bottom:8px;color:var(--bad)"><b>✖ Reckitt canceló ${CAN.size} contenedor${CAN.size === 1 ? '' : 'es'} en la programación:</b> `
+    + [...CAN.entries()].map(([id, c]) => `<button type="button" class="link" data-b-abrir="${id}" title="Abre el viaje">${esc(id)} · ${esc(c.x.v.pais || '')}${c.x.conMovimiento ? ' ⚠' : ''}</button>`).join(' · ')
+    + ` <span class="sub" style="color:var(--ink)">cada uno tiene su tarjeta abajo con "Cancelar el viaje"${sinMov > 1 ? ', o cancele todos de una vez:' : '.'}</span>`
+    + (sinMov > 1 ? ` ${btnT(`✖ Cancelar los ${sinMov} viajes`, 'data-b-cancelartodos="1"', 'Cancela de una vez los que no tienen vehículo ni se ejecutaron, a su nombre')}` : '') + `</div>`;
+  cont.innerHTML = avisoCancelados + `<div class="bj-ronda sub">${ronda}${bloqueo}${llave}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}</div>` + bloqueGerencia(T) + bloqueCalifGerencia() + avisoAuto + resumenCierre() + barraOp
     + `<div class="bj-resumen"><div><b>Para hoy: ${R.L.filter(t => t.hoy).length}</b>${(n => n ? ` · <span style="color:var(--bad)">${n} atrasado${n === 1 ? '' : 's'}</span>` : '')(R.L.filter(t => t.hoy && t.fecha && diffDias(t.fecha) < 0).length)} · próximos días: ${R.L.filter(t => !t.hoy).length}
       · <label class="sub">Área <select class="bj-area" data-b-areasel="1">${[['', 'Todas'], ...AREAS.map(a => [a, a])].map(([a, t]) => `<option value="${a}" ${bandejaArea === a ? 'selected' : ''}>${t} (${porArea(a)})</option>`).join('')}</select></label></div>
       <div class="chips">${`<button type="button" class="chip ${!bandejaFiltro ? 'on' : ''}" data-b-filtro="">Todo · ${R.L.length}</button>`}${BLOQUES.map(([k, t]) => cuenta(k) ? `<button type="button" class="chip ${bandejaFiltro === k ? 'on' : ''}" data-b-filtro="${k}" title="${esc(BLOQUES.find(x => x[0] === k)[3])}">${t} · ${cuenta(k)}</button>` : '').join('')}</div></div>`
@@ -10437,6 +10463,7 @@ $('#bandeja').onclick = e => {
   else if (d.bAbrir) abrir(d.bAbrir);
   else if (d.bCancelar) cancelarPorReckitt(d.bCancelar);   // programacion.js
   else if (d.bCuadro) abrirCuadroDeViaje(d.bCuadro);
+  else if (d.bCancelartodos) cancelarTodosPorReckitt();
   else if (d.bElegir) guardarElegidos(d.bElegir);
   else if (d.bElegirno) guardarDatosMarcados(d.bElegirno, true);
   else if (d.bCerrar) cerrarAccion(d.bCerrar);
