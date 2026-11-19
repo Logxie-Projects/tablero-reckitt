@@ -2046,6 +2046,14 @@ function datoMalEscrito(campo, valor){
 // en el correo; el retiro el 7 en la base y el 11 en el correo). La etapa de facturación y la aprobación de extracostos avanzan
 // (Pendiente → Aprobado → Facturado): que cambien no es una contradicción. p = un dato propuesto {campo, actual, valor}.
 const noCoincide = p => !!p && !!String(p.actual || '').trim() && !['facturacion', 'aprobacionExtra'].includes(p.campo);
+/* 19-nov (IMPO-022: el contenedor MRSU6328652 llegó en el correo del 14-nov, LogxIA lo propuso el 17-nov y quedó 2 días entre 62 datos
+ * pendientes de "Llenar datos"): un dato de IDENTIDAD de un correo (número que no cambia: contenedor, DO, sello…) que lleva un día o más
+ * sin decidirse es una línea ROJA en Acciones para hoy y sale en el reporte de errores por correo. Las fechas no cuentan: se mueven
+ * con su causa y un correo viejo puede traer una fecha ya superada. Nunca se cierra solo ni por el paso del tiempo: se decide con
+ * "Guardar" o "No guardar". p.fecha = cuándo se propuso (o la fecha del correo). */
+const CAMPOS_IDENTIDAD = ['contenedor', 'do', 'mn', 'sello', 'vgm', 'peso', 'placa', 'empresa', 'solicitante', 'rbhy', 'obd'];
+const diasPropuesta = p => { const f = String((p || {}).fecha || '').slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(f) ? Math.max(0, -diffDias(f)) : 0; };
+const propuestaVencida = p => !!p && CAMPOS_IDENTIDAD.includes(p.campo) && diasPropuesta(p) >= 1;
 
 /* ---------- datos en la casilla equivocada, avisos antes de guardar y contenedores hermanos (10-nov) ----------
  * Errores reales del equipo (8 y 9-nov) que el sistema no veía porque solo revisaba lo que FALTA: el booking escrito en la casilla
@@ -7919,7 +7927,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'c492755fc6';
+const VERSION_TABLERO = 'bb9895acec';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -10130,8 +10138,11 @@ function armarBandeja(){
       // 12-nov (decisiones.js): tabla "Hoy en el viaje / Lo que llegó" con una elección por dato y un solo botón
       if (choques.length) { const tid = idDecision(v.id, area, 'choque');
         add(v, {b: 'nocoincide', area, ks: nuevos.length ? [] : deAcc.map(id => 'a' + id), html: htmlChoques(choques, tid) + (nuevos.length ? '' : vienen), acc: botonesChoques(tid, v.id)}); }
-      if (nuevos.length) { const tid = idDecision(v.id, area, 'nuevo');
-        add(v, {b: 'datos', area, ks: deAcc.map(id => 'a' + id), html: htmlDatosNuevos(nuevos, tid) + vienen, acc: botonesDatosNuevos(tid)}); }
+      // 19-nov (IMPO-022): un dato de identidad (contenedor, DO, sello…) sin decidir hace un día o más sale en rojo y dice cuánto lleva
+      if (nuevos.length) { const tid = idDecision(v.id, area, 'nuevo'), venc = nuevos.filter(propuestaVencida), vieja = venc.map(p => String(p.fecha)).sort()[0];
+        add(v, {b: 'datos', area, vencida: venc.length > 0, ks: deAcc.map(id => 'a' + id),
+          html: (venc.length ? `${desdeCuando(vieja)}<b>Sin decidir: ${venc.map(p => esc(p.etiqueta)).join(', ')}</b> <span class="sub">el correo ya lo trae; guárdelo en el viaje o descártelo</span><br>` : '') + htmlDatosNuevos(nuevos, tid) + vienen,
+          acc: botonesDatosNuevos(tid)}); }
     });
     // 7 · Falta (errores del viaje y de sus subviajes; sin los que ya salen arriba), solo si arranca en ≤ HORIZONTE_FALTA días o ya arrancó
     const pe = primerEvento(v), cerca = !pe || diffDias(pe) <= HORIZONTE_FALTA;
@@ -10211,7 +10222,7 @@ function armarBandeja(){
   tarjetas.forEach(t => t.items.forEach(i => { i.area = i.area || 'Operaciones'; const F = [i.k, ...(i.ks || [])].filter(Boolean).map(k => FILAS.get(k)).filter(Boolean);
     const f = F.find(x => x.bloquea) || F.find(x => x.roja) || F[0];
     if (f) i.k = f.k;
-    i.roja = !!(f && f.bloquea) || !!i.prog; i.exc = f ? f.exc : null; i.rojaSinExc = !!(f && f.roja && !f.exc); }));
+    i.roja = !!(f && f.bloquea) || !!i.prog || !!i.vencida; i.exc = f ? f.exc : null; i.rojaSinExc = !!(f && f.roja && !f.exc); }));
   // orden (6-nov): por la fecha de la próxima acción, la más cercana primero (lo atrasado arriba); las rojas antes que todo porque
   // bloquean. Fecha de la tarjeta: el próximo paso sin confirmar del viaje o de sus subviajes (pasosDe); sin pasos pendientes, el
   // primer evento; sin viaje, el día del correo que la pide (ya pasó: va arriba)
