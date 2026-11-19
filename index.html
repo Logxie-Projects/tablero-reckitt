@@ -3898,6 +3898,17 @@ const urlCorreo = b => { const a = String(b.asunto || '').replace(/^\s*((re|rv|f
   const q = num.length ? num.join(' ') + ventana : (palabras.length ? `subject:(${palabras.join(' ')})` : a.split(/\s+/).slice(0, 6).join(' ')) + ventana;
   return 'https://mail.google.com/mail/?authuser=calidad@stentrapetrol.com#search/' + encodeURIComponent(q); };
 const verCorreo = b => urlCorreo(b) ? lnkT('📧 Ver correo', urlCorreo(b)) : '';
+// 19-nov ("uno muestra Abrir correo y el otro no… déjala en todos"): las tarjetas que nacen del viaje (Por tomar, sin vehículo, pasos…) no
+// tenían correo porque no vienen de una acción de la bitácora. Ahora todas lo traen: se abre el correo más reciente de la bitácora que toca el
+// viaje (el más antiguo en "Por tomar": el que lo originó) y, si LogxIA no registró ninguno, una búsqueda por sus números (DO, pedido, booking…)
+const urlCorreoViaje = (v, primero) => {
+  const cs = (typeof correosDe === 'function' ? correosDe(v) : []).filter(b => urlCorreo(b)), f = b => String(b.fechaCorreo || b.registrado || '');
+  cs.sort((a, b) => primero ? f(a).localeCompare(f(b)) : f(b).localeCompare(f(a)));
+  if (cs[0]) return urlCorreo(cs[0]);
+  const n = [...new Set([v.do, v.pedido, v.booking, v.contenedor, v.mn, v.rbhy].flatMap(x => String(x || '').split(/[\s,;/]+/)).filter(s => /\d/.test(s) && s.length >= 4))].slice(0, 4);
+  return n.length ? 'https://mail.google.com/mail/?authuser=calidad@stentrapetrol.com#search/' + encodeURIComponent('{' + n.join(' ') + '}') : '';
+};
+const verCorreoViaje = (v, primero) => { const u = urlCorreoViaje(v, primero); return u ? lnkT('📧 Ver correo', u) : ''; };
 // BITÁCORA (7-nov, antes pestaña Acciones): historial de solo consulta de lo que LogxIA registró de los correos: qué pidió quién,
 // cuándo y quién la cerró. Lo pendiente se trabaja en la Bandeja de Pendientes; aquí solo se busca, se abre el viaje o el correo y,
 // si algo se cerró por error, se reabre. Se abre desde el pie de la Bandeja (📒 Bitácora de acciones).
@@ -8006,7 +8017,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '8339d3952c';
+const VERSION_TABLERO = '68e56f721f';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -10304,6 +10315,8 @@ function armarBandeja(){
     it.desde = HOY; it.opViaje = v ? v.operacion : '';   // lo de mañana va en la operación de su viaje; la nota, en todas
     add(null, it, 'Cierre del día');
   });
+  // 19-nov: "Ver correo" en TODAS las tarjetas de un viaje, no solo en las que vienen de una acción de la bitácora
+  tarjetas.forEach(t => { if (t.v) t.items.forEach(i => { if (i.acc && !/Ver correo/.test(i.acc)) i.acc += verCorreoViaje(t.v, i.b === 'tomar'); }); });
   // lo que ya no tiene sentido pedirle a un viaje que Reckitt canceló (sin vehículo ni ejecución): vehículo, pasos, dónde va, faltantes…
   const MOOT = ['tomar', 'vehiculo', 'sinact', 'gps', 'paso', 'donde', 'hacer', 'falta', 'manana', 'registro'];
   tarjetas.forEach(t => { const c = t.v && CANCELA.get(t.v.id); if (c && !c.x.conMovimiento) t.items = t.items.filter(i => !MOOT.includes(i.b)); });
