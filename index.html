@@ -3983,12 +3983,16 @@ const esGerencia = () => { try { return sessionStorage.getItem('rkt-gerencia') =
 const revisados = () => new Map((window.TURNO || []).map(x => [x.clave, x]));
 async function marcarRevisado(k){
   const usuario = pedirUsuario('¿Quién eres? Queda como "Revisado por …" para todo el equipo'); if (!usuario) return;
+  // 19-nov (revisión de seguridad): aprobar o rechazar (ok| no| salok| salno|) lo comprueba el servidor con la clave de Gerencia; si el tablero
+  // se recargó y ya no la tiene en memoria, se vuelve a pedir
+  let codigo = '';
+  if (/^(ok|no|salok|salno)\|/.test(k)) { codigo = claveGerenciaSesion || prompt('Clave de Gerencia (para aprobar o rechazar)') || ''; if (!codigo) return; }
   const antes = window.TURNO || [], revisado = !revisados().has(k);
   const hora = ahoraBogota().hhmm;
   window.TURNO = revisado ? [...antes, {clave: k, estado: 'Revisado', usuario, hora}] : antes.filter(x => x.clave !== k);
   repintarTurno();
   try {
-    const j = await api('turno', {k, revisado, usuario});
+    const j = await api('turno', {k, revisado, usuario, codigo});
     if (!j.ok) throw new Error(j.error || 'error');
     window.TURNO = j.turno || window.TURNO; repintarTurno();
   } catch(e) { window.TURNO = antes; repintarTurno(); toast('No se guardó la marca: ' + e.message); }
@@ -8049,7 +8053,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'b886e510bd';
+const VERSION_TABLERO = 'f8c345f38d';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
