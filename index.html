@@ -6517,6 +6517,33 @@ function textoBotonProgramacion(b){
   return '📋 ' + (p.length ? p.join(' · ') : 'Programación ya aplicada: nada por crear ni cambiar');
 }
 
+// 19-nov ("está pidiendo vehículo": EXPO-017 salía en Acciones para hoy pidiendo vehículo y pasos aunque Reckitt ya lo había cancelado en el
+// cuadro de Jhonier): los viajes abiertos que el cuadro MÁS RECIENTE de su mes marca CANCELADO, por viaje: {c: cuadro, x: {r, v, conMovimiento}}.
+// La Bandeja los pone arriba con "Cancelar el viaje" y deja de pedirles vehículo y pasos; si Jhonier los vuelve a listar con fecha, la línea desaparece.
+function canceladosEnCuadro(){
+  const M = new Map();
+  if (window.MODO_CLIENTE || !claveActual()) return M;
+  if (!CUADROS_PROG || Date.now() - CUADROS_PROG.t > CUADROS_PROG_MIN * 60e3) { pedirCuadrosProg(); if (!CUADROS_PROG) return M; }
+  CUADROS_PROG.correos.forEach(c => { try { (compararProgramacion(c).cancelados || []).forEach(x => { if (x.v && !M.has(x.v.id)) M.set(x.v.id, {c, x}); }); } catch(e) {} });
+  return M;
+}
+const observacionCancelado = (v, c, mesTxt) => `Cancelado por Reckitt en la programación de ${mesTxt} (correo ${c.fecha.slice(0, 10)})` + (v.observacion ? ' · antes: ' + String(v.observacion).slice(0, 120) : '');
+// "Cancelar el viaje" desde su tarjeta de la Bandeja: confirma, pide el nombre y lo cancela (STATUS y marca Estado), con el Historial a su nombre
+async function cancelarPorReckitt(id){
+  const can = canceladosEnCuadro().get(id), v = viajePorId(id);
+  if (!can || !v) return toast('Ese cuadro ya no marca el viaje como cancelado');
+  const c = can.c, mesTxt = MES[Number(c.programacion[0].fechaCargue.slice(5, 7)) - 1];
+  if (!await preguntarSiNo(`¿Cancelar ${id} (${[v.pais, v.booking].filter(Boolean).join(' · ')})?\n\nEn la programación de ${mesTxt} (correo del ${c.fecha.slice(0, 10)}), Reckitt marcó este contenedor como CANCELADO.${can.x.conMovimiento ? `\n\n⚠ ${v.placa ? 'Ya tiene vehículo (' + v.placa + ')' : 'Ya se ejecutó'}: confírmelo con Reckitt antes de cancelar.` : ''}`, 'Sí, cancelar el viaje')) return;
+  const usuario = pedirUsuario('¿Quién eres? Queda como quien canceló el viaje'); if (!usuario) return;
+  try {
+    const j = await api('update', {id, cambios: {situacion: 'Cancelado', estado: 'Cancelado', observacion: observacionCancelado(v, c, mesTxt)}, fuente: 'programacion',
+      usuario: `${usuario} (cancelado por Reckitt, programación ${mesTxt}, correo ${c.fecha.slice(0, 10)})`});
+    if (!j.ok) throw new Error(j.error || 'error');
+    toast(`${id} cancelado`); await cargar(); render();
+  } catch(e) { toast('No se pudo cancelar: ' + e.message); }
+}
+const abrirCuadroDeViaje = id => { const can = canceladosEnCuadro().get(id); if (can) abrirProgramacion(can.c); };
+
 // programación mensual: busca el cuadro del mes en los correos; si ya está aplicado, ofrece cerrar la acción
 async function atajoProgramacion(b){
   // si el tablero ya trajo los cuadros hace poco (para el texto del botón), abre con esos, sin esperar al servidor
@@ -6774,8 +6801,7 @@ async function aplicarProgramacion(op){
     }
     // cancelar el viaje de lo que Reckitt canceló: STATUS y marca Estado en Cancelado; la observación dice por qué y conserva la anterior
     for (const x of canSel) {
-      const obs = `Cancelado por Reckitt en la programación de ${mesTxt} (correo ${c.fecha.slice(0, 10)})` + (x.v.observacion ? ' · antes: ' + String(x.v.observacion).slice(0, 120) : '');
-      const j = await post({action:'update', id: x.v.id, cambios: {situacion: 'Cancelado', estado: 'Cancelado', observacion: obs}, fuente: 'programacion'});
+      const j = await post({action:'update', id: x.v.id, cambios: {situacion: 'Cancelado', estado: 'Cancelado', observacion: observacionCancelado(x.v, c, mesTxt)}, fuente: 'programacion'});
       if (!j.ok) throw new Error(`${x.v.id}: ${j.error || 'error'}`);
     }
     toast(`Programación aplicada: ${crear.length} creados, ${sel.length - crear.length - omitidas} actualizados${canSel.length ? `, ${canSel.length} cancelado${canSel.length === 1 ? '' : 's'}` : ''}${omitidas ? ` · ${omitidas} sin aplicar por la revisión de números` : ''}`);
@@ -6836,7 +6862,7 @@ function pintarBarrido(){
       botones = (n ? btn(`Actualizar viaje (${n})`, 'aplicar', i, true) : '') + btn('Abrir viaje', 'abrir', i);
     } else if (c.tipo === 'Programación') {
       const P = compararProgramacion(c), n = k => P.filas.filter(f => f.accion===k).length;
-      estado = `<b>${c.programacion.length} cargues</b><br><span class="sub">${n('crear')} nuevos · ${n('cambiar')+n('reusar')} con cambios · ${n('igual')} al día${P.fuera.length ? ` · ${P.fuera.length} ya no aparecen` : ''}</span>`;
+      estado = `<b>${c.programacion.length} cargues</b><br><span class="sub">${n('crear')} nuevos · ${n('cambiar')+n('reusar')} con cambios · ${n('igual')} al día${P.fuera.length ? ` · ${P.fuera.length} ya no aparecen` : ''}${(P.cancelados || []).filter(x => x.v).length ? ` · <b style="color:var(--bad)">${(P.cancelados || []).filter(x => x.v).length} cancelados por Reckitt</b>` : ''}</span>`;
       botones = btn('Revisar programación', 'prog', i, true);
     } else if (c.tipo === 'Comodato') {
       estado = '<span class="sub">Dato de devolución</span>';
@@ -7958,7 +7984,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '6191c06f7b';
+const VERSION_TABLERO = '0ba0fe9d37';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -10086,8 +10112,17 @@ function armarBandeja(){
   viajes.filter(v => !v.padre && !esPrueba(v) && situacion(v) === 'Cerrado').forEach(v => hijosDe(v).filter(s => vigente(s) && !cumplido(s, 'fechaUrbano')).forEach(s =>
     add(v, {b: 'paso', k: 'huer|' + s.id, html: `${esc(nombreSub(s))} · <b>El viaje principal está cerrado y el urbano sigue pendiente</b>${s.fechaUrbano ? ' · ' + esc(fd(s.fechaUrbano)) : ' · sin fecha'}`,
       acc: btnT('Abrir el subviaje', `data-b-abrir="${s.id}"`)})));
+  // 19-nov ("está pidiendo vehículo"): EXPO-017 pedía vehículo y confirmar pasos aunque Reckitt ya lo había cancelado en el cuadro de Jhonier
+  // (programacion.js canceladosEnCuadro). Su tarjeta empieza con "Reckitt canceló este contenedor" y "Cancelar el viaje"; mientras tanto no se le
+  // pide vehículo, pasos ni datos que faltan (abajo, antes de ordenar). Con vehículo o ya ejecutado sí se sigue trabajando, con el aviso.
+  const CANCELA = canceladosEnCuadro();
   vivos.forEach(v => {
     const hijos = hijosDe(v), todos = [v, ...hijos];
+    const canc = CANCELA.get(v.id);
+    if (canc) add(v, {b: 'nocoincide', k: 'canc|' + v.id, area: 'Operaciones', urgente: true, hacer: 'Reckitt canceló este contenedor: cancele el viaje',
+      html: `${desdeCuando(canc.c.fecha)}<b>Reckitt lo canceló en la programación</b> <span class="sub">de ${esc(nombreMes(canc.c.programacion[0].fechaCargue.slice(0, 7)))} (${esc(canc.c.firma || 'Reckitt')}, correo del ${esc(fd(canc.c.fecha.slice(0, 10)))}): en el cuadro, la fecha de cargue dice CANCELADO.</span>`
+        + (canc.x.conMovimiento ? `<br><span style="color:var(--warn)">⚠ ${v.placa ? 'Ya tiene vehículo (' + esc(v.placa) + ')' : 'Ya se ejecutó'}: confírmelo con Reckitt antes de cancelar.</span>` : '<br><span class="sub">Mientras no se cancele, no se le pide vehículo ni confirmar pasos.</span>'),
+      acc: btnT('✖ Cancelar el viaje', `data-b-cancelar="${v.id}"`, 'Pasa el viaje a Cancelado, a su nombre, con el motivo en la observación') + btnT('Ver el cuadro de Jhonier', `data-b-cuadro="${v.id}"`, 'Abre la programación con el contenedor cancelado') + btnT('Abrir el viaje', `data-b-abrir="${v.id}"`)});
     // 2 · Por tomar
     if (esNuevo(v)) add(v, {b: 'tomar', html: `Nadie lo ha tomado: ábralo y presione <b>Tomar</b>`, acc: btnT('Tomar este viaje', `data-b-abrir="${v.id}"`)});
     // 3 · Sin vehículo (Cobertura + error "sin vehículo" + acción "asignar vehículo": una sola línea)
@@ -10247,13 +10282,16 @@ function armarBandeja(){
     it.desde = HOY; it.opViaje = v ? v.operacion : '';   // lo de mañana va en la operación de su viaje; la nota, en todas
     add(null, it, 'Cierre del día');
   });
+  // lo que ya no tiene sentido pedirle a un viaje que Reckitt canceló (sin vehículo ni ejecución): vehículo, pasos, dónde va, faltantes…
+  const MOOT = ['tomar', 'vehiculo', 'sinact', 'gps', 'paso', 'donde', 'hacer', 'falta', 'manana', 'registro'];
+  tarjetas.forEach(t => { const c = t.v && CANCELA.get(t.v.id); if (c && !c.x.conMovimiento) t.items = t.items.filter(i => !MOOT.includes(i.b)); });
   // roja = la misma línea roja de Mi turno (bloquea el tablero mientras no tenga excepción vigente); su excepción, la misma
   // una línea que junta varias cosas (datos + sus acciones; sin vehículo + "asignar vehículo") lleva todas sus claves (ks):
   // es roja si cualquiera lo es, y la excepción se pide sobre esa
   tarjetas.forEach(t => t.items.forEach(i => { i.area = i.area || 'Operaciones'; const F = [i.k, ...(i.ks || [])].filter(Boolean).map(k => FILAS.get(k)).filter(Boolean);
     const f = F.find(x => x.bloquea) || F.find(x => x.roja) || F[0];
     if (f) i.k = f.k;
-    i.roja = !!(f && f.bloquea) || !!i.prog || !!i.vencida; i.exc = f ? f.exc : null; i.rojaSinExc = !!(f && f.roja && !f.exc); }));
+    i.roja = !!(f && f.bloquea) || !!i.prog || !!i.vencida || !!i.urgente; i.exc = f ? f.exc : null; i.rojaSinExc = !!(f && f.roja && !f.exc); }));
   // orden (6-nov): por la fecha de la próxima acción, la más cercana primero (lo atrasado arriba); las rojas antes que todo porque
   // bloquean. Fecha de la tarjeta: el próximo paso sin confirmar del viaje o de sus subviajes (pasosDe); sin pasos pendientes, el
   // primer evento; sin viaje, el día del correo que la pide (ya pasó: va arriba)
@@ -10395,6 +10433,8 @@ $('#bandeja').onclick = e => {
   else if (d.bOp !== undefined) elegirOperacion(d.bOp);
   else if (d.bCampo) abrirEnCampo(d.bCampo, d.campo);   // calidad.js: abre el viaje con el cursor en esa casilla
   else if (d.bAbrir) abrir(d.bAbrir);
+  else if (d.bCancelar) cancelarPorReckitt(d.bCancelar);   // programacion.js
+  else if (d.bCuadro) abrirCuadroDeViaje(d.bCuadro);
   else if (d.bElegir) guardarElegidos(d.bElegir);
   else if (d.bElegirno) guardarDatosMarcados(d.bElegirno, true);
   else if (d.bCerrar) cerrarAccion(d.bCerrar);
