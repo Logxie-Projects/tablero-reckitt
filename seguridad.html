@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Seguridad y datos · LogxView</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* seguridad.html · ℹ️ Seguridad y datos (20-nov-2026). Página informativa para el cliente y el equipo: dónde están los datos de la operación y cómo se protegen.
+   Es texto fijo, sin datos de viajes y sin clave. Solo dice lo que es cierto HOY; los puntos por mejorar viven en docs/SEGURIDAD-AUDITORIA.md (privado).
+   Al cambiar el sistema, actualizar esta página y esa fecha. Se publica tal cual (generar_publico.py la copia). */
+:root{--bg:#f5f6f8;--surface:#fff;--surface-2:#f0f2f5;--border:#e3e6eb;--text:#1b1f27;--muted:#667085;--accent:#ff007f;--accent-soft:#ffe9f3;--ok:#0f8a5f;--ok-soft:#e3f6ee}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1115;--surface:#171a21;--surface-2:#1f232c;--border:#2a2f3a;--text:#e8eaef;--muted:#98a2b3;--accent:#ff4fa3;--accent-soft:#3a1529;--ok:#2bd08a;--ok-soft:#10281f}}
+:root[data-theme="dark"]{--bg:#0f1115;--surface:#171a21;--surface-2:#1f232c;--border:#2a2f3a;--text:#e8eaef;--muted:#98a2b3;--accent:#ff4fa3;--accent-soft:#3a1529;--ok:#2bd08a;--ok-soft:#10281f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:400 16px/1.55 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:900px;margin:0 auto;padding:20px 16px 48px}
+.arriba{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.btn{display:inline-flex;align-items:center;min-height:40px;padding:0 14px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:8px;font:600 14px Inter,system-ui,sans-serif;text-decoration:none;cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+h1{margin:6px 0 4px;font-size:26px;line-height:1.2}
+.lema{margin:0 0 4px;color:var(--muted)}
+.fecha{margin:0 0 18px;color:var(--muted);font-size:13px}
+section{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;margin:0 0 14px}
+h2{margin:0 0 4px;font-size:18px}
+h2 .n{display:inline-grid;place-items:center;width:26px;height:26px;margin-right:8px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-size:14px}
+.sub{margin:0 0 12px;color:var(--muted);font-size:14px}
+.flujo{display:grid;grid-template-columns:1fr 28px 1fr 28px 1fr;gap:6px;align-items:stretch}
+.caja{border:1px solid var(--border);background:var(--surface-2);border-radius:10px;padding:10px 12px;font-size:14px}
+.caja b{display:block;margin-bottom:2px}
+.caja small{display:block;color:var(--muted);font-size:12.5px;line-height:1.4}
+.caja.dato{border-color:var(--ok);background:var(--ok-soft)}
+.flecha{display:grid;place-items:center;color:var(--muted);font-size:18px}
+.nota-flujo{margin:10px 0 0;font-size:14px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--border)}
+th{color:var(--muted);font-weight:600;font-size:12.5px;text-transform:uppercase;letter-spacing:.04em}
+tr:last-child td{border-bottom:0}
+td:first-child{font-weight:600;white-space:nowrap}
+ul.v{list-style:none;padding:0;margin:0;display:grid;gap:8px}
+ul.v li{position:relative;padding-left:26px;font-size:15px}
+ul.v li:before{content:"✓";position:absolute;left:0;top:0;width:18px;height:18px;border-radius:50%;background:var(--ok-soft);color:var(--ok);font-size:12px;font-weight:700;display:grid;place-items:center;margin-top:3px}
+.pie{margin-top:18px;color:var(--muted);font-size:13px}
+@media (max-width:640px){
+  .flujo{grid-template-columns:1fr}.flecha{transform:rotate(90deg);height:18px}
+  td:first-child{white-space:normal}
+  table,thead,tbody,tr,th,td{display:block}thead{display:none}
+  tr{padding:8px 0;border-bottom:1px solid var(--border)}tr:last-child{border-bottom:0}td{border:0;padding:2px 0}
+}
+@media print{
+  body{background:#fff;color:#000;font-size:12px}.arriba{display:none}main{padding:0}
+  section{break-inside:avoid;border-color:#bbb;border-radius:6px;padding:10px 12px;margin-bottom:8px}
+  .btn{display:none}
+}
+</style>
+</head>
+<body>
+<main>
+  <div class="arriba">
+    <a class="btn" href="index.html" id="volver">← Volver al tablero</a>
+    <button class="btn" type="button" onclick="window.print()" title="Imprimir o guardar como PDF">🖨 Imprimir o guardar PDF</button>
+  </div>
+
+  <h1>Seguridad y datos</h1>
+  <p class="lema">Dónde están los datos de la operación Reckitt y cómo se protegen. Sistema LogxView de ENTRAPETROL.</p>
+  <p class="fecha">Actualizado el 20 de noviembre de 2026</p>
+
+  <section>
+    <h2><span class="n">1</span>Dónde están los datos</h2>
+    <p class="sub">Los datos viven en la cuenta de Google Workspace de Entrapetrol. La página del tablero es solo la pantalla: no guarda ningún dato.</p>
+    <div class="flujo">
+      <div class="caja"><b>Correos de la operación</b><small>Programaciones, bookings y cartas de retiro que llegan al buzón de calidad de Entrapetrol</small></div>
+      <div class="flecha">→</div>
+      <div class="caja dato"><b>Google Workspace de Entrapetrol</b><small>Hojas de Google, Drive y el programa que valida cada petición. Aquí están los datos</small></div>
+      <div class="flecha">→</div>
+      <div class="caja"><b>Tablero LogxView</b><small>Pantalla web: pide los datos con una clave y solo muestra lo que el perfil permite</small></div>
+    </div>
+    <p class="nota-flujo">Aparte: la app de los conductores (solo su viaje) y el GPS de los vehículos (enlaces de Satrack, solo para el equipo).</p>
+  </section>
+
+  <section>
+    <h2><span class="n">2</span>Quién ve qué</h2>
+    <p class="sub">Cada perfil recibe del servidor solo los datos que le corresponden; no es la pantalla la que los esconde.</p>
+    <table>
+      <thead><tr><th>Perfil</th><th>Cómo entra</th><th>Qué ve</th></tr></thead>
+      <tbody>
+        <tr><td>Reckitt</td><td>Clave del cliente</td><td>Estado de sus viajes, indicadores y avisos de llegada. No ve costos, ubicación del GPS, cédulas ni celulares</td></tr>
+        <tr><td>Equipo Entrapetrol</td><td>Clave del equipo y su nombre</td><td>La operación completa. Cada cambio queda con su nombre</td></tr>
+        <tr><td>Gerencia</td><td>Clave del equipo y clave propia</td><td>Lo del equipo, más las aprobaciones que solo Gerencia puede dar</td></tr>
+        <tr><td>Conductor</td><td>Enlace personal de su viaje</td><td>Solo su viaje y sus pasos</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2><span class="n">3</span>Cómo se protegen</h2>
+    <p class="sub">Controles que están funcionando hoy.</p>
+    <ul class="v">
+      <li><b>Sin datos en la página.</b> La página pública solo trae el diseño; los datos llegan después de validar la clave en el servidor.</li>
+      <li><b>Cada cambio deja huella.</b> El historial guarda quién cambió qué, cuándo, el valor anterior y el nuevo.</li>
+      <li><b>Los correos al cliente salen de plantillas</b> y a destinatarios definidos en la configuración, sin costos ni datos internos. Cada envío queda registrado.</li>
+      <li><b>Nada se borra por accidente.</b> Los conductores y vehículos se archivan con motivo y se pueden restaurar.</li>
+      <li><b>Escrituras ordenadas.</b> Dos personas no se pisan: el sistema bloquea la hoja mientras una escribe y busca la fila del viaje justo antes de guardar.</li>
+      <li><b>Vigilancia.</b> Un reporte revisa los errores cada hora y otro vigila el tamaño y la velocidad del sistema cada día.</li>
+      <li><b>Pruebas automáticas</b> de las reglas de negocio y de los controles de acceso antes de cada publicación.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="n">4</span>Quién más toca los datos</h2>
+    <table>
+      <thead><tr><th>Servicio</th><th>Para qué</th><th>Qué recibe</th></tr></thead>
+      <tbody>
+        <tr><td>Google Workspace</td><td>Correo, hojas, archivos y el programa del sistema</td><td>Todos los datos de la operación</td></tr>
+        <tr><td>GitHub</td><td>Publicar la pantalla y guardar el código</td><td>Solo código. Ningún dato de viajes</td></tr>
+        <tr><td>LogxIA (asistente de inteligencia artificial, con Claude de Anthropic)</td><td>Leer los correos de la operación y proponer actualizaciones</td><td>El texto de esos correos. Propone; las actualizaciones de programación las aprueba una persona</td></tr>
+        <tr><td>Satrack</td><td>Ubicación de los vehículos</td><td>Placas y posiciones, por enlaces temporales</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2><span class="n">5</span>Datos personales de los conductores</h2>
+    <p class="sub">Cédula, foto, celular y ubicación se piden cuando el conductor acepta un viaje y da su autorización. Solo los ve el equipo de Entrapetrol; nunca se envían a la vista de Reckitt.</p>
+  </section>
+
+  <p class="pie">¿Una pregunta o una auditoría? Escríbale a su coordinador de Entrapetrol. Esta página resume cómo funciona hoy el sistema y se actualiza cuando algo cambia.</p>
+</main>
+<script>
+try { const t = localStorage.getItem('rkt-tema'); if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+</body>
+</html>

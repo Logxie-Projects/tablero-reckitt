@@ -1316,6 +1316,7 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
     <button class="btn solo-interno" id="btnComunicado" title="Comunicado a los conductores por WhatsApp (seguridad, vías, viajes disponibles, documentos): plantilla lista para el canal de avisos de la comunidad">📣 Comunicado</button>
     <button class="btn solo-interno" id="btnDocs" title="Confirmaciones de booking y cartas de retiro que llegan con la programación de Jhonier, archivadas en Drive por mes; marca lo que falta">📎 Documentos de contenedores</button>
     <button class="btn" id="btnCsv">Exportar CSV</button>
+    <a class="btn" id="lnkSeguridad" style="text-decoration:none;color:inherit" href="seguridad.html" target="_blank" rel="noopener" title="Dónde están los datos de la operación y cómo se protegen (para el cliente, el equipo y las auditorías)">ℹ️ Seguridad y datos</a>
   </div>
 </header>
 
@@ -8053,7 +8054,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'f8c345f38d';
+const VERSION_TABLERO = '94cab3aed1';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
