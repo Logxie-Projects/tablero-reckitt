@@ -1315,6 +1315,7 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 .ll-costos .ll-grp td{background:color-mix(in srgb, var(--muted, #888) 10%, transparent);font-weight:600;color:var(--muted);text-align:left}
 .ll-costos .ll-tot td{font-weight:600}
 .ll-costos .ll-sel{background:color-mix(in srgb, var(--accent) 7%, transparent)}
+.ll-costos .ll-gran td{border-top:2px solid var(--border);font-size:13px}
 </style>
 </head>
 <body>
@@ -3579,7 +3580,15 @@ function costosContenedor(factura, vs, t){
   const lista = Object.keys(extras).map(k => [k, extras[k]]); if (extraTotal > 0 && !lista.length) lista.push(['Extracostos', extraTotal]);
   const transporte = (vs || []).length ? {tarifa: en(tarifa, 'COP'), retorno: en(retorno, 'COP'), extras: lista.map(([k, x]) => Object.assign({concepto: k}, en(x, 'COP'))), extra: en(extraTotal, 'COP'),
     aprob: estados.size === 1 ? [...estados][0] : estados.size ? 'Mixta' : '', total: en(tarifa + retorno + extraTotal, 'COP'), sinTarifa: !tarifa} : null;
-  return {venta: C ? en(C.venta, mon) : null, logistica, transporte, tasas: t};
+  // 21-nov (esquema del usuario): «Costos logísticos» = transporte de ETP + agenciamiento (cargos de la factura que envía Jhonier), con un TOTAL que los suma; el valor de la mercancía NO entra.
+  // Si falta uno de los dos bloques (sin factura o sin viaje) el total es el de lo que hay y `completo` es false. Una moneda sin tasa en alguno de los dos queda en null.
+  // un viaje sin tarifa ni extracostos todavía no tiene costo de transporte (no cuenta como $0): `falta` dice qué le falta al total
+  const sinCosto = !!transporte && transporte.sinTarifa && !(tarifa + retorno + extraTotal), falta = !transporte ? 'el viaje' : sinCosto ? 'la tarifa del viaje' : !logistica ? 'la factura' : '';
+  const venta = C ? en(C.venta, mon) : null, partes = [transporte && !sinCosto && transporte.total, logistica && logistica.total].filter(Boolean);
+  const suma = m => partes.every(p => p[m] != null) ? partes.reduce((a, p) => a + p[m], 0) : null;
+  const total = partes.length ? {COP: suma('COP'), GBP: suma('GBP'), USD: suma('USD')} : null;
+  const pctTotal = total && venta ? (total.USD != null && venta.USD ? total.USD / venta.USD * 100 : total.COP != null && venta.COP ? total.COP / venta.COP * 100 : null) : null;
+  return {venta, logistica, transporte, total, completo: !falta, falta, pctTotal, tasas: t};
 }
 /** Las cifras de arriba del informe, sobre filas con `lista` y `llenado` (las que no tienen tipo de contenedor no cuentan). */
 function resumenLlenado(filas){
@@ -5653,27 +5662,30 @@ function pintarLlenado(){
         <td>${barra(x)}<span class="sub">${fmtLl(f.l.volumenM3)} de ${fmtLl(x.capVol)} m³ · ${fmtLl(x.volPct, 0)}%</span></td>
         <td>${f.l.brutoKg ? fmtLl(x.pesoPct, 0) + '%' : '<span class="sub">—</span>'}${x.pasaPeso ? ' <b style="color:var(--bad)" title="Pasa el peso útil">⚠</b>' : ''}</td>
         <td><span class="ll-pill ${LLENADO_LIMITA[x.limita][0]}" title="${esc(LLENADO_LIMITA[x.limita][2])}">${LLENADO_LIMITA[x.limita][1]}</span>${x.pasaVolumen ? ' <b style="color:var(--bad)" title="Pasa el volumen">⚠</b>' : ''}</td>`;
-    // 21-nov (usuario: «misma columna es confuso»): el valor de la mercancía y el costo de la agencia de aduana van en columnas distintas
-    const venta = f.costo ? `<td>${montoLl(f.costos.venta[llenadoMoneda], llenadoMoneda)}</td><td>${montoLl(f.costos.logistica.total[llenadoMoneda], llenadoMoneda)}<br><span class="sub">${fmtLl(f.costo.pctLogistica, 1)}% de la mercancía</span></td>` : '<td colspan="2"><span class="sub">Sin factura</span></td>';
+    // 21-nov (usuario: «misma columna es confuso»; esquema «Costos logísticos»): el valor de la mercancía y los costos logísticos (transporte de ETP + agenciamiento) van en columnas distintas
+    const cs = f.costos, mon = llenadoMoneda;
+    const merc = f.costo ? `<td>${montoLl(cs.venta[mon], mon)}</td>` : '<td><span class="sub">Sin factura</span></td>';
+    const logi = cs.total ? `<td>${montoLl(cs.total[mon], mon)}<br><span class="sub">${cs.completo && cs.pctTotal != null ? fmtLl(cs.pctTotal, 1) + '% de la mercancía' : 'incompleto: falta ' + cs.falta}</span></td>` : '<td><span class="sub">—</span></td>';
+    const venta = merc + logi;
     const det = llenadoAbierto === k ? `<tr class="ll-det"><td colspan="7">${detalleLlenado(f)}</td></tr>` : '';
     return `<tr class="ll-fila" data-ll-abrir="${esc(k)}"><td>${quien}</td>${resto}${venta}</tr>${det}`;
   };
-  const conFact = F.filter(f => f.costo), sumV = conFact.reduce((a, f) => a + f.costo.venta, 0), sumL = conFact.reduce((a, f) => a + f.costo.logistica, 0);   // el porcentaje no depende de la moneda
-  const enMon = pick => conFact.reduce((a, f) => a == null || pick(f)[llenadoMoneda] == null ? null : a + pick(f)[llenadoMoneda], 0);   // suma cada contenedor con SU tasa; null si a alguno le falta
-  const sumVm = enMon(f => f.costos.venta), sumLm = enMon(f => f.costos.logistica.total);
+  // solo cuentan los contenedores con viaje Y factura (si falta uno de los dos, el costo logístico no está completo y el porcentaje saldría de menos)
+  const conFact = F.filter(f => f.costo && f.costos.completo), sumM = pick => conFact.reduce((a, f) => a == null || pick(f) == null ? null : a + pick(f), 0);   // null si a alguno le falta la tasa
+  const sumVm = sumM(f => f.costos.venta[llenadoMoneda]), sumLm = sumM(f => f.costos.total[llenadoMoneda]), sumVu = sumM(f => f.costos.venta.USD), sumLu = sumM(f => f.costos.total.USD);
   const selector = `<div class="ll-mon"><span class="sub">Moneda de la tabla y los totales:</span> ${MONEDAS_LL.map(m => `<button type="button" class="chip${m === llenadoMoneda ? ' on' : ''}" data-ll-mon="${m}">${m}</button>`).join(' ')}
     ${GBP_ERROR ? '<span class="sub" style="color:var(--warn)">· no se pudo consultar la tasa de la libra: las libras salen con «—»</span>' : ''}</div>`;
   cont.innerHTML = selector + `<div class="ll-kpis">${kpi('Llenado promedio', n && R.n ? fmtLl(R.volPromedio, 0) + '%' : '—', 'volumen lleno sobre la capacidad')}
       ${kpi('Con espacio de sobra', R.n ? `${R.conSobra} de ${R.n}` : '—', 'ni peso ni volumen pasan del ' + UMBRAL_LLENADO + '%')}
       ${kpi('Espacio que sobra', R.n ? fmtLl(R.vacioM3, 0) + ' m³' : '—', 'solo de los que sobran, no de los pesados')}
       ${kpi('Equivale a', R.n ? fmtLl(R.equivale40) + " de 40'" : '—', 'contenedores de 67,7 m³')}
-      ${kpi('Agencia de aduana sobre venta', conFact.length ? fmtLl(sumL / sumV * 100, 1) + '%' : '—', conFact.length ? `${montoLl(sumLm, llenadoMoneda)} de ${montoLl(sumVm, llenadoMoneda)} · ${conFact.length} de ${n} con factura` : 'faltan las facturas')}</div>
+      ${kpi('Costos logísticos sobre la mercancía', conFact.length && sumVu ? fmtLl(sumLu / sumVu * 100, 1) + '%' : '—', conFact.length ? `${montoLl(sumLm, llenadoMoneda)} de costos y ${montoLl(sumVm, llenadoMoneda)} de mercancía · ${conFact.length} de ${n} con viaje y factura` : 'faltan el viaje o la factura')}</div>
     ${cargaLlenado()}${pendientesLlenado()}
-    ${n ? `<div class="tbl-wrap"><table class="prop ll-tabla"><thead><tr><th>Contenedor · RBHY</th><th>Tipo</th><th>Volumen lleno</th><th>Peso</th><th>Lo que limita</th><th>Valor de la mercancía</th><th>Costo agencia de aduana</th></tr></thead><tbody>${F.map(filaHtml).join('')}</tbody></table></div>`
+    ${n ? `<div class="tbl-wrap"><table class="prop ll-tabla"><thead><tr><th>Contenedor · RBHY</th><th>Tipo</th><th>Volumen lleno</th><th>Peso</th><th>Lo que limita</th><th>Valor de la mercancía</th><th>Costos logísticos (ETP + agencia)</th></tr></thead><tbody>${F.map(filaHtml).join('')}</tbody></table></div>`
       : `<p class="sub">No hay listas de empaque leídas para este mes. Toque «Leer correos ahora» para buscarlas en el buzón de calidad@.</p>`}
     <p class="sub" style="margin-top:8px">Capacidad: 20' = ${fmtLl(CAPACIDAD_CONT['20'].vol)} m³ y ${fmtLl(CAPACIDAD_CONT['20'].kg, 0)} kg · 40' = ${fmtLl(CAPACIDAD_CONT['40'].vol)} m³ y ${fmtLl(CAPACIDAD_CONT['40'].kg, 0)} kg · 40' HC = ${fmtLl(CAPACIDAD_CONT['40HC'].vol)} m³ y ${fmtLl(CAPACIDAD_CONT['40HC'].kg, 0)} kg. El peso es el que permite la tractomula (${fmtLl(PESO_TRACTOMULA, 0)} kg entre contenedor y carga) menos la tara típica del contenedor. El tipo sale de la Unidad del viaje; en exportaciones el «40'» se toma como 40' HC, porque así son todos los bookings leídos.
     «Peso» o «Volumen» dice cuál límite se alcanza primero: si el contenedor va pesado, el espacio vacío no es desperdicio. Solo «Sobra espacio» se puede mejorar. Toque una fila para ver el diagrama, los productos con su precio y el costo contra la venta.
-    «Agencia de aduana» son los cargos que trae la factura de venta que envía Jhonier (flete interno, cargo adicional y, en las CIF, flete internacional y seguro), sobre el valor de la mercancía. «ETP» es el transporte de la base de viajes. Son dos costos distintos y no se suman entre sí. Los costos van en COP (con la TRM de cada factura), GBP (con la tasa del día de la factura, que se consulta a un servicio público de tasas de cambio) y USD; el transporte de ETP, con su tarifa, retorno y extracostos, sale de la base de viajes.</p>`;
+    «Costos logísticos» = el transporte de ETP (transporte terrestre, cargue y otros extracostos, retorno del contenedor; salen de la base de viajes) más el agenciamiento de la agencia de aduana (los cargos de la factura de venta que envía Jhonier). El valor de la mercancía no entra en los costos. Los costos van en COP (con la TRM de cada factura), GBP (con la tasa del día de la factura, que se consulta a un servicio público de tasas de cambio) y USD.</p>`;
 }
 // Vista lateral del contenedor: un bloque por producto, de largo proporcional a su volumen, y el espacio vacío rayado; debajo, el peso contra el límite de la tractomula
 function diagramaLlenado(f, prods){
@@ -5695,25 +5707,26 @@ function diagramaLlenado(f, prods){
     <rect x="${X0}" y="${Y0 + H + 34}" width="${L}" height="12" rx="3" fill="var(--surface-2)" stroke="var(--border)"/><rect x="${X0}" y="${Y0 + H + 34}" width="${pesoW.toFixed(1)}" height="12" rx="3" fill="${col}"/>
   </svg>`;
 }
-// A la derecha del diagrama (21-nov, pedido de Gallego): los costos de este contenedor en COP, GBP y USD, en dos bloques que no se suman: los costos de ETP (el transporte de la base de
-// viajes: tarifa, retorno y extracostos) y los de la agencia de aduana, que son los cargos de la factura de venta que envía Jhonier (decisión del usuario: «costos ETP y costos agencia
-// de aduana, que son los de Jhonier»). La moneda elegida arriba va resaltada.
+// A la derecha del diagrama (21-nov, pedido de Gallego): los costos de este contenedor en COP, GBP y USD. Esquema del usuario: arriba el valor de la mercancía, aparte (no es un costo);
+// luego UN cuadro de «Costos logísticos» con el transporte de ETP (transporte terrestre, cargue y otros extracostos, retorno del contenedor), el agenciamiento de la agencia de aduana
+// (los cargos de la factura que envía Jhonier) y el TOTAL que los suma. La moneda elegida arriba va resaltada.
 function panelCostos(f){
   const c = f.costos, F = f.fact, T = c.tasas, tr = c.transporte, ag = c.logistica;   // ag: los cargos de la factura (el campo se llama logistica en el dominio)
   const fila = (nom, o, cls) => `<tr${cls ? ` class="${cls}"` : ''}><td>${nom}</td>${MONEDAS_LL.map(m => `<td${m === llenadoMoneda ? ' class="ll-sel"' : ''}>${o ? montoLl(o[m], m) : '—'}</td>`).join('')}</tr>`;
   const grupo = t => `<tr class="ll-grp"><td colspan="4">${t}</td></tr>`, nota = t => `<tr><td colspan="4" class="sub">${t}</td></tr>`;
-  const etp = tr ? grupo('Costos ETP · transporte (base de viajes)') + (tr.sinTarifa ? nota('El viaje todavía no tiene tarifa cargada.') : fila('Tarifa', tr.tarifa)) + (tr.retorno.COP ? fila('Retorno del vacío', tr.retorno) : '')
-      + grupo(`Extracostos${tr.aprob ? ' · ' + (tr.aprob === 'Aprobado' ? 'aprobados por Reckitt' : tr.aprob === 'Pendiente' ? '<b style="color:var(--warn)">pendientes de aprobación</b>' : esc(tr.aprob)) : ''}`)
-      + (tr.extras.length ? tr.extras.map(x => fila(esc(x.concepto), x)).join('') : nota('Sin extracostos.')) + fila('Subtotal ETP', tr.total, 'll-tot')
-    : grupo('Costos ETP · transporte') + nota('La lista no está ligada a un viaje: no hay tarifa ni extracostos que mostrar.');
-  const agencia = F && c.venta && ag ? grupo(`Costos agencia de aduana · los de la factura que envía Jhonier${F.numero ? ' (' + esc(F.numero) + ')' : ''}${F.incoterm ? ' · ' + esc(F.incoterm) : ''} · ${fmtLl(ag.pct, 1)}% de la mercancía`)
-      + ag.cargos.map(x => fila(esc(x.concepto), x)).join('') + fila('Subtotal agencia de aduana', ag.total, 'll-tot')
-    : grupo('Costos agencia de aduana') + nota('Todavía no hay factura leída de este contenedor (llega en el correo «NUEVA EXPORTACIÓN»; toque «Leer correos ahora»).');
-  // 21-nov (usuario: «costos de mercancía no se deben mezclar con costos logísticos»): el valor de la mercancía NO es un costo; va aparte, debajo, con su propio título
-  const merc = F && c.venta ? `<div style="font-weight:600;margin:14px 0 4px">Valor de la mercancía · factura de venta <span class="sub" style="font-weight:400">(no es un costo)</span></div><div class="tbl-wrap"><table class="prop ll-costos"><tbody>${fila('Mercancía', c.venta)}</tbody></table></div>` : '';
+  const cab = `<thead><tr><th></th>${MONEDAS_LL.map(m => `<th${m === llenadoMoneda ? ' class="ll-sel"' : ''}>${m}</th>`).join('')}</tr></thead>`;
+  const merc = F && c.venta ? `<div style="font-weight:600;margin-bottom:4px">Valor de la mercancía <span class="sub" style="font-weight:400">· factura de venta (no es un costo)</span></div><div class="tbl-wrap"><table class="prop ll-costos">${cab}<tbody>${fila('Mercancía', c.venta)}</tbody></table></div>` : '';
+  const pend = tr && tr.aprob && tr.aprob !== 'Aprobado' ? ` <span style="color:var(--warn)">· ${tr.aprob === 'Pendiente' ? 'pendiente de aprobación' : esc(tr.aprob)}</span>` : '';
+  const etp = tr ? grupo('Transporte · ETP (base de viajes)') + (tr.sinTarifa ? nota('El viaje todavía no tiene tarifa cargada.') : fila('Transporte terrestre', tr.tarifa))
+      + tr.extras.map(x => fila(esc(x.concepto) + pend, x)).join('') + (tr.retorno.COP ? fila('Retorno del contenedor', tr.retorno) : '') + fila('Subtotal transporte', tr.total, 'll-tot')
+    : grupo('Transporte · ETP') + nota('La lista no está ligada a un viaje: no hay costos de transporte que mostrar.');
+  const agencia = ag && F ? grupo(`Agenciamiento · agencia de aduana <span class="sub" style="font-weight:400">(factura que envía Jhonier${F.numero ? ' ' + esc(F.numero) : ''}${F.incoterm ? ' · ' + esc(F.incoterm) : ''})</span>`)
+      + ag.cargos.map(x => fila(esc(x.concepto), x)).join('') + fila('Subtotal agenciamiento', ag.total, 'll-tot')
+    : grupo('Agenciamiento · agencia de aduana') + nota('Todavía no hay factura leída de este contenedor (llega en el correo «NUEVA EXPORTACIÓN»; toque «Leer correos ahora»).');
+  const total = c.total ? fila('Total costos logísticos' + (c.completo ? '' : ' <span class="sub">(incompleto)</span>'), c.total, 'll-tot ll-gran') + (c.completo && c.pctTotal != null ? nota(fmtLl(c.pctTotal, 1) + '% del valor de la mercancía') : '') : '';
   const fechaTasa = F && F.fecha ? F.fecha : String(f.l.fecha || '').slice(0, 10);
   const tasas = `<div class="sub" style="margin-top:6px">Tasas: ${T.trm ? `TRM $${fmtLl(T.trm, 2)} por USD${T.aproximada ? ' <b title="Este contenedor todavía no tiene factura propia: se usa la TRM de la factura más reciente">(aproximada)</b>' : ' de la factura'}` : 'sin TRM'} · ${T.gbp ? `${fmtLl(T.gbp, 4)} GBP por USD del ${esc(fd(fechaTasa))}` : 'sin tasa de la libra'}.</div>`;
-  return `<div style="font-weight:600;margin-bottom:4px">Costos de este contenedor</div><div class="tbl-wrap"><table class="prop ll-costos"><thead><tr><th></th>${MONEDAS_LL.map(m => `<th${m === llenadoMoneda ? ' class="ll-sel"' : ''}>${m}</th>`).join('')}</tr></thead><tbody>${etp}${agencia}</tbody></table></div>${merc}${tasas}`;
+  return `${merc}<div style="font-weight:600;margin:${merc ? '14px' : '0'} 0 4px">Costos logísticos</div><div class="tbl-wrap"><table class="prop ll-costos">${cab}<tbody>${etp}${agencia}${total}</tbody></table></div>${tasas}`;
 }
 function detalleLlenado(f){
   const l = f.l, F = f.fact, prods = productosContenedor(l, F);
@@ -5766,10 +5779,11 @@ async function cargarLlenado(actualizar, historico){
 function csvLlenado(){
   const F = filasLlenado(llenadoMes); if (!F.length) return toast('No hay listas en este mes');
   const q = s => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
-  const filas = [['RBHY', 'Contenedor', 'Tipo', 'Delivery', 'Cajas', 'Volumen m3', 'Capacidad m3', 'Volumen %', 'Peso bruto kg', 'Peso %', 'Lo que limita', 'Factura', 'Moneda', 'Venta (mercancia)', 'Agencia aduana (factura)', 'Agencia aduana sobre venta %', 'Total factura', 'Venta COP', 'Venta GBP', 'Venta USD', 'Agencia aduana COP', 'Agencia aduana GBP', 'Agencia aduana USD', 'Costos ETP COP', 'Extracostos COP', 'Extracostos aprobacion', 'TRM', 'GBP por USD', 'Avisos']].concat(F.map(f => [f.l.rbhy, f.l.contenedor, f.tipos.join('+'), f.l.delivery, f.l.cajas,
+  const filas = [['RBHY', 'Contenedor', 'Tipo', 'Delivery', 'Cajas', 'Volumen m3', 'Capacidad m3', 'Volumen %', 'Peso bruto kg', 'Peso %', 'Lo que limita', 'Factura', 'Moneda', 'Venta (mercancia)', 'Agencia aduana (factura)', 'Agencia aduana sobre venta %', 'Total factura', 'Venta COP', 'Venta GBP', 'Venta USD', 'Agencia aduana COP', 'Agencia aduana GBP', 'Agencia aduana USD', 'Costos logisticos COP', 'Costos logisticos GBP', 'Costos logisticos USD', 'Costos logisticos % de la mercancia', 'Costos ETP COP', 'Extracostos COP', 'Extracostos aprobacion', 'TRM', 'GBP por USD', 'Avisos']].concat(F.map(f => [f.l.rbhy, f.l.contenedor, f.tipos.join('+'), f.l.delivery, f.l.cajas,
     f.l.volumenM3, f.llenado ? f.llenado.capVol.toFixed(1) : '', f.llenado ? f.llenado.volPct.toFixed(1) : '', f.l.brutoKg, f.llenado ? f.llenado.pesoPct.toFixed(1) : '', f.llenado ? LLENADO_LIMITA[f.llenado.limita][1] : '',
     f.fact ? f.fact.numero : '', f.costo ? f.costo.moneda : '', f.costo ? f.costo.venta : '', f.costo ? f.costo.logistica : '', f.costo ? f.costo.pctLogistica.toFixed(1) : '', f.costo ? f.costo.total : '',
     ...['venta', 'logistica'].flatMap(k => MONEDAS_LL.map(m => { const o = k === 'venta' ? f.costos.venta : f.costos.logistica && f.costos.logistica.total; return o && o[m] != null ? (m === 'COP' ? Math.round(o[m]) : o[m].toFixed(2)) : ''; })),
+    ...MONEDAS_LL.map(m => f.costos.total && f.costos.total[m] != null ? (m === 'COP' ? Math.round(f.costos.total[m]) : f.costos.total[m].toFixed(2)) : ''), f.costos.completo && f.costos.pctTotal != null ? f.costos.pctTotal.toFixed(1) : '',
     f.costos.transporte ? Math.round(f.costos.transporte.total.COP) : '', f.costos.transporte ? Math.round(f.costos.transporte.extra.COP) : '', f.costos.transporte ? f.costos.transporte.aprob : '', f.tasas.trm || '', f.tasas.gbp || '', f.l.avisos.concat(f.fact ? f.fact.avisos : []).join(' | ')]));
   const url = URL.createObjectURL(new Blob(['﻿' + filas.map(r => r.map(q).join(';')).join('\r\n')], {type: 'text/csv;charset=utf-8'}));
   const a = document.createElement('a'); a.href = url; a.download = `llenado-contenedores-${llenadoMes}.csv`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5e3);
@@ -8594,7 +8608,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '30dcf22be2';
+const VERSION_TABLERO = 'd8b7d18d1f';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
