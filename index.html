@@ -5558,7 +5558,7 @@ document.addEventListener('click', e => { if (e.target.closest('[data-gc-abrir]'
 let LLENADO = null, LLENADO_FACT = [], LLENADO_CARGA = null, LLENADO_TIPOS = {}, llenadoMes = '', llenadoAbierto = '';
 // 21-nov (pedido de José Gallego, Reckitt): los costos también en COP y GBP. COP con la TRM de cada factura; GBP con la tasa del día de la factura, que el navegador consulta a un
 // servicio público de tasas (api.frankfurter.dev: solo se le envían fechas). GBP_TABLA = {fecha: libras por dólar}; si el servicio no responde, las libras salen con «—».
-let GBP_TABLA = {}, GBP_ERROR = false, llenadoMoneda = (() => { try { const m = localStorage.getItem('rkt-ll-moneda'); return ['COP', 'GBP', 'USD'].includes(m) ? m : 'COP'; } catch(e) { return 'COP'; } })();
+let GBP_TABLA = {}, GBP_ERROR = false, llenadoMoneda = (() => { try { const m = localStorage.getItem('rkt-ll-moneda'); return ['COP', 'GBP', 'USD'].includes(m) ? m : 'GBP'; } catch(e) { return 'GBP'; } })();
 const MONEDAS_LL = ['COP', 'GBP', 'USD'], SIMBOLO_LL = {COP: '$', GBP: '£', USD: 'US$'};
 const montoLl = (m, mon) => m == null ? '—' : SIMBOLO_LL[mon] + fmtLl(m, 0);
 const COLORES_LL = ['#7F77DD', '#D4537E', '#1D9E75', '#BA7517', '#D85A30', '#378ADD', '#639922', '#888780'];   // un color por producto en el diagrama y en su tabla
@@ -5728,6 +5728,20 @@ function panelCostos(f){
   const tasas = `<div class="sub" style="margin-top:6px">Tasas: ${T.trm ? `TRM $${fmtLl(T.trm, 2)} por USD${T.aproximada ? ' <b title="Este contenedor todavía no tiene factura propia: se usa la TRM de la factura más reciente">(aproximada)</b>' : ' de la factura'}` : 'sin TRM'} · ${T.gbp ? `${fmtLl(T.gbp, 4)} GBP por USD del ${esc(fd(fechaTasa))}` : 'sin tasa de la libra'}.</div>`;
   return `${merc}<div style="font-weight:600;margin:${merc ? '14px' : '0'} 0 4px">Costos logísticos</div><div class="tbl-wrap"><table class="prop ll-costos">${cab}<tbody>${etp}${agencia}${total}</tbody></table></div>${tasas}`;
 }
+// 21-nov (usuario, sobre las tarjetas de abajo de la versión anterior: «eso era bueno, hazlo pero en GBP, que es la moneda de Reckitt»): cuatro tarjetas con la factura de venta en libras,
+// con el dólar y el peso en la línea de abajo. Los cargos van con el nombre que escribe la factura; no se les llama «agencia» ni «logística» porque la factura no dice de quién son.
+function tarjetasFactura(f){
+  const c = f.costos, F = f.fact, ag = c.logistica; if (!F || !c.venta || !ag) return '';
+  const lb = o => o && o.GBP != null ? '£' + fmtLl(o.GBP, 0) : '—', usd = o => o && o.USD != null ? 'US$' + fmtLl(o.USD, 0) : '';
+  const total = c.venta.GBP != null && ag.total.GBP != null ? {GBP: c.venta.GBP + ag.total.GBP, USD: c.venta.USD + ag.total.USD} : null;
+  const kpi = (t, v, sub) => `<div class="ll-kpi"><span class="sub">${t}</span><b>${v}</b>${sub ? `<span class="sub">${sub}</span>` : ''}</div>`;
+  const aprox = c.tasas.aproximada ? ' (aprox.)' : '';
+  return `<div class="sub" style="margin-top:14px">Factura de venta de Reckitt${F.numero ? ' ' + esc(F.numero) : ''} · en libras (GBP), con el dólar y el peso colombiano abajo</div>
+    <div class="ll-kpis" style="margin:6px 0 0">${kpi('Valor de la mercancía', lb(c.venta), [usd(c.venta), c.venta.COP != null ? '$' + fmtLl(c.venta.COP / 1e6, 1) + ' M a TRM ' + fmtLl(c.tasas.trm, 2) + aprox : ''].filter(Boolean).join(' · '))}
+      ${kpi('Cargos de la factura', lb(ag.total), ag.cargos.map(x => `${esc(x.concepto)} ${lb(x)}`).join(' · '))}
+      ${kpi('Total factura' + (F.incoterm ? ' ' + esc(F.incoterm) : ''), lb(total), [usd(total), F.numero ? 'Factura ' + esc(F.numero) : ''].filter(Boolean).join(' · '))}
+      ${kpi('Cargos sobre la mercancía', fmtLl(ag.pct, 1) + '%', `${lb(ag.total)} de ${lb(c.venta)}`)}</div>`;
+}
 function detalleLlenado(f){
   const l = f.l, F = f.fact, prods = productosContenedor(l, F);
   const avisos = l.avisos.concat(F ? F.avisos : []), aviso = (f.sinViaje ? `<div class="sub" style="color:var(--warn)">⚠ Esta lista no está ligada a ningún viaje${f.choque ? ': <b>' + esc(f.choque) + '</b>' : ' (por RBHY, booking ni contenedor): falta el RBHY en el viaje —las Acciones lo proponen desde el correo—, o el viaje no está creado'}.${f.tipoSupuesto ? " El cálculo supone un contenedor de 40' HC." : ''}</div>` : '') + (avisos.length ? `<div class="sub" style="color:var(--warn)">⚠ ${avisos.map(esc).join(' · ')}</div>` : '');
@@ -5739,7 +5753,7 @@ function detalleLlenado(f){
       <tr style="font-weight:600"><td></td><td>Total</td><td>${fmtLl(l.cajas, 0)}</td><td>${fmtLl(l.volumenM3, 1)}</td><td>${fmtLl(l.brutoKg, 0)}</td>${conPrecio ? `<td></td><td>${F ? fmtLl(F.subtotal, 0) : ''}</td><td>${F && l.volumenM3 ? fmtLl(F.subtotal / l.volumenM3, 0) : ''}</td>` : ''}</tr></tbody></table></div>`;
   const correo = l.msgId ? ` · <a class="link" href="https://mail.google.com/mail/?authuser=calidad@stentrapetrol.com#all/${esc(l.msgId)}" target="_blank" rel="noopener">Ver correo con la lista (PDF)</a>` : '';
   return `<div class="sub">Lista ${esc(l.delivery || 'sin Delivery ID')} · ${fmtLl(l.cajas, 0)} cajas · ${fmtLl(l.volumenM3, 3)} m³ · ${fmtLl(l.brutoKg, 0)} kg bruto${f.vs.map(v => ` · <button type="button" class="link" data-ll-viaje="${esc(v.id)}">${esc(v.id)}</button>`).join('')}${correo}</div>${aviso}
-    <div class="ll-cols"><div class="ll-izq">${diagramaLlenado(f, prods)}</div><div class="ll-der">${panelCostos(f)}</div></div>${tab}`;
+    <div class="ll-cols"><div class="ll-izq">${diagramaLlenado(f, prods)}</div><div class="ll-der">${panelCostos(f)}</div></div>${tab}${tarjetasFactura(f)}`;
 }
 // La libra del día de cada factura: UNA consulta con el rango de fechas (el servicio publica solo días hábiles; gbpDelDia toma la del último día hasta la fecha). Sin respuesta, GBP_ERROR.
 async function cargarGbp(){
@@ -8608,7 +8622,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'd8b7d18d1f';
+const VERSION_TABLERO = '30aef4efdd';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
