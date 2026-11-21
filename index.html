@@ -1304,6 +1304,17 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 .ll-pill.p-pes{background:color-mix(in srgb, var(--s-asig) 14%, transparent);color:var(--s-asig)}
 .ll-pill.p-vol{background:color-mix(in srgb, var(--ok) 14%, transparent);color:var(--ok)}
 .ll-pill.p-sob{background:color-mix(in srgb, var(--bad) 14%, transparent);color:var(--bad)}
+.ll-mon{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
+.ll-mon .chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.ll-cols{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;margin:8px 0}
+.ll-izq{flex:1 1 400px;min-width:0}
+.ll-der{flex:1 1 400px;min-width:0}
+.ll-costos{width:100%}
+.ll-costos th,.ll-costos td{text-align:right;white-space:nowrap}
+.ll-costos th:first-child,.ll-costos td:first-child{text-align:left;white-space:normal}
+.ll-costos .ll-grp td{background:color-mix(in srgb, var(--muted, #888) 10%, transparent);font-weight:600;color:var(--muted);text-align:left}
+.ll-costos .ll-tot td{font-weight:600}
+.ll-costos .ll-sel{background:color-mix(in srgb, var(--accent) 7%, transparent)}
 </style>
 </head>
 <body>
@@ -1404,6 +1415,7 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 
   <section id="v-trafico" class="hidden"><div class="card"><div id="trafico"></div></div></section>
 
+  <section id="v-errores" class="hidden">
   <section id="v-llenado" class="hidden solo-interno">
     <div class="card">
       <div class="toolbar" style="justify-content:space-between">
@@ -1414,7 +1426,6 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
     </div>
   </section>
 
-  <section id="v-errores" class="hidden">
     <div class="card">
       <div class="toolbar" style="justify-content:space-between">
         <div><h2 style="margin:0">Calidad de datos</h2><div class="sub" id="errResumen"></div></div>
@@ -3536,6 +3547,40 @@ function costoVsVenta(factura){
   return {venta: factura.subtotal, logistica, total: factura.total, moneda: factura.moneda || 'USD', incoterm: factura.incoterm, cargos: factura.cargos || [], trm,
     pctLogistica: logistica / factura.subtotal * 100, ventaCOP: trm ? factura.subtotal * trm : 0, logisticaCOP: trm ? logistica * trm : 0};
 }
+/* ---------- Costos en tres monedas y desglose (21-nov-2026) ----------
+ * Pedido de José Gallego (Reckitt): ver los costos también en COP y GBP, no solo en USD, y detallar costos y extracostos de cada contenedor. Decisiones del usuario:
+ * dos bloques (la logística que carga la factura de Reckitt y, aparte, el transporte de ETP: tarifa, retorno y extracostos de la base de viajes) y la libra con la tasa
+ * del día de la factura, consultada a un servicio público de tasas. Pesos: la TRM que trae cada factura. tasas = {trm: pesos por dólar, gbp: libras por dólar};
+ * una moneda sin tasa queda en null (la pantalla pone "—" y no inventa). */
+function enMonedas(monto, moneda, t){
+  const m = Number(monto) || 0, trm = (t && t.trm) || 0, gbp = (t && t.gbp) || 0;
+  const usd = moneda === 'COP' ? (trm ? m / trm : null) : m, cop = moneda === 'COP' ? m : (trm ? m * trm : null);
+  return {COP: cop, USD: usd, GBP: usd != null && gbp ? usd * gbp : null};
+}
+/** La tasa de la libra del día de `fecha` (AAAA-MM-DD) en una tabla {fecha: libras por dólar}: la del último día publicado hasta esa fecha (fin de semana: la del viernes). 0 si no hay. */
+function gbpDelDia(tabla, fecha){
+  const ks = Object.keys(tabla || {}).sort(); if (!ks.length || !/^\d{4}-\d{2}-\d{2}$/.test(String(fecha || ''))) return 0;
+  let k = ''; ks.forEach(d => { if (d <= fecha) k = d; });
+  return Number(tabla[k || ks[0]]) || 0;
+}
+/** Las tasas de un contenedor: la TRM de SU factura (en dólares) y la libra del día de la factura. Sin factura propia usa la TRM de respaldo (la de la factura más reciente) y lo avisa (`aproximada`). */
+function tasasContenedor(factura, tablaGbp, trmRespaldo, fechaRespaldo){
+  const propia = !!(factura && factura.trm > 0 && (factura.moneda || 'USD') === 'USD');
+  return {trm: propia ? factura.trm : (trmRespaldo || 0), gbp: gbpDelDia(tablaGbp, (factura && factura.fecha) || fechaRespaldo), aproximada: !propia};
+}
+/** El detalle de costos de un contenedor en COP, GBP y USD: venta (mercancía), logística de la factura por concepto y transporte de ETP (tarifa, retorno y extracostos de los viajes `vs`).
+ *  El transporte cuenta todos los extracostos y dice su aprobación (`aprob`: Aprobado, Pendiente… o Mixta); lo que no hay (sin factura, sin viaje) queda en null. */
+function costosContenedor(factura, vs, t){
+  const en = (m, mon) => enMonedas(m, mon, t), C = costoVsVenta(factura), mon = C && C.moneda === 'COP' ? 'COP' : 'USD';
+  const logistica = C ? {cargos: C.cargos.map(c => Object.assign({concepto: c.concepto}, en(c.monto, mon))), total: en(C.logistica, mon), pct: C.pctLogistica} : null;
+  let tarifa = 0, retorno = 0, extraTotal = 0; const extras = {}, estados = new Set();
+  (vs || []).forEach(v => { const c = cobro(v); tarifa += c.tarifa; retorno += c.retorno; extraTotal += c.extra; if (c.extra) estados.add(c.aprob);
+    itemsExtra(v).filter(([k, x]) => x && !ES_RETORNO.test(k)).forEach(([k, x]) => { extras[k] = (extras[k] || 0) + x; }); });
+  const lista = Object.keys(extras).map(k => [k, extras[k]]); if (extraTotal > 0 && !lista.length) lista.push(['Extracostos', extraTotal]);
+  const transporte = (vs || []).length ? {tarifa: en(tarifa, 'COP'), retorno: en(retorno, 'COP'), extras: lista.map(([k, x]) => Object.assign({concepto: k}, en(x, 'COP'))), extra: en(extraTotal, 'COP'),
+    aprob: estados.size === 1 ? [...estados][0] : estados.size ? 'Mixta' : '', total: en(tarifa + retorno + extraTotal, 'COP'), sinTarifa: !tarifa} : null;
+  return {venta: C ? en(C.venta, mon) : null, logistica, transporte, tasas: t};
+}
 /** Las cifras de arriba del informe, sobre filas con `lista` y `llenado` (las que no tienen tipo de contenedor no cuentan). */
 function resumenLlenado(filas){
   const L = (filas || []).filter(f => f.llenado), capVol = L.reduce((a, f) => a + f.llenado.capVol, 0), vol = L.reduce((a, f) => a + f.lista.volumenM3, 0);
@@ -5494,214 +5539,6 @@ async function manejarConexiones(e){
     toast(op === 'quitar' ? 'Conexión con Simon GPS quitada' : j.prueba && j.prueba.ok ? 'Conectó con Simon GPS' : 'No conectó: vea el motivo en la ventana');  } catch(err) { b.disabled = false; b.textContent = txt; toast('No se pudo: ' + err.message); if (/Gerencia/.test(err.message)) { try { sessionStorage.removeItem('rkt-gerencia'); } catch(x) {} claveGerenciaSesion = ''; } }
 }
 document.addEventListener('click', e => { if (e.target.closest('[data-gc-abrir]')) abrirConexiones(); });
-/* ---------- llenado.js · pestaña "Llenado de contenedores" (20-nov-2026) ----------
- * Capa: pantalla. Pedido: los jefes de Reckitt (Milena, Gallego y Viviana) creen que se desperdicia espacio y quieren ver cuánto volumen se
- * llena de cada contenedor EXPO. Los datos salen de las listas de empaque (PDF) que Jhonier adjunta a cada "NUEVA EXPORTACIÓN" (Llenado.gs).
- * Quién lo ve: SOLO Gerencia o Calidad de ETP, en modo Gerencia. La pestaña no existe para el cliente ni para Operaciones, y lo que la
- * protege de verdad es el servidor: cada lectura (POST 'llenado') pide la clave del equipo y la clave de Gerencia, y esos datos no van en la
- * carga general que recibe el cliente. Al salir del modo Gerencia se borran de la pantalla. Reckitt lo recibirá después por correo.
- * Las cuentas (capacidad, peso o volumen, "sobra") viven en el dominio: leerListaEmpaque, llenadoContenedores, resumenLlenado. */
-let LLENADO = null, LLENADO_FACT = [], LLENADO_CARGA = null, LLENADO_TIPOS = {}, llenadoMes = '', llenadoAbierto = '';
-const COLORES_LL = ['#7F77DD', '#D4537E', '#1D9E75', '#BA7517', '#D85A30', '#378ADD', '#639922', '#888780'];   // un color por producto en el diagrama y en su tabla
-// la factura de una lista: por el número de entrega (Delivery) y, si no, por el RBHY
-// el módulo es de las EXPORTACIONES: una lista de empaque de una importación (proveedor del exterior, sin RBHY) no es de este módulo aunque venga de un correo de Reckitt
-const esListaExpo = l => !!l.rbhy || /exportaci|RBHY/i.test(l.asunto || '');
-const facturaDeLista = l => (LLENADO_FACT || []).find(x => x.delivery && x.delivery === l.delivery) || (l.rbhy ? (LLENADO_FACT || []).find(x => x.rbhy === l.rbhy) : null) || null;
-const usdLl = n => 'USD ' + fmtLl(n, 0), copM = n => '$' + fmtLl(n / 1e6, 1) + ' M';
-const fmtLl = (n, d = 1) => Number(n || 0).toLocaleString('es-CO', {minimumFractionDigits: d, maximumFractionDigits: d});
-const LLENADO_LIMITA = {Peso: ['p-pes', 'Peso', 'va pesado: el espacio vacío no es desperdicio'], Volumen: ['p-vol', 'Volumen', 'bien lleno'], Sobra: ['p-sob', 'Sobra espacio', 'ni peso ni volumen pasan del ' + UMBRAL_LLENADO + '%']};
-
-// La pestaña solo se ve en modo Gerencia; al salir (o si el servidor rechaza la clave) se cierra y se borran los datos de la pantalla
-function ajustarPestanaLlenado(){
-  const b = document.querySelector('#nav [data-v="llenado"]'); if (!b) return;
-  const ver = !window.MODO_CLIENTE && esGerencia();
-  b.classList.toggle('hidden', !ver);
-  if (ver) return;
-  LLENADO = null; llenadoAbierto = '';
-  const v = $('#v-llenado'); if (v) v.querySelector('#llenadoCuerpo').innerHTML = '';
-  if (v && !v.classList.contains('hidden')) document.querySelector('#nav [data-v="tablero"]')?.click();
-}
-
-// viajes EXPO a los que corresponde una lista: por RBHY y, si no, por contenedor. Más de uno = la lista cubre varios contenedores
-function viajesDeLista(l){
-  const R = limpioId(l.rbhy), C = limpioId(l.contenedor);
-  const vivos = viajes.filter(v => v.operacion === 'EXPO' && !v.padre && v.estado !== 'Cancelado' && situacion(v) !== 'Cancelado');
-  // Se identifica por RBHY o por booking, y cuando los DOS datos están (en la lista y en el viaje) tienen que coincidir. No se corrige nada del viaje: el RBHY que falta en el
-  // viaje lo propone el módulo de Acciones desde el correo (RBHY29150: «Sin decidir: RBHY», LX-0564) y esta pestaña solo lo usa cuando ya esté.
-  const B = limpioId(l.booking), rb = v => limpioId(v.rbhy), bk = v => limpioId(v.booking);
-  const concuerda = v => !(R && rb(v) && rb(v) !== R) && !(B && bk(v) && bk(v) !== B);   // un dato distinto en los dos lados = no es ese viaje
-  const porRbhy = R ? vivos.filter(v => rb(v) === R && concuerda(v)) : [];
-  if (porRbhy.length) return porRbhy;
-  // el viaje aún sin RBHY (nadie lo ha decidido): por booking, y solo si es UN viaje; con varios contenedores en el mismo booking no se adivina cuál es
-  const porBooking = B ? vivos.filter(v => bk(v) === B && !rb(v) && concuerda(v)) : [];
-  if (porBooking.length === 1) return porBooking;
-  return C ? vivos.filter(v => limpioId(v.contenedor) === C && concuerda(v)) : [];
-}
-// cuando la lista no se une a ningún viaje: ¿hay un viaje con su RBHY pero con otro booking (o con su booking pero con otro RBHY)? Se dice cuál, para que lo revise una persona
-function choqueDeLista(l){
-  const R = limpioId(l.rbhy), B = limpioId(l.booking), vivos = viajes.filter(v => v.operacion === 'EXPO' && !v.padre && v.estado !== 'Cancelado' && situacion(v) !== 'Cancelado');
-  const a = R ? vivos.find(v => limpioId(v.rbhy) === R) : null; if (a) return `El viaje ${a.id} tiene ese RBHY pero otro booking (${a.booking || 'sin booking'}); la lista dice ${l.booking || 'otro'}`;
-  const b = B ? vivos.filter(v => limpioId(v.booking) === B && limpioId(v.rbhy) && limpioId(v.rbhy) !== R) : []; if (b.length) return `El booking ${l.booking} está en ${b.map(v => v.id).join(', ')} con otro RBHY (${b.map(v => v.rbhy).join(', ')})`;
-  return '';
-}
-function filasLlenado(mes){
-  return (LLENADO || []).filter(l => l.mes === mes).map(l => {
-    // 21-nov: la Unidad de los viajes EXPO dice "1X40" y se leía como 40' estándar (67,7 m³), pero todos los bookings leídos (25 de 25: MSC "40HC", ONE "40'DRY HC",
-    // Hapag-Lloyd "40HC", Perú "40' HI-CUBE") son 40' HC (76,3 m³): con 67,7 el llenado salía de más (RBHY28962: 65 % en vez de 57 %). En EXPO el 40 se toma como 40' HC
-    // 21-nov (pedido del usuario: "¿no se puede deducir de los documentos?"): el tipo sale de la confirmación del booking de la naviera (el servidor la lee y la guarda: LLENADO_TIPOS);
-    // si ese booking aún no se leyó, se usa la Unidad del viaje y el «40» cuenta como HC
-    const vs = viajesDeLista(l), tipos = vs.map(v => LLENADO_TIPOS[String(v.booking || '').toUpperCase()] || (t => t === '40' ? '40HC' : t)(tipoContenedor(v.unidad))), sinTipo = vs.some((v, i) => !tipos[i]);
-    // 21-nov (pedido del usuario: "no debe dejar de mostrar si ya tiene los adjuntos; el módulo es para el llenado"): una lista que se leyó se muestra y se calcula AUNQUE no esté
-    // ligada a un viaje (por RBHY, booking o contenedor); sin viaje el tipo sale del booking de la lista o se supone 40' HC, y la fila avisa. Solo se alerta si los datos no coinciden.
-    const sinViaje = !vs.length, tipoBk = LLENADO_TIPOS[String(l.booking || '').toUpperCase()], tipoSupuesto = sinViaje && !tipoBk, tiposF = sinViaje ? [tipoBk || '40HC'] : tipos;
-    const fact = facturaDeLista(l), choque = sinViaje ? choqueDeLista(l) : '';
-    return {l, vs, tipos: tiposF, choque, sinViaje, tipoSupuesto, lista: l, llenado: (vs.length || l.volumenM3 > 0) && !sinTipo ? llenadoContenedores(l, tiposF) : null, sinTipo, fact, costo: costoVsVenta(fact)};
-  }).sort((a, b) => String(b.l.fecha).localeCompare(String(a.l.fecha)));
-}
-
-// Carga inicial por viaje: el servidor revisa, viaje por viaje, TODOS los correos con la lista, la factura y los documentos de cada exportación que ya existe
-// (sin importar la antigüedad). Sigue sola cada hora; este botón la adelanta (unos 4 minutos por pulsación).
-// Los documentos de cada exportación llegan por partes: el correo de Jhonier trae la solicitud y, en otros correos del mismo hilo, la lista de empaque y la factura. El servidor
-// los lee a cada hora y los suma al contenedor; aquí se ve qué falta por llegar (viajes que ya cargaron sin lista de empaque, y listas todavía sin factura).
-function pendientesLlenado(){
-  if (!LLENADO) return '';
-  const hoy = typeof HOY === 'string' ? HOY : new Date().toISOString().slice(0, 10), conLista = new Set();
-  LLENADO.forEach(l => viajesDeLista(l).forEach(v => conLista.add(v.id)));
-  const sinLista = viajes.filter(v => v.operacion === 'EXPO' && !v.padre && v.estado !== 'Cancelado' && situacion(v) !== 'Cancelado' && !conLista.has(v.id)
-    && String(v.fechaCargue || v.planCargue || '').slice(0, 10) && String(v.fechaCargue || v.planCargue || '').slice(0, 10) <= hoy);
-  const sinFactura = LLENADO.filter(l => !facturaDeLista(l));
-  if (!sinLista.length && !sinFactura.length) return '';
-  const viaje = v => `<button type="button" class="link" data-ll-viaje="${esc(v.id)}">${esc(v.id)}</button>${v.rbhy ? ' <span class="sub">' + esc(v.rbhy) + '</span>' : ''}`;
-  const chips = (arr, f) => arr.slice(0, 14).map(f).join(' · ') + (arr.length > 14 ? ` · <span class="sub">y ${arr.length - 14} más</span>` : '');
-  return `<div class="ll-pend" style="margin:0 0 10px;padding:8px 10px;border-radius:8px;background:color-mix(in srgb, var(--muted, #888) 10%, transparent)">
-    <b>Esperando documentos de Reckitt</b> <span class="sub">· llegan en correos distintos; el sistema los revisa cada hora y los suma solo</span>
-    ${sinLista.length ? `<div style="margin-top:4px">Sin lista de empaque (${sinLista.length}): ${chips(sinLista, viaje)}</div>` : ''}
-    ${sinFactura.length ? `<div style="margin-top:4px">Con lista pero sin factura (${sinFactura.length}): ${chips(sinFactura, l => `<b>${esc(l.contenedor || l.rbhy || l.delivery)}</b>${l.contenedor && l.rbhy ? ' <span class="sub">' + esc(l.rbhy) + '</span>' : ''}`)}</div>` : ''}
-  </div>`;
-}
-function cargaLlenado(){
-  const C = LLENADO_CARGA; if (!C) return '';
-  const estado = !C.total ? 'aún no empieza' : `<b>${C.hechos} de ${C.total}</b> viajes revisados${C.revisar ? ` (${C.revisar} para revisar a mano)` : ''}`;
-  if (C.enCurso) return `<p class="sub" style="margin:0 0 10px">Histórico de los viajes: ${estado} · <b>leyendo los correos ahora</b> (puede tardar unos minutos; el avance se ve al volver a abrir la pestaña)</p>`;
-  const boton = !C.total || C.hechos < C.total ?` · <button type="button" class="btn" id="llenadoHistorico" title="Lee ahora los correos de los viajes que faltan (unos 4 minutos); el resto sigue solo cada hora">Cargar histórico de los viajes</button>` : ' · completo';
-  return `<p class="sub" style="margin:0 0 10px">Histórico de los viajes: ${estado}${boton}</p>`;
-}
-function pintarLlenado(){
-  const cont = $('#llenadoCuerpo'); if (!LLENADO) return;
-  const meses = [...new Set(LLENADO.map(l => l.mes))].filter(m => /^\d{4}-\d{2}$/.test(m)).sort().reverse();
-  if (!meses.includes(llenadoMes)) llenadoMes = meses[0] || '';
-  const F = filasLlenado(llenadoMes), R = resumenLlenado(F), n = F.length;
-  const kpi = (t, v, sub) => `<div class="ll-kpi"><span class="sub">${t}</span><b>${v}</b>${sub ? `<span class="sub">${sub}</span>` : ''}</div>`;
-  const barra = x => `<div class="ll-bar"><i class="${x.limita === 'Sobra' ? 'mal' : x.pesoPct > x.volPct ? 'med' : 'ok'}" style="width:${Math.min(100, x.volPct).toFixed(0)}%"></i></div>`;
-  const filaHtml = f => {
-    const x = f.llenado, v0 = f.vs[0], k = f.l.rbhy + '|' + f.l.delivery;
-    const quien = `<b>${esc(f.l.contenedor || (v0 && v0.contenedor) || 'Sin contenedor')}</b><br><span class="sub">${esc(f.l.rbhy || 'Sin RBHY')}${v0 && v0.pais ? ' · ' + esc(v0.pais) : ''}${f.vs.length > 1 ? ` · ${f.vs.length} contenedores` : ''}${f.sinViaje ? ' · <b style="color:var(--warn)" title="La lista no está ligada a un viaje (por RBHY, booking o contenedor)">sin viaje</b>' : ''}</span>`;
-    const resto = f.sinTipo ? `<td colspan="4"><b style="color:var(--bad)">Falta el tipo de contenedor (20 o 40) en el viaje</b> ${f.vs.map(v => `<button type="button" class="link" data-ll-viaje="${esc(v.id)}">${esc(v.id)}</button>`).join(' ')}</td>`
-      : !x ? `<td colspan="4" class="sub">No se pudo leer el volumen de la lista: ${esc(f.l.avisos.join(' · ') || 'revise el PDF')}</td>`
-      : `<td>${esc(f.tipos.map(t => t === '40HC' ? "40' HC" : t + "'").join(' + '))}${f.tipoSupuesto ? ' <span class="sub" title="No hay viaje ni confirmación de booking leída: se supone 40 pies HC (todos los bookings leídos lo son)">supuesto</span>' : ''}</td>
-        <td>${barra(x)}<span class="sub">${fmtLl(f.l.volumenM3)} de ${fmtLl(x.capVol)} m³ · ${fmtLl(x.volPct, 0)}%</span></td>
-        <td>${f.l.brutoKg ? fmtLl(x.pesoPct, 0) + '%' : '<span class="sub">—</span>'}${x.pasaPeso ? ' <b style="color:var(--bad)" title="Pasa el peso útil">⚠</b>' : ''}</td>
-        <td><span class="ll-pill ${LLENADO_LIMITA[x.limita][0]}" title="${esc(LLENADO_LIMITA[x.limita][2])}">${LLENADO_LIMITA[x.limita][1]}</span>${x.pasaVolumen ? ' <b style="color:var(--bad)" title="Pasa el volumen">⚠</b>' : ''}</td>`;
-    const venta = f.costo ? `<td>${usdLl(f.costo.venta)}<br><span class="sub">logística ${fmtLl(f.costo.pctLogistica, 1)}%</span></td>` : '<td><span class="sub">Sin factura</span></td>';
-    const det = llenadoAbierto === k ? `<tr class="ll-det"><td colspan="6">${detalleLlenado(f)}</td></tr>` : '';
-    return `<tr class="ll-fila" data-ll-abrir="${esc(k)}"><td>${quien}</td>${resto}${venta}</tr>${det}`;
-  };
-  const conFact = F.filter(f => f.costo), sumV = conFact.reduce((a, f) => a + f.costo.venta, 0), sumL = conFact.reduce((a, f) => a + f.costo.logistica, 0);
-  cont.innerHTML = `<div class="ll-kpis">${kpi('Llenado promedio', n && R.n ? fmtLl(R.volPromedio, 0) + '%' : '—', 'volumen lleno sobre la capacidad')}
-      ${kpi('Con espacio de sobra', R.n ? `${R.conSobra} de ${R.n}` : '—', 'ni peso ni volumen pasan del ' + UMBRAL_LLENADO + '%')}
-      ${kpi('Espacio que sobra', R.n ? fmtLl(R.vacioM3, 0) + ' m³' : '—', 'solo de los que sobran, no de los pesados')}
-      ${kpi('Equivale a', R.n ? fmtLl(R.equivale40) + " de 40'" : '—', 'contenedores de 67,7 m³')}
-      ${kpi('Logística sobre venta', conFact.length ? fmtLl(sumL / sumV * 100, 1) + '%' : '—', conFact.length ? `${usdLl(sumL)} de ${usdLl(sumV)} · ${conFact.length} de ${n} con factura` : 'faltan las facturas')}</div>
-    ${cargaLlenado()}${pendientesLlenado()}
-    ${n ? `<div class="tbl-wrap"><table class="prop ll-tabla"><thead><tr><th>Contenedor · RBHY</th><th>Tipo</th><th>Volumen lleno</th><th>Peso</th><th>Lo que limita</th><th>Venta · logística</th></tr></thead><tbody>${F.map(filaHtml).join('')}</tbody></table></div>`
-      : `<p class="sub">No hay listas de empaque leídas para este mes. Toque «Leer correos ahora» para buscarlas en el buzón de calidad@.</p>`}
-    <p class="sub" style="margin-top:8px">Capacidad: 20' = ${fmtLl(CAPACIDAD_CONT['20'].vol)} m³ y ${fmtLl(CAPACIDAD_CONT['20'].kg, 0)} kg · 40' = ${fmtLl(CAPACIDAD_CONT['40'].vol)} m³ y ${fmtLl(CAPACIDAD_CONT['40'].kg, 0)} kg · 40' HC = ${fmtLl(CAPACIDAD_CONT['40HC'].vol)} m³ y ${fmtLl(CAPACIDAD_CONT['40HC'].kg, 0)} kg. El peso es el que permite la tractomula (${fmtLl(PESO_TRACTOMULA, 0)} kg entre contenedor y carga) menos la tara típica del contenedor. El tipo sale de la Unidad del viaje; en exportaciones el «40'» se toma como 40' HC, porque así son todos los bookings leídos.
-    «Peso» o «Volumen» dice cuál límite se alcanza primero: si el contenedor va pesado, el espacio vacío no es desperdicio. Solo «Sobra espacio» se puede mejorar. Toque una fila para ver el diagrama, los productos con su precio y el costo contra la venta.
-    «Logística» es lo que la factura de Reckitt carga por flete interno, flete internacional, seguro y cargo adicional, sobre el valor de la mercancía.</p>`;
-}
-// Vista lateral del contenedor: un bloque por producto, de largo proporcional a su volumen, y el espacio vacío rayado; debajo, el peso contra el límite de la tractomula
-function diagramaLlenado(f, prods){
-  const x = f.llenado; if (!x || !f.l.volumenM3) return '';
-  const L = 600, X0 = 40, H = 66, Y0 = 34; let acum = 0;
-  const bloques = prods.filter(p => p.volumenM3 > 0).map((p, i) => { const w = p.volumenM3 / x.capVol * L, b = {p, x: X0 + acum, w, c: COLORES_LL[i % COLORES_LL.length], n: i + 1}; acum += w; return b; });
-  const usado = Math.min(L, bloques.length ? acum : f.l.volumenM3 / x.capVol * L), pesoW = Math.min(L, x.pesoPct / 100 * L);
-  const bl = bloques.map(b => `<rect x="${b.x.toFixed(1)}" y="${Y0}" width="${Math.max(0.5, b.w).toFixed(1)}" height="${H}" fill="${b.c}" opacity="0.85"><title>${esc(b.p.descripcion || b.p.material)} · ${fmtLl(b.p.volumenM3, 1)} m³</title></rect>`
-    + (b.w >= 16 ? `<text x="${(b.x + b.w / 2).toFixed(1)}" y="${Y0 + H / 2 + 4}" text-anchor="middle" font-size="12" font-weight="600" fill="#fff">${b.n}</text>` : '')).join('');
-  const vacioX = X0 + usado, vacioW = Math.max(0, L - usado);
-  const col = x.pesoPct > 100 ? 'var(--bad)' : x.pesoPct > x.volPct ? 'var(--warn)' : 'var(--ok)';
-  return `<svg viewBox="0 0 680 148" width="100%" style="max-width:760px;display:block" role="img" aria-label="Llenado del contenedor: ${fmtLl(x.volPct, 0)}% del volumen y ${fmtLl(x.pesoPct, 0)}% del peso">
-    <defs><pattern id="llvac" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="8" stroke="var(--muted)" stroke-width="1" opacity=".5"/></pattern></defs>
-    <text x="${X0}" y="24" font-size="11" fill="var(--muted)">Fondo del contenedor</text><text x="${X0 + L}" y="24" font-size="11" fill="var(--muted)" text-anchor="end">Puertas</text>
-    <rect x="${vacioX.toFixed(1)}" y="${Y0}" width="${vacioW.toFixed(1)}" height="${H}" fill="url(#llvac)"/>${bl}
-    <rect x="${X0}" y="${Y0}" width="${L}" height="${H}" rx="3" fill="none" stroke="var(--muted)" stroke-width="1.2"/>
-    ${vacioW > 130 ? `<text x="${(vacioX + vacioW / 2).toFixed(1)}" y="${Y0 + H / 2 - 4}" text-anchor="middle" font-size="14" font-weight="600" fill="var(--text)">${fmtLl(x.volPct, 0)}% del volumen</text><text x="${(vacioX + vacioW / 2).toFixed(1)}" y="${Y0 + H / 2 + 14}" text-anchor="middle" font-size="12" fill="var(--muted)">${fmtLl(x.vacioM3, 1)} m³ vacíos de ${fmtLl(x.capVol, 1)} m³</text>` : ''}
-    <text x="${X0}" y="${Y0 + H + 26}" font-size="13" font-weight="600" fill="var(--text)">Peso: ${fmtLl(f.l.brutoKg, 0)} de ${fmtLl(x.capKg, 0)} kg (${fmtLl(x.pesoPct, 0)}%)</text>
-    <rect x="${X0}" y="${Y0 + H + 34}" width="${L}" height="12" rx="3" fill="var(--surface-2)" stroke="var(--border)"/><rect x="${X0}" y="${Y0 + H + 34}" width="${pesoW.toFixed(1)}" height="12" rx="3" fill="${col}"/>
-  </svg>`;
-}
-function detalleLlenado(f){
-  const l = f.l, x = f.llenado, C = f.costo, F = f.fact, prods = productosContenedor(l, F);
-  const avisos = l.avisos.concat(F ? F.avisos : []), aviso = (f.sinViaje ? `<div class="sub" style="color:var(--warn)">⚠ Esta lista no está ligada a ningún viaje${f.choque ? ': <b>' + esc(f.choque) + '</b>' : ' (por RBHY, booking ni contenedor): falta el RBHY en el viaje —las Acciones lo proponen desde el correo—, o el viaje no está creado'}.${f.tipoSupuesto ? " El cálculo supone un contenedor de 40' HC." : ''}</div>` : '') + (avisos.length ? `<div class="sub" style="color:var(--warn)">⚠ ${avisos.map(esc).join(' · ')}</div>` : '');
-  const sw = i => `<span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${COLORES_LL[i % COLORES_LL.length]};vertical-align:-1px"></span>`;
-  const conPrecio = prods.some(p => p.valor > 0), conVol = prods.some(p => p.volumenM3 > 0);
-  const tab = !prods.length ? '<div class="sub">Esta lista se leyó solo con sus totales (sin el detalle por material).</div>'
-    : `<div class="tbl-wrap"><table class="prop"><colgroup><col style="width:22px"><col style="width:34%"></colgroup><thead><tr><th></th><th>Producto</th><th>Cajas</th><th>m³</th><th>kg bruto</th>${conPrecio ? '<th>USD/caja</th><th>Valor USD</th><th>USD/m³</th>' : ''}</tr></thead><tbody>${prods.map((p, i) =>
-      `<tr><td>${p.volumenM3 > 0 ? sw(i) : ''}</td><td>${esc(p.descripcion || p.material)} <span class="sub">· ${esc(p.material)}${p.cuadra ? '' : ` · <b style="color:var(--bad)">lista ${fmtLl(p.cajas, 0)} cajas, factura ${fmtLl(p.cajasFactura, 0)}</b>`}</span></td><td>${fmtLl(p.cajas || p.cajasFactura, 0)}</td><td>${conVol ? fmtLl(p.volumenM3, 1) : '—'}</td><td>${conVol ? fmtLl(p.brutoKg, 0) : '—'}</td>${conPrecio ? `<td>${p.precioCaja ? fmtLl(p.precioCaja, 2) : '—'}</td><td>${p.valor ? fmtLl(p.valor, 0) : '—'}</td><td>${p.valorPorM3 ? fmtLl(p.valorPorM3, 0) : '—'}</td>` : ''}</tr>`).join('')}
-      <tr style="font-weight:600"><td></td><td>Total</td><td>${fmtLl(l.cajas, 0)}</td><td>${fmtLl(l.volumenM3, 1)}</td><td>${fmtLl(l.brutoKg, 0)}</td>${conPrecio ? `<td></td><td>${F ? fmtLl(F.subtotal, 0) : ''}</td><td>${F && l.volumenM3 ? fmtLl(F.subtotal / l.volumenM3, 0) : ''}</td>` : ''}</tr></tbody></table></div>`;
-  const kpi = (t, v, sub) => `<div class="ll-kpi"><span class="sub">${t}</span><b>${v}</b>${sub ? `<span class="sub">${sub}</span>` : ''}</div>`;
-  const costo = C ? `<div class="ll-kpis" style="margin:12px 0 0">${kpi('Venta: mercancía', usdLl(C.venta), C.trm ? `${copM(C.ventaCOP)} a TRM ${fmtLl(C.trm, 2)}` : '')}
-      ${kpi('Logística facturada', usdLl(C.logistica), C.cargos.map(c => `${esc(c.concepto)} ${fmtLl(c.monto, 0)}`).join(' · '))}
-      ${kpi('Total factura' + (C.incoterm ? ' ' + esc(C.incoterm) : ''), usdLl(C.total), F.numero ? 'Factura ' + esc(F.numero) : '')}
-      ${kpi('Logística sobre venta', fmtLl(C.pctLogistica, 1) + '%', C.trm ? `${copM(C.logisticaCOP)} de ${copM(C.ventaCOP)}` : '')}</div>`
-    : '<div class="sub" style="margin-top:10px">Todavía no hay factura leída de este contenedor (llega en el correo «NUEVA EXPORTACIÓN»; toque «Leer correos ahora»).</div>';
-  const correo = l.msgId ? ` · <a class="link" href="https://mail.google.com/mail/?authuser=calidad@stentrapetrol.com#all/${esc(l.msgId)}" target="_blank" rel="noopener">Ver correo con la lista (PDF)</a>` : '';
-  return `<div class="sub">Lista ${esc(l.delivery || 'sin Delivery ID')} · ${fmtLl(l.cajas, 0)} cajas · ${fmtLl(l.volumenM3, 3)} m³ · ${fmtLl(l.brutoKg, 0)} kg bruto${f.vs.map(v => ` · <button type="button" class="link" data-ll-viaje="${esc(v.id)}">${esc(v.id)}</button>`).join('')}${correo}</div>${aviso}
-    <div style="margin:8px 0">${diagramaLlenado(f, prods)}</div>${tab}${costo}`;
-}
-async function cargarLlenado(actualizar, historico){
-  const codigo = await claveGerenciaParaGps();   // gps-conexiones.js: la clave de Gerencia de la sesión; si falta, la pide
-  if (!codigo) return;
-  const cuerpo = $('#llenadoCuerpo'), b = $('#llenadoActualizar'), bh = $('#llenadoHistorico'); if (b) b.disabled = true;
-  if (bh) { bh.disabled = true; bh.textContent = 'Leyendo los viajes… hasta 4 minutos'; }
-  if (!LLENADO) cuerpo.innerHTML = '<p class="sub">Cargando el llenado…</p>';
-  try {
-    const j = await api('llenado', {codigo, actualizar: !!actualizar, historico: !!historico});
-    if (!j.ok) throw new Error(j.error || 'error');
-    LLENADO = (j.listas || []).filter(esListaExpo); LLENADO_FACT = j.facturas || []; LLENADO_CARGA = j.carga || null; LLENADO_TIPOS = j.tipos || {};
-    if (actualizar) toast(j.nuevas ? `${j.nuevas} ${j.nuevas === 1 ? 'lista nueva leída' : 'listas nuevas leídas'}` : 'No hay listas nuevas en el correo');
-    if (historico && LLENADO_CARGA) toast(LLENADO_CARGA.hechos >= LLENADO_CARGA.total ? 'Histórico completo' : `Histórico: ${LLENADO_CARGA.hechos} de ${LLENADO_CARGA.total} viajes; pulse otra vez para seguir`);
-  } catch (err) {
-    if (/Gerencia/.test(err.message)) { try { sessionStorage.removeItem('rkt-gerencia'); } catch(x) {} claveGerenciaSesion = ''; ajustarPestanaLlenado(); }
-    else { LLENADO = LLENADO || null; cuerpo.innerHTML = /Acción no soportada/.test(err.message) ? '<p class="sub">El servidor todavía no tiene el informe de llenado: falta desplegar la versión nueva del Apps Script.</p>' : `<p class="sub">No se pudo leer el llenado: ${esc(err.message)}</p>`; }
-    toast('No se pudo: ' + err.message); if (b) b.disabled = false; if (bh) { bh.disabled = false; bh.textContent = 'Cargar histórico de los viajes'; } return;
-  }
-  if (b) b.disabled = false;
-  const sel = $('#llenadoMes'); const meses = [...new Set(LLENADO.map(l => l.mes))].filter(m => /^\d{4}-\d{2}$/.test(m)).sort().reverse();
-  if (sel) { if (!meses.includes(llenadoMes)) llenadoMes = meses[0] || ''; sel.innerHTML = meses.map(m => `<option value="${esc(m)}"${m === llenadoMes ? ' selected' : ''}>${esc(nombreMes(m))}</option>`).join(''); }
-  pintarLlenado();
-}
-// CSV del mes (Excel lo abre): una fila por contenedor, con lo que se ve en la tabla
-function csvLlenado(){
-  const F = filasLlenado(llenadoMes); if (!F.length) return toast('No hay listas en este mes');
-  const q = s => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
-  const filas = [['RBHY', 'Contenedor', 'Tipo', 'Delivery', 'Cajas', 'Volumen m3', 'Capacidad m3', 'Volumen %', 'Peso bruto kg', 'Peso %', 'Lo que limita', 'Factura', 'Moneda', 'Venta (mercancia)', 'Logistica facturada', 'Logistica sobre venta %', 'Total factura', 'Avisos']].concat(F.map(f => [f.l.rbhy, f.l.contenedor, f.tipos.join('+'), f.l.delivery, f.l.cajas,
-    f.l.volumenM3, f.llenado ? f.llenado.capVol.toFixed(1) : '', f.llenado ? f.llenado.volPct.toFixed(1) : '', f.l.brutoKg, f.llenado ? f.llenado.pesoPct.toFixed(1) : '', f.llenado ? LLENADO_LIMITA[f.llenado.limita][1] : '',
-    f.fact ? f.fact.numero : '', f.costo ? f.costo.moneda : '', f.costo ? f.costo.venta : '', f.costo ? f.costo.logistica : '', f.costo ? f.costo.pctLogistica.toFixed(1) : '', f.costo ? f.costo.total : '', f.l.avisos.concat(f.fact ? f.fact.avisos : []).join(' | ')]));
-  const url = URL.createObjectURL(new Blob(['﻿' + filas.map(r => r.map(q).join(';')).join('\r\n')], {type: 'text/csv;charset=utf-8'}));
-  const a = document.createElement('a'); a.href = url; a.download = `llenado-contenedores-${llenadoMes}.csv`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5e3);
-}
-// eventos: la pestaña pide los datos al abrirla (eventos.js llama a abrirPestanaLlenado)
-function abrirPestanaLlenado(){ if (!LLENADO) cargarLlenado(false); else pintarLlenado(); }
-$('#v-llenado').addEventListener('click', e => {
-  const t = e.target;
-  if (t.closest('#llenadoActualizar')) return cargarLlenado(true);
-  if (t.closest('#llenadoHistorico')) return cargarLlenado(false, true);
-  if (t.closest('#llenadoCsv')) return csvLlenado();
-  const ver = t.closest('[data-ll-viaje]'); if (ver) { e.stopPropagation(); return abrir(ver.dataset.llViaje); }
-  const fila = t.closest('[data-ll-abrir]'); if (fila) { llenadoAbierto = llenadoAbierto === fila.dataset.llAbrir ? '' : fila.dataset.llAbrir; pintarLlenado(); }
-});
-$('#llenadoMes').addEventListener('change', e => { llenadoMes = e.target.value; llenadoAbierto = ''; pintarLlenado(); });
-ajustarPestanaLlenado();
 /* ---------- novedades del viaje: la bitácora con hora y autor (fase 1) y la línea de tiempo única (fase 2) ----------
  * Cada novedad es una fila de la pestaña "Novedades del viaje" (Base.gs): cuándo, viaje, quién, tipo, texto y origen. No se
  * editan ni se borran: así queda el seguimiento. El campo Observación sigue siendo la nota fija del viaje (programación,
@@ -5936,6 +5773,250 @@ function resumenEventos(E){
 }
 
 const ICONO_EVENTO = {'Programación':'📋', 'Cambio de plan':'⟲', 'Correo':'✉', 'Edición':'✎', 'Excel':'▦', 'Subviaje':'↪', 'Incidente':'⚠'};
+/* ---------- llenado.js · pestaña "Llenado de contenedores" (20-nov-2026) ----------
+ * Capa: pantalla. Pedido: los jefes de Reckitt (Milena, Gallego y Viviana) creen que se desperdicia espacio y quieren ver cuánto volumen se
+ * llena de cada contenedor EXPO. Los datos salen de las listas de empaque (PDF) que Jhonier adjunta a cada "NUEVA EXPORTACIÓN" (Llenado.gs).
+ * Quién lo ve: SOLO Gerencia o Calidad de ETP, en modo Gerencia. La pestaña no existe para el cliente ni para Operaciones, y lo que la
+ * protege de verdad es el servidor: cada lectura (POST 'llenado') pide la clave del equipo y la clave de Gerencia, y esos datos no van en la
+ * carga general que recibe el cliente. Al salir del modo Gerencia se borran de la pantalla. Reckitt lo recibirá después por correo.
+ * Las cuentas (capacidad, peso o volumen, "sobra") viven en el dominio: leerListaEmpaque, llenadoContenedores, resumenLlenado. */
+let LLENADO = null, LLENADO_FACT = [], LLENADO_CARGA = null, LLENADO_TIPOS = {}, llenadoMes = '', llenadoAbierto = '';
+// 21-nov (pedido de José Gallego, Reckitt): los costos también en COP y GBP. COP con la TRM de cada factura; GBP con la tasa del día de la factura, que el navegador consulta a un
+// servicio público de tasas (api.frankfurter.dev: solo se le envían fechas). GBP_TABLA = {fecha: libras por dólar}; si el servicio no responde, las libras salen con «—».
+let GBP_TABLA = {}, GBP_ERROR = false, llenadoMoneda = (() => { try { const m = localStorage.getItem('rkt-ll-moneda'); return ['COP', 'GBP', 'USD'].includes(m) ? m : 'COP'; } catch(e) { return 'COP'; } })();
+const MONEDAS_LL = ['COP', 'GBP', 'USD'], SIMBOLO_LL = {COP: '$', GBP: '£', USD: 'US$'};
+const montoLl = (m, mon) => m == null ? '—' : SIMBOLO_LL[mon] + fmtLl(m, 0);
+const COLORES_LL = ['#7F77DD', '#D4537E', '#1D9E75', '#BA7517', '#D85A30', '#378ADD', '#639922', '#888780'];   // un color por producto en el diagrama y en su tabla
+// la factura de una lista: por el número de entrega (Delivery) y, si no, por el RBHY
+// el módulo es de las EXPORTACIONES: una lista de empaque de una importación (proveedor del exterior, sin RBHY) no es de este módulo aunque venga de un correo de Reckitt
+const esListaExpo = l => !!l.rbhy || /exportaci|RBHY/i.test(l.asunto || '');
+const facturaDeLista = l => (LLENADO_FACT || []).find(x => x.delivery && x.delivery === l.delivery) || (l.rbhy ? (LLENADO_FACT || []).find(x => x.rbhy === l.rbhy) : null) || null;
+const fmtLl = (n, d = 1) => Number(n || 0).toLocaleString('es-CO', {minimumFractionDigits: d, maximumFractionDigits: d});
+// la TRM de la factura más reciente: sirve de respaldo para un contenedor que todavía no tiene factura
+const trmRespaldoLl = () => ((LLENADO_FACT || []).filter(x => x.trm > 0 && (x.moneda || 'USD') === 'USD').sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))[0] || {}).trm || 0;
+const LLENADO_LIMITA = {Peso: ['p-pes', 'Peso', 'va pesado: el espacio vacío no es desperdicio'], Volumen: ['p-vol', 'Volumen', 'bien lleno'], Sobra: ['p-sob', 'Sobra espacio', 'ni peso ni volumen pasan del ' + UMBRAL_LLENADO + '%']};
+
+// La pestaña solo se ve en modo Gerencia; al salir (o si el servidor rechaza la clave) se cierra y se borran los datos de la pantalla
+function ajustarPestanaLlenado(){
+  const b = document.querySelector('#nav [data-v="llenado"]'); if (!b) return;
+  const ver = !window.MODO_CLIENTE && esGerencia();
+  b.classList.toggle('hidden', !ver);
+  if (ver) return;
+  LLENADO = null; llenadoAbierto = '';
+  const v = $('#v-llenado'); if (v) v.querySelector('#llenadoCuerpo').innerHTML = '';
+  if (v && !v.classList.contains('hidden')) document.querySelector('#nav [data-v="tablero"]')?.click();
+}
+
+// viajes EXPO a los que corresponde una lista: por RBHY y, si no, por contenedor. Más de uno = la lista cubre varios contenedores
+function viajesDeLista(l){
+  const R = limpioId(l.rbhy), C = limpioId(l.contenedor);
+  const vivos = viajes.filter(v => v.operacion === 'EXPO' && !v.padre && v.estado !== 'Cancelado' && situacion(v) !== 'Cancelado');
+  // Se identifica por RBHY o por booking, y cuando los DOS datos están (en la lista y en el viaje) tienen que coincidir. No se corrige nada del viaje: el RBHY que falta en el
+  // viaje lo propone el módulo de Acciones desde el correo (RBHY29150: «Sin decidir: RBHY», LX-0564) y esta pestaña solo lo usa cuando ya esté.
+  const B = limpioId(l.booking), rb = v => limpioId(v.rbhy), bk = v => limpioId(v.booking);
+  const concuerda = v => !(R && rb(v) && rb(v) !== R) && !(B && bk(v) && bk(v) !== B);   // un dato distinto en los dos lados = no es ese viaje
+  const porRbhy = R ? vivos.filter(v => rb(v) === R && concuerda(v)) : [];
+  if (porRbhy.length) return porRbhy;
+  // el viaje aún sin RBHY (nadie lo ha decidido): por booking, y solo si es UN viaje; con varios contenedores en el mismo booking no se adivina cuál es
+  const porBooking = B ? vivos.filter(v => bk(v) === B && !rb(v) && concuerda(v)) : [];
+  if (porBooking.length === 1) return porBooking;
+  return C ? vivos.filter(v => limpioId(v.contenedor) === C && concuerda(v)) : [];
+}
+// cuando la lista no se une a ningún viaje: ¿hay un viaje con su RBHY pero con otro booking (o con su booking pero con otro RBHY)? Se dice cuál, para que lo revise una persona
+function choqueDeLista(l){
+  const R = limpioId(l.rbhy), B = limpioId(l.booking), vivos = viajes.filter(v => v.operacion === 'EXPO' && !v.padre && v.estado !== 'Cancelado' && situacion(v) !== 'Cancelado');
+  const a = R ? vivos.find(v => limpioId(v.rbhy) === R) : null; if (a) return `El viaje ${a.id} tiene ese RBHY pero otro booking (${a.booking || 'sin booking'}); la lista dice ${l.booking || 'otro'}`;
+  const b = B ? vivos.filter(v => limpioId(v.booking) === B && limpioId(v.rbhy) && limpioId(v.rbhy) !== R) : []; if (b.length) return `El booking ${l.booking} está en ${b.map(v => v.id).join(', ')} con otro RBHY (${b.map(v => v.rbhy).join(', ')})`;
+  return '';
+}
+function filasLlenado(mes){
+  return (LLENADO || []).filter(l => l.mes === mes).map(l => {
+    // 21-nov: la Unidad de los viajes EXPO dice "1X40" y se leía como 40' estándar (67,7 m³), pero todos los bookings leídos (25 de 25: MSC "40HC", ONE "40'DRY HC",
+    // Hapag-Lloyd "40HC", Perú "40' HI-CUBE") son 40' HC (76,3 m³): con 67,7 el llenado salía de más (RBHY28962: 65 % en vez de 57 %). En EXPO el 40 se toma como 40' HC
+    // 21-nov (pedido del usuario: "¿no se puede deducir de los documentos?"): el tipo sale de la confirmación del booking de la naviera (el servidor la lee y la guarda: LLENADO_TIPOS);
+    // si ese booking aún no se leyó, se usa la Unidad del viaje y el «40» cuenta como HC
+    const vs = viajesDeLista(l), tipos = vs.map(v => LLENADO_TIPOS[String(v.booking || '').toUpperCase()] || (t => t === '40' ? '40HC' : t)(tipoContenedor(v.unidad))), sinTipo = vs.some((v, i) => !tipos[i]);
+    // 21-nov (pedido del usuario: "no debe dejar de mostrar si ya tiene los adjuntos; el módulo es para el llenado"): una lista que se leyó se muestra y se calcula AUNQUE no esté
+    // ligada a un viaje (por RBHY, booking o contenedor); sin viaje el tipo sale del booking de la lista o se supone 40' HC, y la fila avisa. Solo se alerta si los datos no coinciden.
+    const sinViaje = !vs.length, tipoBk = LLENADO_TIPOS[String(l.booking || '').toUpperCase()], tipoSupuesto = sinViaje && !tipoBk, tiposF = sinViaje ? [tipoBk || '40HC'] : tipos;
+    const fact = facturaDeLista(l), choque = sinViaje ? choqueDeLista(l) : '', tasas = tasasContenedor(fact, GBP_TABLA, trmRespaldoLl(), String(l.fecha || '').slice(0, 10));
+    return {l, vs, tipos: tiposF, choque, sinViaje, tipoSupuesto, lista: l, llenado: (vs.length || l.volumenM3 > 0) && !sinTipo ? llenadoContenedores(l, tiposF) : null, sinTipo, fact, costo: costoVsVenta(fact), tasas, costos: costosContenedor(fact, vs, tasas)};
+  }).sort((a, b) => String(b.l.fecha).localeCompare(String(a.l.fecha)));
+}
+
+// Carga inicial por viaje: el servidor revisa, viaje por viaje, TODOS los correos con la lista, la factura y los documentos de cada exportación que ya existe
+// (sin importar la antigüedad). Sigue sola cada hora; este botón la adelanta (unos 4 minutos por pulsación).
+// Los documentos de cada exportación llegan por partes: el correo de Jhonier trae la solicitud y, en otros correos del mismo hilo, la lista de empaque y la factura. El servidor
+// los lee a cada hora y los suma al contenedor; aquí se ve qué falta por llegar (viajes que ya cargaron sin lista de empaque, y listas todavía sin factura).
+function pendientesLlenado(){
+  if (!LLENADO) return '';
+  const hoy = typeof HOY === 'string' ? HOY : new Date().toISOString().slice(0, 10), conLista = new Set();
+  LLENADO.forEach(l => viajesDeLista(l).forEach(v => conLista.add(v.id)));
+  const sinLista = viajes.filter(v => v.operacion === 'EXPO' && !v.padre && v.estado !== 'Cancelado' && situacion(v) !== 'Cancelado' && !conLista.has(v.id)
+    && String(v.fechaCargue || v.planCargue || '').slice(0, 10) && String(v.fechaCargue || v.planCargue || '').slice(0, 10) <= hoy);
+  const sinFactura = LLENADO.filter(l => !facturaDeLista(l));
+  if (!sinLista.length && !sinFactura.length) return '';
+  const viaje = v => `<button type="button" class="link" data-ll-viaje="${esc(v.id)}">${esc(v.id)}</button>${v.rbhy ? ' <span class="sub">' + esc(v.rbhy) + '</span>' : ''}`;
+  const chips = (arr, f) => arr.slice(0, 14).map(f).join(' · ') + (arr.length > 14 ? ` · <span class="sub">y ${arr.length - 14} más</span>` : '');
+  return `<div class="ll-pend" style="margin:0 0 10px;padding:8px 10px;border-radius:8px;background:color-mix(in srgb, var(--muted, #888) 10%, transparent)">
+    <b>Esperando documentos de Reckitt</b> <span class="sub">· llegan en correos distintos; el sistema los revisa cada hora y los suma solo</span>
+    ${sinLista.length ? `<div style="margin-top:4px">Sin lista de empaque (${sinLista.length}): ${chips(sinLista, viaje)}</div>` : ''}
+    ${sinFactura.length ? `<div style="margin-top:4px">Con lista pero sin factura (${sinFactura.length}): ${chips(sinFactura, l => `<b>${esc(l.contenedor || l.rbhy || l.delivery)}</b>${l.contenedor && l.rbhy ? ' <span class="sub">' + esc(l.rbhy) + '</span>' : ''}`)}</div>` : ''}
+  </div>`;
+}
+function cargaLlenado(){
+  const C = LLENADO_CARGA; if (!C) return '';
+  const estado = !C.total ? 'aún no empieza' : `<b>${C.hechos} de ${C.total}</b> viajes revisados${C.revisar ? ` (${C.revisar} para revisar a mano)` : ''}`;
+  if (C.enCurso) return `<p class="sub" style="margin:0 0 10px">Histórico de los viajes: ${estado} · <b>leyendo los correos ahora</b> (puede tardar unos minutos; el avance se ve al volver a abrir la pestaña)</p>`;
+  const boton = !C.total || C.hechos < C.total ?` · <button type="button" class="btn" id="llenadoHistorico" title="Lee ahora los correos de los viajes que faltan (unos 4 minutos); el resto sigue solo cada hora">Cargar histórico de los viajes</button>` : ' · completo';
+  return `<p class="sub" style="margin:0 0 10px">Histórico de los viajes: ${estado}${boton}</p>`;
+}
+function pintarLlenado(){
+  const cont = $('#llenadoCuerpo'); if (!LLENADO) return;
+  const meses = [...new Set(LLENADO.map(l => l.mes))].filter(m => /^\d{4}-\d{2}$/.test(m)).sort().reverse();
+  if (!meses.includes(llenadoMes)) llenadoMes = meses[0] || '';
+  const F = filasLlenado(llenadoMes), R = resumenLlenado(F), n = F.length;
+  const kpi = (t, v, sub) => `<div class="ll-kpi"><span class="sub">${t}</span><b>${v}</b>${sub ? `<span class="sub">${sub}</span>` : ''}</div>`;
+  const barra = x => `<div class="ll-bar"><i class="${x.limita === 'Sobra' ? 'mal' : x.pesoPct > x.volPct ? 'med' : 'ok'}" style="width:${Math.min(100, x.volPct).toFixed(0)}%"></i></div>`;
+  const filaHtml = f => {
+    const x = f.llenado, v0 = f.vs[0], k = f.l.rbhy + '|' + f.l.delivery;
+    const quien = `<b>${esc(f.l.contenedor || (v0 && v0.contenedor) || 'Sin contenedor')}</b><br><span class="sub">${esc(f.l.rbhy || 'Sin RBHY')}${v0 && v0.pais ? ' · ' + esc(v0.pais) : ''}${f.vs.length > 1 ? ` · ${f.vs.length} contenedores` : ''}${f.sinViaje ? ' · <b style="color:var(--warn)" title="La lista no está ligada a un viaje (por RBHY, booking o contenedor)">sin viaje</b>' : ''}</span>`;
+    const resto = f.sinTipo ? `<td colspan="4"><b style="color:var(--bad)">Falta el tipo de contenedor (20 o 40) en el viaje</b> ${f.vs.map(v => `<button type="button" class="link" data-ll-viaje="${esc(v.id)}">${esc(v.id)}</button>`).join(' ')}</td>`
+      : !x ? `<td colspan="4" class="sub">No se pudo leer el volumen de la lista: ${esc(f.l.avisos.join(' · ') || 'revise el PDF')}</td>`
+      : `<td>${esc(f.tipos.map(t => t === '40HC' ? "40' HC" : t + "'").join(' + '))}${f.tipoSupuesto ? ' <span class="sub" title="No hay viaje ni confirmación de booking leída: se supone 40 pies HC (todos los bookings leídos lo son)">supuesto</span>' : ''}</td>
+        <td>${barra(x)}<span class="sub">${fmtLl(f.l.volumenM3)} de ${fmtLl(x.capVol)} m³ · ${fmtLl(x.volPct, 0)}%</span></td>
+        <td>${f.l.brutoKg ? fmtLl(x.pesoPct, 0) + '%' : '<span class="sub">—</span>'}${x.pasaPeso ? ' <b style="color:var(--bad)" title="Pasa el peso útil">⚠</b>' : ''}</td>
+        <td><span class="ll-pill ${LLENADO_LIMITA[x.limita][0]}" title="${esc(LLENADO_LIMITA[x.limita][2])}">${LLENADO_LIMITA[x.limita][1]}</span>${x.pasaVolumen ? ' <b style="color:var(--bad)" title="Pasa el volumen">⚠</b>' : ''}</td>`;
+    const venta = f.costo ? `<td>${montoLl(f.costos.venta[llenadoMoneda], llenadoMoneda)}<br><span class="sub">logística ${fmtLl(f.costo.pctLogistica, 1)}%</span></td>` : '<td><span class="sub">Sin factura</span></td>';
+    const det = llenadoAbierto === k ? `<tr class="ll-det"><td colspan="6">${detalleLlenado(f)}</td></tr>` : '';
+    return `<tr class="ll-fila" data-ll-abrir="${esc(k)}"><td>${quien}</td>${resto}${venta}</tr>${det}`;
+  };
+  const conFact = F.filter(f => f.costo), sumV = conFact.reduce((a, f) => a + f.costo.venta, 0), sumL = conFact.reduce((a, f) => a + f.costo.logistica, 0);   // el porcentaje no depende de la moneda
+  const enMon = pick => conFact.reduce((a, f) => a == null || pick(f)[llenadoMoneda] == null ? null : a + pick(f)[llenadoMoneda], 0);   // suma cada contenedor con SU tasa; null si a alguno le falta
+  const sumVm = enMon(f => f.costos.venta), sumLm = enMon(f => f.costos.logistica.total);
+  const selector = `<div class="ll-mon"><span class="sub">Moneda de la tabla y los totales:</span> ${MONEDAS_LL.map(m => `<button type="button" class="chip${m === llenadoMoneda ? ' on' : ''}" data-ll-mon="${m}">${m}</button>`).join(' ')}
+    ${GBP_ERROR ? '<span class="sub" style="color:var(--warn)">· no se pudo consultar la tasa de la libra: las libras salen con «—»</span>' : ''}</div>`;
+  cont.innerHTML = selector + `<div class="ll-kpis">${kpi('Llenado promedio', n && R.n ? fmtLl(R.volPromedio, 0) + '%' : '—', 'volumen lleno sobre la capacidad')}
+      ${kpi('Con espacio de sobra', R.n ? `${R.conSobra} de ${R.n}` : '—', 'ni peso ni volumen pasan del ' + UMBRAL_LLENADO + '%')}
+      ${kpi('Espacio que sobra', R.n ? fmtLl(R.vacioM3, 0) + ' m³' : '—', 'solo de los que sobran, no de los pesados')}
+      ${kpi('Equivale a', R.n ? fmtLl(R.equivale40) + " de 40'" : '—', 'contenedores de 67,7 m³')}
+      ${kpi('Logística sobre venta', conFact.length ? fmtLl(sumL / sumV * 100, 1) + '%' : '—', conFact.length ? `${montoLl(sumLm, llenadoMoneda)} de ${montoLl(sumVm, llenadoMoneda)} · ${conFact.length} de ${n} con factura` : 'faltan las facturas')}</div>
+    ${cargaLlenado()}${pendientesLlenado()}
+    ${n ? `<div class="tbl-wrap"><table class="prop ll-tabla"><thead><tr><th>Contenedor · RBHY</th><th>Tipo</th><th>Volumen lleno</th><th>Peso</th><th>Lo que limita</th><th>Venta · logística</th></tr></thead><tbody>${F.map(filaHtml).join('')}</tbody></table></div>`
+      : `<p class="sub">No hay listas de empaque leídas para este mes. Toque «Leer correos ahora» para buscarlas en el buzón de calidad@.</p>`}
+    <p class="sub" style="margin-top:8px">Capacidad: 20' = ${fmtLl(CAPACIDAD_CONT['20'].vol)} m³ y ${fmtLl(CAPACIDAD_CONT['20'].kg, 0)} kg · 40' = ${fmtLl(CAPACIDAD_CONT['40'].vol)} m³ y ${fmtLl(CAPACIDAD_CONT['40'].kg, 0)} kg · 40' HC = ${fmtLl(CAPACIDAD_CONT['40HC'].vol)} m³ y ${fmtLl(CAPACIDAD_CONT['40HC'].kg, 0)} kg. El peso es el que permite la tractomula (${fmtLl(PESO_TRACTOMULA, 0)} kg entre contenedor y carga) menos la tara típica del contenedor. El tipo sale de la Unidad del viaje; en exportaciones el «40'» se toma como 40' HC, porque así son todos los bookings leídos.
+    «Peso» o «Volumen» dice cuál límite se alcanza primero: si el contenedor va pesado, el espacio vacío no es desperdicio. Solo «Sobra espacio» se puede mejorar. Toque una fila para ver el diagrama, los productos con su precio y el costo contra la venta.
+    «Logística» es lo que la factura de Reckitt carga por flete interno, flete internacional, seguro y cargo adicional, sobre el valor de la mercancía. Los costos van en COP (con la TRM de cada factura), GBP (con la tasa del día de la factura, que se consulta a un servicio público de tasas de cambio) y USD; el transporte de ETP, con su tarifa, retorno y extracostos, sale de la base de viajes.</p>`;
+}
+// Vista lateral del contenedor: un bloque por producto, de largo proporcional a su volumen, y el espacio vacío rayado; debajo, el peso contra el límite de la tractomula
+function diagramaLlenado(f, prods){
+  const x = f.llenado; if (!x || !f.l.volumenM3) return '';
+  const L = 600, X0 = 40, H = 66, Y0 = 34; let acum = 0;
+  const bloques = prods.filter(p => p.volumenM3 > 0).map((p, i) => { const w = p.volumenM3 / x.capVol * L, b = {p, x: X0 + acum, w, c: COLORES_LL[i % COLORES_LL.length], n: i + 1}; acum += w; return b; });
+  const usado = Math.min(L, bloques.length ? acum : f.l.volumenM3 / x.capVol * L), pesoW = Math.min(L, x.pesoPct / 100 * L);
+  const bl = bloques.map(b => `<rect x="${b.x.toFixed(1)}" y="${Y0}" width="${Math.max(0.5, b.w).toFixed(1)}" height="${H}" fill="${b.c}" opacity="0.85"><title>${esc(b.p.descripcion || b.p.material)} · ${fmtLl(b.p.volumenM3, 1)} m³</title></rect>`
+    + (b.w >= 16 ? `<text x="${(b.x + b.w / 2).toFixed(1)}" y="${Y0 + H / 2 + 4}" text-anchor="middle" font-size="12" font-weight="600" fill="#fff">${b.n}</text>` : '')).join('');
+  const vacioX = X0 + usado, vacioW = Math.max(0, L - usado);
+  const col = x.pesoPct > 100 ? 'var(--bad)' : x.pesoPct > x.volPct ? 'var(--warn)' : 'var(--ok)';
+  return `<svg viewBox="0 0 680 148" width="100%" style="max-width:760px;display:block" role="img" aria-label="Llenado del contenedor: ${fmtLl(x.volPct, 0)}% del volumen y ${fmtLl(x.pesoPct, 0)}% del peso">
+    <defs><pattern id="llvac" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="8" stroke="var(--muted)" stroke-width="1" opacity=".5"/></pattern></defs>
+    <text x="${X0}" y="24" font-size="11" fill="var(--muted)">Fondo del contenedor</text><text x="${X0 + L}" y="24" font-size="11" fill="var(--muted)" text-anchor="end">Puertas</text>
+    <rect x="${vacioX.toFixed(1)}" y="${Y0}" width="${vacioW.toFixed(1)}" height="${H}" fill="url(#llvac)"/>${bl}
+    <rect x="${X0}" y="${Y0}" width="${L}" height="${H}" rx="3" fill="none" stroke="var(--muted)" stroke-width="1.2"/>
+    ${vacioW > 130 ? `<text x="${(vacioX + vacioW / 2).toFixed(1)}" y="${Y0 + H / 2 - 4}" text-anchor="middle" font-size="14" font-weight="600" fill="var(--text)">${fmtLl(x.volPct, 0)}% del volumen</text><text x="${(vacioX + vacioW / 2).toFixed(1)}" y="${Y0 + H / 2 + 14}" text-anchor="middle" font-size="12" fill="var(--muted)">${fmtLl(x.vacioM3, 1)} m³ vacíos de ${fmtLl(x.capVol, 1)} m³</text>` : ''}
+    <text x="${X0}" y="${Y0 + H + 26}" font-size="13" font-weight="600" fill="var(--text)">Peso: ${fmtLl(f.l.brutoKg, 0)} de ${fmtLl(x.capKg, 0)} kg (${fmtLl(x.pesoPct, 0)}%)</text>
+    <rect x="${X0}" y="${Y0 + H + 34}" width="${L}" height="12" rx="3" fill="var(--surface-2)" stroke="var(--border)"/><rect x="${X0}" y="${Y0 + H + 34}" width="${pesoW.toFixed(1)}" height="12" rx="3" fill="${col}"/>
+  </svg>`;
+}
+// A la derecha del diagrama (21-nov, pedido de Gallego): los costos de este contenedor en COP, GBP y USD, en dos bloques: la logística que carga la factura de Reckitt y el
+// transporte de ETP (tarifa, retorno y extracostos de la base de viajes). La moneda elegida arriba va resaltada.
+function panelCostos(f){
+  const c = f.costos, F = f.fact, T = c.tasas, tr = c.transporte, lo = c.logistica;
+  const fila = (nom, o, cls) => `<tr${cls ? ` class="${cls}"` : ''}><td>${nom}</td>${MONEDAS_LL.map(m => `<td${m === llenadoMoneda ? ' class="ll-sel"' : ''}>${o ? montoLl(o[m], m) : '—'}</td>`).join('')}</tr>`;
+  const grupo = t => `<tr class="ll-grp"><td colspan="4">${t}</td></tr>`, nota = t => `<tr><td colspan="4" class="sub">${t}</td></tr>`;
+  const venta = F && c.venta ? grupo(`Venta · factura ${esc(F.numero || '')}${F.incoterm ? ' · ' + esc(F.incoterm) : ''}`) + fila('Mercancía', c.venta, 'll-tot')
+      + grupo(`Logística facturada · ${fmtLl(lo.pct, 1)}% de la venta`) + lo.cargos.map(x => fila(esc(x.concepto), x)).join('') + fila('Subtotal logística', lo.total, 'll-tot')
+    : grupo('Venta y logística') + nota('Todavía no hay factura leída de este contenedor (llega en el correo «NUEVA EXPORTACIÓN»; toque «Leer correos ahora»).');
+  const transp = tr ? grupo('Transporte de ETP · base de viajes') + (tr.sinTarifa ? nota('El viaje todavía no tiene tarifa cargada.') : fila('Tarifa', tr.tarifa)) + (tr.retorno.COP ? fila('Retorno del vacío', tr.retorno) : '')
+      + grupo(`Extracostos${tr.aprob ? ' · ' + (tr.aprob === 'Aprobado' ? 'aprobados por Reckitt' : tr.aprob === 'Pendiente' ? '<b style="color:var(--warn)">pendientes de aprobación</b>' : esc(tr.aprob)) : ''}`)
+      + (tr.extras.length ? tr.extras.map(x => fila(esc(x.concepto), x)).join('') : nota('Sin extracostos.')) + fila('Subtotal transporte', tr.total, 'll-tot')
+    : grupo('Transporte de ETP') + nota('La lista no está ligada a un viaje: no hay tarifa ni extracostos que mostrar.');
+  const fechaTasa = F && F.fecha ? F.fecha : String(f.l.fecha || '').slice(0, 10);
+  const tasas = `<div class="sub" style="margin-top:6px">Tasas: ${T.trm ? `TRM $${fmtLl(T.trm, 2)} por USD${T.aproximada ? ' <b title="Este contenedor todavía no tiene factura propia: se usa la TRM de la factura más reciente">(aproximada)</b>' : ' de la factura'}` : 'sin TRM'} · ${T.gbp ? `${fmtLl(T.gbp, 4)} GBP por USD del ${esc(fd(fechaTasa))}` : 'sin tasa de la libra'}.</div>`;
+  return `<div style="font-weight:600;margin-bottom:4px">Costos de este contenedor</div><div class="tbl-wrap"><table class="prop ll-costos"><thead><tr><th></th>${MONEDAS_LL.map(m => `<th${m === llenadoMoneda ? ' class="ll-sel"' : ''}>${m}</th>`).join('')}</tr></thead><tbody>${venta}${transp}</tbody></table></div>${tasas}`;
+}
+function detalleLlenado(f){
+  const l = f.l, F = f.fact, prods = productosContenedor(l, F);
+  const avisos = l.avisos.concat(F ? F.avisos : []), aviso = (f.sinViaje ? `<div class="sub" style="color:var(--warn)">⚠ Esta lista no está ligada a ningún viaje${f.choque ? ': <b>' + esc(f.choque) + '</b>' : ' (por RBHY, booking ni contenedor): falta el RBHY en el viaje —las Acciones lo proponen desde el correo—, o el viaje no está creado'}.${f.tipoSupuesto ? " El cálculo supone un contenedor de 40' HC." : ''}</div>` : '') + (avisos.length ? `<div class="sub" style="color:var(--warn)">⚠ ${avisos.map(esc).join(' · ')}</div>` : '');
+  const sw = i => `<span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${COLORES_LL[i % COLORES_LL.length]};vertical-align:-1px"></span>`;
+  const conPrecio = prods.some(p => p.valor > 0), conVol = prods.some(p => p.volumenM3 > 0);
+  const tab = !prods.length ? '<div class="sub">Esta lista se leyó solo con sus totales (sin el detalle por material).</div>'
+    : `<div class="tbl-wrap"><table class="prop"><colgroup><col style="width:22px"><col style="width:34%"></colgroup><thead><tr><th></th><th>Producto</th><th>Cajas</th><th>m³</th><th>kg bruto</th>${conPrecio ? '<th>USD/caja</th><th>Valor USD</th><th>USD/m³</th>' : ''}</tr></thead><tbody>${prods.map((p, i) =>
+      `<tr><td>${p.volumenM3 > 0 ? sw(i) : ''}</td><td>${esc(p.descripcion || p.material)} <span class="sub">· ${esc(p.material)}${p.cuadra ? '' : ` · <b style="color:var(--bad)">lista ${fmtLl(p.cajas, 0)} cajas, factura ${fmtLl(p.cajasFactura, 0)}</b>`}</span></td><td>${fmtLl(p.cajas || p.cajasFactura, 0)}</td><td>${conVol ? fmtLl(p.volumenM3, 1) : '—'}</td><td>${conVol ? fmtLl(p.brutoKg, 0) : '—'}</td>${conPrecio ? `<td>${p.precioCaja ? fmtLl(p.precioCaja, 2) : '—'}</td><td>${p.valor ? fmtLl(p.valor, 0) : '—'}</td><td>${p.valorPorM3 ? fmtLl(p.valorPorM3, 0) : '—'}</td>` : ''}</tr>`).join('')}
+      <tr style="font-weight:600"><td></td><td>Total</td><td>${fmtLl(l.cajas, 0)}</td><td>${fmtLl(l.volumenM3, 1)}</td><td>${fmtLl(l.brutoKg, 0)}</td>${conPrecio ? `<td></td><td>${F ? fmtLl(F.subtotal, 0) : ''}</td><td>${F && l.volumenM3 ? fmtLl(F.subtotal / l.volumenM3, 0) : ''}</td>` : ''}</tr></tbody></table></div>`;
+  const correo = l.msgId ? ` · <a class="link" href="https://mail.google.com/mail/?authuser=calidad@stentrapetrol.com#all/${esc(l.msgId)}" target="_blank" rel="noopener">Ver correo con la lista (PDF)</a>` : '';
+  return `<div class="sub">Lista ${esc(l.delivery || 'sin Delivery ID')} · ${fmtLl(l.cajas, 0)} cajas · ${fmtLl(l.volumenM3, 3)} m³ · ${fmtLl(l.brutoKg, 0)} kg bruto${f.vs.map(v => ` · <button type="button" class="link" data-ll-viaje="${esc(v.id)}">${esc(v.id)}</button>`).join('')}${correo}</div>${aviso}
+    <div class="ll-cols"><div class="ll-izq">${diagramaLlenado(f, prods)}</div><div class="ll-der">${panelCostos(f)}</div></div>${tab}`;
+}
+// La libra del día de cada factura: UNA consulta con el rango de fechas (el servicio publica solo días hábiles; gbpDelDia toma la del último día hasta la fecha). Sin respuesta, GBP_ERROR.
+async function cargarGbp(){
+  const hoy = typeof HOY === 'string' && HOY ? HOY : new Date().toISOString().slice(0, 10);
+  const fechas = (LLENADO_FACT || []).map(x => x.fecha).concat((LLENADO || []).map(l => String(l.fecha || '').slice(0, 10))).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= hoy).sort();
+  if (!fechas.length) return;
+  try {
+    const r = await fetch(`https://api.frankfurter.dev/v1/${fechas[0]}..${hoy}?base=USD&symbols=GBP`); if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json(), t = {}; Object.keys(j.rates || {}).forEach(d => { if (j.rates[d] && j.rates[d].GBP) t[d] = j.rates[d].GBP; });
+    GBP_TABLA = t; GBP_ERROR = !Object.keys(t).length;
+  } catch(e) { GBP_ERROR = true; }
+}
+async function cargarLlenado(actualizar, historico){
+  const codigo = await claveGerenciaParaGps();   // gps-conexiones.js: la clave de Gerencia de la sesión; si falta, la pide
+  if (!codigo) return;
+  const cuerpo = $('#llenadoCuerpo'), b = $('#llenadoActualizar'), bh = $('#llenadoHistorico'); if (b) b.disabled = true;
+  if (bh) { bh.disabled = true; bh.textContent = 'Leyendo los viajes… hasta 4 minutos'; }
+  if (!LLENADO) cuerpo.innerHTML = '<p class="sub">Cargando el llenado…</p>';
+  try {
+    const j = await api('llenado', {codigo, actualizar: !!actualizar, historico: !!historico});
+    if (!j.ok) throw new Error(j.error || 'error');
+    LLENADO = (j.listas || []).filter(esListaExpo); LLENADO_FACT = j.facturas || []; LLENADO_CARGA = j.carga || null; LLENADO_TIPOS = j.tipos || {};
+    if (actualizar) toast(j.nuevas ? `${j.nuevas} ${j.nuevas === 1 ? 'lista nueva leída' : 'listas nuevas leídas'}` : 'No hay listas nuevas en el correo');
+    if (historico && LLENADO_CARGA) toast(LLENADO_CARGA.hechos >= LLENADO_CARGA.total ? 'Histórico completo' : `Histórico: ${LLENADO_CARGA.hechos} de ${LLENADO_CARGA.total} viajes; pulse otra vez para seguir`);
+  } catch (err) {
+    if (/Gerencia/.test(err.message)) { try { sessionStorage.removeItem('rkt-gerencia'); } catch(x) {} claveGerenciaSesion = ''; ajustarPestanaLlenado(); }
+    else { LLENADO = LLENADO || null; cuerpo.innerHTML = /Acción no soportada/.test(err.message) ? '<p class="sub">El servidor todavía no tiene el informe de llenado: falta desplegar la versión nueva del Apps Script.</p>' : `<p class="sub">No se pudo leer el llenado: ${esc(err.message)}</p>`; }
+    toast('No se pudo: ' + err.message); if (b) b.disabled = false; if (bh) { bh.disabled = false; bh.textContent = 'Cargar histórico de los viajes'; } return;
+  }
+  if (b) b.disabled = false;
+  const sel = $('#llenadoMes'); const meses = [...new Set(LLENADO.map(l => l.mes))].filter(m => /^\d{4}-\d{2}$/.test(m)).sort().reverse();
+  if (sel) { if (!meses.includes(llenadoMes)) llenadoMes = meses[0] || ''; sel.innerHTML = meses.map(m => `<option value="${esc(m)}"${m === llenadoMes ? ' selected' : ''}>${esc(nombreMes(m))}</option>`).join(''); }
+  pintarLlenado();
+  cargarGbp().then(() => { if (LLENADO) pintarLlenado(); });   // las libras llegan después, sin hacer esperar a la tabla
+}
+// CSV del mes (Excel lo abre): una fila por contenedor, con lo que se ve en la tabla
+function csvLlenado(){
+  const F = filasLlenado(llenadoMes); if (!F.length) return toast('No hay listas en este mes');
+  const q = s => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
+  const filas = [['RBHY', 'Contenedor', 'Tipo', 'Delivery', 'Cajas', 'Volumen m3', 'Capacidad m3', 'Volumen %', 'Peso bruto kg', 'Peso %', 'Lo que limita', 'Factura', 'Moneda', 'Venta (mercancia)', 'Logistica facturada', 'Logistica sobre venta %', 'Total factura', 'Venta COP', 'Venta GBP', 'Venta USD', 'Logistica COP', 'Logistica GBP', 'Logistica USD', 'Transporte ETP COP', 'Extracostos COP', 'Extracostos aprobacion', 'TRM', 'GBP por USD', 'Avisos']].concat(F.map(f => [f.l.rbhy, f.l.contenedor, f.tipos.join('+'), f.l.delivery, f.l.cajas,
+    f.l.volumenM3, f.llenado ? f.llenado.capVol.toFixed(1) : '', f.llenado ? f.llenado.volPct.toFixed(1) : '', f.l.brutoKg, f.llenado ? f.llenado.pesoPct.toFixed(1) : '', f.llenado ? LLENADO_LIMITA[f.llenado.limita][1] : '',
+    f.fact ? f.fact.numero : '', f.costo ? f.costo.moneda : '', f.costo ? f.costo.venta : '', f.costo ? f.costo.logistica : '', f.costo ? f.costo.pctLogistica.toFixed(1) : '', f.costo ? f.costo.total : '',
+    ...['venta', 'logistica'].flatMap(k => MONEDAS_LL.map(m => { const o = k === 'venta' ? f.costos.venta : f.costos.logistica && f.costos.logistica.total; return o && o[m] != null ? (m === 'COP' ? Math.round(o[m]) : o[m].toFixed(2)) : ''; })),
+    f.costos.transporte ? Math.round(f.costos.transporte.total.COP) : '', f.costos.transporte ? Math.round(f.costos.transporte.extra.COP) : '', f.costos.transporte ? f.costos.transporte.aprob : '', f.tasas.trm || '', f.tasas.gbp || '', f.l.avisos.concat(f.fact ? f.fact.avisos : []).join(' | ')]));
+  const url = URL.createObjectURL(new Blob(['﻿' + filas.map(r => r.map(q).join(';')).join('\r\n')], {type: 'text/csv;charset=utf-8'}));
+  const a = document.createElement('a'); a.href = url; a.download = `llenado-contenedores-${llenadoMes}.csv`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5e3);
+}
+// eventos: la pestaña pide los datos al abrirla (eventos.js llama a abrirPestanaLlenado)
+function abrirPestanaLlenado(){ if (!LLENADO) cargarLlenado(false); else pintarLlenado(); }
+$('#v-llenado').addEventListener('click', e => {
+  const t = e.target;
+  if (t.closest('#llenadoActualizar')) return cargarLlenado(true);
+  if (t.closest('#llenadoHistorico')) return cargarLlenado(false, true);
+  if (t.closest('#llenadoCsv')) return csvLlenado();
+  const ver = t.closest('[data-ll-viaje]'); if (ver) { e.stopPropagation(); return abrir(ver.dataset.llViaje); }
+  const mon = t.closest('[data-ll-mon]'); if (mon) { llenadoMoneda = mon.dataset.llMon; try { localStorage.setItem('rkt-ll-moneda', llenadoMoneda); } catch(x) {} return pintarLlenado(); }
+  const fila = t.closest('[data-ll-abrir]'); if (fila) { llenadoAbierto = llenadoAbierto === fila.dataset.llAbrir ? '' : fila.dataset.llAbrir; pintarLlenado(); }
+});
+$('#llenadoMes').addEventListener('change', e => { llenadoMes = e.target.value; llenadoAbierto = ''; pintarLlenado(); });
+ajustarPestanaLlenado();
 /* ---------- causa.js · causa de un cambio de fecha con su respaldo (8-nov-2026) ----------
  * Capa: pantalla. Regla del usuario: en el sistema las fechas siempre las mueve Entrapetrol; lo que prueba que el cambio fue del
  * cliente es su correo. Al mover una fecha ya programada (ventana del viaje y chat) se elige la causa:
@@ -8509,7 +8590,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '91da6f9889';
+const VERSION_TABLERO = '5d3e77ef59';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
