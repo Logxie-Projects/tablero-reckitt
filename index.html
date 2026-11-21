@@ -1415,7 +1415,6 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 
   <section id="v-trafico" class="hidden"><div class="card"><div id="trafico"></div></div></section>
 
-  <section id="v-errores" class="hidden">
   <section id="v-llenado" class="hidden solo-interno">
     <div class="card">
       <div class="toolbar" style="justify-content:space-between">
@@ -1426,6 +1425,7 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
     </div>
   </section>
 
+  <section id="v-errores" class="hidden">
     <div class="card">
       <div class="toolbar" style="justify-content:space-between">
         <div><h2 style="margin:0">Calidad de datos</h2><div class="sub" id="errResumen"></div></div>
@@ -5539,240 +5539,6 @@ async function manejarConexiones(e){
     toast(op === 'quitar' ? 'Conexión con Simon GPS quitada' : j.prueba && j.prueba.ok ? 'Conectó con Simon GPS' : 'No conectó: vea el motivo en la ventana');  } catch(err) { b.disabled = false; b.textContent = txt; toast('No se pudo: ' + err.message); if (/Gerencia/.test(err.message)) { try { sessionStorage.removeItem('rkt-gerencia'); } catch(x) {} claveGerenciaSesion = ''; } }
 }
 document.addEventListener('click', e => { if (e.target.closest('[data-gc-abrir]')) abrirConexiones(); });
-/* ---------- novedades del viaje: la bitácora con hora y autor (fase 1) y la línea de tiempo única (fase 2) ----------
- * Cada novedad es una fila de la pestaña "Novedades del viaje" (Base.gs): cuándo, viaje, quién, tipo, texto y origen. No se
- * editan ni se borran: así queda el seguimiento. El campo Observación sigue siendo la nota fija del viaje (programación,
- * bodega de cargue: la leen correos.js y viaje.js) y se muestra al final como "Nota del viaje (sin hora)".
- * Las "Interna" solo las ve el equipo (el backend no se las manda a Reckitt).
- * Lo usan viaje.js (lineaNovedad en la tarjeta, bloqueNovedades en la ventana), tabla.js (columna Observación) y turno.js. */
-const TIPOS_NOVEDAD = [['Status', '📍'], ['Acuerdo con Reckitt', '🤝'], ['Incidente', '⚠'], ['Pendiente', '⏳'], ['Interna', '🔒']];
-// "Cambio" la escribe el sistema (fase 2: Base.gs novedadDeCambios_) con cada dato guardado; no es un botón
-const iconoNovedad = t => t === 'Cambio' ? '⚙' : t === 'Hecho' ? '✅' : (TIPOS_NOVEDAD.find(x => x[0] === t) || [, '•'])[1];
-const delSistema = n => n.origen === 'Sistema';
-// las del viaje y sus subviajes, la más nueva primero
-const novedadesDe = v => { const ids = [v.id, ...viajes.filter(x => x.padre === v.id).map(x => x.id)];
-  return (window.NOVEDADES || []).filter(n => ids.includes(String(n.viaje))).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))); };
-// LA LÍNEA DE LA TARJETA (7-nov, "que sea realmente de utilidad para la operación; los otros son registros internos"): lo que
-// cuenta qué pasa con la carga. Vale la última nota del equipo o lo que reportó el conductor en su app, o el último paso
-// confirmado del viaje (ultimoHecho: "Vacío devuelto el vie 6 nov") si es más nuevo. Los cambios que escribe el sistema al guardar
-// (un conductor escrito con su nombre completo, un BL, una fecha corregida…) son registro interno: van en la línea de tiempo del
-// viaje, no aquí. De un cambio, en la línea de tiempo solo se resume lo de la operación (CAMBIO_OPERATIVO).
-const CAMBIO_OPERATIVO = /fecha|cita|retir|entrega|cargue|llenado|devoluci|descargue|placa|conductor|estado|status|bodega|patio/i;
-const soloOperacion = t => sinObservacion(t).split(/ · (?=[A-ZÁÉÍÓÚÑ][^:·]{1,40}: )/).filter(s => CAMBIO_OPERATIVO.test(s.split(':')[0])).join(' · ');
-// una nota Interna (solo para el equipo) o una prueba del sistema tampoco: no son el status del viaje
-const notaDelViaje = n => n.tipo !== 'Interna' && !/prueba/i.test(n.usuario || '');
-// 10-nov ("el comentario del subviaje se ve también en el viaje"): cada frente muestra SUS novedades. La línea de la tarjeta, el
-// último comentario de la ronda y el contador usan solo las del propio viaje o subviaje (novedadesPropias). La línea de tiempo de
-// la ventana del viaje sigue juntando las dos (novedadesDe), y las del subviaje van marcadas como tales.
-const novedadesPropias = v => (window.NOVEDADES || []).filter(n => String(n.viaje) === v.id).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
-const ultimaNovedadEscrita = v => novedadesPropias(v).filter(notaDelViaje).find(n => !delSistema(n));
-// la nota o el último paso confirmado si es más nuevo (dominio comentarioViaje; la misma regla del correo al cliente)
-const ultimaNovedad = v => comentarioViaje(v, ultimaNovedadEscrita(v), window.NOVEDADES);
-// cualquier fecha (ISO con zona del Historial o local de las novedades) como "AAAA-MM-DDTHH:mm" de Bogotá, para ordenar y mostrar
-function fechaLocal(f){
-  const s = String(f || ''); if (!s) return '';
-  if (!/(Z|[+-]\d\d:?\d\d)$/.test(s)) return s.replace(' ', 'T').slice(0, 16);
-  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {timeZone: 'America/Bogota', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'})
-    .formatToParts(new Date(s)).map(x => [x.type, x.value]));
-  return `${p.year}-${p.month}-${p.day}T${p.hour === '24' ? '00' : p.hour}:${p.minute}`;
-}
-// "hace 15 min", "hace 3 h", "ayer 15:20", "lun 3 nov 10:42"
-function haceCuanto(f){
-  if (!f) return 'sin hora';
-  const ahora = ahoraBogota(), dia = String(f).slice(0, 10), hora = String(f).slice(11, 16);
-  if (dia === ahora.fecha) { const min = ahora.min - (Number(hora.slice(0, 2)) * 60 + Number(hora.slice(3, 5)));
-    return min < 1 ? 'ahora' : min < 60 ? `hace ${min} min` : `hace ${Math.floor(min / 60)} h`; }
-  const ayer = new Date(ahora.fecha + 'T12:00'); ayer.setDate(ayer.getDate() - 1);
-  return `${dia === ayer.toISOString().slice(0, 10) ? 'ayer' : fd(dia)} ${hora}`;
-}
-// en los cambios, una observación editada sale como "Observación actualizada" (el texto completo está en la Observación del viaje):
-// se corta hasta el siguiente dato cambiado (" · Etiqueta: … →" o " | Etiqueta: … →")
-const SIGUIENTE_DATO = '(?=(?: · | \\| )[A-ZÁÉÍÓÚÑ][^:·|]{1,40}: [^·|]*→|$)';
-const sinObservacion = t => String(t || '').replace(new RegExp('Observaci[oó]n: [\\s\\S]*?' + SIGUIENTE_DATO, 'g'), 'Observación actualizada')
-  // columnas de control (las reprogramaciones ya salen como "Cambio de plan" con su causa; "Visto por" es del equipo): no van
-  .replace(new RegExp('(?:^|(?: · | \\| ))(?:Reprogramaciones|Visto por): [\\s\\S]*?' + SIGUIENTE_DATO, 'g'), '').replace(/^(?: · | \| )/, '');
-// en la tarjeta y la tabla, de un cambio solo lo de la operación; la línea de tiempo lo muestra completo
-const textoNovedad = n => n.tipo === 'Cambio' ? soloOperacion(n.texto) : n.texto;
-// la línea de la tarjeta: la última novedad con hora y autor; sin novedades, la observación como antes
-function lineaNovedad(v){
-  const n = ultimaNovedad(v), estilo = 'style="margin:-4px 0 10px"';
-  if (n) return `<div class="sub nov-ult" ${estilo} title="${esc(fechaNovedad(n))}">🕑 <b>${esc(haceCuanto(n.fecha))}</b> · ${esc(n.usuario)} · ${n.origen === 'Conductor' ? '🚛 Conductor' : iconoNovedad(n.tipo) + ' ' + esc(n.tipo)}: ${esc(textoNovedad(n))}${novedadesPropias(v).length > 1 ? ` <span class="sub">(+${novedadesPropias(v).length - 1})</span>` : ''}</div>`;
-  return v.observacion ? `<div class="sub" ${estilo}>💬 ${esc(v.observacion)}</div>` : '';
-}
-const fechaNovedad = n => { const f = fechaLocal(n.fecha); return f ? `${fd(f)}${f.length > 10 ? ' ' + f.slice(11, 16) : ''}` : 'sin hora'; };
-// el último comentario del viaje (Bandeja, ¿Dónde va? y Sin actualizar): lo más nuevo entre la última novedad de la operación y la última vez que alguien editó
-// la Observación (Historial). La observación es acumulada ("…- DESCARGA 4 NOV- VEHICULOS EN SOLISTICA"): se muestra el final, que
-// es lo más reciente. Cada uno con lo suyo: el subviaje muestra sus propios comentarios, no los del viaje principal (10-nov).
-function ultimoComentario(v){
-  const base = v, n = ultimaNovedad(base);
-  const h = historial.filter(x => x.id === base.id && /Observaci[oó]n:/.test(x.observacion || '')).sort((a, b) => fechaLocal(b.fecha).localeCompare(fechaLocal(a.fecha)))[0];
-  const obs = String(base.observacion || '').trim(), cola = obs.length > 160 ? '…' + obs.slice(-160) : obs;
-  if (n && (!h || fechaLocal(n.fecha) >= fechaLocal(h.fecha))) return `🕑 ${esc(haceCuanto(fechaLocal(n.fecha)))} · ${esc(n.usuario)}: ${esc(textoNovedad(n))}`;
-  if (!obs) return '';
-  return `💬 ${h ? esc(haceCuanto(fechaLocal(h.fecha))) + ' · ' + esc(String(h.usuario || '').replace(/ \(tablero\)$/, '')) + ': ' : ''}${esc(cola)}`;
-}
-// columna Observación de la tabla: la última novedad (con cuándo y quién) o la observación
-const textoObservacion = v => { const n = ultimaNovedad(v); return n ? `${haceCuanto(n.fecha)} · ${n.usuario}: ${textoNovedad(n)}` : (v.observacion || ''); };
-
-// en la ventana del viaje: agregar (equipo) y la línea de tiempo única del viaje (fase 2): novedades del equipo, cambios
-// guardados, correos de LogxIA, reprogramaciones y programación (eventosDe, linea-tiempo.js), con filtros; la nota fija al final
-let tipoNovedad = 'Status', filtroLinea = '';
-const FILTROS_LINEA = [['', 'Todo'], ['Novedad', 'Equipo'], ['Conductor', 'Conductor'], ['Cambio', 'Cambios'], ['Correo', 'Correos'], ['Reprogramación', 'Reprogramaciones']];
-// a qué filtro va cada tipo de evento ("Conductor": lo que marca el conductor en su app, Base.gs novedadDeConductor_)
-const grupoEvento = t => ({'Novedad': 'Novedad', 'Conductor': 'Conductor', 'Correo': 'Correo', 'Cambio de plan': 'Reprogramación', 'Incidente': 'Reprogramación'})[t] || 'Cambio';
-// 5-nov: Gerencia (modo Gerencia, turno.js) puede corregir el texto y el tipo de una novedad del equipo o del conductor; queda
-// marcada "✏ editada" con quién, cuándo y qué decía antes (Novedades.gs editarNovedad_). Las del sistema no se editan.
-// 6-nov ("solo Gerencia, más fácil"): los botones salen siempre para el equipo, no solo en modo Gerencia; al guardar o borrar se
-// pide la clave de Gerencia si no se dio en esta pestaña (cambioDeGerencia) y el servidor la vuelve a comprobar
-const editable = e => !window.MODO_CLIENTE && e.n && e.n.fila && (e.tipo === 'Novedad' || e.tipo === 'Conductor');
-const marcaGer = () => esGerencia() || claveGerenciaSesion ? '' : ' (Gerencia)';
-const marcaEditada = e => !e.n || !e.n.editada ? '' : ` <span class="sub nov-editada" title="${esc(String(e.n.editada).split(' ;; ').map(x => 'Editada por ' + x).join('\n'))}">✏ editada</span>`;
-let EVENTOS_LINEA = [];
-function itemEvento(e, i){
-  const titulo = e.tipo === 'Novedad' ? e.sub : e.tipo === 'Conductor' ? `Conductor · ${e.sub}` : e.tipo === 'Cambio de plan' ? `Cambio de plan · ${e.causa || 'Sin causa'}${e.resp && e.resp !== 'Sin causa' ? ` (responde ${e.resp})` : ''}`
-    : e.tipo === 'Programación' ? 'Programación de Reckitt' : e.tipo === 'Correo' ? `Correo${e.prioridad ? ' · ' + e.prioridad : ''}${e.hecha ? ' · ✔ hecha' : ''}` : e.tipo;
-  const ic = e.tipo === 'Novedad' ? iconoNovedad(e.sub) : e.tipo === 'Conductor' ? '🚛' : e.tipo === 'Cambio' ? '⚙' : (ICONO_EVENTO[e.tipo] || '•');
-  return `<div class="nov-it nov-${grupoEvento(e.tipo)}" data-nev="${i}"><span class="nov-ic">${ic}</span><div style="flex:1;min-width:0"><span class="sub">${esc(fechaNovedad({fecha: e.fecha}))}${e.quien ? ' · ' + esc(e.quien) : ''}</span>${marcaEditada(e)}
-    ${editable(e) ? ` <button type="button" class="link" data-nedit="${i}" title="Solo Gerencia: corregir el texto o el tipo (pide la clave de Gerencia; queda el rastro de la edición)">✏ Editar${marcaGer()}</button> <button type="button" class="link" data-nborrar="${i}" title="Solo Gerencia: borrar una novedad mal escrita (pide la clave; en la hoja queda marcada como borrada)" style="color:var(--bad)">🗑 Borrar${marcaGer()}</button>` : ''}
-    <div class="nov-cuerpo"><b>${esc(titulo)}</b> · ${esc(e.texto)}${e.costo ? ` <span style="color:var(--warn)">· costo extra ${pesos(e.costo)}</span>` : ''}${e.incidente ? ` <span style="color:var(--bad)">· ⚠ ${esc(e.incidente)}</span>` : ''}</div></div></div>`;
-}
-function listaLinea(v){
-  const E = EVENTOS_LINEA = eventosDe(v).filter(e => !filtroLinea || grupoEvento(e.tipo) === filtroLinea);
-  return E.map(itemEvento).join('')
-    + (!filtroLinea && v.observacion ? `<div class="nov-it nov-nota"><span class="nov-ic">📌</span><div><span class="sub">Nota del viaje (sin hora) · se edita abajo en Observación</span><div>${esc(v.observacion)}</div></div></div>` : '')
-    || '<p class="sub">Nada en este filtro.</p>';
-}
-// enviar a Gerencia (editar o borrar): pide la clave si no está en memoria, la olvida si el servidor la rechaza y refresca la línea
-async function cambioDeGerencia(accion, ev, datos){
-  const codigo = claveGerenciaSesion || await pedirTexto('Clave de Gerencia', '', 'Continuar'); if (!codigo) return false;
-  const j = await api(accion, {fila: ev.n.fila, viaje: ev.n.viaje, antes: ev.n.texto, codigo, usuario: usuarioActual() || 'Gerencia', ...datos});
-  if (!j.ok) { if (/clave/i.test(j.error || '')) claveGerenciaSesion = ''; throw new Error(j.error || 'error'); }
-  claveGerenciaSesion = codigo;
-  window.NOVEDADES = j.novedades || window.NOVEDADES;
-  const v = viajePorId(editId); if (v) $('#mNovedades').innerHTML = bloqueNovedades(v);
-  render(); return true;
-}
-// borrar (Gerencia): para una novedad mal escrita; la fila queda en la hoja marcada "borrada" y deja de salir en todos lados
-document.addEventListener('click', async e => {
-  const b = e.target.closest('[data-nborrar]'); if (!b) return;
-  const ev = EVENTOS_LINEA[+b.dataset.nborrar]; if (!ev) return;
-  if (!await preguntarSiNo(`¿Borrar esta novedad de ${ev.n.usuario}?\n\n"${ev.n.texto}"\n\nDeja de verse en el tablero y en los correos; en la hoja queda marcada como borrada por usted.`, 'Borrar')) return;
-  try { if (await cambioDeGerencia('borrarNovedad', ev, {})) toast('Novedad borrada'); }
-  catch(err) { toast('No se borró: ' + err.message); }
-});
-// editar (Gerencia): el texto se cambia en el mismo lugar; al guardar, el servidor vuelve a comprobar la clave de Gerencia
-document.addEventListener('click', e => {
-  const b = e.target.closest('[data-nedit]'); if (!b) return;
-  const ev = EVENTOS_LINEA[+b.dataset.nedit], caja = b.closest('[data-nev]'); if (!ev || !caja) return;
-  const tipos = ev.tipo === 'Conductor' ? '' : `<select class="nov-etipo">${TIPOS_NOVEDAD.map(([t, ic]) => `<option ${t === ev.n.tipo ? 'selected' : ''} value="${esc(t)}">${ic} ${esc(t)}</option>`).join('')}</select> `;
-  caja.querySelector('.nov-cuerpo').innerHTML = `<div class="nov-editar">${tipos}<textarea class="nov-etexto" rows="2">${esc(ev.n.texto)}</textarea>
-    <div style="margin-top:4px"><button type="button" class="btn primary" data-nguardar="${b.dataset.nedit}">Guardar corrección</button> <button type="button" class="btn" data-ncancelar>Cancelar</button>
-    <span class="sub">Queda marcada como editada, con lo que decía antes.${claveGerenciaSesion ? '' : ' Al guardar se pide la clave de Gerencia.'}</span></div></div>`;
-  b.remove(); caja.querySelector('.nov-etexto').focus();
-});
-document.addEventListener('click', e => { if (!e.target.closest('[data-ncancelar]')) return;
-  const v = viajePorId(editId); if (v) $('#novLista').innerHTML = listaLinea(v); });
-document.addEventListener('click', async e => {
-  const b = e.target.closest('[data-nguardar]'); if (!b) return;
-  const ev = EVENTOS_LINEA[+b.dataset.nguardar], caja = b.closest('[data-nev]');
-  const texto = caja.querySelector('.nov-etexto').value.trim(), tipo = (caja.querySelector('.nov-etipo') || {}).value || ev.n.tipo;
-  if (!texto) return toast('Escriba el texto de la novedad');
-  if (texto === ev.n.texto && tipo === ev.n.tipo) return toast('No cambió nada');
-  b.disabled = true; b.textContent = 'Guardando…';
-  try { if (await cambioDeGerencia('editarNovedad', ev, {tipo, texto})) toast('Novedad corregida'); else { b.disabled = false; b.textContent = 'Guardar corrección'; } }
-  catch(err) { toast('No se guardó: ' + err.message); b.disabled = false; b.textContent = 'Guardar corrección'; }
-});
-document.addEventListener('click', e => { const b = e.target.closest('[data-flinea]'); if (!b) return;
-  filtroLinea = b.dataset.flinea; const v = viajePorId(editId);
-  document.querySelectorAll('[data-flinea]').forEach(x => x.classList.toggle('on', x === b)); $('#novLista').innerHTML = listaLinea(v); });
-function bloqueNovedades(v){
-  filtroLinea = '';
-  const E = eventosDe(v), cuenta = g => E.filter(e => !g || grupoEvento(e.tipo) === g).length;
-  const form = window.MODO_CLIENTE ? '' : `<div class="nov-form">
-      <div class="nov-tipos">${TIPOS_NOVEDAD.map(([t, i]) => `<button type="button" class="chip ${t === tipoNovedad ? 'on' : ''}" data-tnov="${esc(t)}" title="${t === 'Interna' ? 'Solo la ve el equipo de Entrapetrol' : 'La ve también Reckitt'}">${i} ${esc(t)}</button>`).join('')}</div>
-      <div class="nov-fila"><textarea id="novTexto" rows="2" placeholder="Qué pasó. Ej: Contenedor cargado, sale hacia bodega Reckitt"></textarea>
-      <button type="button" class="btn primary" id="novAgregar" onclick="agregarNovedad('${v.id}')">Agregar novedad</button></div></div>`;
-  const filtros = E.length ? `<div class="nov-filtros">${FILTROS_LINEA.map(([g, t]) => `<button type="button" class="chip ${g === filtroLinea ? 'on' : ''}" data-flinea="${g}">${t} · ${cuenta(g)}</button>`).join('')}</div>` : '';
-  const resumen = resumenEventos(E);   // linea-tiempo.js: cambios de plan, costo extra, incidentes
-  return `<fieldset class="mgrupo nov"><legend>Novedades y línea de tiempo del viaje</legend>${form}${resumen ? `<div class="sub" style="margin-top:8px">${resumen}</div>` : ''}${filtros}<div id="novLista">${E.length || v.observacion ? listaLinea(v) : '<p class="sub">Aún no hay novedades.</p>'}</div></fieldset>`;
-}
-document.addEventListener('click', e => { const b = e.target.closest('[data-tnov]'); if (!b) return;
-  tipoNovedad = b.dataset.tnov; document.querySelectorAll('[data-tnov]').forEach(x => x.classList.toggle('on', x === b)); });
-async function agregarNovedad(id){
-  const t = $('#novTexto'), texto = t.value.trim(); if (!texto) { t.focus(); return; }
-  const usuario = pedirUsuario('¿Quién eres? Queda como autor de la novedad'); if (!usuario) return;
-  const btn = $('#novAgregar'); btn.disabled = true; btn.textContent = 'Guardando…';
-  try {
-    const j = await api('novedadViaje', {id, usuario, tipo: tipoNovedad, texto});
-    if (!j.ok) throw new Error(j.error || 'error');
-    window.NOVEDADES = j.novedades || window.NOVEDADES;
-    const v = viajePorId(id);
-    v.ultimaNovedad = ahoraBogota().fecha + 'T' + ahoraBogota().hhmm;   // "sin actualizar" (dominio) ya la cuenta
-    // 19-nov (revisión): si mientras tanto abrió otro viaje, la novedad no se pinta en el modal del otro
-    const abierto = editId === id && $('#mNovedades'); if (abierto) abierto.innerHTML = bloqueNovedades(v);
-    // fase 3: lo que LogxIA dedujo de la novedad (Correos.gs propuestasDeNovedad_): fechas por aprobar y acción abierta
-    const lx = j.logxia || {}, fechas = lx.fechas || [];
-    const dijo = [fechas.length && `propone ${fechas.map(f => `${f.etiqueta.toLowerCase()} el ${fd(f.valor)}`).join(' y ')} (apruébalo en ✉ Llenar datos desde correos)`,
-      lx.accion && `abrió una acción: ${lx.accion.accion.replace(/^Operaciones: /, '')}`].filter(Boolean);
-    render(); toast(dijo.length ? 'Novedad guardada · LogxIA ' + dijo.join(' · ') : 'Novedad guardada');
-    if (dijo.length) { if (abierto && $('#novLista')) $('#novLista').insertAdjacentHTML('beforebegin', `<div class="nov-lx">🤖 <b>LogxIA</b> ${esc(dijo.join(' · '))}</div>`);
-      if (lx.accion && await cargar() !== false) render();   // trae la acción nueva (Acciones y Mi turno)
-      if (fechas.length) { await cargarPropuestas(1); render(); } }   // propuestas.js: el contador del botón
-  } catch(e) { toast('No se guardó la novedad: ' + e.message); btn.disabled = false; btn.textContent = 'Agregar novedad'; }
-}
-
-/* ---------- línea de tiempo del viaje: qué entra (novedades, cambios, correos de LogxIA, reprogramaciones, programación) ---------- */
-/* ---------- línea de tiempo del viaje: todo lo que ha pasado (ediciones, correos, cambios de plan, costos, incidentes) ---------- */
-// correos de la bitácora que tocan el viaje (también los ya resueltos y los de viajes cerrados)
-// (más amplio que accionesDe: también el booking dentro de un texto más largo y el pedido citado en el asunto)
-const correosDe = v => (window.BITACORA||[]).filter(b => coincide(v, b) || (compacto(v.booking).length >= 6 && compacto(b.booking).includes(compacto(v.booking))) ||
-  (v.pedido && String(b.asunto||'').includes(String(v.pedido).split('-')[0])));
-
-function eventosDe(v){
-  const E = [], hijos = hijosDe(v), ids = [v.id, ...hijos.map(x => x.id)];
-  const fechaHist = f => String(f||'');
-  // novedades (novedades.js): las del equipo y los cambios que el sistema anota solo desde la fase 2
-  const novs = novedadesDe(v);
-  // las del subviaje dicen de quién son: "Subviaje a (destino): …"
-  const deQuien = n => { const s = String(n.viaje) !== v.id && hijos.find(x => x.id === String(n.viaje)); return s ? nombreSub(s) + ': ' : ''; };
-  novs.forEach(n => E.push(delSistema(n) ? {fecha: fechaLocal(n.fecha), tipo: 'Cambio', quien: n.usuario, texto: deQuien(n) + sinObservacion(n.texto)}
-    : {fecha: fechaLocal(n.fecha), tipo: n.origen === 'Conductor' ? 'Conductor' : 'Novedad', sub: n.tipo, quien: n.usuario, texto: deQuien(n) + n.texto, n}));
-  // un cambio del Historial que ya tiene su novedad automática (misma hora ±3 min) no se repite
-  const minutos = f => { const s = fechaLocal(f); return s.length > 10 ? Date.parse(s + ':00Z') / 6e4 : NaN; };
-  const cambios = novs.filter(delSistema).map(n => minutos(n.fecha));
-  const yaAnotado = f => cambios.some(m => Math.abs(m - minutos(f)) <= 3);
-  historial.filter(x => ids.includes(x.id)).forEach(x => {
-    const t = String(x.observacion||'').replace(/^(EXPO|IMPO) · /, '');
-    if (!t || /^Reprogramaciones:/.test(t) || yaAnotado(x.fecha)) return;
-    // "Mes programado: antes → después" va como evento de programación (de qué cuadro mensual de Reckitt a cuál pasó)
-    const partes = t.split(' | '), prog = partes.find(p => /^Mes programado: /.test(p)), resto = partes.filter(p => p !== prog).join(' | ');
-    if (prog) { const [antes, despues] = prog.replace(/^Mes programado: /, '').split(' → ');
-      E.push({fecha: fechaHist(x.fecha), tipo: 'Programación', quien: x.usuario || '', texto: textoProgramacion(v, antes, despues)}); }
-    const limpio = sinObservacion(resto);
-    if (limpio) E.push({fecha: fechaHist(x.fecha), tipo: /^Versión anterior/.test(resto) ? 'Excel' : 'Edición', quien: x.usuario || '', texto: (x.id!==v.id ? `Subviaje ${x.id}: ` : '') + limpio});
-  });
-  reprogsDe(v).forEach(r => {
-    const hito = ((HITOS_PLAN[v.operacion]||[]).find(([, , cs]) => cs.includes(r.campo)) || [r.campo])[0];
-    E.push({fecha: r.fecha, tipo: 'Cambio de plan', quien: r.usuario, causa: r.causa, resp: responsable(r.causa), costo: r.costo, incidente: r.incidente,
-      texto: `${hito}: ${r.antes ? fd(r.antes) : '—'} → ${r.despues ? fd(r.despues) : 'sin fecha'}${r.antes && r.despues ? ` (${dDias(r.antes, r.despues) > 0 ? '+' : ''}${dDias(r.antes, r.despues)} d)` : ''}${r.detalle ? ' · '+r.detalle : ''}`});
-  });
-  correosDe(v).forEach(b => E.push({fecha: String(b.fechaCorreo||b.registrado||''), tipo: 'Correo', quien: String(b.remitente||'').replace(/<.*>/, '').trim(),
-    texto: `${b.asunto || ''}${b.accion ? ' → ' + b.accion : ''}`, prioridad: b.prioridad, hecha: b.estadoAccion==='Hecha'}));
-  hijos.forEach(x => E.push({fecha: '', tipo: 'Subviaje', texto: `${x.id}: bodega de paso ${x.patioSub||'—'} · urbano ${x.fechaUrbano ? fd(x.fechaUrbano) : 'sin fecha'}${x.motivoSub ? ' · '+x.motivoSub : ''}`}));
-  if (v.novedad) E.push({fecha: '', tipo: 'Incidente', texto: 'Marcado con novedad' + (v.observacion ? ': ' + v.observacion : '')});
-  return E.sort((a, b) => fechaLocal(b.fecha).localeCompare(fechaLocal(a.fecha)));
-}
-
-// "3 cambios de plan (Reckitt 2, Entrapetrol 1) · costo extra $… · 1 incidente" para la cabecera de la línea de tiempo
-function resumenEventos(E){
-  const cp = E.filter(e => e.tipo==='Cambio de plan'), por = {};
-  cp.forEach(e => { por[e.resp] = (por[e.resp]||0) + 1; });
-  const costo = cp.reduce((t, e) => t + (e.costo||0), 0), inc = cp.filter(e => e.incidente).length + E.filter(e => e.tipo==='Incidente' || e.sub==='Incidente').length;
-  return [cp.length && `<b>${cp.length}</b> cambio${cp.length===1?'':'s'} de plan (${Object.entries(por).map(([r, n]) => `${esc(r)} ${n}`).join(', ')})`,
-    costo && `costo extra <b>${pesos(costo)}</b>`, inc && `<b style="color:var(--bad)">${inc}</b> incidente${inc===1?'':'s'}`].filter(Boolean).join(' · ');
-}
-
-const ICONO_EVENTO = {'Programación':'📋', 'Cambio de plan':'⟲', 'Correo':'✉', 'Edición':'✎', 'Excel':'▦', 'Subviaje':'↪', 'Incidente':'⚠'};
 /* ---------- llenado.js · pestaña "Llenado de contenedores" (20-nov-2026) ----------
  * Capa: pantalla. Pedido: los jefes de Reckitt (Milena, Gallego y Viviana) creen que se desperdicia espacio y quieren ver cuánto volumen se
  * llena de cada contenedor EXPO. Los datos salen de las listas de empaque (PDF) que Jhonier adjunta a cada "NUEVA EXPORTACIÓN" (Llenado.gs).
@@ -6017,6 +5783,240 @@ $('#v-llenado').addEventListener('click', e => {
 });
 $('#llenadoMes').addEventListener('change', e => { llenadoMes = e.target.value; llenadoAbierto = ''; pintarLlenado(); });
 ajustarPestanaLlenado();
+/* ---------- novedades del viaje: la bitácora con hora y autor (fase 1) y la línea de tiempo única (fase 2) ----------
+ * Cada novedad es una fila de la pestaña "Novedades del viaje" (Base.gs): cuándo, viaje, quién, tipo, texto y origen. No se
+ * editan ni se borran: así queda el seguimiento. El campo Observación sigue siendo la nota fija del viaje (programación,
+ * bodega de cargue: la leen correos.js y viaje.js) y se muestra al final como "Nota del viaje (sin hora)".
+ * Las "Interna" solo las ve el equipo (el backend no se las manda a Reckitt).
+ * Lo usan viaje.js (lineaNovedad en la tarjeta, bloqueNovedades en la ventana), tabla.js (columna Observación) y turno.js. */
+const TIPOS_NOVEDAD = [['Status', '📍'], ['Acuerdo con Reckitt', '🤝'], ['Incidente', '⚠'], ['Pendiente', '⏳'], ['Interna', '🔒']];
+// "Cambio" la escribe el sistema (fase 2: Base.gs novedadDeCambios_) con cada dato guardado; no es un botón
+const iconoNovedad = t => t === 'Cambio' ? '⚙' : t === 'Hecho' ? '✅' : (TIPOS_NOVEDAD.find(x => x[0] === t) || [, '•'])[1];
+const delSistema = n => n.origen === 'Sistema';
+// las del viaje y sus subviajes, la más nueva primero
+const novedadesDe = v => { const ids = [v.id, ...viajes.filter(x => x.padre === v.id).map(x => x.id)];
+  return (window.NOVEDADES || []).filter(n => ids.includes(String(n.viaje))).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))); };
+// LA LÍNEA DE LA TARJETA (7-nov, "que sea realmente de utilidad para la operación; los otros son registros internos"): lo que
+// cuenta qué pasa con la carga. Vale la última nota del equipo o lo que reportó el conductor en su app, o el último paso
+// confirmado del viaje (ultimoHecho: "Vacío devuelto el vie 6 nov") si es más nuevo. Los cambios que escribe el sistema al guardar
+// (un conductor escrito con su nombre completo, un BL, una fecha corregida…) son registro interno: van en la línea de tiempo del
+// viaje, no aquí. De un cambio, en la línea de tiempo solo se resume lo de la operación (CAMBIO_OPERATIVO).
+const CAMBIO_OPERATIVO = /fecha|cita|retir|entrega|cargue|llenado|devoluci|descargue|placa|conductor|estado|status|bodega|patio/i;
+const soloOperacion = t => sinObservacion(t).split(/ · (?=[A-ZÁÉÍÓÚÑ][^:·]{1,40}: )/).filter(s => CAMBIO_OPERATIVO.test(s.split(':')[0])).join(' · ');
+// una nota Interna (solo para el equipo) o una prueba del sistema tampoco: no son el status del viaje
+const notaDelViaje = n => n.tipo !== 'Interna' && !/prueba/i.test(n.usuario || '');
+// 10-nov ("el comentario del subviaje se ve también en el viaje"): cada frente muestra SUS novedades. La línea de la tarjeta, el
+// último comentario de la ronda y el contador usan solo las del propio viaje o subviaje (novedadesPropias). La línea de tiempo de
+// la ventana del viaje sigue juntando las dos (novedadesDe), y las del subviaje van marcadas como tales.
+const novedadesPropias = v => (window.NOVEDADES || []).filter(n => String(n.viaje) === v.id).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+const ultimaNovedadEscrita = v => novedadesPropias(v).filter(notaDelViaje).find(n => !delSistema(n));
+// la nota o el último paso confirmado si es más nuevo (dominio comentarioViaje; la misma regla del correo al cliente)
+const ultimaNovedad = v => comentarioViaje(v, ultimaNovedadEscrita(v), window.NOVEDADES);
+// cualquier fecha (ISO con zona del Historial o local de las novedades) como "AAAA-MM-DDTHH:mm" de Bogotá, para ordenar y mostrar
+function fechaLocal(f){
+  const s = String(f || ''); if (!s) return '';
+  if (!/(Z|[+-]\d\d:?\d\d)$/.test(s)) return s.replace(' ', 'T').slice(0, 16);
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {timeZone: 'America/Bogota', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'})
+    .formatToParts(new Date(s)).map(x => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour === '24' ? '00' : p.hour}:${p.minute}`;
+}
+// "hace 15 min", "hace 3 h", "ayer 15:20", "lun 3 nov 10:42"
+function haceCuanto(f){
+  if (!f) return 'sin hora';
+  const ahora = ahoraBogota(), dia = String(f).slice(0, 10), hora = String(f).slice(11, 16);
+  if (dia === ahora.fecha) { const min = ahora.min - (Number(hora.slice(0, 2)) * 60 + Number(hora.slice(3, 5)));
+    return min < 1 ? 'ahora' : min < 60 ? `hace ${min} min` : `hace ${Math.floor(min / 60)} h`; }
+  const ayer = new Date(ahora.fecha + 'T12:00'); ayer.setDate(ayer.getDate() - 1);
+  return `${dia === ayer.toISOString().slice(0, 10) ? 'ayer' : fd(dia)} ${hora}`;
+}
+// en los cambios, una observación editada sale como "Observación actualizada" (el texto completo está en la Observación del viaje):
+// se corta hasta el siguiente dato cambiado (" · Etiqueta: … →" o " | Etiqueta: … →")
+const SIGUIENTE_DATO = '(?=(?: · | \\| )[A-ZÁÉÍÓÚÑ][^:·|]{1,40}: [^·|]*→|$)';
+const sinObservacion = t => String(t || '').replace(new RegExp('Observaci[oó]n: [\\s\\S]*?' + SIGUIENTE_DATO, 'g'), 'Observación actualizada')
+  // columnas de control (las reprogramaciones ya salen como "Cambio de plan" con su causa; "Visto por" es del equipo): no van
+  .replace(new RegExp('(?:^|(?: · | \\| ))(?:Reprogramaciones|Visto por): [\\s\\S]*?' + SIGUIENTE_DATO, 'g'), '').replace(/^(?: · | \| )/, '');
+// en la tarjeta y la tabla, de un cambio solo lo de la operación; la línea de tiempo lo muestra completo
+const textoNovedad = n => n.tipo === 'Cambio' ? soloOperacion(n.texto) : n.texto;
+// la línea de la tarjeta: la última novedad con hora y autor; sin novedades, la observación como antes
+function lineaNovedad(v){
+  const n = ultimaNovedad(v), estilo = 'style="margin:-4px 0 10px"';
+  if (n) return `<div class="sub nov-ult" ${estilo} title="${esc(fechaNovedad(n))}">🕑 <b>${esc(haceCuanto(n.fecha))}</b> · ${esc(n.usuario)} · ${n.origen === 'Conductor' ? '🚛 Conductor' : iconoNovedad(n.tipo) + ' ' + esc(n.tipo)}: ${esc(textoNovedad(n))}${novedadesPropias(v).length > 1 ? ` <span class="sub">(+${novedadesPropias(v).length - 1})</span>` : ''}</div>`;
+  return v.observacion ? `<div class="sub" ${estilo}>💬 ${esc(v.observacion)}</div>` : '';
+}
+const fechaNovedad = n => { const f = fechaLocal(n.fecha); return f ? `${fd(f)}${f.length > 10 ? ' ' + f.slice(11, 16) : ''}` : 'sin hora'; };
+// el último comentario del viaje (Bandeja, ¿Dónde va? y Sin actualizar): lo más nuevo entre la última novedad de la operación y la última vez que alguien editó
+// la Observación (Historial). La observación es acumulada ("…- DESCARGA 4 NOV- VEHICULOS EN SOLISTICA"): se muestra el final, que
+// es lo más reciente. Cada uno con lo suyo: el subviaje muestra sus propios comentarios, no los del viaje principal (10-nov).
+function ultimoComentario(v){
+  const base = v, n = ultimaNovedad(base);
+  const h = historial.filter(x => x.id === base.id && /Observaci[oó]n:/.test(x.observacion || '')).sort((a, b) => fechaLocal(b.fecha).localeCompare(fechaLocal(a.fecha)))[0];
+  const obs = String(base.observacion || '').trim(), cola = obs.length > 160 ? '…' + obs.slice(-160) : obs;
+  if (n && (!h || fechaLocal(n.fecha) >= fechaLocal(h.fecha))) return `🕑 ${esc(haceCuanto(fechaLocal(n.fecha)))} · ${esc(n.usuario)}: ${esc(textoNovedad(n))}`;
+  if (!obs) return '';
+  return `💬 ${h ? esc(haceCuanto(fechaLocal(h.fecha))) + ' · ' + esc(String(h.usuario || '').replace(/ \(tablero\)$/, '')) + ': ' : ''}${esc(cola)}`;
+}
+// columna Observación de la tabla: la última novedad (con cuándo y quién) o la observación
+const textoObservacion = v => { const n = ultimaNovedad(v); return n ? `${haceCuanto(n.fecha)} · ${n.usuario}: ${textoNovedad(n)}` : (v.observacion || ''); };
+
+// en la ventana del viaje: agregar (equipo) y la línea de tiempo única del viaje (fase 2): novedades del equipo, cambios
+// guardados, correos de LogxIA, reprogramaciones y programación (eventosDe, linea-tiempo.js), con filtros; la nota fija al final
+let tipoNovedad = 'Status', filtroLinea = '';
+const FILTROS_LINEA = [['', 'Todo'], ['Novedad', 'Equipo'], ['Conductor', 'Conductor'], ['Cambio', 'Cambios'], ['Correo', 'Correos'], ['Reprogramación', 'Reprogramaciones']];
+// a qué filtro va cada tipo de evento ("Conductor": lo que marca el conductor en su app, Base.gs novedadDeConductor_)
+const grupoEvento = t => ({'Novedad': 'Novedad', 'Conductor': 'Conductor', 'Correo': 'Correo', 'Cambio de plan': 'Reprogramación', 'Incidente': 'Reprogramación'})[t] || 'Cambio';
+// 5-nov: Gerencia (modo Gerencia, turno.js) puede corregir el texto y el tipo de una novedad del equipo o del conductor; queda
+// marcada "✏ editada" con quién, cuándo y qué decía antes (Novedades.gs editarNovedad_). Las del sistema no se editan.
+// 6-nov ("solo Gerencia, más fácil"): los botones salen siempre para el equipo, no solo en modo Gerencia; al guardar o borrar se
+// pide la clave de Gerencia si no se dio en esta pestaña (cambioDeGerencia) y el servidor la vuelve a comprobar
+const editable = e => !window.MODO_CLIENTE && e.n && e.n.fila && (e.tipo === 'Novedad' || e.tipo === 'Conductor');
+const marcaGer = () => esGerencia() || claveGerenciaSesion ? '' : ' (Gerencia)';
+const marcaEditada = e => !e.n || !e.n.editada ? '' : ` <span class="sub nov-editada" title="${esc(String(e.n.editada).split(' ;; ').map(x => 'Editada por ' + x).join('\n'))}">✏ editada</span>`;
+let EVENTOS_LINEA = [];
+function itemEvento(e, i){
+  const titulo = e.tipo === 'Novedad' ? e.sub : e.tipo === 'Conductor' ? `Conductor · ${e.sub}` : e.tipo === 'Cambio de plan' ? `Cambio de plan · ${e.causa || 'Sin causa'}${e.resp && e.resp !== 'Sin causa' ? ` (responde ${e.resp})` : ''}`
+    : e.tipo === 'Programación' ? 'Programación de Reckitt' : e.tipo === 'Correo' ? `Correo${e.prioridad ? ' · ' + e.prioridad : ''}${e.hecha ? ' · ✔ hecha' : ''}` : e.tipo;
+  const ic = e.tipo === 'Novedad' ? iconoNovedad(e.sub) : e.tipo === 'Conductor' ? '🚛' : e.tipo === 'Cambio' ? '⚙' : (ICONO_EVENTO[e.tipo] || '•');
+  return `<div class="nov-it nov-${grupoEvento(e.tipo)}" data-nev="${i}"><span class="nov-ic">${ic}</span><div style="flex:1;min-width:0"><span class="sub">${esc(fechaNovedad({fecha: e.fecha}))}${e.quien ? ' · ' + esc(e.quien) : ''}</span>${marcaEditada(e)}
+    ${editable(e) ? ` <button type="button" class="link" data-nedit="${i}" title="Solo Gerencia: corregir el texto o el tipo (pide la clave de Gerencia; queda el rastro de la edición)">✏ Editar${marcaGer()}</button> <button type="button" class="link" data-nborrar="${i}" title="Solo Gerencia: borrar una novedad mal escrita (pide la clave; en la hoja queda marcada como borrada)" style="color:var(--bad)">🗑 Borrar${marcaGer()}</button>` : ''}
+    <div class="nov-cuerpo"><b>${esc(titulo)}</b> · ${esc(e.texto)}${e.costo ? ` <span style="color:var(--warn)">· costo extra ${pesos(e.costo)}</span>` : ''}${e.incidente ? ` <span style="color:var(--bad)">· ⚠ ${esc(e.incidente)}</span>` : ''}</div></div></div>`;
+}
+function listaLinea(v){
+  const E = EVENTOS_LINEA = eventosDe(v).filter(e => !filtroLinea || grupoEvento(e.tipo) === filtroLinea);
+  return E.map(itemEvento).join('')
+    + (!filtroLinea && v.observacion ? `<div class="nov-it nov-nota"><span class="nov-ic">📌</span><div><span class="sub">Nota del viaje (sin hora) · se edita abajo en Observación</span><div>${esc(v.observacion)}</div></div></div>` : '')
+    || '<p class="sub">Nada en este filtro.</p>';
+}
+// enviar a Gerencia (editar o borrar): pide la clave si no está en memoria, la olvida si el servidor la rechaza y refresca la línea
+async function cambioDeGerencia(accion, ev, datos){
+  const codigo = claveGerenciaSesion || await pedirTexto('Clave de Gerencia', '', 'Continuar'); if (!codigo) return false;
+  const j = await api(accion, {fila: ev.n.fila, viaje: ev.n.viaje, antes: ev.n.texto, codigo, usuario: usuarioActual() || 'Gerencia', ...datos});
+  if (!j.ok) { if (/clave/i.test(j.error || '')) claveGerenciaSesion = ''; throw new Error(j.error || 'error'); }
+  claveGerenciaSesion = codigo;
+  window.NOVEDADES = j.novedades || window.NOVEDADES;
+  const v = viajePorId(editId); if (v) $('#mNovedades').innerHTML = bloqueNovedades(v);
+  render(); return true;
+}
+// borrar (Gerencia): para una novedad mal escrita; la fila queda en la hoja marcada "borrada" y deja de salir en todos lados
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-nborrar]'); if (!b) return;
+  const ev = EVENTOS_LINEA[+b.dataset.nborrar]; if (!ev) return;
+  if (!await preguntarSiNo(`¿Borrar esta novedad de ${ev.n.usuario}?\n\n"${ev.n.texto}"\n\nDeja de verse en el tablero y en los correos; en la hoja queda marcada como borrada por usted.`, 'Borrar')) return;
+  try { if (await cambioDeGerencia('borrarNovedad', ev, {})) toast('Novedad borrada'); }
+  catch(err) { toast('No se borró: ' + err.message); }
+});
+// editar (Gerencia): el texto se cambia en el mismo lugar; al guardar, el servidor vuelve a comprobar la clave de Gerencia
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-nedit]'); if (!b) return;
+  const ev = EVENTOS_LINEA[+b.dataset.nedit], caja = b.closest('[data-nev]'); if (!ev || !caja) return;
+  const tipos = ev.tipo === 'Conductor' ? '' : `<select class="nov-etipo">${TIPOS_NOVEDAD.map(([t, ic]) => `<option ${t === ev.n.tipo ? 'selected' : ''} value="${esc(t)}">${ic} ${esc(t)}</option>`).join('')}</select> `;
+  caja.querySelector('.nov-cuerpo').innerHTML = `<div class="nov-editar">${tipos}<textarea class="nov-etexto" rows="2">${esc(ev.n.texto)}</textarea>
+    <div style="margin-top:4px"><button type="button" class="btn primary" data-nguardar="${b.dataset.nedit}">Guardar corrección</button> <button type="button" class="btn" data-ncancelar>Cancelar</button>
+    <span class="sub">Queda marcada como editada, con lo que decía antes.${claveGerenciaSesion ? '' : ' Al guardar se pide la clave de Gerencia.'}</span></div></div>`;
+  b.remove(); caja.querySelector('.nov-etexto').focus();
+});
+document.addEventListener('click', e => { if (!e.target.closest('[data-ncancelar]')) return;
+  const v = viajePorId(editId); if (v) $('#novLista').innerHTML = listaLinea(v); });
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-nguardar]'); if (!b) return;
+  const ev = EVENTOS_LINEA[+b.dataset.nguardar], caja = b.closest('[data-nev]');
+  const texto = caja.querySelector('.nov-etexto').value.trim(), tipo = (caja.querySelector('.nov-etipo') || {}).value || ev.n.tipo;
+  if (!texto) return toast('Escriba el texto de la novedad');
+  if (texto === ev.n.texto && tipo === ev.n.tipo) return toast('No cambió nada');
+  b.disabled = true; b.textContent = 'Guardando…';
+  try { if (await cambioDeGerencia('editarNovedad', ev, {tipo, texto})) toast('Novedad corregida'); else { b.disabled = false; b.textContent = 'Guardar corrección'; } }
+  catch(err) { toast('No se guardó: ' + err.message); b.disabled = false; b.textContent = 'Guardar corrección'; }
+});
+document.addEventListener('click', e => { const b = e.target.closest('[data-flinea]'); if (!b) return;
+  filtroLinea = b.dataset.flinea; const v = viajePorId(editId);
+  document.querySelectorAll('[data-flinea]').forEach(x => x.classList.toggle('on', x === b)); $('#novLista').innerHTML = listaLinea(v); });
+function bloqueNovedades(v){
+  filtroLinea = '';
+  const E = eventosDe(v), cuenta = g => E.filter(e => !g || grupoEvento(e.tipo) === g).length;
+  const form = window.MODO_CLIENTE ? '' : `<div class="nov-form">
+      <div class="nov-tipos">${TIPOS_NOVEDAD.map(([t, i]) => `<button type="button" class="chip ${t === tipoNovedad ? 'on' : ''}" data-tnov="${esc(t)}" title="${t === 'Interna' ? 'Solo la ve el equipo de Entrapetrol' : 'La ve también Reckitt'}">${i} ${esc(t)}</button>`).join('')}</div>
+      <div class="nov-fila"><textarea id="novTexto" rows="2" placeholder="Qué pasó. Ej: Contenedor cargado, sale hacia bodega Reckitt"></textarea>
+      <button type="button" class="btn primary" id="novAgregar" onclick="agregarNovedad('${v.id}')">Agregar novedad</button></div></div>`;
+  const filtros = E.length ? `<div class="nov-filtros">${FILTROS_LINEA.map(([g, t]) => `<button type="button" class="chip ${g === filtroLinea ? 'on' : ''}" data-flinea="${g}">${t} · ${cuenta(g)}</button>`).join('')}</div>` : '';
+  const resumen = resumenEventos(E);   // linea-tiempo.js: cambios de plan, costo extra, incidentes
+  return `<fieldset class="mgrupo nov"><legend>Novedades y línea de tiempo del viaje</legend>${form}${resumen ? `<div class="sub" style="margin-top:8px">${resumen}</div>` : ''}${filtros}<div id="novLista">${E.length || v.observacion ? listaLinea(v) : '<p class="sub">Aún no hay novedades.</p>'}</div></fieldset>`;
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-tnov]'); if (!b) return;
+  tipoNovedad = b.dataset.tnov; document.querySelectorAll('[data-tnov]').forEach(x => x.classList.toggle('on', x === b)); });
+async function agregarNovedad(id){
+  const t = $('#novTexto'), texto = t.value.trim(); if (!texto) { t.focus(); return; }
+  const usuario = pedirUsuario('¿Quién eres? Queda como autor de la novedad'); if (!usuario) return;
+  const btn = $('#novAgregar'); btn.disabled = true; btn.textContent = 'Guardando…';
+  try {
+    const j = await api('novedadViaje', {id, usuario, tipo: tipoNovedad, texto});
+    if (!j.ok) throw new Error(j.error || 'error');
+    window.NOVEDADES = j.novedades || window.NOVEDADES;
+    const v = viajePorId(id);
+    v.ultimaNovedad = ahoraBogota().fecha + 'T' + ahoraBogota().hhmm;   // "sin actualizar" (dominio) ya la cuenta
+    // 19-nov (revisión): si mientras tanto abrió otro viaje, la novedad no se pinta en el modal del otro
+    const abierto = editId === id && $('#mNovedades'); if (abierto) abierto.innerHTML = bloqueNovedades(v);
+    // fase 3: lo que LogxIA dedujo de la novedad (Correos.gs propuestasDeNovedad_): fechas por aprobar y acción abierta
+    const lx = j.logxia || {}, fechas = lx.fechas || [];
+    const dijo = [fechas.length && `propone ${fechas.map(f => `${f.etiqueta.toLowerCase()} el ${fd(f.valor)}`).join(' y ')} (apruébalo en ✉ Llenar datos desde correos)`,
+      lx.accion && `abrió una acción: ${lx.accion.accion.replace(/^Operaciones: /, '')}`].filter(Boolean);
+    render(); toast(dijo.length ? 'Novedad guardada · LogxIA ' + dijo.join(' · ') : 'Novedad guardada');
+    if (dijo.length) { if (abierto && $('#novLista')) $('#novLista').insertAdjacentHTML('beforebegin', `<div class="nov-lx">🤖 <b>LogxIA</b> ${esc(dijo.join(' · '))}</div>`);
+      if (lx.accion && await cargar() !== false) render();   // trae la acción nueva (Acciones y Mi turno)
+      if (fechas.length) { await cargarPropuestas(1); render(); } }   // propuestas.js: el contador del botón
+  } catch(e) { toast('No se guardó la novedad: ' + e.message); btn.disabled = false; btn.textContent = 'Agregar novedad'; }
+}
+
+/* ---------- línea de tiempo del viaje: qué entra (novedades, cambios, correos de LogxIA, reprogramaciones, programación) ---------- */
+/* ---------- línea de tiempo del viaje: todo lo que ha pasado (ediciones, correos, cambios de plan, costos, incidentes) ---------- */
+// correos de la bitácora que tocan el viaje (también los ya resueltos y los de viajes cerrados)
+// (más amplio que accionesDe: también el booking dentro de un texto más largo y el pedido citado en el asunto)
+const correosDe = v => (window.BITACORA||[]).filter(b => coincide(v, b) || (compacto(v.booking).length >= 6 && compacto(b.booking).includes(compacto(v.booking))) ||
+  (v.pedido && String(b.asunto||'').includes(String(v.pedido).split('-')[0])));
+
+function eventosDe(v){
+  const E = [], hijos = hijosDe(v), ids = [v.id, ...hijos.map(x => x.id)];
+  const fechaHist = f => String(f||'');
+  // novedades (novedades.js): las del equipo y los cambios que el sistema anota solo desde la fase 2
+  const novs = novedadesDe(v);
+  // las del subviaje dicen de quién son: "Subviaje a (destino): …"
+  const deQuien = n => { const s = String(n.viaje) !== v.id && hijos.find(x => x.id === String(n.viaje)); return s ? nombreSub(s) + ': ' : ''; };
+  novs.forEach(n => E.push(delSistema(n) ? {fecha: fechaLocal(n.fecha), tipo: 'Cambio', quien: n.usuario, texto: deQuien(n) + sinObservacion(n.texto)}
+    : {fecha: fechaLocal(n.fecha), tipo: n.origen === 'Conductor' ? 'Conductor' : 'Novedad', sub: n.tipo, quien: n.usuario, texto: deQuien(n) + n.texto, n}));
+  // un cambio del Historial que ya tiene su novedad automática (misma hora ±3 min) no se repite
+  const minutos = f => { const s = fechaLocal(f); return s.length > 10 ? Date.parse(s + ':00Z') / 6e4 : NaN; };
+  const cambios = novs.filter(delSistema).map(n => minutos(n.fecha));
+  const yaAnotado = f => cambios.some(m => Math.abs(m - minutos(f)) <= 3);
+  historial.filter(x => ids.includes(x.id)).forEach(x => {
+    const t = String(x.observacion||'').replace(/^(EXPO|IMPO) · /, '');
+    if (!t || /^Reprogramaciones:/.test(t) || yaAnotado(x.fecha)) return;
+    // "Mes programado: antes → después" va como evento de programación (de qué cuadro mensual de Reckitt a cuál pasó)
+    const partes = t.split(' | '), prog = partes.find(p => /^Mes programado: /.test(p)), resto = partes.filter(p => p !== prog).join(' | ');
+    if (prog) { const [antes, despues] = prog.replace(/^Mes programado: /, '').split(' → ');
+      E.push({fecha: fechaHist(x.fecha), tipo: 'Programación', quien: x.usuario || '', texto: textoProgramacion(v, antes, despues)}); }
+    const limpio = sinObservacion(resto);
+    if (limpio) E.push({fecha: fechaHist(x.fecha), tipo: /^Versión anterior/.test(resto) ? 'Excel' : 'Edición', quien: x.usuario || '', texto: (x.id!==v.id ? `Subviaje ${x.id}: ` : '') + limpio});
+  });
+  reprogsDe(v).forEach(r => {
+    const hito = ((HITOS_PLAN[v.operacion]||[]).find(([, , cs]) => cs.includes(r.campo)) || [r.campo])[0];
+    E.push({fecha: r.fecha, tipo: 'Cambio de plan', quien: r.usuario, causa: r.causa, resp: responsable(r.causa), costo: r.costo, incidente: r.incidente,
+      texto: `${hito}: ${r.antes ? fd(r.antes) : '—'} → ${r.despues ? fd(r.despues) : 'sin fecha'}${r.antes && r.despues ? ` (${dDias(r.antes, r.despues) > 0 ? '+' : ''}${dDias(r.antes, r.despues)} d)` : ''}${r.detalle ? ' · '+r.detalle : ''}`});
+  });
+  correosDe(v).forEach(b => E.push({fecha: String(b.fechaCorreo||b.registrado||''), tipo: 'Correo', quien: String(b.remitente||'').replace(/<.*>/, '').trim(),
+    texto: `${b.asunto || ''}${b.accion ? ' → ' + b.accion : ''}`, prioridad: b.prioridad, hecha: b.estadoAccion==='Hecha'}));
+  hijos.forEach(x => E.push({fecha: '', tipo: 'Subviaje', texto: `${x.id}: bodega de paso ${x.patioSub||'—'} · urbano ${x.fechaUrbano ? fd(x.fechaUrbano) : 'sin fecha'}${x.motivoSub ? ' · '+x.motivoSub : ''}`}));
+  if (v.novedad) E.push({fecha: '', tipo: 'Incidente', texto: 'Marcado con novedad' + (v.observacion ? ': ' + v.observacion : '')});
+  return E.sort((a, b) => fechaLocal(b.fecha).localeCompare(fechaLocal(a.fecha)));
+}
+
+// "3 cambios de plan (Reckitt 2, Entrapetrol 1) · costo extra $… · 1 incidente" para la cabecera de la línea de tiempo
+function resumenEventos(E){
+  const cp = E.filter(e => e.tipo==='Cambio de plan'), por = {};
+  cp.forEach(e => { por[e.resp] = (por[e.resp]||0) + 1; });
+  const costo = cp.reduce((t, e) => t + (e.costo||0), 0), inc = cp.filter(e => e.incidente).length + E.filter(e => e.tipo==='Incidente' || e.sub==='Incidente').length;
+  return [cp.length && `<b>${cp.length}</b> cambio${cp.length===1?'':'s'} de plan (${Object.entries(por).map(([r, n]) => `${esc(r)} ${n}`).join(', ')})`,
+    costo && `costo extra <b>${pesos(costo)}</b>`, inc && `<b style="color:var(--bad)">${inc}</b> incidente${inc===1?'':'s'}`].filter(Boolean).join(' · ');
+}
+
+const ICONO_EVENTO = {'Programación':'📋', 'Cambio de plan':'⟲', 'Correo':'✉', 'Edición':'✎', 'Excel':'▦', 'Subviaje':'↪', 'Incidente':'⚠'};
 /* ---------- causa.js · causa de un cambio de fecha con su respaldo (8-nov-2026) ----------
  * Capa: pantalla. Regla del usuario: en el sistema las fechas siempre las mueve Entrapetrol; lo que prueba que el cambio fue del
  * cliente es su correo. Al mover una fecha ya programada (ventana del viaje y chat) se elige la causa:
@@ -8590,7 +8590,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '5d3e77ef59';
+const VERSION_TABLERO = 'd254854c28';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
