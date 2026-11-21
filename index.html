@@ -5467,11 +5467,11 @@ function filasLlenado(mes){
 }
 
 // Carga inicial por viaje: el servidor revisa, viaje por viaje, TODOS los correos con la lista, la factura y los documentos de cada exportación que ya existe
-// (sin importar la antigüedad). Sigue sola cada hora; este botón la adelanta (unos 2 minutos por pulsación).
+// (sin importar la antigüedad). Sigue sola cada hora; este botón la adelanta (unos 4 minutos por pulsación).
 function cargaLlenado(){
   const C = LLENADO_CARGA; if (!C) return '';
   const estado = !C.total ? 'aún no empieza' : `<b>${C.hechos} de ${C.total}</b> viajes revisados${C.revisar ? ` (${C.revisar} para revisar a mano)` : ''}`;
-  const boton = !C.total || C.hechos < C.total ? ` · <button type="button" class="btn" id="llenadoHistorico" title="Lee ahora los correos de los viajes que faltan (unos 2 minutos); el resto sigue solo cada hora">Cargar histórico de los viajes</button>` : ' · completo';
+  const boton = !C.total || C.hechos < C.total ? ` · <button type="button" class="btn" id="llenadoHistorico" title="Lee ahora los correos de los viajes que faltan (unos 4 minutos); el resto sigue solo cada hora">Cargar histórico de los viajes</button>` : ' · completo';
   return `<p class="sub" style="margin:0 0 10px">Histórico de los viajes: ${estado}${boton}</p>`;
 }
 function pintarLlenado(){
@@ -5551,7 +5551,7 @@ async function cargarLlenado(actualizar, historico){
   const codigo = await claveGerenciaParaGps();   // gps-conexiones.js: la clave de Gerencia de la sesión; si falta, la pide
   if (!codigo) return;
   const cuerpo = $('#llenadoCuerpo'), b = $('#llenadoActualizar'), bh = $('#llenadoHistorico'); if (b) b.disabled = true;
-  if (bh) { bh.disabled = true; bh.textContent = 'Leyendo los viajes… hasta 2 minutos'; }
+  if (bh) { bh.disabled = true; bh.textContent = 'Leyendo los viajes… hasta 4 minutos'; }
   if (!LLENADO) cuerpo.innerHTML = '<p class="sub">Cargando el llenado…</p>';
   try {
     const j = await api('llenado', {codigo, actualizar: !!actualizar, historico: !!historico});
@@ -8388,7 +8388,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'da9e8c3dcf';
+const VERSION_TABLERO = 'b8cadf4aed';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
