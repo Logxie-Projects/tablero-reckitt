@@ -3396,7 +3396,23 @@ function leerListaEmpaque(texto){
   if (!brutoKg) avisos.push('No se encontró el peso bruto total');
   else if (completas && Math.abs(sumaKg - brutoKg) / brutoKg > 0.02) avisos.push(`Los pesos de las filas (${Math.round(sumaKg)} kg) no suman el total (${Math.round(brutoKg)} kg)`);
   if (!delivery) avisos.push('No se encontró el Delivery ID');
-  return {delivery, brutoKg, netoKg, volumenM3, cajas, lineas: completas ? lineas : [], avisos};
+  // 21-nov: el formato en español (22 de 25) no trae filas de SAP: cada material va en una línea con sus totales, o en una línea sin números seguida de sus lotes con valores
+  let detalle = completas ? lineas : [];
+  if (!detalle.length) {
+    const mats = []; let sin = null;
+    t.split('\n').forEach(raw => { const s = raw.trim();
+      const h = s.match(/^(\d{6,9})\s+([A-Za-z][^\n]*?)(?:\s+n\/a\s+([\d.,]+)\s+n\/a\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+))?$/);
+      if (h && !/^(Material|Lote|Total)/i.test(h[2])) {
+        if (h[3]) { mats.push({item: String(mats.length + 1), material: h[1], descripcion: h[2].trim(), cajas: cajasLista(h[3]), netoKg: numeroLista(h[4]), brutoKg: numeroLista(h[5]), volumenM3: numeroLista(h[6])}); sin = null; }
+        else { sin = {item: String(mats.length + 1), material: h[1], descripcion: h[2].trim(), cajas: 0, netoKg: 0, brutoKg: 0, volumenM3: 0}; mats.push(sin); }
+        return; }
+      const lote = s.match(/^[A-Z]{2}[A-Z0-9]{3,6}\s+\d{2}-[A-Za-z]{3}-\d{2}\s+\d{2}-[A-Za-z]{3}-\d{2}\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)$/);
+      if (lote && sin) { sin.cajas += cajasLista(lote[1]); sin.netoKg += numeroLista(lote[2]); sin.brutoKg += numeroLista(lote[3]); sin.volumenM3 += numeroLista(lote[4]); } });
+    const v = mats.reduce((a, x) => a + x.volumenM3, 0);
+    if (mats.length && volumenM3 && Math.abs(v - volumenM3) / volumenM3 <= 0.02) detalle = mats.map(x => Object.assign(x, {volumenM3: Math.round(x.volumenM3 * 1000) / 1000, netoKg: Math.round(x.netoKg * 1000) / 1000, brutoKg: Math.round(x.brutoKg * 1000) / 1000}));
+    else if (mats.length) avisos.push('El detalle por material no suma el total de la lista: se muestra solo el total');
+  }
+  return {delivery, brutoKg, netoKg, volumenM3, cajas, lineas: detalle, avisos};
 }
 /** Cuánto llena la lista un contenedor (o varios: `tipos` = ['40', '40']). null si no hay tipo o volumen. limita: 'Peso' · 'Volumen' · 'Sobra'. */
 function llenadoContenedores(lista, tipos){
@@ -3406,6 +3422,50 @@ function llenadoContenedores(lista, tipos){
   const volPct = lista.volumenM3 / capVol * 100, pesoPct = lista.brutoKg ? lista.brutoKg / capKg * 100 : 0;
   const limita = Math.max(volPct, pesoPct) < UMBRAL_LLENADO ? 'Sobra' : pesoPct > volPct ? 'Peso' : 'Volumen';
   return {capVol, capKg, volPct, pesoPct, vacioM3: Math.max(0, capVol - lista.volumenM3), limita, pasaPeso: pesoPct > 100, pasaVolumen: volPct > 100};
+}
+/** Lee el texto de la factura electrónica de venta de Reckitt (SAP) que Jhonier adjunta a cada "NUEVA EXPORTACIÓN": número, entrega, Incoterm, moneda, TRM,
+ *  valor de la mercancía (subtotal), cargos de logística (flete interno, flete internacional, seguro, cargo adicional), total y una línea por material.
+ *  `avisos` dice qué no se pudo leer o no cuadra. Se une con la lista de empaque por el número de entrega (Delivery) o el RBHY. */
+function leerFacturaVenta(texto){
+  const t = String(texto || '').replace(/ /g, ' ').replace(/\r/g, ''), avisos = [], m1 = re => (t.match(re) || [])[1] || '';
+  const num = re => numeroLista(m1(re));
+  const inc = t.match(/Incoterm\s+([A-Z]{3})\s+([A-Za-zñÑ]+)/i) || [];
+  const CARGOS = [['Additional\\s+charge', 'Cargo adicional'], ['Internal\\s+Freight', 'Flete interno'], ['International\\s+Freight', 'Flete internacional'], ['Insurance', 'Seguro']];
+  const cargos = CARGOS.map(([re, concepto]) => ({concepto, monto: num(new RegExp('(?:^|\\n|\\s)' + re + '\\s+([\\d.,]+)', 'i'))})).filter(c => c.monto > 0);
+  const lineas = [], reLinea = /^(\d{1,3})\s+(.+?)\s+(\d{6,9})\s+([\d.,]+)\s*([A-Z]{2,3})\s+([\d.,]+)\s*\/\s*([\d.,]+)\s*[A-Z]{2,3}\s+(\d{12,14})\s+[\d.,]+%\s+([\d.,]+)\s+[\d.,]+\s*$/gm;
+  let m;
+  while ((m = reLinea.exec(t))) { const cajas = cajasLista(m[4]), valor = numeroLista(m[9]);
+    lineas.push({item: m[1], descripcion: m[2].trim(), material: m[3], cajas, unidad: m[5], precio: numeroLista(m[6]) / (numeroLista(m[7]) || 1), valor, ean: m[8]}); }
+  const subtotal = num(/Sub\s*total\s*([\d.,]+)/i), cargosFila = num(/\bCharges\s+([\d.,]+)/i), sumaCargos = Math.round(cargos.reduce((a, c) => a + c.monto, 0) * 100) / 100;
+  const cargosTotal = cargosFila || sumaCargos, total = num(/Document\s*Amount\s*([\d.,]+)/i) || num(/Final\s*Amount\s*([\d.,]+)/i);
+  const sumaLineas = Math.round(lineas.reduce((a, l) => a + l.valor, 0) * 100) / 100;
+  if (!total) avisos.push('No se encontró el total de la factura');
+  if (!subtotal) avisos.push('No se encontró el valor de la mercancía (subtotal)');
+  if (!lineas.length) avisos.push('No se leyeron las líneas de productos de la factura');
+  else if (subtotal && Math.abs(sumaLineas - subtotal) > Math.max(1, subtotal * 0.002)) avisos.push(`Las líneas (${sumaLineas}) no suman el subtotal (${subtotal}): revise la factura`);
+  if (total && subtotal && Math.abs(subtotal + cargosTotal - total) > Math.max(1, total * 0.002)) avisos.push(`Mercancía más cargos (${Math.round((subtotal + cargosTotal) * 100) / 100}) no da el total (${total})`);
+  if (cargosFila && sumaCargos && Math.abs(cargosFila - sumaCargos) > 1) avisos.push(`Los cargos detallados (${sumaCargos}) no suman los cargos de la factura (${cargosFila})`);
+  return {rbhy: m1(/\b(RBHY\d{4,7})\b/i).toUpperCase(), delivery: m1(/Delivery\s*Number\s*(\d{8,12})/i), numero: m1(/Document\s*Number\s*(\d{6,12})/i), fecha: m1(/Document\s*Date\s*(\d{1,2}-[A-Za-z]{3}-\d{2})/i),
+    incoterm: inc[1] || '', lugar: inc[2] || '', moneda: m1(/Currency\s+([A-Z]{3})/i), trm: num(/Conversion\s*rate\s*\([A-Z]{3}\)\s*([\d.,]+)/i), total, subtotal, cargos, cargosTotal, totalCOP: num(/Final\s*Amount\s*Local\s*([\d.,]+)/i), lineas, avisos};
+}
+/** Un renglón por material con lo que trae la lista de empaque (cajas, m³, kg) y lo que trae la factura (precio por caja, valor). Si la lista no trae detalle, salen solo los de la factura. */
+function productosContenedor(lista, factura){
+  const mat = {}, orden = [];
+  const tomar = k => mat[k] || (orden.push(k), mat[k] = {material: k, descripcion: '', cajas: 0, volumenM3: 0, brutoKg: 0, netoKg: 0, cajasFactura: 0, valor: 0});
+  ((lista && lista.lineas) || []).forEach(l => { const o = tomar(l.material); o.cajas += l.cajas; o.volumenM3 += l.volumenM3; o.brutoKg += l.brutoKg; o.netoKg += l.netoKg || 0; if (!o.descripcion) o.descripcion = l.descripcion || ''; });
+  ((factura && factura.lineas) || []).forEach(l => { const o = tomar(l.material); o.cajasFactura += l.cajas; o.valor += l.valor; if (!o.descripcion) o.descripcion = l.descripcion || ''; });
+  const filas = orden.map(k => mat[k]), vol = filas.reduce((a, x) => a + x.volumenM3, 0), val = filas.reduce((a, x) => a + x.valor, 0);
+  return filas.map(x => Object.assign(x, {
+    precioCaja: x.cajasFactura ? x.valor / x.cajasFactura : 0, valorPorM3: x.volumenM3 && x.valor ? x.valor / x.volumenM3 : 0,
+    pctVolumen: vol ? x.volumenM3 / vol * 100 : 0, pctValor: val ? x.valor / val * 100 : 0,
+    cuadra: !x.cajas || !x.cajasFactura || x.cajas === x.cajasFactura})).sort((a, b) => b.volumenM3 - a.volumenM3 || b.valor - a.valor);
+}
+/** Costo contra venta de un contenedor: lo que se vende (mercancía) contra toda la logística que la factura carga (flete interno e internacional, seguro, cargo adicional). null si no hay valores. */
+function costoVsVenta(factura){
+  if (!factura || !(factura.subtotal > 0)) return null;
+  const logistica = factura.cargosTotal || 0, trm = factura.trm || 0;
+  return {venta: factura.subtotal, logistica, total: factura.total, moneda: factura.moneda || 'USD', incoterm: factura.incoterm, cargos: factura.cargos || [], trm,
+    pctLogistica: logistica / factura.subtotal * 100, ventaCOP: trm ? factura.subtotal * trm : 0, logisticaCOP: trm ? logistica * trm : 0};
 }
 /** Las cifras de arriba del informe, sobre filas con `lista` y `llenado` (las que no tienen tipo de contenedor no cuentan). */
 function resumenLlenado(filas){
@@ -5372,7 +5432,11 @@ document.addEventListener('click', e => { if (e.target.closest('[data-gc-abrir]'
  * protege de verdad es el servidor: cada lectura (POST 'llenado') pide la clave del equipo y la clave de Gerencia, y esos datos no van en la
  * carga general que recibe el cliente. Al salir del modo Gerencia se borran de la pantalla. Reckitt lo recibirá después por correo.
  * Las cuentas (capacidad, peso o volumen, "sobra") viven en el dominio: leerListaEmpaque, llenadoContenedores, resumenLlenado. */
-let LLENADO = null, llenadoMes = '', llenadoAbierto = '';
+let LLENADO = null, LLENADO_FACT = [], llenadoMes = '', llenadoAbierto = '';
+const COLORES_LL = ['#7F77DD', '#D4537E', '#1D9E75', '#BA7517', '#D85A30', '#378ADD', '#639922', '#888780'];   // un color por producto en el diagrama y en su tabla
+// la factura de una lista: por el número de entrega (Delivery) y, si no, por el RBHY
+const facturaDeLista = l => (LLENADO_FACT || []).find(x => x.delivery && x.delivery === l.delivery) || (l.rbhy ? (LLENADO_FACT || []).find(x => x.rbhy === l.rbhy) : null) || null;
+const usdLl = n => 'USD ' + fmtLl(n, 0), copM = n => '$' + fmtLl(n / 1e6, 1) + ' M';
 const fmtLl = (n, d = 1) => Number(n || 0).toLocaleString('es-CO', {minimumFractionDigits: d, maximumFractionDigits: d});
 const LLENADO_LIMITA = {Peso: ['p-pes', 'Peso', 'va pesado: el espacio vacío no es desperdicio'], Volumen: ['p-vol', 'Volumen', 'bien lleno'], Sobra: ['p-sob', 'Sobra espacio', 'ni peso ni volumen pasan del ' + UMBRAL_LLENADO + '%']};
 
@@ -5397,7 +5461,8 @@ function viajesDeLista(l){
 function filasLlenado(mes){
   return (LLENADO || []).filter(l => l.mes === mes).map(l => {
     const vs = viajesDeLista(l), tipos = vs.map(v => tipoContenedor(v.unidad)), sinTipo = vs.some((v, i) => !tipos[i]);
-    return {l, vs, tipos, lista: l, llenado: vs.length && !sinTipo ? llenadoContenedores(l, tipos) : null, sinTipo};
+    const fact = facturaDeLista(l);
+    return {l, vs, tipos, lista: l, llenado: vs.length && !sinTipo ? llenadoContenedores(l, tipos) : null, sinTipo, fact, costo: costoVsVenta(fact)};
   }).sort((a, b) => String(b.l.fecha).localeCompare(String(a.l.fecha)));
 }
 
@@ -5418,27 +5483,61 @@ function pintarLlenado(){
         <td>${barra(x)}<span class="sub">${fmtLl(f.l.volumenM3)} de ${fmtLl(x.capVol)} m³ · ${fmtLl(x.volPct, 0)}%</span></td>
         <td>${f.l.brutoKg ? fmtLl(x.pesoPct, 0) + '%' : '<span class="sub">—</span>'}${x.pasaPeso ? ' <b style="color:var(--bad)" title="Pasa el peso útil">⚠</b>' : ''}</td>
         <td><span class="ll-pill ${LLENADO_LIMITA[x.limita][0]}" title="${esc(LLENADO_LIMITA[x.limita][2])}">${LLENADO_LIMITA[x.limita][1]}</span>${x.pasaVolumen ? ' <b style="color:var(--bad)" title="Pasa el volumen">⚠</b>' : ''}</td>`;
-    const det = llenadoAbierto === k ? `<tr class="ll-det"><td colspan="5">${detalleLlenado(f)}</td></tr>` : '';
-    return `<tr class="ll-fila" data-ll-abrir="${esc(k)}"><td>${quien}</td>${resto}</tr>${det}`;
+    const venta = f.costo ? `<td>${usdLl(f.costo.venta)}<br><span class="sub">logística ${fmtLl(f.costo.pctLogistica, 1)}%</span></td>` : '<td><span class="sub">Sin factura</span></td>';
+    const det = llenadoAbierto === k ? `<tr class="ll-det"><td colspan="6">${detalleLlenado(f)}</td></tr>` : '';
+    return `<tr class="ll-fila" data-ll-abrir="${esc(k)}"><td>${quien}</td>${resto}${venta}</tr>${det}`;
   };
+  const conFact = F.filter(f => f.costo), sumV = conFact.reduce((a, f) => a + f.costo.venta, 0), sumL = conFact.reduce((a, f) => a + f.costo.logistica, 0);
   cont.innerHTML = `<div class="ll-kpis">${kpi('Llenado promedio', n && R.n ? fmtLl(R.volPromedio, 0) + '%' : '—', 'volumen lleno sobre la capacidad')}
       ${kpi('Con espacio de sobra', R.n ? `${R.conSobra} de ${R.n}` : '—', 'ni peso ni volumen pasan del ' + UMBRAL_LLENADO + '%')}
       ${kpi('Espacio que sobra', R.n ? fmtLl(R.vacioM3, 0) + ' m³' : '—', 'solo de los que sobran, no de los pesados')}
-      ${kpi('Equivale a', R.n ? fmtLl(R.equivale40) + " de 40'" : '—', 'contenedores de 67,7 m³')}</div>
-    ${n ? `<div class="tbl-wrap"><table class="prop ll-tabla"><thead><tr><th>Contenedor · RBHY</th><th>Tipo</th><th>Volumen lleno</th><th>Peso</th><th>Lo que limita</th></tr></thead><tbody>${F.map(filaHtml).join('')}</tbody></table></div>`
+      ${kpi('Equivale a', R.n ? fmtLl(R.equivale40) + " de 40'" : '—', 'contenedores de 67,7 m³')}
+      ${kpi('Logística sobre venta', conFact.length ? fmtLl(sumL / sumV * 100, 1) + '%' : '—', conFact.length ? `${usdLl(sumL)} de ${usdLl(sumV)} · ${conFact.length} de ${n} con factura` : 'faltan las facturas')}</div>
+    ${n ? `<div class="tbl-wrap"><table class="prop ll-tabla"><thead><tr><th>Contenedor · RBHY</th><th>Tipo</th><th>Volumen lleno</th><th>Peso</th><th>Lo que limita</th><th>Venta · logística</th></tr></thead><tbody>${F.map(filaHtml).join('')}</tbody></table></div>`
       : `<p class="sub">No hay listas de empaque leídas para este mes. Toque «Leer correos ahora» para buscarlas en el buzón de calidad@.</p>`}
     <p class="sub" style="margin-top:8px">Capacidad: 20' = ${fmtLl(CAPACIDAD_CONT['20'].vol)} m³ y ${fmtLl(CAPACIDAD_CONT['20'].kg, 0)} kg · 40' = ${fmtLl(CAPACIDAD_CONT['40'].vol)} m³ y ${fmtLl(CAPACIDAD_CONT['40'].kg, 0)} kg · 40' HC = ${fmtLl(CAPACIDAD_CONT['40HC'].vol)} m³ y ${fmtLl(CAPACIDAD_CONT['40HC'].kg, 0)} kg. El peso es el que permite la tractomula (${fmtLl(PESO_TRACTOMULA, 0)} kg entre contenedor y carga) menos la tara típica del contenedor. El tipo sale de la Unidad del viaje.
-    «Peso» o «Volumen» dice cuál límite se alcanza primero: si el contenedor va pesado, el espacio vacío no es desperdicio. Solo «Sobra espacio» se puede mejorar. Toque una fila para ver sus materiales.</p>`;
+    «Peso» o «Volumen» dice cuál límite se alcanza primero: si el contenedor va pesado, el espacio vacío no es desperdicio. Solo «Sobra espacio» se puede mejorar. Toque una fila para ver el diagrama, los productos con su precio y el costo contra la venta.
+    «Logística» es lo que la factura de Reckitt carga por flete interno, flete internacional, seguro y cargo adicional, sobre el valor de la mercancía.</p>`;
+}
+// Vista lateral del contenedor: un bloque por producto, de largo proporcional a su volumen, y el espacio vacío rayado; debajo, el peso contra el límite de la tractomula
+function diagramaLlenado(f, prods){
+  const x = f.llenado; if (!x || !f.l.volumenM3) return '';
+  const L = 600, X0 = 40, H = 66, Y0 = 34; let acum = 0;
+  const bloques = prods.filter(p => p.volumenM3 > 0).map((p, i) => { const w = p.volumenM3 / x.capVol * L, b = {p, x: X0 + acum, w, c: COLORES_LL[i % COLORES_LL.length], n: i + 1}; acum += w; return b; });
+  const usado = Math.min(L, bloques.length ? acum : f.l.volumenM3 / x.capVol * L), pesoW = Math.min(L, x.pesoPct / 100 * L);
+  const bl = bloques.map(b => `<rect x="${b.x.toFixed(1)}" y="${Y0}" width="${Math.max(0.5, b.w).toFixed(1)}" height="${H}" fill="${b.c}" opacity="0.85"><title>${esc(b.p.descripcion || b.p.material)} · ${fmtLl(b.p.volumenM3, 1)} m³</title></rect>`
+    + (b.w >= 16 ? `<text x="${(b.x + b.w / 2).toFixed(1)}" y="${Y0 + H / 2 + 4}" text-anchor="middle" font-size="12" font-weight="600" fill="#fff">${b.n}</text>` : '')).join('');
+  const vacioX = X0 + usado, vacioW = Math.max(0, L - usado);
+  const col = x.pesoPct > 100 ? 'var(--bad)' : x.pesoPct > x.volPct ? 'var(--warn)' : 'var(--ok)';
+  return `<svg viewBox="0 0 680 148" width="100%" style="max-width:760px;display:block" role="img" aria-label="Llenado del contenedor: ${fmtLl(x.volPct, 0)}% del volumen y ${fmtLl(x.pesoPct, 0)}% del peso">
+    <defs><pattern id="llvac" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="8" stroke="var(--muted)" stroke-width="1" opacity=".5"/></pattern></defs>
+    <text x="${X0}" y="24" font-size="11" fill="var(--muted)">Fondo del contenedor</text><text x="${X0 + L}" y="24" font-size="11" fill="var(--muted)" text-anchor="end">Puertas</text>
+    <rect x="${vacioX.toFixed(1)}" y="${Y0}" width="${vacioW.toFixed(1)}" height="${H}" fill="url(#llvac)"/>${bl}
+    <rect x="${X0}" y="${Y0}" width="${L}" height="${H}" rx="3" fill="none" stroke="var(--muted)" stroke-width="1.2"/>
+    ${vacioW > 130 ? `<text x="${(vacioX + vacioW / 2).toFixed(1)}" y="${Y0 + H / 2 - 4}" text-anchor="middle" font-size="14" font-weight="600" fill="var(--text)">${fmtLl(x.volPct, 0)}% del volumen</text><text x="${(vacioX + vacioW / 2).toFixed(1)}" y="${Y0 + H / 2 + 14}" text-anchor="middle" font-size="12" fill="var(--muted)">${fmtLl(x.vacioM3, 1)} m³ vacíos de ${fmtLl(x.capVol, 1)} m³</text>` : ''}
+    <text x="${X0}" y="${Y0 + H + 26}" font-size="13" font-weight="600" fill="var(--text)">Peso: ${fmtLl(f.l.brutoKg, 0)} de ${fmtLl(x.capKg, 0)} kg (${fmtLl(x.pesoPct, 0)}%)</text>
+    <rect x="${X0}" y="${Y0 + H + 34}" width="${L}" height="12" rx="3" fill="var(--surface-2)" stroke="var(--border)"/><rect x="${X0}" y="${Y0 + H + 34}" width="${pesoW.toFixed(1)}" height="12" rx="3" fill="${col}"/>
+  </svg>`;
 }
 function detalleLlenado(f){
-  const l = f.l, aviso = l.avisos.length ? `<div class="sub" style="color:var(--warn)">⚠ ${l.avisos.map(esc).join(' · ')}</div>` : '';
-  const filas = l.lineas.length ? `<table class="prop"><thead><tr><th>Material</th><th>Cajas</th><th>Volumen</th><th>Peso bruto</th></tr></thead><tbody>${l.lineas.map(x =>
-    `<tr><td>${esc(x.material)}${x.descripcion ? ' · ' + esc(x.descripcion) : ''}</td><td>${fmtLl(x.cajas, 0)}</td><td>${fmtLl(x.volumenM3, 3)} m³</td><td>${fmtLl(x.brutoKg, 0)} kg</td></tr>`).join('')}</tbody></table>`
-    : '<div class="sub">Esta lista se leyó solo con sus totales (sin el detalle por material).</div>';
+  const l = f.l, x = f.llenado, C = f.costo, F = f.fact, prods = productosContenedor(l, F);
+  const avisos = l.avisos.concat(F ? F.avisos : []), aviso = avisos.length ? `<div class="sub" style="color:var(--warn)">⚠ ${avisos.map(esc).join(' · ')}</div>` : '';
+  const sw = i => `<span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${COLORES_LL[i % COLORES_LL.length]};vertical-align:-1px"></span>`;
+  const conPrecio = prods.some(p => p.valor > 0), conVol = prods.some(p => p.volumenM3 > 0);
+  const tab = !prods.length ? '<div class="sub">Esta lista se leyó solo con sus totales (sin el detalle por material).</div>'
+    : `<div class="tbl-wrap"><table class="prop"><colgroup><col style="width:22px"><col style="width:34%"></colgroup><thead><tr><th></th><th>Producto</th><th>Cajas</th><th>m³</th><th>kg bruto</th>${conPrecio ? '<th>USD/caja</th><th>Valor USD</th><th>USD/m³</th>' : ''}</tr></thead><tbody>${prods.map((p, i) =>
+      `<tr><td>${p.volumenM3 > 0 ? sw(i) : ''}</td><td>${esc(p.descripcion || p.material)}<br><span class="sub">${esc(p.material)}${p.cuadra ? '' : ` · <b style="color:var(--bad)">lista ${fmtLl(p.cajas, 0)} cajas, factura ${fmtLl(p.cajasFactura, 0)}</b>`}</span></td><td>${fmtLl(p.cajas || p.cajasFactura, 0)}</td><td>${conVol ? fmtLl(p.volumenM3, 1) : '—'}</td><td>${conVol ? fmtLl(p.brutoKg, 0) : '—'}</td>${conPrecio ? `<td>${p.precioCaja ? fmtLl(p.precioCaja, 2) : '—'}</td><td>${p.valor ? fmtLl(p.valor, 0) : '—'}</td><td>${p.valorPorM3 ? fmtLl(p.valorPorM3, 0) : '—'}</td>` : ''}</tr>`).join('')}
+      <tr style="font-weight:600"><td></td><td>Total</td><td>${fmtLl(l.cajas, 0)}</td><td>${fmtLl(l.volumenM3, 1)}</td><td>${fmtLl(l.brutoKg, 0)}</td>${conPrecio ? `<td></td><td>${F ? fmtLl(F.subtotal, 0) : ''}</td><td>${F && l.volumenM3 ? fmtLl(F.subtotal / l.volumenM3, 0) : ''}</td>` : ''}</tr></tbody></table></div>`;
+  const kpi = (t, v, sub) => `<div class="ll-kpi"><span class="sub">${t}</span><b>${v}</b>${sub ? `<span class="sub">${sub}</span>` : ''}</div>`;
+  const costo = C ? `<div class="ll-kpis" style="margin:12px 0 0">${kpi('Venta: mercancía', usdLl(C.venta), C.trm ? `${copM(C.ventaCOP)} a TRM ${fmtLl(C.trm, 2)}` : '')}
+      ${kpi('Logística facturada', usdLl(C.logistica), C.cargos.map(c => `${esc(c.concepto)} ${fmtLl(c.monto, 0)}`).join(' · '))}
+      ${kpi('Total factura' + (C.incoterm ? ' ' + esc(C.incoterm) : ''), usdLl(C.total), F.numero ? 'Factura ' + esc(F.numero) : '')}
+      ${kpi('Logística sobre venta', fmtLl(C.pctLogistica, 1) + '%', C.trm ? `${copM(C.logisticaCOP)} de ${copM(C.ventaCOP)}` : '')}</div>`
+    : '<div class="sub" style="margin-top:10px">Todavía no hay factura leída de este contenedor (llega en el correo «NUEVA EXPORTACIÓN»; toque «Leer correos ahora»).</div>';
   const correo = l.msgId ? ` · <a class="link" href="https://mail.google.com/mail/?authuser=calidad@stentrapetrol.com#all/${esc(l.msgId)}" target="_blank" rel="noopener">Ver correo con la lista (PDF)</a>` : '';
-  return `<div class="sub">Lista ${esc(l.delivery || 'sin Delivery ID')} · ${fmtLl(l.cajas, 0)} cajas · ${fmtLl(l.volumenM3, 3)} m³ · ${fmtLl(l.brutoKg, 0)} kg bruto${f.vs.map(v => ` · <button type="button" class="link" data-ll-viaje="${esc(v.id)}">${esc(v.id)}</button>`).join('')}${correo}</div>${aviso}${filas}`;
+  return `<div class="sub">Lista ${esc(l.delivery || 'sin Delivery ID')} · ${fmtLl(l.cajas, 0)} cajas · ${fmtLl(l.volumenM3, 3)} m³ · ${fmtLl(l.brutoKg, 0)} kg bruto${f.vs.map(v => ` · <button type="button" class="link" data-ll-viaje="${esc(v.id)}">${esc(v.id)}</button>`).join('')}${correo}</div>${aviso}
+    <div style="margin:8px 0">${diagramaLlenado(f, prods)}</div>${tab}${costo}`;
 }
-
 async function cargarLlenado(actualizar){
   const codigo = await claveGerenciaParaGps();   // gps-conexiones.js: la clave de Gerencia de la sesión; si falta, la pide
   if (!codigo) return;
@@ -5447,7 +5546,7 @@ async function cargarLlenado(actualizar){
   try {
     const j = await api('llenado', {codigo, actualizar: !!actualizar});
     if (!j.ok) throw new Error(j.error || 'error');
-    LLENADO = j.listas || [];
+    LLENADO = j.listas || []; LLENADO_FACT = j.facturas || [];
     if (actualizar) toast(j.nuevas ? `${j.nuevas} ${j.nuevas === 1 ? 'lista nueva leída' : 'listas nuevas leídas'}` : 'No hay listas nuevas en el correo');
   } catch (err) {
     if (/Gerencia/.test(err.message)) { try { sessionStorage.removeItem('rkt-gerencia'); } catch(x) {} claveGerenciaSesion = ''; ajustarPestanaLlenado(); }
@@ -5463,8 +5562,9 @@ async function cargarLlenado(actualizar){
 function csvLlenado(){
   const F = filasLlenado(llenadoMes); if (!F.length) return toast('No hay listas en este mes');
   const q = s => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
-  const filas = [['RBHY', 'Contenedor', 'Tipo', 'Delivery', 'Cajas', 'Volumen m3', 'Capacidad m3', 'Volumen %', 'Peso bruto kg', 'Peso %', 'Lo que limita', 'Avisos']].concat(F.map(f => [f.l.rbhy, f.l.contenedor, f.tipos.join('+'), f.l.delivery, f.l.cajas,
-    f.l.volumenM3, f.llenado ? f.llenado.capVol.toFixed(1) : '', f.llenado ? f.llenado.volPct.toFixed(1) : '', f.l.brutoKg, f.llenado ? f.llenado.pesoPct.toFixed(1) : '', f.llenado ? LLENADO_LIMITA[f.llenado.limita][1] : '', f.l.avisos.join(' | ')]));
+  const filas = [['RBHY', 'Contenedor', 'Tipo', 'Delivery', 'Cajas', 'Volumen m3', 'Capacidad m3', 'Volumen %', 'Peso bruto kg', 'Peso %', 'Lo que limita', 'Factura', 'Moneda', 'Venta (mercancia)', 'Logistica facturada', 'Logistica sobre venta %', 'Total factura', 'Avisos']].concat(F.map(f => [f.l.rbhy, f.l.contenedor, f.tipos.join('+'), f.l.delivery, f.l.cajas,
+    f.l.volumenM3, f.llenado ? f.llenado.capVol.toFixed(1) : '', f.llenado ? f.llenado.volPct.toFixed(1) : '', f.l.brutoKg, f.llenado ? f.llenado.pesoPct.toFixed(1) : '', f.llenado ? LLENADO_LIMITA[f.llenado.limita][1] : '',
+    f.fact ? f.fact.numero : '', f.costo ? f.costo.moneda : '', f.costo ? f.costo.venta : '', f.costo ? f.costo.logistica : '', f.costo ? f.costo.pctLogistica.toFixed(1) : '', f.costo ? f.costo.total : '', f.l.avisos.concat(f.fact ? f.fact.avisos : []).join(' | ')]));
   const url = URL.createObjectURL(new Blob(['﻿' + filas.map(r => r.map(q).join(';')).join('\r\n')], {type: 'text/csv;charset=utf-8'}));
   const a = document.createElement('a'); a.href = url; a.download = `llenado-contenedores-${llenadoMes}.csv`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5e3);
 }
@@ -8276,7 +8376,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'a0c5f3cb44';
+const VERSION_TABLERO = '4990434c43';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
