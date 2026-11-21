@@ -5524,8 +5524,23 @@ function ajustarPestanaLlenado(){
 function viajesDeLista(l){
   const R = limpioId(l.rbhy), C = limpioId(l.contenedor);
   const vivos = viajes.filter(v => v.operacion === 'EXPO' && !v.padre && v.estado !== 'Cancelado' && situacion(v) !== 'Cancelado');
-  const porRbhy = R ? vivos.filter(v => limpioId(v.rbhy) === R) : [];
-  return porRbhy.length ? porRbhy : C ? vivos.filter(v => limpioId(v.contenedor) === C) : [];
+  // Se identifica por RBHY o por booking, y cuando los DOS datos están (en la lista y en el viaje) tienen que coincidir. No se corrige nada del viaje: el RBHY que falta en el
+  // viaje lo propone el módulo de Acciones desde el correo (RBHY29150: «Sin decidir: RBHY», LX-0564) y esta pestaña solo lo usa cuando ya esté.
+  const B = limpioId(l.booking), rb = v => limpioId(v.rbhy), bk = v => limpioId(v.booking);
+  const concuerda = v => !(R && rb(v) && rb(v) !== R) && !(B && bk(v) && bk(v) !== B);   // un dato distinto en los dos lados = no es ese viaje
+  const porRbhy = R ? vivos.filter(v => rb(v) === R && concuerda(v)) : [];
+  if (porRbhy.length) return porRbhy;
+  // el viaje aún sin RBHY (nadie lo ha decidido): por booking, y solo si es UN viaje; con varios contenedores en el mismo booking no se adivina cuál es
+  const porBooking = B ? vivos.filter(v => bk(v) === B && !rb(v) && concuerda(v)) : [];
+  if (porBooking.length === 1) return porBooking;
+  return C ? vivos.filter(v => limpioId(v.contenedor) === C && concuerda(v)) : [];
+}
+// cuando la lista no se une a ningún viaje: ¿hay un viaje con su RBHY pero con otro booking (o con su booking pero con otro RBHY)? Se dice cuál, para que lo revise una persona
+function choqueDeLista(l){
+  const R = limpioId(l.rbhy), B = limpioId(l.booking), vivos = viajes.filter(v => v.operacion === 'EXPO' && !v.padre && v.estado !== 'Cancelado' && situacion(v) !== 'Cancelado');
+  const a = R ? vivos.find(v => limpioId(v.rbhy) === R) : null; if (a) return `El viaje ${a.id} tiene ese RBHY pero otro booking (${a.booking || 'sin booking'}); la lista dice ${l.booking || 'otro'}`;
+  const b = B ? vivos.filter(v => limpioId(v.booking) === B && limpioId(v.rbhy) && limpioId(v.rbhy) !== R) : []; if (b.length) return `El booking ${l.booking} está en ${b.map(v => v.id).join(', ')} con otro RBHY (${b.map(v => v.rbhy).join(', ')})`;
+  return '';
 }
 function filasLlenado(mes){
   return (LLENADO || []).filter(l => l.mes === mes).map(l => {
@@ -5534,8 +5549,8 @@ function filasLlenado(mes){
     // 21-nov (pedido del usuario: "¿no se puede deducir de los documentos?"): el tipo sale de la confirmación del booking de la naviera (el servidor la lee y la guarda: LLENADO_TIPOS);
     // si ese booking aún no se leyó, se usa la Unidad del viaje y el «40» cuenta como HC
     const vs = viajesDeLista(l), tipos = vs.map(v => LLENADO_TIPOS[String(v.booking || '').toUpperCase()] || (t => t === '40' ? '40HC' : t)(tipoContenedor(v.unidad))), sinTipo = vs.some((v, i) => !tipos[i]);
-    const fact = facturaDeLista(l);
-    return {l, vs, tipos, lista: l, llenado: vs.length && !sinTipo ? llenadoContenedores(l, tipos) : null, sinTipo, fact, costo: costoVsVenta(fact)};
+    const fact = facturaDeLista(l), choque = vs.length ? '' : choqueDeLista(l);
+    return {l, vs, tipos, choque, lista: l, llenado: vs.length && !sinTipo ? llenadoContenedores(l, tipos) : null, sinTipo, fact, costo: costoVsVenta(fact)};
   }).sort((a, b) => String(b.l.fecha).localeCompare(String(a.l.fecha)));
 }
 
@@ -5576,7 +5591,7 @@ function pintarLlenado(){
   const filaHtml = f => {
     const x = f.llenado, v0 = f.vs[0], k = f.l.rbhy + '|' + f.l.delivery;
     const quien = `<b>${esc(f.l.contenedor || (v0 && v0.contenedor) || 'Sin contenedor')}</b><br><span class="sub">${esc(f.l.rbhy || 'Sin RBHY')}${v0 && v0.pais ? ' · ' + esc(v0.pais) : ''}${f.vs.length > 1 ? ` · ${f.vs.length} contenedores` : ''}</span>`;
-    const resto = !f.vs.length ? `<td colspan="4" class="sub">No hay un viaje EXPO con este RBHY${f.l.contenedor ? ' ni con este contenedor' : ''}. Cree el viaje o revise el RBHY.</td>`
+    const resto = !f.vs.length ? `<td colspan="4" class="sub">No hay un viaje EXPO con este RBHY${f.l.contenedor ? ' ni con este contenedor' : ''}${f.l.booking ? ' ni un único viaje sin RBHY con el booking ' + esc(f.l.booking) : ''}${f.choque ? ` · <b style="color:var(--bad)">${esc(f.choque)}</b>` : ''}. Falta el RBHY en el viaje (las Acciones lo proponen desde el correo), o el viaje no está creado, o el RBHY/booking de la lista no es el del viaje.</td>`
       : f.sinTipo ? `<td colspan="4"><b style="color:var(--bad)">Falta el tipo de contenedor (20 o 40) en el viaje</b> ${f.vs.map(v => `<button type="button" class="link" data-ll-viaje="${esc(v.id)}">${esc(v.id)}</button>`).join(' ')}</td>`
       : !x ? `<td colspan="4" class="sub">No se pudo leer el volumen de la lista: ${esc(f.l.avisos.join(' · ') || 'revise el PDF')}</td>`
       : `<td>${esc(f.tipos.map(t => t === '40HC' ? "40' HC" : t + "'").join(' + '))}</td>
@@ -8490,7 +8505,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'c444fb7762';
+const VERSION_TABLERO = '34d772c4d0';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
