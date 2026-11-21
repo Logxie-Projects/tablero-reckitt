@@ -3348,6 +3348,21 @@ const UMBRAL_LLENADO = 70;   // % de volumen o de peso por debajo del cual se co
 // "1x40' HC", "40HC", "20", "40 pies" → '20' · '40' · '40HC'; '' si no dice 20 ni 40
 const tipoContenedor = unidad => { const s = String(unidad || '').toUpperCase(), m = s.match(/(?:^|\D)(20|40)(?!\d)/);
   return !m ? '' : m[1] === '40' && /HC|HQ|HIGH|CUBE/.test(s) ? '40HC' : m[1]; };
+/** Tipo de contenedor que dice la confirmación del booking de la naviera: '40HC' · '40' · '20' · '' si no lo dice claro. Se revisaron las 52 confirmaciones archivadas
+ *  (21-nov): todas son 40' HC y lo dicen de seis maneras: MSC "S.O.C 40HC/4510" (o /45G1) y "QUANTITY 40HC", ONE "Equipment Type: 40'DRY HC", Evergreen "2 /40' HI-CUBE",
+ *  Hapag-Lloyd "1 x 45GP" (45G = 40' alto), Maersk "40 DRY 9 6" (alto 9'6" = HC; 8'6" sería estándar) y DSV/Yang Ming "CONTENEDOR40HC". La Unidad del viaje ("1X40") no
+ *  distingue el HC; el documento sí. Orden: código ISO, altura de Maersk, "HC" escrito, y por último "40 DRY" sin más. */
+const tipoContenedorDeBooking = texto => {
+  const s = String(texto || '').toUpperCase().replace(/[’´`]/g, "'").replace(/\s+/g, ' '), iso = c => c.slice(0, 2) === '45' || c.slice(0, 2) === 'L5' ? '40HC' : c.slice(0, 2) === '42' ? '40' : '20';
+  let m = s.match(/\/(4510|45G1|45R1|4210|42G1|2210|22G1)\b/) || s.match(/(?<![A-Z0-9])(45G[P1]|42G[P1]|22G[P1])(?![A-Z0-9])/);   // MSC "40HC/4510" · Hapag "1 x 45GP"
+  if (m) return iso(m[1]);
+  m = s.match(/(?<![0-9])(20|40)\W+DRY\W+(\d)\W+(\d)(?![0-9])/);   // Maersk "Size/Type/Height (ft.in): 40 DRY 9 6"
+  if (m) return m[1] === '20' ? '20' : m[2] === '9' ? '40HC' : '40';
+  m = s.match(/(?<![0-9])(20|40|45)\s*'?\s*-?\s*(?:DRY\s*|DV\s*|STD\s*)?(?:HC|HQ|H\.C\.|HI[- ]?CUBE|HIGH[- ]?CUBE)(?![A-Z])/);
+  if (m) return m[1] === '20' ? '20' : '40HC';
+  m = s.match(/(?<![0-9])(20|40)\s*'?\s*-?\s*(DRY|DV|GP|ST|STD|STANDARD|FT|FEET|PIES|CONTAINER)\b/);
+  return m ? m[1] : '';
+};
 // número de las listas de SAP: 20,084.903 (coma de miles, punto decimal) o 1.980,5; un solo punto es decimal (0.278, 124.056)
 const numeroLista = s => { let x = String(s == null ? '' : s).replace(/\s/g, ''); if (!x) return 0;
   const c = x.lastIndexOf(','), p = x.lastIndexOf('.');
@@ -5451,7 +5466,7 @@ document.addEventListener('click', e => { if (e.target.closest('[data-gc-abrir]'
  * protege de verdad es el servidor: cada lectura (POST 'llenado') pide la clave del equipo y la clave de Gerencia, y esos datos no van en la
  * carga general que recibe el cliente. Al salir del modo Gerencia se borran de la pantalla. Reckitt lo recibirá después por correo.
  * Las cuentas (capacidad, peso o volumen, "sobra") viven en el dominio: leerListaEmpaque, llenadoContenedores, resumenLlenado. */
-let LLENADO = null, LLENADO_FACT = [], LLENADO_CARGA = null, llenadoMes = '', llenadoAbierto = '';
+let LLENADO = null, LLENADO_FACT = [], LLENADO_CARGA = null, LLENADO_TIPOS = {}, llenadoMes = '', llenadoAbierto = '';
 const COLORES_LL = ['#7F77DD', '#D4537E', '#1D9E75', '#BA7517', '#D85A30', '#378ADD', '#639922', '#888780'];   // un color por producto en el diagrama y en su tabla
 // la factura de una lista: por el número de entrega (Delivery) y, si no, por el RBHY
 const facturaDeLista = l => (LLENADO_FACT || []).find(x => x.delivery && x.delivery === l.delivery) || (l.rbhy ? (LLENADO_FACT || []).find(x => x.rbhy === l.rbhy) : null) || null;
@@ -5481,7 +5496,9 @@ function filasLlenado(mes){
   return (LLENADO || []).filter(l => l.mes === mes).map(l => {
     // 21-nov: la Unidad de los viajes EXPO dice "1X40" y se leía como 40' estándar (67,7 m³), pero todos los bookings leídos (25 de 25: MSC "40HC", ONE "40'DRY HC",
     // Hapag-Lloyd "40HC", Perú "40' HI-CUBE") son 40' HC (76,3 m³): con 67,7 el llenado salía de más (RBHY28962: 65 % en vez de 57 %). En EXPO el 40 se toma como 40' HC
-    const vs = viajesDeLista(l), tipos = vs.map(v => { const t = tipoContenedor(v.unidad); return t === '40' ? '40HC' : t; }), sinTipo = vs.some((v, i) => !tipos[i]);
+    // 21-nov (pedido del usuario: "¿no se puede deducir de los documentos?"): el tipo sale de la confirmación del booking de la naviera (el servidor la lee y la guarda: LLENADO_TIPOS);
+    // si ese booking aún no se leyó, se usa la Unidad del viaje y el «40» cuenta como HC
+    const vs = viajesDeLista(l), tipos = vs.map(v => LLENADO_TIPOS[String(v.booking || '').toUpperCase()] || (t => t === '40' ? '40HC' : t)(tipoContenedor(v.unidad))), sinTipo = vs.some((v, i) => !tipos[i]);
     const fact = facturaDeLista(l);
     return {l, vs, tipos, lista: l, llenado: vs.length && !sinTipo ? llenadoContenedores(l, tipos) : null, sinTipo, fact, costo: costoVsVenta(fact)};
   }).sort((a, b) => String(b.l.fecha).localeCompare(String(a.l.fecha)));
@@ -5578,7 +5595,7 @@ async function cargarLlenado(actualizar, historico){
   try {
     const j = await api('llenado', {codigo, actualizar: !!actualizar, historico: !!historico});
     if (!j.ok) throw new Error(j.error || 'error');
-    LLENADO = j.listas || []; LLENADO_FACT = j.facturas || []; LLENADO_CARGA = j.carga || null;
+    LLENADO = j.listas || []; LLENADO_FACT = j.facturas || []; LLENADO_CARGA = j.carga || null; LLENADO_TIPOS = j.tipos || {};
     if (actualizar) toast(j.nuevas ? `${j.nuevas} ${j.nuevas === 1 ? 'lista nueva leída' : 'listas nuevas leídas'}` : 'No hay listas nuevas en el correo');
     if (historico && LLENADO_CARGA) toast(LLENADO_CARGA.hechos >= LLENADO_CARGA.total ? 'Histórico completo' : `Histórico: ${LLENADO_CARGA.hechos} de ${LLENADO_CARGA.total} viajes; pulse otra vez para seguir`);
   } catch (err) {
@@ -8420,7 +8437,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = 'e77018f4af';
+const VERSION_TABLERO = '76b97ced17';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
