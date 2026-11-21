@@ -441,7 +441,7 @@ body.en-turno #modosHdr{display:none}
 .tr-acc{display:flex;flex-wrap:wrap;gap:4px 12px;justify-content:flex-end;max-width:52%}
 .tr-vacio{padding:6px 10px}
 @media (max-width:700px){.tr-fila{flex-direction:column}.tr-acc{max-width:none;justify-content:flex-start}}
-body.en-turno #gbar{display:none}
+body.en-turno #gbar, body.en-llenado #gbar, body.en-llenado #modosHdr{display:none}   /* Llenado (llenado.js) no usa los filtros globales */
 /* preguntas al agente LogxIA: lista en el chat y aviso de respuestas nuevas en el botón */
 .chat-preg details{padding:4px 12px}
 .chat-preg summary{cursor:pointer;padding:4px 0}
@@ -1288,6 +1288,22 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 .gc-res{border-radius:9px;padding:9px 12px;font-size:13px;line-height:1.5;margin-top:10px}
 .gc-res.ok{background:#e7f6ef;color:#0b5e43}.gc-res.warn{background:#fff4e5;color:#8a3f06}.gc-res.bad{background:#fdecea;color:#8f1d12}
 .tf-top .btn{margin-top:6px}
+
+/* Llenado de contenedores (llenado.js, 20-nov): solo modo Gerencia */
+.ll-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:0 0 12px}
+.ll-kpi{background:color-mix(in srgb, var(--muted, #888) 10%, transparent);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column}
+.ll-kpi b{font-size:22px;font-weight:600;line-height:1.2}
+.ll-tabla td{vertical-align:middle}
+.ll-fila{cursor:pointer}
+.ll-fila:hover{background:color-mix(in srgb, var(--accent) 6%, transparent)}
+.ll-det td{background:color-mix(in srgb, var(--muted, #888) 7%, transparent);padding:10px 12px}
+.ll-bar{height:8px;border-radius:4px;background:color-mix(in srgb, var(--muted, #888) 20%, transparent);overflow:hidden;min-width:90px}
+.ll-bar i{display:block;height:100%;border-radius:4px}
+.ll-bar .ok{background:var(--ok)}.ll-bar .med{background:var(--warn)}.ll-bar .mal{background:var(--bad)}
+.ll-pill{font-size:11px;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.ll-pill.p-pes{background:color-mix(in srgb, var(--s-asig) 14%, transparent);color:var(--s-asig)}
+.ll-pill.p-vol{background:color-mix(in srgb, var(--ok) 14%, transparent);color:var(--ok)}
+.ll-pill.p-sob{background:color-mix(in srgb, var(--bad) 14%, transparent);color:var(--bad)}
 </style>
 </head>
 <body>
@@ -1303,6 +1319,7 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
       <button data-v="motonaves">Motonaves</button>
       <button data-v="errores" title="Reporte de calidad de los datos: lo mismo de Acciones para hoy, visto dato por dato. Para Gerencia y Calidad">Calidad de datos <span class="badge" id="nErr"></span></button>
       <button data-v="acciones" class="hidden">Acciones <span class="badge" id="nAcc"></span></button>
+      <button data-v="llenado" class="hidden solo-interno" title="Cuánto llena cada contenedor EXPO, con las listas de empaque de Reckitt. Solo en modo Gerencia (Gerencia y Calidad de ETP)">Llenado de contenedores</button>
     </nav>
     <div class="spacer"></div>
     <div class="conn"><span class="dot" id="connDot"></span><span id="connTxt">Modo demo</span></div>
@@ -1386,6 +1403,16 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
   </section>
 
   <section id="v-trafico" class="hidden"><div class="card"><div id="trafico"></div></div></section>
+
+  <section id="v-llenado" class="hidden solo-interno">
+    <div class="card">
+      <div class="toolbar" style="justify-content:space-between">
+        <div><h2 style="margin:0">Llenado de contenedores · exportaciones</h2><div class="sub">Cuánto volumen y peso lleva cada contenedor, según la lista de empaque de Reckitt. Solo para Gerencia y Calidad.</div></div>
+        <div class="chips"><select id="llenadoMes" aria-label="Mes"></select><button type="button" class="btn" id="llenadoActualizar" title="Lee ya los correos de calidad@ (hasta 5 listas nuevas); el resto se lee solo cada hora">⟳ Leer correos ahora</button><button type="button" class="btn" id="llenadoCsv" title="Descarga la tabla del mes para abrirla en Excel">⬇ Descargar CSV del mes</button></div>
+      </div>
+      <div id="llenadoCuerpo" style="margin-top:10px"></div>
+    </div>
+  </section>
 
   <section id="v-errores" class="hidden">
     <div class="card">
@@ -3304,6 +3331,87 @@ function etapaSubviaje(s){
   if (porConfirmar(s, 'fechaDescargueSub')) return {txt: `Descargue en patio ${fd(s.fechaDescargueSub)} · por confirmar`, tono: 'confirmar', pend};
   if (s.fechaDescargueSub) return {txt: 'Descargue en patio ' + fd(s.fechaDescargueSub), tono: 'curso', pend};
   return {txt: 'Sin fechas', tono: 'gris', pend};
+}
+
+/* ---------- Llenado de contenedores EXPO (20-nov-2026) ---------- */
+// Pedido: los jefes de Reckitt (Milena, Gallego y Viviana) creen que se desperdicia espacio y quieren ver cuánto volumen se llena de
+// cada contenedor con la lista de empaque (PDF) que viene en el correo "NUEVA EXPORTACIÓN … RBHY…" de Jhonier. Solo lo ve Gerencia o
+// Calidad de ETP (el servidor pide la clave de Gerencia). Capacidades: internas estándar de la industria (confirmadas con el usuario),
+// el peso es el útil aproximado. "Peso" o "Volumen" dice cuál límite se alcanza primero: un contenedor pesado con espacio vacío NO es
+// desperdicio; "Sobra" (ni peso ni volumen llegan al umbral) es lo que sí se puede mejorar.
+// Peso (21-nov, regla del usuario): el límite lo pone la tractomula, 34 t entre contenedor y carga; la carga permitida es 34.000 kg menos la tara del contenedor.
+// Las taras son las típicas de cada tipo (la real está grabada en cada contenedor); el 20' no pasa de 28.000 kg por su propia estructura.
+const PESO_TRACTOMULA = 34000;
+const TARA_CONT = {'20': 2300, '40': 3800, '40HC': 3900};
+const CAPACIDAD_CONT = {'20': {vol: 33.2, kg: Math.min(28000, PESO_TRACTOMULA - TARA_CONT['20'])}, '40': {vol: 67.7, kg: PESO_TRACTOMULA - TARA_CONT['40']}, '40HC': {vol: 76.3, kg: PESO_TRACTOMULA - TARA_CONT['40HC']}};
+const UMBRAL_LLENADO = 70;   // % de volumen o de peso por debajo del cual se considera que sobra espacio
+// "1x40' HC", "40HC", "20", "40 pies" → '20' · '40' · '40HC'; '' si no dice 20 ni 40
+const tipoContenedor = unidad => { const s = String(unidad || '').toUpperCase(), m = s.match(/(?:^|\D)(20|40)(?!\d)/);
+  return !m ? '' : m[1] === '40' && /HC|HQ|HIGH|CUBE/.test(s) ? '40HC' : m[1]; };
+// número de las listas de SAP: 20,084.903 (coma de miles, punto decimal) o 1.980,5; un solo punto es decimal (0.278, 124.056)
+const numeroLista = s => { let x = String(s == null ? '' : s).replace(/\s/g, ''); if (!x) return 0;
+  const c = x.lastIndexOf(','), p = x.lastIndexOf('.');
+  if (c >= 0 && p >= 0) x = c > p ? x.replace(/\./g, '').replace(',', '.') : x.replace(/,/g, '');
+  else if (c >= 0) x = /^\d{1,3}(,\d{3})+$/.test(x) ? x.replace(/,/g, '') : x.replace(',', '.');
+  else if (/^\d{1,3}(\.\d{3}){2,}$/.test(x)) x = x.replace(/\./g, '');
+  const n = Number(x); return isFinite(n) ? n : 0; };
+const cajasLista = s => /^\d{1,3}([.,]\d{3})+$/.test(String(s).trim()) ? Number(String(s).replace(/[.,]/g, '')) : Math.round(numeroLista(s));
+/** Lee el texto de una lista de empaque de Reckitt (Packing List): total de volumen (suma de los M3 de cada línea), cajas, peso y,
+ *  si el texto trae las filas completas, el detalle por material. `avisos` dice qué no se pudo leer o no cuadra. */
+function leerListaEmpaque(texto){
+  const t = String(texto || '').replace(/ /g, ' ').replace(/\r/g, ''), avisos = [];
+  // Dos formatos (21-nov, con 25 listas reales): "Lista de Empaque" en español (22 de 25; los totales están en el encabezado: Peso bruto total (KG),
+  // Volumen total (M3), Numero total de envases) y "Packing List" de SAP en inglés (Total Gross Weight arriba y una línea "Totals … KG … M3" al pie).
+  const delivery = (t.match(/Numero\s*nota\s*de\s*entrega\D{0,12}?(\d{8,12})/i) || t.match(/Delivery\s*ID\D{0,20}?(\d{8,12})/i) || t.match(/Packing\s*List\s*N\S{0,3}\s*:?\s*(\d{8,12})/i) || t.match(/\b(8[02]\d{8})\b/) || [])[1] || '';
+  const kg = re => numeroLista((t.match(re) || [])[1]);
+  const totales = t.match(/^[ \t]*Totals?\b[^\n]*?([\d.,]+)\s*KG\s+([\d.,]+)\s*M3[ \t]*\n?(?:[ \t]*([\d.,]+)\s*CAR)?/im) || [];   // SAP: "Totals 18,514.00EA 20084.903 KG 41.135 M3" y, abajo, "1,980.00CAR"
+  // la fila "Total 1,850 1,850 20,553.500 22,061.250 39.903" (PC, CAR, neto, bruto, volumen) del pie del formato en español: respaldo cuando la conversión
+  // del PDF separa las etiquetas del encabezado de sus valores
+  const filaTotal = t.match(/\bTotal\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)(?![\d.,])/i) || [];
+  // la fila Total (cinco números juntos) manda sobre las etiquetas del encabezado: si la conversión las separa de sus valores, la etiqueta de al lado puede traer el valor de otra
+  let brutoKg = numeroLista(filaTotal[4]) || kg(/Peso\s*bruto\s*total\s*\(KG\)\s*([\d.,]+)/i) || kg(/Total\s*Gross\s*Weight\D{0,20}?([\d.,]+)\s*KG/i) || numeroLista(totales[1]);
+  const netoKg = numeroLista(filaTotal[3]) || kg(/Peso\s*Neto\s*Total\s*\(KG\)\s*([\d.,]+)/i) || kg(/Total\s*Net\s*Weight\D{0,20}?([\d.,]+)\s*KG/i);
+  const lineas = [], reLinea = /(\d{6})\s+(\d{6,9})\s+([\d.,]+)\s*EA\s+([\d.,]+)\s*CAR\s+([\d.,]+)\s*CAR\s+([\d.,]+)\s*KG\s+([\d.,]+)\s*M3\s+([\d.,]+)\s*KG/gi;
+  let m;
+  while ((m = reLinea.exec(t))) {
+    const resto = t.slice(reLinea.lastIndex, reLinea.lastIndex + 200);
+    const d = (resto.match(/^\s*\d{12,14}\s*\n?\s*(?:\d+\s+)?([A-Z][A-Z0-9 ,.\/'%+()-]{3,70}?)\s+\d{12,14}/) || [])[1] || '';
+    lineas.push({item: m[1], material: m[2], descripcion: d.trim(), cajas: cajasLista(m[4]), brutoKg: numeroLista(m[6]), volumenM3: numeroLista(m[7]), netoKg: numeroLista(m[8])});
+  }
+  // sin la línea "Totals" (si no, el volumen de SAP salía doble): los "x M3" de cada fila (más completos que las filas enteras, que el OCR a veces parte)
+  const cuerpo = t.replace(/^[ \t]*Totals?\b[^\n]*$/gim, '');
+  const vols = [...cuerpo.matchAll(/([\d.,]+)\s*M3\b/gi)].map(x => numeroLista(x[1]));
+  const sumaVol = Math.round(vols.reduce((a, b) => a + b, 0) * 1000) / 1000;
+  const volTotal = numeroLista(filaTotal[5]) || numeroLista((t.match(/Volumen\s*total\s*\(M3\)\s*([\d.,]+)/i) || [])[1]) || numeroLista(totales[2]);   // el total que trae la lista
+  const volumenM3 = volTotal || sumaVol;
+  const completas = lineas.length > 0 && lineas.length === vols.length;
+  const cars = [...cuerpo.matchAll(/([\d.,]+)\s*CAR\b/gi)].map(x => cajasLista(x[1]));
+  const cajasTotal = (filaTotal[2] ? cajasLista(filaTotal[2]) : 0) || cajasLista((t.match(/Numero\s*total\s*de\s*envases\s*([\d.,]+)/i) || [])[1]) || (totales[3] ? cajasLista(totales[3]) : 0);
+  const cajas = cajasTotal || (completas ? lineas.reduce((a, l) => a + l.cajas, 0) : Math.round(cars.reduce((a, b) => a + b, 0) / 2));   // cada fila de SAP trae la cantidad dos veces
+  const sumaKg = lineas.reduce((a, l) => a + l.brutoKg, 0);
+  if (!brutoKg && completas) brutoKg = Math.round(sumaKg * 1000) / 1000;
+  if (!volumenM3) avisos.push('No se encontró el volumen (M3): revise la lista de empaque');
+  else if (volTotal && sumaVol && Math.abs(sumaVol - volTotal) / volTotal > 0.02) avisos.push(`El total de volumen (${volTotal} m³) no coincide con la suma de las filas (${sumaVol} m³): se usa el total de la lista`);
+  else if (!volTotal && !completas) avisos.push(`Lectura aproximada: ${vols.length} volúmenes y ${lineas.length} filas completas; el detalle por material puede faltar`);
+  if (!brutoKg) avisos.push('No se encontró el peso bruto total');
+  else if (completas && Math.abs(sumaKg - brutoKg) / brutoKg > 0.02) avisos.push(`Los pesos de las filas (${Math.round(sumaKg)} kg) no suman el total (${Math.round(brutoKg)} kg)`);
+  if (!delivery) avisos.push('No se encontró el Delivery ID');
+  return {delivery, brutoKg, netoKg, volumenM3, cajas, lineas: completas ? lineas : [], avisos};
+}
+/** Cuánto llena la lista un contenedor (o varios: `tipos` = ['40', '40']). null si no hay tipo o volumen. limita: 'Peso' · 'Volumen' · 'Sobra'. */
+function llenadoContenedores(lista, tipos){
+  const caps = (tipos || []).map(t => CAPACIDAD_CONT[t]).filter(Boolean);
+  if (!caps.length || !lista || !(lista.volumenM3 > 0)) return null;
+  const capVol = caps.reduce((a, c) => a + c.vol, 0), capKg = caps.reduce((a, c) => a + c.kg, 0);
+  const volPct = lista.volumenM3 / capVol * 100, pesoPct = lista.brutoKg ? lista.brutoKg / capKg * 100 : 0;
+  const limita = Math.max(volPct, pesoPct) < UMBRAL_LLENADO ? 'Sobra' : pesoPct > volPct ? 'Peso' : 'Volumen';
+  return {capVol, capKg, volPct, pesoPct, vacioM3: Math.max(0, capVol - lista.volumenM3), limita, pasaPeso: pesoPct > 100, pasaVolumen: volPct > 100};
+}
+/** Las cifras de arriba del informe, sobre filas con `lista` y `llenado` (las que no tienen tipo de contenedor no cuentan). */
+function resumenLlenado(filas){
+  const L = (filas || []).filter(f => f.llenado), capVol = L.reduce((a, f) => a + f.llenado.capVol, 0), vol = L.reduce((a, f) => a + f.lista.volumenM3, 0);
+  const sobra = L.filter(f => f.llenado.limita === 'Sobra'), vacioM3 = sobra.reduce((a, f) => a + f.llenado.vacioM3, 0);
+  return {n: L.length, volPromedio: capVol ? vol / capVol * 100 : 0, conSobra: sobra.length, vacioM3, equivale40: vacioM3 / CAPACIDAD_CONT['40'].vol};
 }</script>
 <script>
 /* ---------- base.js · utilidades comunes del tablero ---------- */
@@ -3999,7 +4107,7 @@ async function marcarRevisado(k){
   } catch(e) { window.TURNO = antes; repintarTurno(); toast('No se guardó la marca: ' + e.message); }
 }
 // una marca, excepción o ronda cambió: se repinta la Bandeja, que es donde se ven
-const repintarTurno = () => renderBandeja();
+const repintarTurno = () => { renderBandeja(); ajustarPestanaLlenado(); };   // 20-nov: la pestaña Llenado (llenado.js) solo existe en modo Gerencia
 // hitosDe (lo que pasa en el viaje en cada fecha) está en el dominio (dominio.js)
 // WhatsApp con el mensaje armado; el coordinador elige el contacto (la base aún no guarda el teléfono del conductor)
 const waConductor = (v, pregunta) => waLink('', 
@@ -5257,6 +5365,120 @@ async function manejarConexiones(e){
     toast(op === 'quitar' ? 'Conexión con Simon GPS quitada' : j.prueba && j.prueba.ok ? 'Conectó con Simon GPS' : 'No conectó: vea el motivo en la ventana');  } catch(err) { b.disabled = false; b.textContent = txt; toast('No se pudo: ' + err.message); if (/Gerencia/.test(err.message)) { try { sessionStorage.removeItem('rkt-gerencia'); } catch(x) {} claveGerenciaSesion = ''; } }
 }
 document.addEventListener('click', e => { if (e.target.closest('[data-gc-abrir]')) abrirConexiones(); });
+/* ---------- llenado.js · pestaña "Llenado de contenedores" (20-nov-2026) ----------
+ * Capa: pantalla. Pedido: los jefes de Reckitt (Milena, Gallego y Viviana) creen que se desperdicia espacio y quieren ver cuánto volumen se
+ * llena de cada contenedor EXPO. Los datos salen de las listas de empaque (PDF) que Jhonier adjunta a cada "NUEVA EXPORTACIÓN" (Llenado.gs).
+ * Quién lo ve: SOLO Gerencia o Calidad de ETP, en modo Gerencia. La pestaña no existe para el cliente ni para Operaciones, y lo que la
+ * protege de verdad es el servidor: cada lectura (POST 'llenado') pide la clave del equipo y la clave de Gerencia, y esos datos no van en la
+ * carga general que recibe el cliente. Al salir del modo Gerencia se borran de la pantalla. Reckitt lo recibirá después por correo.
+ * Las cuentas (capacidad, peso o volumen, "sobra") viven en el dominio: leerListaEmpaque, llenadoContenedores, resumenLlenado. */
+let LLENADO = null, llenadoMes = '', llenadoAbierto = '';
+const fmtLl = (n, d = 1) => Number(n || 0).toLocaleString('es-CO', {minimumFractionDigits: d, maximumFractionDigits: d});
+const LLENADO_LIMITA = {Peso: ['p-pes', 'Peso', 'va pesado: el espacio vacío no es desperdicio'], Volumen: ['p-vol', 'Volumen', 'bien lleno'], Sobra: ['p-sob', 'Sobra espacio', 'ni peso ni volumen pasan del ' + UMBRAL_LLENADO + '%']};
+
+// La pestaña solo se ve en modo Gerencia; al salir (o si el servidor rechaza la clave) se cierra y se borran los datos de la pantalla
+function ajustarPestanaLlenado(){
+  const b = document.querySelector('#nav [data-v="llenado"]'); if (!b) return;
+  const ver = !window.MODO_CLIENTE && esGerencia();
+  b.classList.toggle('hidden', !ver);
+  if (ver) return;
+  LLENADO = null; llenadoAbierto = '';
+  const v = $('#v-llenado'); if (v) v.querySelector('#llenadoCuerpo').innerHTML = '';
+  if (v && !v.classList.contains('hidden')) document.querySelector('#nav [data-v="tablero"]')?.click();
+}
+
+// viajes EXPO a los que corresponde una lista: por RBHY y, si no, por contenedor. Más de uno = la lista cubre varios contenedores
+function viajesDeLista(l){
+  const R = limpioId(l.rbhy), C = limpioId(l.contenedor);
+  const vivos = viajes.filter(v => v.operacion === 'EXPO' && !v.padre && v.estado !== 'Cancelado' && situacion(v) !== 'Cancelado');
+  const porRbhy = R ? vivos.filter(v => limpioId(v.rbhy) === R) : [];
+  return porRbhy.length ? porRbhy : C ? vivos.filter(v => limpioId(v.contenedor) === C) : [];
+}
+function filasLlenado(mes){
+  return (LLENADO || []).filter(l => l.mes === mes).map(l => {
+    const vs = viajesDeLista(l), tipos = vs.map(v => tipoContenedor(v.unidad)), sinTipo = vs.some((v, i) => !tipos[i]);
+    return {l, vs, tipos, lista: l, llenado: vs.length && !sinTipo ? llenadoContenedores(l, tipos) : null, sinTipo};
+  }).sort((a, b) => String(b.l.fecha).localeCompare(String(a.l.fecha)));
+}
+
+function pintarLlenado(){
+  const cont = $('#llenadoCuerpo'); if (!LLENADO) return;
+  const meses = [...new Set(LLENADO.map(l => l.mes))].filter(m => /^\d{4}-\d{2}$/.test(m)).sort().reverse();
+  if (!meses.includes(llenadoMes)) llenadoMes = meses[0] || '';
+  const F = filasLlenado(llenadoMes), R = resumenLlenado(F), n = F.length;
+  const kpi = (t, v, sub) => `<div class="ll-kpi"><span class="sub">${t}</span><b>${v}</b>${sub ? `<span class="sub">${sub}</span>` : ''}</div>`;
+  const barra = x => `<div class="ll-bar"><i class="${x.limita === 'Sobra' ? 'mal' : x.pesoPct > x.volPct ? 'med' : 'ok'}" style="width:${Math.min(100, x.volPct).toFixed(0)}%"></i></div>`;
+  const filaHtml = f => {
+    const x = f.llenado, v0 = f.vs[0], k = f.l.rbhy + '|' + f.l.delivery;
+    const quien = `<b>${esc(f.l.contenedor || (v0 && v0.contenedor) || 'Sin contenedor')}</b><br><span class="sub">${esc(f.l.rbhy || 'Sin RBHY')}${v0 && v0.pais ? ' · ' + esc(v0.pais) : ''}${f.vs.length > 1 ? ` · ${f.vs.length} contenedores` : ''}</span>`;
+    const resto = !f.vs.length ? `<td colspan="4" class="sub">No hay un viaje EXPO con este RBHY${f.l.contenedor ? ' ni con este contenedor' : ''}. Cree el viaje o revise el RBHY.</td>`
+      : f.sinTipo ? `<td colspan="4"><b style="color:var(--bad)">Falta el tipo de contenedor (20 o 40) en el viaje</b> ${f.vs.map(v => `<button type="button" class="link" data-ll-viaje="${esc(v.id)}">${esc(v.id)}</button>`).join(' ')}</td>`
+      : !x ? `<td colspan="4" class="sub">No se pudo leer el volumen de la lista: ${esc(f.l.avisos.join(' · ') || 'revise el PDF')}</td>`
+      : `<td>${esc(f.tipos.map(t => t === '40HC' ? "40' HC" : t + "'").join(' + '))}</td>
+        <td>${barra(x)}<span class="sub">${fmtLl(f.l.volumenM3)} de ${fmtLl(x.capVol)} m³ · ${fmtLl(x.volPct, 0)}%</span></td>
+        <td>${f.l.brutoKg ? fmtLl(x.pesoPct, 0) + '%' : '<span class="sub">—</span>'}${x.pasaPeso ? ' <b style="color:var(--bad)" title="Pasa el peso útil">⚠</b>' : ''}</td>
+        <td><span class="ll-pill ${LLENADO_LIMITA[x.limita][0]}" title="${esc(LLENADO_LIMITA[x.limita][2])}">${LLENADO_LIMITA[x.limita][1]}</span>${x.pasaVolumen ? ' <b style="color:var(--bad)" title="Pasa el volumen">⚠</b>' : ''}</td>`;
+    const det = llenadoAbierto === k ? `<tr class="ll-det"><td colspan="5">${detalleLlenado(f)}</td></tr>` : '';
+    return `<tr class="ll-fila" data-ll-abrir="${esc(k)}"><td>${quien}</td>${resto}</tr>${det}`;
+  };
+  cont.innerHTML = `<div class="ll-kpis">${kpi('Llenado promedio', n && R.n ? fmtLl(R.volPromedio, 0) + '%' : '—', 'volumen lleno sobre la capacidad')}
+      ${kpi('Con espacio de sobra', R.n ? `${R.conSobra} de ${R.n}` : '—', 'ni peso ni volumen pasan del ' + UMBRAL_LLENADO + '%')}
+      ${kpi('Espacio que sobra', R.n ? fmtLl(R.vacioM3, 0) + ' m³' : '—', 'solo de los que sobran, no de los pesados')}
+      ${kpi('Equivale a', R.n ? fmtLl(R.equivale40) + " de 40'" : '—', 'contenedores de 67,7 m³')}</div>
+    ${n ? `<div class="tbl-wrap"><table class="prop ll-tabla"><thead><tr><th>Contenedor · RBHY</th><th>Tipo</th><th>Volumen lleno</th><th>Peso</th><th>Lo que limita</th></tr></thead><tbody>${F.map(filaHtml).join('')}</tbody></table></div>`
+      : `<p class="sub">No hay listas de empaque leídas para este mes. Toque «Leer correos ahora» para buscarlas en el buzón de calidad@.</p>`}
+    <p class="sub" style="margin-top:8px">Capacidad: 20' = ${fmtLl(CAPACIDAD_CONT['20'].vol)} m³ y ${fmtLl(CAPACIDAD_CONT['20'].kg, 0)} kg · 40' = ${fmtLl(CAPACIDAD_CONT['40'].vol)} m³ y ${fmtLl(CAPACIDAD_CONT['40'].kg, 0)} kg · 40' HC = ${fmtLl(CAPACIDAD_CONT['40HC'].vol)} m³ y ${fmtLl(CAPACIDAD_CONT['40HC'].kg, 0)} kg. El peso es el que permite la tractomula (${fmtLl(PESO_TRACTOMULA, 0)} kg entre contenedor y carga) menos la tara típica del contenedor. El tipo sale de la Unidad del viaje.
+    «Peso» o «Volumen» dice cuál límite se alcanza primero: si el contenedor va pesado, el espacio vacío no es desperdicio. Solo «Sobra espacio» se puede mejorar. Toque una fila para ver sus materiales.</p>`;
+}
+function detalleLlenado(f){
+  const l = f.l, aviso = l.avisos.length ? `<div class="sub" style="color:var(--warn)">⚠ ${l.avisos.map(esc).join(' · ')}</div>` : '';
+  const filas = l.lineas.length ? `<table class="prop"><thead><tr><th>Material</th><th>Cajas</th><th>Volumen</th><th>Peso bruto</th></tr></thead><tbody>${l.lineas.map(x =>
+    `<tr><td>${esc(x.material)}${x.descripcion ? ' · ' + esc(x.descripcion) : ''}</td><td>${fmtLl(x.cajas, 0)}</td><td>${fmtLl(x.volumenM3, 3)} m³</td><td>${fmtLl(x.brutoKg, 0)} kg</td></tr>`).join('')}</tbody></table>`
+    : '<div class="sub">Esta lista se leyó solo con sus totales (sin el detalle por material).</div>';
+  const correo = l.msgId ? ` · <a class="link" href="https://mail.google.com/mail/?authuser=calidad@stentrapetrol.com#all/${esc(l.msgId)}" target="_blank" rel="noopener">Ver correo con la lista (PDF)</a>` : '';
+  return `<div class="sub">Lista ${esc(l.delivery || 'sin Delivery ID')} · ${fmtLl(l.cajas, 0)} cajas · ${fmtLl(l.volumenM3, 3)} m³ · ${fmtLl(l.brutoKg, 0)} kg bruto${f.vs.map(v => ` · <button type="button" class="link" data-ll-viaje="${esc(v.id)}">${esc(v.id)}</button>`).join('')}${correo}</div>${aviso}${filas}`;
+}
+
+async function cargarLlenado(actualizar){
+  const codigo = await claveGerenciaParaGps();   // gps-conexiones.js: la clave de Gerencia de la sesión; si falta, la pide
+  if (!codigo) return;
+  const cuerpo = $('#llenadoCuerpo'), b = $('#llenadoActualizar'); if (b) b.disabled = true;
+  if (!LLENADO) cuerpo.innerHTML = '<p class="sub">Cargando el llenado…</p>';
+  try {
+    const j = await api('llenado', {codigo, actualizar: !!actualizar});
+    if (!j.ok) throw new Error(j.error || 'error');
+    LLENADO = j.listas || [];
+    if (actualizar) toast(j.nuevas ? `${j.nuevas} ${j.nuevas === 1 ? 'lista nueva leída' : 'listas nuevas leídas'}` : 'No hay listas nuevas en el correo');
+  } catch (err) {
+    if (/Gerencia/.test(err.message)) { try { sessionStorage.removeItem('rkt-gerencia'); } catch(x) {} claveGerenciaSesion = ''; ajustarPestanaLlenado(); }
+    else { LLENADO = LLENADO || null; cuerpo.innerHTML = /Acción no soportada/.test(err.message) ? '<p class="sub">El servidor todavía no tiene el informe de llenado: falta desplegar la versión nueva del Apps Script.</p>' : `<p class="sub">No se pudo leer el llenado: ${esc(err.message)}</p>`; }
+    toast('No se pudo: ' + err.message); if (b) b.disabled = false; return;
+  }
+  if (b) b.disabled = false;
+  const sel = $('#llenadoMes'); const meses = [...new Set(LLENADO.map(l => l.mes))].filter(m => /^\d{4}-\d{2}$/.test(m)).sort().reverse();
+  if (sel) { if (!meses.includes(llenadoMes)) llenadoMes = meses[0] || ''; sel.innerHTML = meses.map(m => `<option value="${esc(m)}"${m === llenadoMes ? ' selected' : ''}>${esc(nombreMes(m))}</option>`).join(''); }
+  pintarLlenado();
+}
+// CSV del mes (Excel lo abre): una fila por contenedor, con lo que se ve en la tabla
+function csvLlenado(){
+  const F = filasLlenado(llenadoMes); if (!F.length) return toast('No hay listas en este mes');
+  const q = s => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
+  const filas = [['RBHY', 'Contenedor', 'Tipo', 'Delivery', 'Cajas', 'Volumen m3', 'Capacidad m3', 'Volumen %', 'Peso bruto kg', 'Peso %', 'Lo que limita', 'Avisos']].concat(F.map(f => [f.l.rbhy, f.l.contenedor, f.tipos.join('+'), f.l.delivery, f.l.cajas,
+    f.l.volumenM3, f.llenado ? f.llenado.capVol.toFixed(1) : '', f.llenado ? f.llenado.volPct.toFixed(1) : '', f.l.brutoKg, f.llenado ? f.llenado.pesoPct.toFixed(1) : '', f.llenado ? LLENADO_LIMITA[f.llenado.limita][1] : '', f.l.avisos.join(' | ')]));
+  const url = URL.createObjectURL(new Blob(['﻿' + filas.map(r => r.map(q).join(';')).join('\r\n')], {type: 'text/csv;charset=utf-8'}));
+  const a = document.createElement('a'); a.href = url; a.download = `llenado-contenedores-${llenadoMes}.csv`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5e3);
+}
+// eventos: la pestaña pide los datos al abrirla (eventos.js llama a abrirPestanaLlenado)
+function abrirPestanaLlenado(){ if (!LLENADO) cargarLlenado(false); else pintarLlenado(); }
+$('#v-llenado').addEventListener('click', e => {
+  const t = e.target;
+  if (t.closest('#llenadoActualizar')) return cargarLlenado(true);
+  if (t.closest('#llenadoCsv')) return csvLlenado();
+  const ver = t.closest('[data-ll-viaje]'); if (ver) { e.stopPropagation(); return abrir(ver.dataset.llViaje); }
+  const fila = t.closest('[data-ll-abrir]'); if (fila) { llenadoAbierto = llenadoAbierto === fila.dataset.llAbrir ? '' : fila.dataset.llAbrir; pintarLlenado(); }
+});
+$('#llenadoMes').addEventListener('change', e => { llenadoMes = e.target.value; llenadoAbierto = ''; pintarLlenado(); });
+ajustarPestanaLlenado();
 /* ---------- novedades del viaje: la bitácora con hora y autor (fase 1) y la línea de tiempo única (fase 2) ----------
  * Cada novedad es una fila de la pestaña "Novedades del viaje" (Base.gs): cuándo, viaje, quién, tipo, texto y origen. No se
  * editan ni se borran: así queda el seguimiento. El campo Observación sigue siendo la nota fija del viaje (programación,
@@ -8054,7 +8276,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '94cab3aed1';
+const VERSION_TABLERO = 'a0c5f3cb44';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -9433,9 +9655,11 @@ montarKL();
 $('#nav').onclick = e => { const b=e.target.closest('button'); if(!b) return;
   document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on', x===b));
   document.body.classList.toggle('en-turno', b.dataset.v === 'bandeja');
+  document.body.classList.toggle('en-llenado', b.dataset.v === 'llenado');
   document.body.classList.toggle('en-errores', b.dataset.v === 'errores');   // 10-nov: en Errores solo aplica la pestaña de operación, no los demás filtros   // la Bandeja no usa la barra de filtros global
-  ['bandeja','tablero','trafico','viajes','motonaves','errores','acciones'].forEach(v=>$('#v-'+v).classList.toggle('hidden', v!==b.dataset.v));
+  ['bandeja','tablero','trafico','viajes','motonaves','errores','acciones','llenado'].forEach(v=>$('#v-'+v).classList.toggle('hidden', v!==b.dataset.v));
   if (b.dataset.v === 'trafico') renderTrafico();   // trafico.js
+  if (b.dataset.v === 'llenado') abrirPestanaLlenado();   // llenado.js (solo modo Gerencia)
   if (b.dataset.v === 'acciones') renderAcciones(); };   // acciones.js: se pinta al abrirla
 $('#proximos').onclick = e => { const b = e.target.closest('[data-ag]'); if (!b) return;
   if (b.dataset.ag==='act') agAct = b.dataset.val; else agDia = b.dataset.val;
