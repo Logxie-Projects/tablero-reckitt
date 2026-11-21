@@ -5653,8 +5653,9 @@ function pintarLlenado(){
         <td>${barra(x)}<span class="sub">${fmtLl(f.l.volumenM3)} de ${fmtLl(x.capVol)} m³ · ${fmtLl(x.volPct, 0)}%</span></td>
         <td>${f.l.brutoKg ? fmtLl(x.pesoPct, 0) + '%' : '<span class="sub">—</span>'}${x.pasaPeso ? ' <b style="color:var(--bad)" title="Pasa el peso útil">⚠</b>' : ''}</td>
         <td><span class="ll-pill ${LLENADO_LIMITA[x.limita][0]}" title="${esc(LLENADO_LIMITA[x.limita][2])}">${LLENADO_LIMITA[x.limita][1]}</span>${x.pasaVolumen ? ' <b style="color:var(--bad)" title="Pasa el volumen">⚠</b>' : ''}</td>`;
-    const venta = f.costo ? `<td>${montoLl(f.costos.venta[llenadoMoneda], llenadoMoneda)}<br><span class="sub">agencia ${fmtLl(f.costo.pctLogistica, 1)}%</span></td>` : '<td><span class="sub">Sin factura</span></td>';
-    const det = llenadoAbierto === k ? `<tr class="ll-det"><td colspan="6">${detalleLlenado(f)}</td></tr>` : '';
+    // 21-nov (usuario: «misma columna es confuso»): el valor de la mercancía y el costo de la agencia de aduana van en columnas distintas
+    const venta = f.costo ? `<td>${montoLl(f.costos.venta[llenadoMoneda], llenadoMoneda)}</td><td>${montoLl(f.costos.logistica.total[llenadoMoneda], llenadoMoneda)}<br><span class="sub">${fmtLl(f.costo.pctLogistica, 1)}% de la mercancía</span></td>` : '<td colspan="2"><span class="sub">Sin factura</span></td>';
+    const det = llenadoAbierto === k ? `<tr class="ll-det"><td colspan="7">${detalleLlenado(f)}</td></tr>` : '';
     return `<tr class="ll-fila" data-ll-abrir="${esc(k)}"><td>${quien}</td>${resto}${venta}</tr>${det}`;
   };
   const conFact = F.filter(f => f.costo), sumV = conFact.reduce((a, f) => a + f.costo.venta, 0), sumL = conFact.reduce((a, f) => a + f.costo.logistica, 0);   // el porcentaje no depende de la moneda
@@ -5668,7 +5669,7 @@ function pintarLlenado(){
       ${kpi('Equivale a', R.n ? fmtLl(R.equivale40) + " de 40'" : '—', 'contenedores de 67,7 m³')}
       ${kpi('Agencia de aduana sobre venta', conFact.length ? fmtLl(sumL / sumV * 100, 1) + '%' : '—', conFact.length ? `${montoLl(sumLm, llenadoMoneda)} de ${montoLl(sumVm, llenadoMoneda)} · ${conFact.length} de ${n} con factura` : 'faltan las facturas')}</div>
     ${cargaLlenado()}${pendientesLlenado()}
-    ${n ? `<div class="tbl-wrap"><table class="prop ll-tabla"><thead><tr><th>Contenedor · RBHY</th><th>Tipo</th><th>Volumen lleno</th><th>Peso</th><th>Lo que limita</th><th>Venta · agencia de aduana</th></tr></thead><tbody>${F.map(filaHtml).join('')}</tbody></table></div>`
+    ${n ? `<div class="tbl-wrap"><table class="prop ll-tabla"><thead><tr><th>Contenedor · RBHY</th><th>Tipo</th><th>Volumen lleno</th><th>Peso</th><th>Lo que limita</th><th>Valor de la mercancía</th><th>Costo agencia de aduana</th></tr></thead><tbody>${F.map(filaHtml).join('')}</tbody></table></div>`
       : `<p class="sub">No hay listas de empaque leídas para este mes. Toque «Leer correos ahora» para buscarlas en el buzón de calidad@.</p>`}
     <p class="sub" style="margin-top:8px">Capacidad: 20' = ${fmtLl(CAPACIDAD_CONT['20'].vol)} m³ y ${fmtLl(CAPACIDAD_CONT['20'].kg, 0)} kg · 40' = ${fmtLl(CAPACIDAD_CONT['40'].vol)} m³ y ${fmtLl(CAPACIDAD_CONT['40'].kg, 0)} kg · 40' HC = ${fmtLl(CAPACIDAD_CONT['40HC'].vol)} m³ y ${fmtLl(CAPACIDAD_CONT['40HC'].kg, 0)} kg. El peso es el que permite la tractomula (${fmtLl(PESO_TRACTOMULA, 0)} kg entre contenedor y carga) menos la tara típica del contenedor. El tipo sale de la Unidad del viaje; en exportaciones el «40'» se toma como 40' HC, porque así son todos los bookings leídos.
     «Peso» o «Volumen» dice cuál límite se alcanza primero: si el contenedor va pesado, el espacio vacío no es desperdicio. Solo «Sobra espacio» se puede mejorar. Toque una fila para ver el diagrama, los productos con su precio y el costo contra la venta.
@@ -5706,11 +5707,13 @@ function panelCostos(f){
       + (tr.extras.length ? tr.extras.map(x => fila(esc(x.concepto), x)).join('') : nota('Sin extracostos.')) + fila('Subtotal ETP', tr.total, 'll-tot')
     : grupo('Costos ETP · transporte') + nota('La lista no está ligada a un viaje: no hay tarifa ni extracostos que mostrar.');
   const agencia = F && c.venta && ag ? grupo(`Costos agencia de aduana · los de la factura que envía Jhonier${F.numero ? ' (' + esc(F.numero) + ')' : ''}${F.incoterm ? ' · ' + esc(F.incoterm) : ''} · ${fmtLl(ag.pct, 1)}% de la mercancía`)
-      + ag.cargos.map(x => fila(esc(x.concepto), x)).join('') + fila('Subtotal agencia de aduana', ag.total, 'll-tot') + fila('<span class="sub">Valor de la mercancía (referencia)</span>', c.venta)
+      + ag.cargos.map(x => fila(esc(x.concepto), x)).join('') + fila('Subtotal agencia de aduana', ag.total, 'll-tot')
     : grupo('Costos agencia de aduana') + nota('Todavía no hay factura leída de este contenedor (llega en el correo «NUEVA EXPORTACIÓN»; toque «Leer correos ahora»).');
+  // 21-nov (usuario: «costos de mercancía no se deben mezclar con costos logísticos»): el valor de la mercancía NO es un costo; va aparte, debajo, con su propio título
+  const merc = F && c.venta ? `<div style="font-weight:600;margin:14px 0 4px">Valor de la mercancía · factura de venta <span class="sub" style="font-weight:400">(no es un costo)</span></div><div class="tbl-wrap"><table class="prop ll-costos"><tbody>${fila('Mercancía', c.venta)}</tbody></table></div>` : '';
   const fechaTasa = F && F.fecha ? F.fecha : String(f.l.fecha || '').slice(0, 10);
   const tasas = `<div class="sub" style="margin-top:6px">Tasas: ${T.trm ? `TRM $${fmtLl(T.trm, 2)} por USD${T.aproximada ? ' <b title="Este contenedor todavía no tiene factura propia: se usa la TRM de la factura más reciente">(aproximada)</b>' : ' de la factura'}` : 'sin TRM'} · ${T.gbp ? `${fmtLl(T.gbp, 4)} GBP por USD del ${esc(fd(fechaTasa))}` : 'sin tasa de la libra'}.</div>`;
-  return `<div style="font-weight:600;margin-bottom:4px">Costos de este contenedor</div><div class="tbl-wrap"><table class="prop ll-costos"><thead><tr><th></th>${MONEDAS_LL.map(m => `<th${m === llenadoMoneda ? ' class="ll-sel"' : ''}>${m}</th>`).join('')}</tr></thead><tbody>${etp}${agencia}</tbody></table></div>${tasas}`;
+  return `<div style="font-weight:600;margin-bottom:4px">Costos de este contenedor</div><div class="tbl-wrap"><table class="prop ll-costos"><thead><tr><th></th>${MONEDAS_LL.map(m => `<th${m === llenadoMoneda ? ' class="ll-sel"' : ''}>${m}</th>`).join('')}</tr></thead><tbody>${etp}${agencia}</tbody></table></div>${merc}${tasas}`;
 }
 function detalleLlenado(f){
   const l = f.l, F = f.fact, prods = productosContenedor(l, F);
@@ -8591,7 +8594,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '888c044dc2';
+const VERSION_TABLERO = '30dcf22be2';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
