@@ -5432,7 +5432,7 @@ document.addEventListener('click', e => { if (e.target.closest('[data-gc-abrir]'
  * protege de verdad es el servidor: cada lectura (POST 'llenado') pide la clave del equipo y la clave de Gerencia, y esos datos no van en la
  * carga general que recibe el cliente. Al salir del modo Gerencia se borran de la pantalla. Reckitt lo recibirá después por correo.
  * Las cuentas (capacidad, peso o volumen, "sobra") viven en el dominio: leerListaEmpaque, llenadoContenedores, resumenLlenado. */
-let LLENADO = null, LLENADO_FACT = [], llenadoMes = '', llenadoAbierto = '';
+let LLENADO = null, LLENADO_FACT = [], LLENADO_CARGA = null, llenadoMes = '', llenadoAbierto = '';
 const COLORES_LL = ['#7F77DD', '#D4537E', '#1D9E75', '#BA7517', '#D85A30', '#378ADD', '#639922', '#888780'];   // un color por producto en el diagrama y en su tabla
 // la factura de una lista: por el número de entrega (Delivery) y, si no, por el RBHY
 const facturaDeLista = l => (LLENADO_FACT || []).find(x => x.delivery && x.delivery === l.delivery) || (l.rbhy ? (LLENADO_FACT || []).find(x => x.rbhy === l.rbhy) : null) || null;
@@ -5466,6 +5466,14 @@ function filasLlenado(mes){
   }).sort((a, b) => String(b.l.fecha).localeCompare(String(a.l.fecha)));
 }
 
+// Carga inicial por viaje: el servidor revisa, viaje por viaje, TODOS los correos con la lista, la factura y los documentos de cada exportación que ya existe
+// (sin importar la antigüedad). Sigue sola cada hora; este botón la adelanta (unos 2 minutos por pulsación).
+function cargaLlenado(){
+  const C = LLENADO_CARGA; if (!C) return '';
+  const estado = !C.total ? 'aún no empieza' : `<b>${C.hechos} de ${C.total}</b> viajes revisados${C.revisar ? ` (${C.revisar} para revisar a mano)` : ''}`;
+  const boton = !C.total || C.hechos < C.total ? ` · <button type="button" class="btn" id="llenadoHistorico" title="Lee ahora los correos de los viajes que faltan (unos 2 minutos); el resto sigue solo cada hora">Cargar histórico de los viajes</button>` : ' · completo';
+  return `<p class="sub" style="margin:0 0 10px">Histórico de los viajes: ${estado}${boton}</p>`;
+}
 function pintarLlenado(){
   const cont = $('#llenadoCuerpo'); if (!LLENADO) return;
   const meses = [...new Set(LLENADO.map(l => l.mes))].filter(m => /^\d{4}-\d{2}$/.test(m)).sort().reverse();
@@ -5493,6 +5501,7 @@ function pintarLlenado(){
       ${kpi('Espacio que sobra', R.n ? fmtLl(R.vacioM3, 0) + ' m³' : '—', 'solo de los que sobran, no de los pesados')}
       ${kpi('Equivale a', R.n ? fmtLl(R.equivale40) + " de 40'" : '—', 'contenedores de 67,7 m³')}
       ${kpi('Logística sobre venta', conFact.length ? fmtLl(sumL / sumV * 100, 1) + '%' : '—', conFact.length ? `${usdLl(sumL)} de ${usdLl(sumV)} · ${conFact.length} de ${n} con factura` : 'faltan las facturas')}</div>
+    ${cargaLlenado()}
     ${n ? `<div class="tbl-wrap"><table class="prop ll-tabla"><thead><tr><th>Contenedor · RBHY</th><th>Tipo</th><th>Volumen lleno</th><th>Peso</th><th>Lo que limita</th><th>Venta · logística</th></tr></thead><tbody>${F.map(filaHtml).join('')}</tbody></table></div>`
       : `<p class="sub">No hay listas de empaque leídas para este mes. Toque «Leer correos ahora» para buscarlas en el buzón de calidad@.</p>`}
     <p class="sub" style="margin-top:8px">Capacidad: 20' = ${fmtLl(CAPACIDAD_CONT['20'].vol)} m³ y ${fmtLl(CAPACIDAD_CONT['20'].kg, 0)} kg · 40' = ${fmtLl(CAPACIDAD_CONT['40'].vol)} m³ y ${fmtLl(CAPACIDAD_CONT['40'].kg, 0)} kg · 40' HC = ${fmtLl(CAPACIDAD_CONT['40HC'].vol)} m³ y ${fmtLl(CAPACIDAD_CONT['40HC'].kg, 0)} kg. El peso es el que permite la tractomula (${fmtLl(PESO_TRACTOMULA, 0)} kg entre contenedor y carga) menos la tara típica del contenedor. El tipo sale de la Unidad del viaje.
@@ -5538,20 +5547,22 @@ function detalleLlenado(f){
   return `<div class="sub">Lista ${esc(l.delivery || 'sin Delivery ID')} · ${fmtLl(l.cajas, 0)} cajas · ${fmtLl(l.volumenM3, 3)} m³ · ${fmtLl(l.brutoKg, 0)} kg bruto${f.vs.map(v => ` · <button type="button" class="link" data-ll-viaje="${esc(v.id)}">${esc(v.id)}</button>`).join('')}${correo}</div>${aviso}
     <div style="margin:8px 0">${diagramaLlenado(f, prods)}</div>${tab}${costo}`;
 }
-async function cargarLlenado(actualizar){
+async function cargarLlenado(actualizar, historico){
   const codigo = await claveGerenciaParaGps();   // gps-conexiones.js: la clave de Gerencia de la sesión; si falta, la pide
   if (!codigo) return;
-  const cuerpo = $('#llenadoCuerpo'), b = $('#llenadoActualizar'); if (b) b.disabled = true;
+  const cuerpo = $('#llenadoCuerpo'), b = $('#llenadoActualizar'), bh = $('#llenadoHistorico'); if (b) b.disabled = true;
+  if (bh) { bh.disabled = true; bh.textContent = 'Leyendo los viajes… hasta 2 minutos'; }
   if (!LLENADO) cuerpo.innerHTML = '<p class="sub">Cargando el llenado…</p>';
   try {
-    const j = await api('llenado', {codigo, actualizar: !!actualizar});
+    const j = await api('llenado', {codigo, actualizar: !!actualizar, historico: !!historico});
     if (!j.ok) throw new Error(j.error || 'error');
-    LLENADO = j.listas || []; LLENADO_FACT = j.facturas || [];
+    LLENADO = j.listas || []; LLENADO_FACT = j.facturas || []; LLENADO_CARGA = j.carga || null;
     if (actualizar) toast(j.nuevas ? `${j.nuevas} ${j.nuevas === 1 ? 'lista nueva leída' : 'listas nuevas leídas'}` : 'No hay listas nuevas en el correo');
+    if (historico && LLENADO_CARGA) toast(LLENADO_CARGA.hechos >= LLENADO_CARGA.total ? 'Histórico completo' : `Histórico: ${LLENADO_CARGA.hechos} de ${LLENADO_CARGA.total} viajes; pulse otra vez para seguir`);
   } catch (err) {
     if (/Gerencia/.test(err.message)) { try { sessionStorage.removeItem('rkt-gerencia'); } catch(x) {} claveGerenciaSesion = ''; ajustarPestanaLlenado(); }
     else { LLENADO = LLENADO || null; cuerpo.innerHTML = /Acción no soportada/.test(err.message) ? '<p class="sub">El servidor todavía no tiene el informe de llenado: falta desplegar la versión nueva del Apps Script.</p>' : `<p class="sub">No se pudo leer el llenado: ${esc(err.message)}</p>`; }
-    toast('No se pudo: ' + err.message); if (b) b.disabled = false; return;
+    toast('No se pudo: ' + err.message); if (b) b.disabled = false; if (bh) { bh.disabled = false; bh.textContent = 'Cargar histórico de los viajes'; } return;
   }
   if (b) b.disabled = false;
   const sel = $('#llenadoMes'); const meses = [...new Set(LLENADO.map(l => l.mes))].filter(m => /^\d{4}-\d{2}$/.test(m)).sort().reverse();
@@ -5573,6 +5584,7 @@ function abrirPestanaLlenado(){ if (!LLENADO) cargarLlenado(false); else pintarL
 $('#v-llenado').addEventListener('click', e => {
   const t = e.target;
   if (t.closest('#llenadoActualizar')) return cargarLlenado(true);
+  if (t.closest('#llenadoHistorico')) return cargarLlenado(false, true);
   if (t.closest('#llenadoCsv')) return csvLlenado();
   const ver = t.closest('[data-ll-viaje]'); if (ver) { e.stopPropagation(); return abrir(ver.dataset.llViaje); }
   const fila = t.closest('[data-ll-abrir]'); if (fila) { llenadoAbierto = llenadoAbierto === fila.dataset.llAbrir ? '' : fila.dataset.llAbrir; pintarLlenado(); }
@@ -8376,7 +8388,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '4990434c43';
+const VERSION_TABLERO = 'da9e8c3dcf';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
