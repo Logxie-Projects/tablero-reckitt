@@ -5504,6 +5504,8 @@ document.addEventListener('click', e => { if (e.target.closest('[data-gc-abrir]'
 let LLENADO = null, LLENADO_FACT = [], LLENADO_CARGA = null, LLENADO_TIPOS = {}, llenadoMes = '', llenadoAbierto = '';
 const COLORES_LL = ['#7F77DD', '#D4537E', '#1D9E75', '#BA7517', '#D85A30', '#378ADD', '#639922', '#888780'];   // un color por producto en el diagrama y en su tabla
 // la factura de una lista: por el número de entrega (Delivery) y, si no, por el RBHY
+// el módulo es de las EXPORTACIONES: una lista de empaque de una importación (proveedor del exterior, sin RBHY) no es de este módulo aunque venga de un correo de Reckitt
+const esListaExpo = l => !!l.rbhy || /exportaci|RBHY/i.test(l.asunto || '');
 const facturaDeLista = l => (LLENADO_FACT || []).find(x => x.delivery && x.delivery === l.delivery) || (l.rbhy ? (LLENADO_FACT || []).find(x => x.rbhy === l.rbhy) : null) || null;
 const usdLl = n => 'USD ' + fmtLl(n, 0), copM = n => '$' + fmtLl(n / 1e6, 1) + ' M';
 const fmtLl = (n, d = 1) => Number(n || 0).toLocaleString('es-CO', {minimumFractionDigits: d, maximumFractionDigits: d});
@@ -5549,8 +5551,11 @@ function filasLlenado(mes){
     // 21-nov (pedido del usuario: "¿no se puede deducir de los documentos?"): el tipo sale de la confirmación del booking de la naviera (el servidor la lee y la guarda: LLENADO_TIPOS);
     // si ese booking aún no se leyó, se usa la Unidad del viaje y el «40» cuenta como HC
     const vs = viajesDeLista(l), tipos = vs.map(v => LLENADO_TIPOS[String(v.booking || '').toUpperCase()] || (t => t === '40' ? '40HC' : t)(tipoContenedor(v.unidad))), sinTipo = vs.some((v, i) => !tipos[i]);
-    const fact = facturaDeLista(l), choque = vs.length ? '' : choqueDeLista(l);
-    return {l, vs, tipos, choque, lista: l, llenado: vs.length && !sinTipo ? llenadoContenedores(l, tipos) : null, sinTipo, fact, costo: costoVsVenta(fact)};
+    // 21-nov (pedido del usuario: "no debe dejar de mostrar si ya tiene los adjuntos; el módulo es para el llenado"): una lista que se leyó se muestra y se calcula AUNQUE no esté
+    // ligada a un viaje (por RBHY, booking o contenedor); sin viaje el tipo sale del booking de la lista o se supone 40' HC, y la fila avisa. Solo se alerta si los datos no coinciden.
+    const sinViaje = !vs.length, tipoBk = LLENADO_TIPOS[String(l.booking || '').toUpperCase()], tipoSupuesto = sinViaje && !tipoBk, tiposF = sinViaje ? [tipoBk || '40HC'] : tipos;
+    const fact = facturaDeLista(l), choque = sinViaje ? choqueDeLista(l) : '';
+    return {l, vs, tipos: tiposF, choque, sinViaje, tipoSupuesto, lista: l, llenado: (vs.length || l.volumenM3 > 0) && !sinTipo ? llenadoContenedores(l, tiposF) : null, sinTipo, fact, costo: costoVsVenta(fact)};
   }).sort((a, b) => String(b.l.fecha).localeCompare(String(a.l.fecha)));
 }
 
@@ -5590,11 +5595,10 @@ function pintarLlenado(){
   const barra = x => `<div class="ll-bar"><i class="${x.limita === 'Sobra' ? 'mal' : x.pesoPct > x.volPct ? 'med' : 'ok'}" style="width:${Math.min(100, x.volPct).toFixed(0)}%"></i></div>`;
   const filaHtml = f => {
     const x = f.llenado, v0 = f.vs[0], k = f.l.rbhy + '|' + f.l.delivery;
-    const quien = `<b>${esc(f.l.contenedor || (v0 && v0.contenedor) || 'Sin contenedor')}</b><br><span class="sub">${esc(f.l.rbhy || 'Sin RBHY')}${v0 && v0.pais ? ' · ' + esc(v0.pais) : ''}${f.vs.length > 1 ? ` · ${f.vs.length} contenedores` : ''}</span>`;
-    const resto = !f.vs.length ? `<td colspan="4" class="sub">No hay un viaje EXPO con este RBHY${f.l.contenedor ? ' ni con este contenedor' : ''}${f.l.booking ? ' ni un único viaje sin RBHY con el booking ' + esc(f.l.booking) : ''}${f.choque ? ` · <b style="color:var(--bad)">${esc(f.choque)}</b>` : ''}. Falta el RBHY en el viaje (las Acciones lo proponen desde el correo), o el viaje no está creado, o el RBHY/booking de la lista no es el del viaje.</td>`
-      : f.sinTipo ? `<td colspan="4"><b style="color:var(--bad)">Falta el tipo de contenedor (20 o 40) en el viaje</b> ${f.vs.map(v => `<button type="button" class="link" data-ll-viaje="${esc(v.id)}">${esc(v.id)}</button>`).join(' ')}</td>`
+    const quien = `<b>${esc(f.l.contenedor || (v0 && v0.contenedor) || 'Sin contenedor')}</b><br><span class="sub">${esc(f.l.rbhy || 'Sin RBHY')}${v0 && v0.pais ? ' · ' + esc(v0.pais) : ''}${f.vs.length > 1 ? ` · ${f.vs.length} contenedores` : ''}${f.sinViaje ? ' · <b style="color:var(--warn)" title="La lista no está ligada a un viaje (por RBHY, booking o contenedor)">sin viaje</b>' : ''}</span>`;
+    const resto = f.sinTipo ? `<td colspan="4"><b style="color:var(--bad)">Falta el tipo de contenedor (20 o 40) en el viaje</b> ${f.vs.map(v => `<button type="button" class="link" data-ll-viaje="${esc(v.id)}">${esc(v.id)}</button>`).join(' ')}</td>`
       : !x ? `<td colspan="4" class="sub">No se pudo leer el volumen de la lista: ${esc(f.l.avisos.join(' · ') || 'revise el PDF')}</td>`
-      : `<td>${esc(f.tipos.map(t => t === '40HC' ? "40' HC" : t + "'").join(' + '))}</td>
+      : `<td>${esc(f.tipos.map(t => t === '40HC' ? "40' HC" : t + "'").join(' + '))}${f.tipoSupuesto ? ' <span class="sub" title="No hay viaje ni confirmación de booking leída: se supone 40 pies HC (todos los bookings leídos lo son)">supuesto</span>' : ''}</td>
         <td>${barra(x)}<span class="sub">${fmtLl(f.l.volumenM3)} de ${fmtLl(x.capVol)} m³ · ${fmtLl(x.volPct, 0)}%</span></td>
         <td>${f.l.brutoKg ? fmtLl(x.pesoPct, 0) + '%' : '<span class="sub">—</span>'}${x.pasaPeso ? ' <b style="color:var(--bad)" title="Pasa el peso útil">⚠</b>' : ''}</td>
         <td><span class="ll-pill ${LLENADO_LIMITA[x.limita][0]}" title="${esc(LLENADO_LIMITA[x.limita][2])}">${LLENADO_LIMITA[x.limita][1]}</span>${x.pasaVolumen ? ' <b style="color:var(--bad)" title="Pasa el volumen">⚠</b>' : ''}</td>`;
@@ -5637,7 +5641,7 @@ function diagramaLlenado(f, prods){
 }
 function detalleLlenado(f){
   const l = f.l, x = f.llenado, C = f.costo, F = f.fact, prods = productosContenedor(l, F);
-  const avisos = l.avisos.concat(F ? F.avisos : []), aviso = avisos.length ? `<div class="sub" style="color:var(--warn)">⚠ ${avisos.map(esc).join(' · ')}</div>` : '';
+  const avisos = l.avisos.concat(F ? F.avisos : []), aviso = (f.sinViaje ? `<div class="sub" style="color:var(--warn)">⚠ Esta lista no está ligada a ningún viaje${f.choque ? ': <b>' + esc(f.choque) + '</b>' : ' (por RBHY, booking ni contenedor): falta el RBHY en el viaje —las Acciones lo proponen desde el correo—, o el viaje no está creado'}.${f.tipoSupuesto ? " El cálculo supone un contenedor de 40' HC." : ''}</div>` : '') + (avisos.length ? `<div class="sub" style="color:var(--warn)">⚠ ${avisos.map(esc).join(' · ')}</div>` : '');
   const sw = i => `<span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${COLORES_LL[i % COLORES_LL.length]};vertical-align:-1px"></span>`;
   const conPrecio = prods.some(p => p.valor > 0), conVol = prods.some(p => p.volumenM3 > 0);
   const tab = !prods.length ? '<div class="sub">Esta lista se leyó solo con sus totales (sin el detalle por material).</div>'
@@ -5663,7 +5667,7 @@ async function cargarLlenado(actualizar, historico){
   try {
     const j = await api('llenado', {codigo, actualizar: !!actualizar, historico: !!historico});
     if (!j.ok) throw new Error(j.error || 'error');
-    LLENADO = j.listas || []; LLENADO_FACT = j.facturas || []; LLENADO_CARGA = j.carga || null; LLENADO_TIPOS = j.tipos || {};
+    LLENADO = (j.listas || []).filter(esListaExpo); LLENADO_FACT = j.facturas || []; LLENADO_CARGA = j.carga || null; LLENADO_TIPOS = j.tipos || {};
     if (actualizar) toast(j.nuevas ? `${j.nuevas} ${j.nuevas === 1 ? 'lista nueva leída' : 'listas nuevas leídas'}` : 'No hay listas nuevas en el correo');
     if (historico && LLENADO_CARGA) toast(LLENADO_CARGA.hechos >= LLENADO_CARGA.total ? 'Histórico completo' : `Histórico: ${LLENADO_CARGA.hechos} de ${LLENADO_CARGA.total} viajes; pulse otra vez para seguir`);
   } catch (err) {
@@ -8505,7 +8509,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '34d772c4d0';
+const VERSION_TABLERO = '91da6f9889';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
