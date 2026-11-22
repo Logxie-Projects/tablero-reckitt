@@ -1494,10 +1494,10 @@ body.en-errores #gbar>:not(.g-ops),body.en-errores #modosHdr{display:none}
 </div>
 <div class="ov" id="ovBarrido">
   <div class="modal" role="dialog" aria-modal="true" style="width:min(980px,100%)">
-    <h3>Correos de los últimos 2 días</h3>
+    <h3 id="barridoTitulo">Correos de los últimos 2 días</h3>
     <div class="sub">Lectura directa del buzón de calidad@ con las reglas de detección (sin LogxIA). Por cada correo: si el viaje ya está en la base puede abrirlo o, si el correo trae datos que faltan o cambiaron, "Actualizar viaje"; si no está, "Crear importación" o "Crear exportación". Nada cambia sin su clic y su nombre, y nunca se cierra un viaje (eso lo hace facturación).</div>
     <div id="barridoLista" style="margin-top:12px"></div>
-    <div class="mfoot"><input id="barridoUsuario" placeholder="Su nombre (para crear viajes)" style="width:220px;margin-right:auto"><button class="btn" id="barridoCerrar">Cerrar</button></div>
+    <div class="mfoot"><input id="barridoUsuario" placeholder="Su nombre (para crear viajes)" style="width:220px;margin-right:auto"><select id="barridoDias" title="Cuántos días atrás leer el buzón" style="margin-right:8px"><option value="2">Últimos 2 días</option><option value="5">Últimos 5 días</option><option value="10">Últimos 10 días</option><option value="14">Últimos 14 días</option></select><button class="btn" id="barridoCerrar">Cerrar</button></div>
   </div>
 </div>
 <div class="ov" id="ovProp">
@@ -2645,9 +2645,15 @@ const CLAVES_VIAJE = ['contenedor', 'do', 'booking', 'rbhy', 'obd'];
 // ¿el dato d (correo, acción de la bitácora, propuesta de LogxIA) es de este viaje? Por su id, por un dato fuerte
 // (contenedor, DO, booking, RBHY, OBD o uno de los pedidos; en IMPO el "booking" del correo a veces es el pedido) y,
 // solo si d no trae ninguno de esos, por la placa
+// contenedor de verdad: 4 letras y 7 dígitos (MRSU5008340). Uno mal escrito o con dos números juntos no cuenta
+const contenedorReal = x => { const c = limpioId(x); return /^[A-Z]{4}\d{7}$/.test(c) ? c : ''; };
 function coincide(v, d){
   if (!v || !d) return false;
   if (d.viajeId && v.id === d.viajeId) return true;
+  // 22-nov (pedido 11682, dos contenedores): un pedido con varios contenedores es un viaje por contenedor y todos comparten pedido y DO.
+  // El pedido y el DO ligaban el contenedor 2 con el viaje del contenedor 1 y no se podía crear: dos contenedores distintos son viajes distintos.
+  const cv = contenedorReal(v.contenedor), cd = contenedorReal(d.contenedor);
+  if (cv && cd && cv !== cd) return false;
   const ped = pedidosDe(v.pedido), pedD = [...pedidosDe(d.pedido), ...pedidosDe(d.booking)];
   // 19-nov (revisión): "PEND" o "Sin info" en los dos lados, o un "1", no son un dato que ligue una acción con un viaje
   const liga = (a, b) => mismoDato(a, b) && textoReal(a) && !/^pte/i.test(String(a).trim()) && compacto(a).length >= 4;
@@ -2664,6 +2670,30 @@ const esPrueba = v => minus(v.empresa) === minus(EMPRESA_PRUEBA);
 // …y entre los vigentes, el viaje principal antes que sus subviajes (comparten pedido, DO y contenedor: IMPO-016 e IMPO-018)
 const viajesDe = (d, lista) => (lista || viajes).filter(v => coincide(v, d)).sort((a, b) => vigente(b) - vigente(a) || !!a.padre - !!b.padre);
 const viajeDe = (d, lista) => (d && d.viajeId && (lista || viajes).find(v => v.id === d.viajeId)) || viajesDe(d, lista)[0];
+// 22-nov: los contenedores de un pedido IMPO (d = {pedido, do, contenedores: [...]}, del correo o de sus PDF) que todavía no tienen su viaje.
+// Un viaje por contenedor, todos con el mismo pedido y DO. Si un viaje del pedido no tiene contenedor, no se adivina cuál de los números es
+// el suyo: no ofrece crear (primero se anota el contenedor en ese viaje). No cuentan los cancelados ni los subviajes.
+function contenedoresQueFaltan(d, lista){
+  const cs = [...new Set(((d && d.contenedores) || []).map(contenedorReal).filter(Boolean))]; if (!cs.length) return [];
+  const peds = pedidosDe(d.pedido), mismos = (lista || viajes).filter(v => !v.padre && v.operacion === 'IMPO' && situacion(v) !== 'Cancelado'
+    && ((peds.length && pedidosDe(v.pedido).some(p => peds.includes(p))) || (textoReal(d.do) && mismoDato(v.do, d.do))));
+  if (mismos.some(v => !contenedorReal(v.contenedor))) return [];
+  const tiene = new Set(mismos.map(v => contenedorReal(v.contenedor)));
+  return cs.filter(c => !tiene.has(c));
+}
+// 22-nov: los contenedores de pedidos IMPO que ya tienen viaje pero a los que les falta el de otro contenedor. docs = {DO o pedido: [contenedores]}
+// (pestaña "Documentos IMPO", leídos de los PDF del correo; el servidor los manda al equipo). Solo carga en contenedor: la carga suelta (LCL) no cuenta.
+// → [{contenedor, pedido, do, primero (el viaje que ya existe), total}]. Con ellos la Bandeja pone una línea "Crear viaje" por contenedor, a la vista de todos.
+function contenedoresSinViaje(lista, docs){
+  const DI = {}; Object.keys(docs || {}).forEach(k => { DI[limpioId(k)] = docs[k]; });
+  const out = [], vistos = new Set(), L = lista || viajes;
+  L.filter(v => v.operacion === 'IMPO' && !v.padre && vigente(v) && !esPrueba(v) && !esLCL(v) && (v.pedido || v.do)).forEach(v => {
+    const cs = DI[limpioId(v.do)] || DI[limpioId(v.pedido)]; if (!cs || cs.length < 2) return;
+    contenedoresQueFaltan({pedido: v.pedido, do: v.do, contenedores: cs}, L).forEach(c => { if (vistos.has(c)) return; vistos.add(c);
+      out.push({contenedor: c, pedido: v.pedido || '', do: v.do || '', primero: v.id, total: cs.length}); });
+  });
+  return out;
+}
 
 /* ---------- acciones de LogxIA (bitácora): su viaje y si el avance del viaje ya las muestra hechas ----------
    Las usan el tablero (Acciones, Mi turno, ventana del viaje) y el backend (resumen del día), con la misma regla. */
@@ -3824,6 +3854,7 @@ function aplicarDatos(j, clave, guardadoEn){
     window.PREGUNTAS = j.preguntas || [];   // preguntas al agente LogxIA (preguntas.js)
     window.TURNOS_C = j.turnosConductores || [];   // conductores enturnados y disponibles (app Viajes ETP)
     window.CONDUCTORES = j.conductores || [];
+    window.DOCS_IMPO = j.docsImpo || {};   // {DO o pedido: [contenedores]} leídos de los PDF del correo, solo el equipo: la Bandeja ofrece crear el viaje de cada contenedor que falta (bandeja.js)
     window.GPS_PARADAS = j.gpsParadas || [];   // llegada y salida por parada según el GPS (Gps.gs, pestaña "GPS paradas"): para la tabla de tiempos de Indicadores; la Torre de Control no las pinta (decisión del usuario, 11-nov)
     window.GPS = j.gps || [];   // GPS de Satrack por placa, solo el equipo (kpis-mapa.js)
     window.CALIF = j.calificaciones || null;
@@ -4177,7 +4208,7 @@ const ATAJOS = [
   ['propuestas', '✔ Ver los datos del correo', b => /Llenar datos desde correos/i.test(b.accion) && !pareceHecha(b), () => abrirPropuestas()],   // si ya están en el viaje, no queda nada que revisar
   // pedido de la operación NACIONAL (estibas de ERCOL…): formulario del viaje nacional con lo que dice el correo (nacional.js)
   ['nacional', '＋ Crear viaje nacional', b => operacionAccion(b) === 'NACIONAL' && !viajeDeAccion(b) && !viajeNacionalDe(b) && !/^sin acci/i.test(b.accion || ''), b => nuevoNacional(b)],
-  ['viaje', '＋ Crear viaje', b => pideCrearViaje(b) && !yaCreado(b), () => abrirBarrido()],   // si ya existe, no (yaCreado)
+  ['viaje', '＋ Crear viaje', b => pideCrearViaje(b) && !yaCreado(b), b => abrirBarrido({dias: diasDeCorreo(b), pedido: datoDeAccion(b).pedido || datoDeAccion(b).do || ''})],   // si ya existe, no (yaCreado)
   ['subviaje', '↪ Crear subviaje', b => /crear subviaje de [A-Z]+-\d+/i.test(b.accion), b => nuevoSubviaje(b.accion.match(/crear subviaje de ([A-Z]+-\d+)/i)[1])],   // 19-nov: una sola regex (con punto final, la 2.ª daba null)
 ];
 const atajoDe = b => b.estadoAccion==='Hecha' || window.MODO_CLIENTE ? null : ATAJOS.find(a => a[2](b));
@@ -6244,7 +6275,7 @@ function pintarForm(v){
       : t==='lista' ? `<select data-k="${k}"><option value=""></option>${opc(x)}</select>`
       : t==='num' ? `<input data-k="${k}" data-num inputmode="numeric" value="${esc(val)}" placeholder="$">`
       // placa y conductor: se eligen del registro en un solo panel y están conectados (registro.js abrirVC); debajo, celular y propietario
-      : ['conductor','placa'].includes(k) && !window.MODO_CLIENTE ? `<div class="cond-pick"><input data-k="${k}" value="${esc(val)}" readonly placeholder="Elegir del registro" data-elegir-vc="${k}" title="Clic para elegir del registro"><button type="button" class="btn" data-elegir-vc="${k}">${k==='conductor' ? '🧑‍✈️' : '🚚'} Elegir</button></div><div class="sub vc-info" id="${k==='conductor' ? 'infoCond' : 'infoPlaca'}"></div>`
+      : ['conductor','placa'].includes(k) && !window.MODO_CLIENTE ? `<div class="cond-pick"><input data-k="${k}" value="${esc(val)}" readonly placeholder="Elegir del registro" data-elegir-vc="${k}" title="Clic para elegir del registro"><button type="button" class="btn" data-elegir-vc="${k}">${k==='conductor' ? '🧑‍✈️' : '🚚'} Elegir</button><button type="button" class="btn" data-quitar-vc="${k}" title="${k==='conductor' ? 'Dejar el viaje sin conductor' : 'Dejar el viaje sin vehículo'}" aria-label="${k==='conductor' ? 'Quitar el conductor' : 'Quitar el vehículo'}">✕</button></div><div class="sub vc-info" id="${k==='conductor' ? 'infoCond' : 'infoPlaca'}"></div>`
       : `<input data-k="${k}" value="${esc(val)}"${t==='dl' ? ` list="${x}"` : ''}>`;
     if (t==='extras') return `<div style="grid-column:1/-1"><label>${l} <span class="sub">(concepto y valor; el total se suma solo)</span></label>
       <div id="mExtras">${(itemsExtra(v).length || !v.padre ? itemsExtra(v) : CONCEPTOS_SUB.map(k=>[k,0])).map(filaExtra).join('')}</div>
@@ -6682,14 +6713,14 @@ function abrirVC(quien){
       <div class="sub">Del registro. Toque el conductor (llega su placa) o una placa (llega quien la maneja). Si no está, créelo abajo.</div>
       <input id="condBuscar" type="search" placeholder="🔍 Nombre, cédula, celular o placa" style="width:100%;margin:10px 0">
       <div id="condLista" class="cond-lista"></div>
-      <div class="m-actions" style="justify-content:space-between;flex-wrap:wrap;gap:6px"><span><button type="button" class="btn" id="condNuevo">＋ Conductor nuevo</button> <button type="button" class="btn" id="vehNuevo">＋ Vehículo nuevo</button></span><button type="button" class="btn" id="condCerrar">Cerrar</button></div></div>`;
+      <div class="m-actions" style="justify-content:space-between;flex-wrap:wrap;gap:6px"><span><button type="button" class="btn" id="condNuevo">＋ Conductor nuevo</button> <button type="button" class="btn" id="vehNuevo">＋ Vehículo nuevo</button> <button type="button" class="btn" id="vcQuitar" title="Deja el viaje sin vehículo y sin conductor">✕ Dejar sin vehículo ni conductor</button></span><button type="button" class="btn" id="condCerrar">Cerrar</button></div></div>`;
     document.body.appendChild(ov);
     ov.onclick = e => { if (e.target === ov) ov.classList.remove('open'); };
     $('#condCerrar').onclick = () => ov.classList.remove('open');
     $('#condBuscar').oninput = pintarVC;
     $('#condLista').onclick = e => { const b = e.target.closest('[data-vc]'); if (!b || b.disabled) return; e.stopPropagation();
       const [cond, placa] = b.dataset.vc.split('|'); elegirVC(cond, placa); };
-    $('#condNuevo').onclick = conductorNuevo; $('#vehNuevo').onclick = vehiculoNuevo;
+    $('#condNuevo').onclick = conductorNuevo; $('#vehNuevo').onclick = vehiculoNuevo; $('#vcQuitar').onclick = () => quitarVC('ambos');
   }
   $('#condBuscar').value = '';
   ov.classList.add('open'); pintarVC(); $('#condBuscar').focus();
@@ -6761,6 +6792,15 @@ function pintarInfoVC(){
     : esc([v.empresa, v.propietario && 'propietario ' + v.propietario, celularCO(v.celularPropietario) && '📱 ' + celularCO(v.celularPropietario)].filter(Boolean).join(' · '));
 }
 document.addEventListener('click', e => { const b = e.target.closest('[data-elegir-vc]'); if (!b) return; abrirVC(b.dataset.elegirVc); });
+// 22-nov (EXPO-036 y EXPO-040, El Salvador: asignados por error, aún sin conductor): los campos son de solo lectura y el panel solo elegía de la lista,
+// no había cómo dejar el viaje sin vehículo ni conductor. Se quita en el formulario y se guarda con el botón de siempre; al quitar placa y conductor
+// el servidor cierra la asignación del conductor (y su enlace). cuales: 'conductor' | 'placa' | 'ambos'
+function quitarVC(cuales){
+  (cuales === 'ambos' ? ['conductor', 'placa'] : [cuales]).forEach(k => ponerVC(k, ''));
+  const ov = $('#ovCond'); if (ov) ov.classList.remove('open');
+  toast(`${cuales === 'ambos' ? 'Sin vehículo ni conductor' : cuales === 'placa' ? 'Sin vehículo' : 'Sin conductor'}: pulse Guardar para dejarlo así`);
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-quitar-vc]'); if (b) quitarVC(b.dataset.quitarVc); });
 document.addEventListener('input', e => { if (e.target.matches && e.target.matches('#mForm [data-k=conductor], #mForm [data-k=placa]')) pintarInfoVC(); });
 
 $('#regGuardar').onclick = guardarRegistroUI;
@@ -7429,19 +7469,39 @@ async function aplicarProgramacion(op){
   if (btnAplicar) btnAplicar.disabled = false;
 }
 /* ---------- buscar correos ahora: lectura directa del buzón de calidad@ (reglas fijas) ---------- */
-let BARRIDO = [];
+let BARRIDO = [], BARRIDO_DIAS = 2, BARRIDO_PED = '', BARRIDO_CONT = '';
+// cuántos días atrás leer el buzón para que aparezca el correo de una acción: el barrido normal mira 2 días y el correo de un viernes ya no
+// estaba el domingo (22-nov, pedido 11441: "＋ Crear viaje" abría una lista sin su correo)
+// Tope de 14 días: el servidor lee los 80 hilos más recientes de Reckitt y Agecoldex, y más atrás ya no alcanza (la acción en la Bandeja no vence; el correo sí sale de la lista)
+const BARRIDO_MAX = 14;
+const diasDeCorreo = b => { const f = new Date(b && (b.fechaCorreo || b.registrado)); return isNaN(f) ? 5 : Math.min(BARRIDO_MAX, Math.max(2, Math.ceil((Date.now() - f) / 864e5) + 1)); };
+const contenedoresDeCorreo = c => (/LCL/.test((c.docs || {}).unidad || '') || c.tipo === 'Programación' || c.tipo === 'Comodato') ? []
+  : contenedoresQueFaltan({pedido: c.pedido, do: c.do, contenedores: [c.contenedor, ...((c.docs || {}).contenedores || [])]});
+// el viaje de cada correo se vuelve a buscar aquí con la regla del tablero (dos contenedores del mismo pedido son dos viajes), sin depender de
+// la versión del servidor
+function enlazarBarrido(){
+  BARRIDO.forEach(c => { if (c.tipo === 'Programación' || c.tipo === 'Comodato') return;
+    const v = viajeDe({contenedor: c.contenedor, pedido: c.pedido, do: c.do, booking: c.booking}, viajes);
+    c.viajeId = v ? v.id : '';
+    c.enBase = v ? {...(c.enBase || {}), operacion: v.operacion, fechaCargue: v.fechaCargue || '', bodega: v.bodega || '', fechaLevante: v.fechaLevante || '', contenedor: v.contenedor || '', do: v.do || '', ciudadDevolucion: v.ciudadDevolucion || ''} : null; });
+}
+const focoBarrido = c => !!BARRIDO_PED && [c.pedido, c.do, c.booking, c.docTrans].some(x => compacto(x) === compacto(BARRIDO_PED));
 const BODEGAS_CORREO = [[/cortijo/i, 'DHL Cortijo'], [/agecolda/i, 'Agecolda'], [/solistica/i, 'Solistica']];
-async function abrirBarrido(){
+async function abrirBarrido(opt){
+  const o = opt && !opt.target ? opt : {};   // desde un botón de acción llega {dias, pedido}; desde "Buscar correos ahora", el clic
+  BARRIDO_DIAS = Math.min(BARRIDO_MAX, Math.max(2, Number(o.dias) || 2)); BARRIDO_PED = String(o.pedido || ''); BARRIDO_CONT = contenedorReal(o.contenedor);   // contenedor de la línea de la Bandeja: solo crearlo cierra esa acción
   if (!CFG.SHEETS_API_URL || !claveActual()) return toast('Funciona desde el tablero publicado');
-  $('#barridoLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">Leyendo el buzón de calidad@…</div>';
+  $('#barridoLista').innerHTML = `<div class="sub" style="padding:20px;text-align:center">Leyendo el buzón de calidad@ (últimos ${BARRIDO_DIAS} días)…</div>`;
+  $('#barridoTitulo').textContent = `Correos de los últimos ${BARRIDO_DIAS} días`; $('#barridoDias').value = String(BARRIDO_DIAS);
   $('#barridoUsuario').value = usuarioGuardado() || '';
   $('#ovBarrido').classList.add('open');
   try {
-    const r = await fetch(CFG.SHEETS_API_URL + '?formato=json&que=correos&dias=2&clave=' + encodeURIComponent(claveActual()));
+    const r = await fetch(CFG.SHEETS_API_URL + '?formato=json&que=correos&dias=' + BARRIDO_DIAS + '&clave=' + encodeURIComponent(claveActual()));
     const t = await r.text();
     let j; try { j = JSON.parse(t); } catch(e) { throw new Error('el servidor aún no tiene permiso para leer el buzón de calidad@'); }
     if (!j.ok) throw new Error(j.error || 'error');
-    BARRIDO = j.correos || [];
+    BARRIDO = j.correos || []; enlazarBarrido();
+    if (BARRIDO_PED) BARRIDO.sort((a, b) => focoBarrido(b) - focoBarrido(a));   // el correo del pedido que se busca, arriba
   } catch(e) { $('#barridoLista').innerHTML = `<div class="sub" style="padding:20px;text-align:center">No se pudo leer el buzón: ${esc(e.message)}.</div>`; return; }
   pintarBarrido();
 }
@@ -7467,10 +7527,13 @@ const ciudadDevolucionDe = d => d === 'CLO' ? 'Cali' : /^bogot/i.test(d || '') ?
 const bodegaDeCorreo = lugar => lugar ? ((BODEGAS_CORREO.find(([re]) => re.test(lugar)) || [null, lugar])[1]) : '';
 const fmtCambio = (k, x) => /^fecha/.test(k) ? fd(x) : x;
 function pintarBarrido(){
-  if (!BARRIDO.length) { $('#barridoLista').innerHTML = '<div class="sub" style="padding:20px;text-align:center">No hay correos del ciclo de operación en los últimos 2 días.</div>'; return; }
+  if (!BARRIDO.length) { $('#barridoLista').innerHTML = `<div class="sub" style="padding:20px;text-align:center">No hay correos del ciclo de operación en los últimos ${BARRIDO_DIAS} días.</div>`; return; }
   const btn = (txt, act, i, primario) => `<button class="btn${primario?' primary':''}" style="margin:4px 4px 0 0;padding:3px 10px" data-act="${act}" data-i="${i}">${txt}</button>`;
   const fila = (c, i) => {
     let estado = '', botones = '';
+    // un pedido con varios contenedores es un viaje por contenedor: lo que aún no tiene viaje se crea uno por uno (22-nov, pedido 11682)
+    const faltan = contenedoresDeCorreo(c).filter(x => c.viajeId || x !== contenedorReal(c.contenedor)), porContenedor = !c.viajeId && faltan.length >= 2 && !c.contenedor;
+    const btnC = x => `<button class="btn primary" style="margin:4px 4px 0 0;padding:3px 10px" data-act="crearcont" data-i="${i}" data-c="${x}">Crear viaje del contenedor ${x}</button>`;
     if (c.viajeId) {
       const ch = cambiosDeCorreo(c), n = Object.keys(ch).length;
       estado = `<span style="color:var(--ok);font-weight:600">✓ ${esc(c.viajeId)}</span>` +
@@ -7484,18 +7547,20 @@ function pintarBarrido(){
       estado = '<span class="sub">Dato de devolución</span>';
     } else {
       estado = `<span style="color:var(--bad);font-weight:600">${c.tipo==='Nueva exportación' ? 'Booking' : 'Pedido'} no está en la base</span>`;
-      botones = btn(c.tipo==='Nueva exportación' ? 'Crear exportación' : 'Crear importación', 'crear', i, true);
+      botones = porContenedor ? '' : btn(c.tipo==='Nueva exportación' ? 'Crear exportación' : 'Crear importación', 'crear', i, true);
     }
+    if (faltan.length) { estado += `${estado ? '<br>' : ''}<span style="color:var(--bad);font-weight:600">Falta el viaje de ${faltan.length === 1 ? 'otro contenedor' : faltan.length + ' contenedores'} de este pedido</span>`; botones += faltan.filter(x => !(!c.viajeId && x === contenedorReal(c.contenedor))).map(btnC).join(''); }
     botones += btn('Ver correo', 'ver', i);
     const D = c.docs || {};
     const datos = [c.booking && 'BK '+c.booking, c.rbhy, c.pais, c.do && 'DO '+c.do, c.pedido && 'PO '+c.pedido, c.contenedor].filter(Boolean).map(esc).join(' · ')
       + (c.docs ? `<br><span class="sub" title="Leído en los PDF del correo">📎 ${esc([D.unidad, D.bultos, D.peso, D.puerto, c.docTrans || D.bl, c.levante && 'levante ' + fd(c.levante), c.solicitante].filter(Boolean).join(' · ') || 'documentos archivados')}</span>` : '');
     const desc = [c.lugar, c.fechaDescargue && fd(c.fechaDescargue), c.hora, c.puerto && (c.puerto+(c.terminal?' ('+c.terminal+')':'')), c.devolucion && 'devol. '+c.devolucion].filter(Boolean).map(esc).join(' · ');
-    return `<tr><td class="sub" style="white-space:nowrap">${esc(c.fecha.slice(5,16).replace('T',' '))}</td><td><b>${esc(c.tipo)}</b><br><span class="sub">${esc(c.firma || c.remitente.replace(/<.*>/,''))}</span></td>
+    return `<tr${focoBarrido(c) ? ' style="background:color-mix(in srgb,var(--accent) 10%,transparent)"' : ''}><td class="sub" style="white-space:nowrap">${esc(c.fecha.slice(5,16).replace('T',' '))}</td><td><b>${esc(c.tipo)}</b><br><span class="sub">${esc(c.firma || c.remitente.replace(/<.*>/,''))}</span></td>
       <td>${datos || '—'}<br><span class="sub" title="${esc(c.asunto)}">${esc(c.asunto.slice(0,70))}${c.asunto.length>70?'…':''}</span></td><td>${desc || '—'}</td><td>${estado}<div>${botones}</div></td></tr>`;
   };
   const pend = BARRIDO.filter(c => !c.viajeId && c.tipo !== 'Comodato').length, cambios = BARRIDO.filter(c => c.viajeId && Object.keys(cambiosDeCorreo(c)).length).length;
-  $('#barridoLista').innerHTML = `<div class="tbl-wrap"><table class="prop"><tr><th>Llegó</th><th>Tipo</th><th>Booking · DO · Pedido · Contenedor</th><th>Descargue / retiro</th><th>En la base · qué hacer</th></tr>${BARRIDO.map(fila).join('')}</table></div>
+  const sinFoco = BARRIDO_PED && !BARRIDO.some(focoBarrido) ? `<div style="color:var(--bad);font-weight:600;margin-bottom:8px">No hay ningún correo del pedido ${esc(BARRIDO_PED)} en los últimos ${BARRIDO_DIAS} días. Pruebe con más días (abajo).</div>` : '';
+  $('#barridoLista').innerHTML = `${sinFoco}<div class="tbl-wrap"><table class="prop"><tr><th>Llegó</th><th>Tipo</th><th>Booking · DO · Pedido · Contenedor</th><th>Descargue / retiro</th><th>En la base · qué hacer</th></tr>${BARRIDO.map(fila).join('')}</table></div>
     <p class="sub" style="margin-top:6px">${BARRIDO.length} correo${BARRIDO.length===1?'':'s'} · ${pend} sin viaje en la base · ${cambios} con datos por actualizar. Lo que cree o actualice queda en el Historial con su nombre.</p>`;
 }
 async function aplicarDesdeCorreo(c){
@@ -7525,31 +7590,33 @@ async function crearExpoDesdeCorreo(c){
     cerrarAccionEnCurso('viaje', `viaje ${j.id} creado en el tablero`);
   } catch(e) { toast('No se pudo crear la exportación: ' + e.message); }
 }
-async function crearDesdeCorreo(c){
+async function crearDesdeCorreo(c, cont){
   const usuario = $('#barridoUsuario').value.trim();
   if (!usuario) { $('#barridoUsuario').focus(); return toast('Escriba su nombre para crear el viaje'); }
   guardarUsuario(usuario);
-  const bodega = bodegaDeCorreo(c.lugar);
+  const hermano = cont && cont !== c.contenedor ? viajeDe({pedido: c.pedido, do: c.do}, viajes) : null;   // el viaje del otro contenedor del pedido: misma bodega y misma devolución
+  const bodega = bodegaDeCorreo(c.lugar) || (hermano && hermano.bodega) || '';
   // lo básico que el tablero necesita y el correo no trae, leído en sus PDF (Documentos.gs): puerto, unidad (LCL), contenedor y BL
   const D = c.docs || {}, lcl = /LCL/.test(D.unidad || '');
   const puerto = /buenaventura/i.test(c.puerto) ? 'Buenaventura' : /cartagena/i.test(c.puerto) ? 'Cartagena' : (D.puerto || '');
-  const contenedor = c.contenedor || (!lcl && (D.contenedores || []).length === 1 ? D.contenedores[0] : '');
+  const contenedor = cont || c.contenedor || (!lcl && (D.contenedores || []).length === 1 ? D.contenedores[0] : '');
+  const extra = !!cont && cont !== c.contenedor;   // otro contenedor del mismo pedido: su fecha de entrega no es la del correo (trae una por contenedor)
   const campos = {situacion:'Abierto', estado:'Sin asignar', pedido:c.pedido, do:c.do, contenedor, puerto, bodega,
     unidad: D.unidad || '', booking: c.docTrans || D.bl || '',
-    destino: /cortijo|agecolda/i.test(bodega) ? 'Yumbo' : '', fechaCargue:c.fechaDescargue, ciudadDevolucion: ciudadDevolucionDe(c.devolucion),
+    destino: /cortijo|agecolda/i.test(bodega) ? 'Yumbo' : '', fechaCargue: extra ? '' : c.fechaDescargue, ciudadDevolucion: ciudadDevolucionDe(c.devolucion) || (hermano && hermano.ciudadDevolucion) || '',
     empresa:c.empresa, solicitante: c.solicitante || (/diana/i.test(c.firma) ? 'Diana Carolina Toro' : ''),
     fechaLevante: c.tipo==='Orden de retiro' ? c.fecha.slice(0,10) : '',
     // la base no tiene columnas de peso ni de fecha del levante: van en la observación, con la carga suelta
-    observacion: `Correo ${c.tipo} ${c.fecha.slice(0,10)}: ${[lcl && 'carga suelta (LCL)', D.bultos, D.peso, c.levante && 'levante '+fd(c.levante), c.lugar, c.fechaDescargue && fd(c.fechaDescargue), c.hora, c.terminal && 'terminal '+c.terminal, c.devolucion && 'devolución '+c.devolucion,
+    observacion: `Correo ${c.tipo} ${c.fecha.slice(0,10)}: ${[extra && `otro contenedor del mismo pedido: ${cont}`, lcl && 'carga suelta (LCL)', D.bultos, D.peso, c.levante && 'levante '+fd(c.levante), c.lugar, c.fechaDescargue && fd(c.fechaDescargue), c.hora, c.terminal && 'terminal '+c.terminal, c.devolucion && 'devolución '+c.devolucion,
       c.entregaEstimada && 'entrega estimada ' + c.entregaEstimada + ' (aún sin cita)'].filter(Boolean).join(' · ')}`};
   Object.keys(campos).forEach(k => { if (campos[k] === '') delete campos[k]; });
   try {
     const j = await api('nuevo', {operacion:'IMPO', campos, usuario: usuario + ' (desde correo)'});
     if (!j.ok) throw new Error(j.error || 'error');
-    c.viajeId = j.id; pintarBarrido();
-    toast(`Viaje ${j.id} creado: queda arriba como NUEVO hasta que alguien lo tome`);
+    if (!extra) { c.viajeId = j.id; pintarBarrido(); }
+    toast(`Viaje ${j.id} creado: queda arriba como NUEVO hasta que alguien lo tome${extra ? ` · falta su fecha de entrega: el correo trae una fecha por contenedor` : ''}`);
     await cargar(); render();
-    cerrarAccionEnCurso('viaje', `viaje ${j.id} creado en el tablero`);
+    if (!BARRIDO_CONT || BARRIDO_CONT === contenedorReal(contenedor)) cerrarAccionEnCurso('viaje', `viaje ${j.id} creado en el tablero`);
     // 13-nov: "su solicitud ha sido procesada": vista previa del aviso a quien lo pidió (con Gallego y ETP en copia); no sale sin revisarlo
     // 13-nov (primer envío real): la hoja tarda unos segundos en devolver el viaje recién creado; sin esperarlo, la vista previa no se abría
     for (let i = 0; i < 6 && !viajePorId(j.id); i++) { await new Promise(r => setTimeout(r, 1500)); await cargar(); render(); }
@@ -7558,6 +7625,7 @@ async function crearDesdeCorreo(c){
   } catch(e) { toast('No se pudo crear el viaje: ' + e.message); }
 }
 $('#btnBarrido').onclick = abrirBarrido;
+$('#barridoDias').onchange = () => abrirBarrido({dias: +$('#barridoDias').value, pedido: BARRIDO_PED, contenedor: BARRIDO_CONT});
 $('#barridoCerrar').onclick = () => $('#ovBarrido').classList.remove('open');
 $('#progCerrar').onclick = () => $('#ovProg').classList.remove('open');
 $('#ovProg').onclick = e => { if (e.target.id==='ovProg') $('#ovProg').classList.remove('open'); };
@@ -7569,6 +7637,7 @@ $('#ovBarrido').onclick = e => {
   if (b.dataset.act === 'ver') return window.open(`https://mail.google.com/mail/?authuser=calidad@stentrapetrol.com#all/${c.msgId}`, '_blank');
   if (b.dataset.act === 'abrir') { $('#ovBarrido').classList.remove('open'); return abrir(c.viajeId); }
   if (b.dataset.act === 'prog') return abrirProgramacion(c);
+  if (b.dataset.act === 'crearcont') { b.disabled = true; return crearDesdeCorreo(c, b.dataset.c).finally(() => { b.disabled = false; }); }
   b.disabled = true;
   if (b.dataset.act === 'aplicar') aplicarDesdeCorreo(c).finally(() => { b.disabled = false; });
   else if (c.tipo === 'Nueva exportación') crearExpoDesdeCorreo(c);
@@ -8610,7 +8679,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '25b0e837f2';
+const VERSION_TABLERO = '0d98930571';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -10735,7 +10804,17 @@ function armarBandeja(){
     const dato = [d.pedido && 'pedido ' + d.pedido, d.do && 'DO ' + d.do, d.booking && 'booking ' + d.booking, d.rbhy, d.contenedor && 'contenedor ' + d.contenedor, d.empresa].filter(Boolean).join(' · ');
     g.sueltas.forEach(s => usadas.add(s.id));
     add(null, {b: 'crear', k: 'sv|' + k, area: 'Operaciones', html: `<b>Crear viaje ${esc(op)} · ${esc(dato)}</b><br><span class="sub">Hay ${g.sueltas.length === 1 ? 'una acción' : g.sueltas.length + ' acciones'} de este pedido y el viaje no está en la base · ${esc(quien)}</span>${g.sueltas.map(lineaEspera).join('')}`,
-      acc: `<button type="button" class="link" onclick="abrirBarrido()" title="Abre los correos recientes: busque este pedido y pulse Crear importación">＋ Crear viaje</button>`, roja: g.sueltas.some(s => pedidoRojo(s))}, 'Viajes por crear', s0);
+      acc: `<button type="button" class="link" onclick="abrirBarrido({dias: ${diasDeCorreo(s0)}, pedido: '${esc(d.pedido || d.do || '')}'})" title="Abre los correos de los últimos días y pone arriba el de este pedido: pulse Crear importación">＋ Crear viaje</button>`, roja: g.sueltas.some(s => pedidoRojo(s))}, 'Viajes por crear', s0);
+  });
+  // 22-nov (pedido 11682, dos contenedores; el usuario: "para que sea consensuado la creación de un segundo"): un pedido IMPO con varios contenedores es un
+  // viaje por contenedor. Los PDF del correo (Documentos IMPO) dicen cuántos son; si falta el viaje de alguno, sale aquí, a la vista de todo el equipo,
+  // con su botón. Nada se crea solo: lo crea una persona con su nombre y queda en el Historial. Si LogxIA ya registró la acción de crear ese contenedor, no se repite.
+  const yaPide = x => B.some(b => pideCrearViaje(b) && !yaCreado(b) && contenedorReal(datoDeAccion(b).contenedor) === x);
+  contenedoresSinViaje(viajes, window.DOCS_IMPO).filter(x => !yaPide(x.contenedor)).forEach(x => {
+    const ref = esc(x.pedido || x.do);
+    add(null, {b: 'crear', k: 'cc|' + x.contenedor, area: 'Operaciones', html: `<b>Crear viaje IMPO · contenedor ${esc(x.contenedor)} · pedido ${ref}</b><br><span class="sub">El pedido trae ${x.total} contenedores (según los PDF del correo) y este no tiene viaje todavía · el primero es ${esc(x.primero)}</span>`,
+      acc: `<button type="button" class="link" onclick="abrirBarrido({dias: 10, pedido: '${ref}', contenedor: '${esc(x.contenedor)}'})" title="Abre los correos del pedido: pulse Crear viaje del contenedor ${esc(x.contenedor)}">＋ Crear viaje</button>`},
+      'Viajes por crear', {asunto: 'importación', accion: 'Crear viaje IMPO'});
   });
   // 11-nov (decisión del usuario: "vigilarlos igual"): el viaje principal quedó Cerrado con el urbano de un subviaje todavía pendiente.
   // Antes ese subviaje desaparecía de aquí (solo se recorrían los viajes abiertos).
