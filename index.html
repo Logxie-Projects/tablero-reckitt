@@ -2668,6 +2668,19 @@ function hallazgos(v){
   }
   return e;
 }
+/* ---------- pendientes de un viaje: UNA lista para la Bandeja y el correo (22-nov, auditoría paso 2) ----------
+ * Antes cada pantalla volvía a decidir, con sus propios filtros, qué hallazgo era "falta", cuál "por hacer" y cuál ya estaba cubierto por
+ * otra línea; el correo contaba distinto que la Bandeja. Ahora lo dice el dominio, una vez. Cada pendiente = el hallazgo de validar más:
+ *   id (regla|viaje), clase y resolver (del catálogo) y
+ *   bloque: 'pregunta' (alerta de criterio que se responde) · 'hacer' (lo que viene: conseguir un dato antes de una fecha) ·
+ *           'falta' (un dato que falta o está mal) · '' (no se lista aparte, porque lo cubre otra línea: ver 'cubre');
+ *   cubre:  'seguimiento' (el viaje sin actualizar ya sale como "¿Pasó?" o "Sin actualizar") · 'cobertura' (sin vehículo a 72 h o menos ya
+ *           sale como "Sin vehículo"). */
+function pendientesDeViaje(v){
+  const cobertura = !v.padre && sinCobertura(v);
+  return validar(v).map(e => { const R = reglaDe(e) || {}, cubre = e.regla === 'seguimiento.sinActualizar' ? 'seguimiento' : cobertura && e.regla === 'vehiculo.falta' ? 'cobertura' : '';
+    return {...e, id: idPendiente(e.regla, v), clase: R.clase || '', resolver: R.resolver || '', cubre, bloque: cubre ? '' : admiteNoAplica(e.regla) ? 'pregunta' : e.tipo === 'Alerta' ? 'hacer' : 'falta'}; });
+}
 // días de demora del vacío IMPO: desde la fecha límite hasta la devolución (o hoy si no se ha devuelto)
 const demora = v => v.fechaLimite ? Math.max(0, diffDias(v.fechaDevolucion || HOY) - diffDias(v.fechaLimite)) : null;
 // EXPO: el contenedor vacío se retira en patio el día anterior al llenado en planta Reckitt
@@ -2759,19 +2772,47 @@ const CLAVES_VIAJE = ['contenedor', 'do', 'booking', 'rbhy', 'obd'];
 // solo si d no trae ninguno de esos, por la placa
 // contenedor de verdad: 4 letras y 7 dígitos (MRSU5008340). Uno mal escrito o con dos números juntos no cuenta
 const contenedorReal = x => { const c = limpioId(x); return /^[A-Z]{4}\d{7}$/.test(c) ? c : ''; };
+// 22-nov (auditoría, regla general): no todos los datos identifican igual.
+//   · ÚNICOS: contenedor, RBHY y OBD son de UN solo viaje. Si uno coincide, el dato es de ese viaje, aunque otro venga distinto
+//     (cambio o corrección de contenedor con el mismo RBHY: sigue siendo el mismo viaje).
+//   · DE GRUPO: pedido, DO y booking / BL los comparten varios viajes (un pedido con dos contenedores, un booking con tres). Ligan
+//     solo si ningún dato único dice lo contrario: dos contenedores reales distintos son dos viajes distintos (pedido 11682).
+// Antes cualquier dato igual ligaba, y el pedido juntaba el contenedor 2 con el viaje del contenedor 1.
+const CLAVES_UNICAS = ['contenedor', 'rbhy', 'obd'], CLAVES_GRUPO = ['do', 'booking'];
+// "PEND" o "Sin info" en los dos lados, o un "1", no son un dato que ligue una acción con un viaje (19-nov)
+const ligaDato = (a, b) => mismoDato(a, b) && textoReal(a) && !/^pte/i.test(String(a).trim()) && compacto(a).length >= 4;
 function coincide(v, d){
   if (!v || !d) return false;
   if (d.viajeId && v.id === d.viajeId) return true;
-  // 22-nov (pedido 11682, dos contenedores): un pedido con varios contenedores es un viaje por contenedor y todos comparten pedido y DO.
-  // El pedido y el DO ligaban el contenedor 2 con el viaje del contenedor 1 y no se podía crear: dos contenedores distintos son viajes distintos.
-  const cv = contenedorReal(v.contenedor), cd = contenedorReal(d.contenedor);
-  if (cv && cd && cv !== cd) return false;
+  if (CLAVES_UNICAS.some(k => ligaDato(v[k], d[k]))) return true;
+  // ningún dato único coincide: si los dos traen el mismo dato único con valores distintos, es OTRA unidad del mismo pedido o booking
+  // (dos contenedores del pedido 11682; dos RBHY del mismo booking). Un dato sin llenar ("PEND", vacío) no separa.
+  const cv = contenedorReal(v.contenedor), cd = contenedorReal(d.contenedor), lleno = x => textoReal(x) && !/^pte/i.test(String(x).trim()) && compacto(x).length >= 4;
+  if ((cv && cd && cv !== cd) || ['rbhy', 'obd'].some(k => lleno(v[k]) && lleno(d[k]) && !mismoDato(v[k], d[k]))) return false;
   const ped = pedidosDe(v.pedido), pedD = [...pedidosDe(d.pedido), ...pedidosDe(d.booking)];
-  // 19-nov (revisión): "PEND" o "Sin info" en los dos lados, o un "1", no son un dato que ligue una acción con un viaje
-  const liga = (a, b) => mismoDato(a, b) && textoReal(a) && !/^pte/i.test(String(a).trim()) && compacto(a).length >= 4;
-  if (CLAVES_VIAJE.some(k => liga(v[k], d[k])) || pedD.some(p => ped.includes(p))) return true;
+  if (CLAVES_GRUPO.some(k => ligaDato(v[k], d[k])) || pedD.some(p => ped.includes(p))) return true;
   const fuerte = d.viajeId || compacto(d.pedido) || CLAVES_VIAJE.some(k => textoReal(d[k]) && compacto(d[k]));
-  return !fuerte && liga(v.placa, d.placa);
+  return !fuerte && ligaDato(v.placa, d.placa);
+}
+/* El dato d (un correo, una acción, un documento) frente a la base, con un resultado que se puede nombrar (antes solo "el primero que coincida"):
+ *   'viaje'    es de UN viaje: por su id, por un dato único, o porque solo un viaje vigente comparte su pedido / DO / booking;
+ *   'falta'    el pedido / DO / booking existe, pero d trae un contenedor que ninguno de sus viajes tiene: falta crear ese viaje;
+ *   'ambiguo'  varios viajes vigentes comparten el pedido / DO / booking y d no dice de cuál es: una persona elige (no se adivina);
+ *   'ninguno'  nada en la base coincide.
+ * → {tipo, viaje (el de siempre: viajeDe), viajes (todos los que coinciden)} */
+function resolverDato(d, lista){
+  const L = lista || viajes, V = viajesDe(d, L), viaje = (d && d.viajeId && L.find(v => v.id === d.viajeId)) || V[0] || null;
+  if (d && d.viajeId && L.some(v => v.id === d.viajeId)) return {tipo: 'viaje', viaje, viajes: V};
+  const unicos = V.filter(v => CLAVES_UNICAS.some(k => ligaDato(v[k], d[k])));
+  if (unicos.length) return {tipo: 'viaje', viaje, viajes: V};
+  const cd = contenedorReal(d && d.contenedor);
+  if (!V.length) {
+    // ningún viaje coincide; si d trae un contenedor nuevo de un pedido / DO / booking que sí está en la base, lo que falta es ese viaje
+    const sinCont = Object.assign({}, d, {contenedor: '', viajeId: ''}), grupo = cd ? L.filter(v => !v.padre && situacion(v) !== 'Cancelado' && coincide(v, sinCont)) : [];
+    return grupo.length ? {tipo: 'falta', viaje: null, viajes: grupo} : {tipo: 'ninguno', viaje: null, viajes: []};
+  }
+  const vig = V.filter(v => vigente(v) && !v.padre);
+  return vig.length > 1 ? {tipo: 'ambiguo', viaje, viajes: V} : {tipo: 'viaje', viaje, viajes: V};
 }
 // viajes del dato: primero los vigentes (con el mismo booking puede haber una versión cerrada y la vigente)
 const vigente = v => !['Cerrado','Cancelado'].includes(situacion(v));
@@ -2796,10 +2837,14 @@ function contenedoresQueFaltan(d, lista){
 // 22-nov: los contenedores de pedidos IMPO que ya tienen viaje pero a los que les falta el de otro contenedor. docs = {DO o pedido: [contenedores]}
 // (pestaña "Documentos IMPO", leídos de los PDF del correo; el servidor los manda al equipo). Solo carga en contenedor: la carga suelta (LCL) no cuenta.
 // → [{contenedor, pedido, do, primero (el viaje que ya existe), total}]. Con ellos la Bandeja pone una línea "Crear viaje" por contenedor, a la vista de todos.
+const DIAS_CERRADO_RECIENTE = 21;
 function contenedoresSinViaje(lista, docs){
   const DI = {}; Object.keys(docs || {}).forEach(k => { DI[limpioId(k)] = docs[k]; });
   const out = [], vistos = new Set(), L = lista || viajes;
-  L.filter(v => v.operacion === 'IMPO' && !v.padre && vigente(v) && !esPrueba(v) && !esLCL(v) && (v.pedido || v.do)).forEach(v => {
+  // 22-nov (auditoría): también los viajes cerrados hace poco. Antes, al cerrar el primer viaje del pedido, la línea del contenedor que
+  // faltaba desaparecía sin que nadie lo hubiera creado. Los cerrados viejos no cuentan (historia anterior al tablero).
+  const reciente = v => vigente(v) || (situacion(v) === 'Cerrado' && (f => !!f && diffDias(f) >= -DIAS_CERRADO_RECIENTE)(fechaPaso(v, 'fechaDevolucion') || fechaPaso(v, 'fechaCargue') || fechaPaso(v, 'fechaRetiro')));
+  L.filter(v => v.operacion === 'IMPO' && !v.padre && reciente(v) && !esPrueba(v) && !esLCL(v) && (v.pedido || v.do)).forEach(v => {
     const cs = DI[limpioId(v.do)] || DI[limpioId(v.pedido)]; if (!cs || cs.length < 2) return;
     contenedoresQueFaltan({pedido: v.pedido, do: v.do, contenedores: cs}, L).forEach(c => { if (vistos.has(c)) return; vistos.add(c);
       out.push({contenedor: c, pedido: v.pedido || '', do: v.do || '', primero: v.id, total: cs.length}); });
@@ -2810,7 +2855,15 @@ function contenedoresSinViaje(lista, docs){
 /* ---------- acciones de LogxIA (bitácora): su viaje y si el avance del viaje ya las muestra hechas ----------
    Las usan el tablero (Acciones, Mi turno, ventana del viaje) y el backend (resumen del día), con la misma regla. */
 // datos de la acción más los de su correo (datosNuevos: pedido, DO, contenedor… de un viaje nuevo o por aprobar)
-const datosNuevosDe = b => { try { return JSON.parse(b.datosNuevos || '{}'); } catch(e) { return {}; } };
+/* 22-nov (auditoría paso 5): LogxIA dice de qué TIPO es la acción con una palabra de una lista cerrada, en datosNuevos.tipoAccion. Con ella el
+ * tablero no adivina por la redacción, que cambia en cada correo (el 22-nov no reconoció un "crear viaje"). Si la acción trae un tipo de la
+ * lista, manda el tipo; si no lo trae o dice 'otro' (acciones viejas, o LogxIA no lo supo), se lee el texto como antes. tipoAccion no es un
+ * dato del viaje: datosNuevosDe lo quita. */
+const TIPOS_ACCION = ['crearViaje', 'asignarVehiculo', 'programacion', 'reprogramacion', 'otro'];
+const leerDatosNuevos = b => { try { const d = JSON.parse(b && b.datosNuevos || '{}'); return d && typeof d === 'object' ? d : {}; } catch(e) { return {}; } };
+const tipoExplicito = b => { const t = leerDatosNuevos(b).tipoAccion; return TIPOS_ACCION.includes(t) ? t : ''; };
+const esTipoAccion = (b, tipo, porTexto) => { const t = tipoExplicito(b); return t === tipo || ((!t || t === 'otro') && !!porTexto); };
+const datosNuevosDe = b => { const d = leerDatosNuevos(b); delete d.tipoAccion; return d; };
 const datoDeAccion = b => { const dn = datosNuevosDe(b); return Object.assign({}, dn, b, {pedido: b.pedido || dn.pedido, do: b.do || dn.do, contenedor: b.contenedor || dn.contenedor}); };
 // viaje creado desde la acción: su observación lleva el id de la acción ("Acción LX-0185 · correo de…", ej. el viaje nacional)
 const viajeCreadoDeAccion = (b, lista) => !b || !b.id ? null
@@ -2825,7 +2878,7 @@ const DATOS_ANOTAR = [
 // acción que pide crear un viaje que ya está en la base (mismo booking, contenedor, DO, RBHY, OBD o pedido; nunca solo la
 // placa): no se ofrece crearlo otra vez (quedaría repetido); la acción dice cuál es y el equipo la cierra con un clic.
 // Cuenta también un viaje CERRADO (ya se hizo y hasta se facturó: pasó con EXPO-001 y la acción LX-0060); uno cancelado no
-const pideCrearViaje = b => /(^|:\s*)crear (en el tablero )?(el )?viaje|crear viaje nuevo/i.test(b.accion);
+const pideCrearViaje = b => esTipoAccion(b, 'crearViaje', /(^|:\s*)crear (en el tablero )?(el )?viaje|crear viaje nuevo/i.test(b.accion));
 function yaCreado(b, lista){
   if (!pideCrearViaje(b)) return null;
   const d = datoDeAccion(b), fuerte = d.viajeId || compacto(d.pedido) || CLAVES_VIAJE.some(k => compacto(d[k]));
@@ -4317,7 +4370,7 @@ let accionEnCurso = null;   // {id, tipo, desde}
 const ATAJOS = [
   // la acción trae datos de su correo por aprobar (propuestas.js): se aplican y la acción se cierra, sin abrir el viaje
   ['aplicar', b => `✔ Guardar ${datosDeAccion(b).length} dato${datosDeAccion(b).length === 1 ? '' : 's'} en el viaje`, b => datosDeAccion(b).length > 0, b => aplicarAccion(b)],
-  ['programacion', '📋 Revisar la programación', b => /programaci[oó]n/i.test(b.accion) && /programaci[oó]n/i.test(b.asunto + ' ' + b.resumen), b => atajoProgramacion(b)],
+  ['programacion', '📋 Revisar la programación', b => esTipoAccion(b, 'programacion', /programaci[oó]n/i.test(b.accion) && /programaci[oó]n/i.test(b.asunto + ' ' + b.resumen)), b => atajoProgramacion(b)],
   ['propuestas', '✔ Ver los datos del correo', b => /Llenar datos desde correos/i.test(b.accion) && !pareceHecha(b), () => abrirPropuestas()],   // si ya están en el viaje, no queda nada que revisar
   // pedido de la operación NACIONAL (estibas de ERCOL…): formulario del viaje nacional con lo que dice el correo (nacional.js)
   ['nacional', '＋ Crear viaje nacional', b => operacionAccion(b) === 'NACIONAL' && !viajeDeAccion(b) && !viajeNacionalDe(b) && !/^sin acci/i.test(b.accion || ''), b => nuevoNacional(b)],
@@ -8792,7 +8845,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '4b67b73303';
+const VERSION_TABLERO = '6d7d0101d6';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -10766,7 +10819,7 @@ async function guardarDatosMarcados(tid, rechazar){
  * botones y los motivos están en el catálogo del dominio: una regla nueva que se responda no necesita código aquí. */
 
 // preguntas abiertas de un viaje y las ya respondidas "no aplica" (dominio: validar, descartadas)
-const preguntasDe = v => window.MODO_CLIENTE || !v ? [] : validar(v).filter(e => admiteNoAplica(e.regla));
+const preguntasDe = v => window.MODO_CLIENTE || !v ? [] : pendientesDeViaje(v).filter(e => e.bloque === 'pregunta');
 const nombrePregunta = v => v ? `${refCorta(v)}${v.id ? ' · ' + v.id : ''}` : '';
 // lo que pendientesOps llama a cada pregunta, para no decir lo mismo dos veces en la etiqueta "Falta (operaciones)"
 const etiquetaOpsDe = e => e.regla === 'subviaje.sospecha' ? 'revisar si lleva subviaje' : String(e.campo || '').toLowerCase();
@@ -10984,8 +11037,8 @@ const accionDeHoy = i => i.roja || (i.b === 'manana' ? !!i.falta : i.b === 'hace
 // reprogramación: el cliente mueve la fecha de un paso de un viaje. Solo las de Operaciones.
 const TITULO_PROGRAMACION = 'Programación y cambios de fecha de Reckitt';
 const esProgramacionNueva = b => { const a = atajoDe(b); return !!a && a[0] === 'programacion'; };
-const esReprogramacion = b => /reprogram|cambi[oó] (de|la) fecha|nueva fecha de (cargue|retiro|llenado|entrega)|(cargue|retiro|llenado|cita|entrega|urbano|devoluci[oó]n)[^.;]{0,50}(→|pasa (a|para)|qued[oó] para|se (mueve|corre|aplaza|adelanta))/i
-  .test([b.accion, b.resumen, b.asunto].join(' '));
+const esReprogramacion = b => esTipoAccion(b, 'reprogramacion', /reprogram|cambi[oó] (de|la) fecha|nueva fecha de (cargue|retiro|llenado|entrega)|(cargue|retiro|llenado|cita|entrega|urbano|devoluci[oó]n)[^.;]{0,50}(→|pasa (a|para)|qued[oó] para|se (mueve|corre|aplaza|adelanta))/i
+  .test([b.accion, b.resumen, b.asunto].join(' ')));
 function armarBandeja(){
   // rondas, líneas rojas y excepciones (turno.js estadoTurno), con las mismas claves ("cob|ID", "conf|ID",
   // "seg2|ID", "aLX-…", registro), así que una excepción o un "Sigue igual" vale en las dos pantallas
@@ -11002,6 +11055,9 @@ function armarBandeja(){
   // 12-nov (LX-0465): "Marcar hecha" parecía darle permiso a LogxIA y solo cerraba la acción; ahora dice quién la hizo y quien.js verifica los viajes
   const accHecha = b => btnT('Cerrar acción', `data-b-cerrar="${b.id}"`, 'Cerrarla porque ya la hizo o porque no le toca a Entrapetrol: el tablero pregunta por qué');
   const pista = b => { const p = pareceHecha(b); return p ? ` <span class="ok-txt">✔ Ya hecha según el viaje: ${esc(p)}</span>` : ''; };
+  // 22-nov (paso 4): el correo trae un pedido o booking que comparten varios viajes y no dice de cuál es. Antes se le ponía al primero sin avisar
+  const ambigua = b => { if (b.viajeId) return ''; const r = resolverDato(datoDeAccion(b)); if (r.tipo !== 'ambiguo') return '';
+    const ids = r.viajes.filter(x => vigente(x) && !x.padre).map(x => x.id); return `<br><span class="sub" style="color:var(--warn)">⚠ ${ids.length} viajes comparten ese pedido o booking (${esc(ids.join(', '))}) y el correo no dice de cuál es: revise que sea este.</span>`; };
 
   // 13-nov (LX-0492 · LX-0503 · LX-0504, Coral Vision y Agecoldex): los correos siguientes de un pedido que aún no tiene viaje (coordinar el retiro,
   // placa y conductor…) quedaban sueltos en "Pedidos sin viaje" y sin botón de crear. Ahora se agrupan por el mismo pedido (DO, booking, RBHY, pedido
@@ -11060,7 +11116,7 @@ function armarBandeja(){
     if (esNuevo(v)) add(v, {b: 'tomar', html: `Nadie lo ha tomado: ábralo y presione <b>Tomar</b>`, acc: btnT('Tomar este viaje', `data-b-abrir="${v.id}"`)});
     // 3 · Sin vehículo (Cobertura + error "sin vehículo" + acción "asignar vehículo": una sola línea)
     if (sinCobertura(v)) {
-      const asignar = B.filter(b => !usadas.has(b.id) && viajeDeAccion(b)?.id === v.id && RE_ASIGNAR.test(minus(b.accion)));
+      const asignar = B.filter(b => !usadas.has(b.id) && viajeDeAccion(b)?.id === v.id && esTipoAccion(b, 'asignarVehiculo', RE_ASIGNAR.test(minus(b.accion))));
       asignar.forEach(b => usadas.add(b.id));
       const d = diffDias(arranqueDe(v)), ent = enturnadosDe(v), disp = disponiblesPara(v).filter(x => !ent.some(e => e.placa === x.placa)).slice(0, 3);
       const sug = sugeridos(v).filter(s => !ent.concat(disp).some(e => e.placa === s.placa)).slice(0, 3);
@@ -11149,18 +11205,18 @@ function armarBandeja(){
     // 7 · Falta (errores del viaje y de sus subviajes; sin los que ya salen arriba), solo si arranca en ≤ HORIZONTE_FALTA días o ya arrancó
     const pe = primerEvento(v), cerca = !pe || diffDias(pe) <= HORIZONTE_FALTA;
     if (cerca) {
-      const E = todos.flatMap(x => validar(x).map(e => ({...e, x}))).filter(e => e.tipo !== 'Alerta' && e.regla !== 'seguimiento.sinActualizar' && !admiteNoAplica(e.regla)
-        && !(sinCobertura(v) && e.x === v && e.regla === 'vehiculo.falta'));
-      if (E.length) add(v, {b: 'falta', html: E.map(e => `${e.x.padre ? `${esc(nombreSub(e.x))} · ` : ''}${esc(e.msg)}`).join('<br>'),
-        acc: btnT('Abrir el viaje y completar', `data-b-abrir="${v.id}"`)});
+      // 22-nov (paso 2): qué es "falta", qué "por hacer" y qué ya está cubierto por otra línea lo dice el dominio (pendientesDeViaje), una vez.
+      // Cada dato dice cómo se resuelve (catálogo de reglas) y el botón abre el viaje en la casilla del primero.
+      const E = todos.flatMap(x => pendientesDeViaje(x).map(e => ({...e, x}))).filter(e => e.bloque === 'falta');
+      if (E.length) add(v, {b: 'falta', html: E.map(e => `${e.x.padre ? `${esc(nombreSub(e.x))} · ` : ''}${esc(e.msg)}${e.resolver ? ` <span class="sub">→ ${esc(e.resolver)}</span>` : ''}`).join('<br>'),
+        acc: btnT('Abrir el viaje y completar', `data-b-campo="${E[0].x.id}" data-campo="${esc(E[0].campo)}"`, 'Abre el viaje en la casilla del primer dato')});
     }
   });
   // 10-nov · Por hacer ("pida la cita no es un error: es algo muy importante por hacer"): las alertas de lo que viene (pedir la cita
   // antes del cierre documental, asignar vehículo, conseguir booking o motonave) salían solo en la pantalla Errores. Ahora son acciones
   // de esta lista, cada una con su fecha: hay que hacerla, a más tardar, el día anterior (hoy = el límite es hoy o mañana).
   vivos.forEach(v => { const todos = [v, ...hijosDe(v)];
-    todos.flatMap(x => validar(x).map(e => ({...e, x}))).filter(e => e.tipo === 'Alerta' && e.regla !== 'seguimiento.sinActualizar' && !admiteNoAplica(e.regla)
-      && !(sinCobertura(v) && e.x === v && e.regla === 'vehiculo.falta')).forEach(e => {
+    todos.flatMap(x => pendientesDeViaje(x).map(e => ({...e, x}))).filter(e => e.bloque === 'hacer').forEach(e => {
         const limite = String((/cita de ingreso/i.test(e.campo) ? e.x.cierreDoc : primerEvento(e.x)) || '').slice(0, 10);
         add(v, {b: 'hacer', hoy: !limite || diffDias(limite) <= 1, html: `${e.x.padre ? `${esc(nombreSub(e.x))} · ` : ''}<b>${esc(textoHacer(e))}</b>${e.porque ? `<br><span class="sub">${esc(e.porque)}</span>` : ''}`,
           acc: btnT('Completar este dato en el viaje', `data-b-campo="${e.x.id}" data-campo="${esc(e.campo)}"`, 'Abre el viaje en esa casilla')}); }); });
@@ -11185,7 +11241,7 @@ function armarBandeja(){
       tarjetas.get(TITULO_PROGRAMACION).prog = true; usadas.add(b.id); return; }
     const cl = claseAccion(b);   // quien.js: qué hay que hacer y quién lo hace
     add(v && vivos.includes(v) ? v : null, {b: 'pedido', k: 'a' + b.id, area: areaDe(b), pill: cl.pill, hacer: cl.hacer,
-      html: `${desdeCuando(b.fechaCorreo || b.registrado)}<span class="tg" title="Quién hace esto">${esc(cl.quien)}</span> ${areaDe(b) !== 'Operaciones' ? `<span class="tg">${esc(areaDe(b))}</span> ` : ''}<b>${esc(String(b.accion).replace(/^(Operaciones|Facturación|Gerencia):\s*/i, ''))}</b>${pista(b)}${queHacer(b)}${comoVa(b, v)}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>${htmlCambios(b)}`,
+      html: `${desdeCuando(b.fechaCorreo || b.registrado)}<span class="tg" title="Quién hace esto">${esc(cl.quien)}</span> ${areaDe(b) !== 'Operaciones' ? `<span class="tg">${esc(areaDe(b))}</span> ` : ''}<b>${esc(String(b.accion).replace(/^(Operaciones|Facturación|Gerencia):\s*/i, ''))}</b>${pista(b)}${ambigua(b)}${queHacer(b)}${comoVa(b, v)}<br><span class="sub">${esc(b.id)} · ${esc(b.remitente || '')}</span>${htmlCambios(b)}`,
       acc: (botonAplicar(b) || botonAtajo(b)) + (v && vivos.includes(v) ? btnT('Abrir el viaje', `data-b-abrir="${v.id}"`) : '') + verCorreo(b) + accHecha(b)}, v && vivos.includes(v) ? '' : 'Pedidos sin viaje', b);
     usadas.add(b.id); });
   // 9 · Base de conductores y vehículos (7-nov): lo que hay que corregir en el registro (dominio problemasConductores /
