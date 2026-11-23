@@ -7292,11 +7292,37 @@ function pedirCuadrosProg(){
 }
 async function pedirCuadrosProgYa(){
   try { const j = await traerCuadrosProg();
-    if (j && j.ok && Array.isArray(j.correos) && j.correos.every(x => x.programacion && x.programacion.length)) { CUADROS_PROG = {correos: j.correos, t: Date.now()};
+    if (j && j.ok && Array.isArray(j.correos) && j.correos.every(x => x.programacion && x.programacion.length)) { CUADROS_PROG = {correos: j.correos, sinLeer: Array.isArray(j.sinLeer) ? j.sinLeer : [], t: Date.now()};
       // se repinta la Bandeja cuando no haya una ventana abierta (19-nov: con "¿Quién eres?" abierta no se repintaba y los cancelados no salían hasta el siguiente cambio)
       const repintar = n => { if (typeof renderBandeja !== 'function') return; if (!document.querySelector('.ov.open')) renderBandeja(); else if (n < 40) setTimeout(() => repintar(n + 1), 3000); };
       repintar(0); } } catch(x) {}
   setTimeout(() => { cuadrosProgPidiendo = false; }, CUADROS_PROG_MIN * 60e3);   // no más de una consulta cada 10 minutos
+}
+/* 23-nov (LX-0651: la tarjeta mostró "EXPO-037 llenado 23-nov → 2-dic" y «Guardar», con el cuadro del 20-nov, aunque la acción era del correo
+ * del 23-nov, que el servidor no había podido leer): la comparación siempre dice de qué cuadro sale y nunca pasa por vigente si es vieja.
+ *   'sinLeer'   el servidor avisa de un correo de programación MÁS NUEVO que ese cuadro y que no pudo leer: no se ofrece guardar;
+ *   'posterior' la acción viene de un correo posterior al cuadro (más de 15 min): se avisa y nada queda marcado de antemano. */
+const horaCuadro = c => new Date(String((c || {}).fecha || '') + ':00-05:00').getTime() || 0;   // la fecha del cuadro viene en hora de Colombia, sin zona
+const horaTxt = hm => { const [h, m] = String(hm || '').split(':').map(Number); return isNaN(h) ? '' : `${h % 12 || 12}:${String(m || 0).padStart(2, '0')} ${h < 12 ? 'a. m.' : 'p. m.'}`; };
+const cuadroTxt = c => `${fd(String(c.fecha).slice(0, 10))}, ${horaTxt(String(c.fecha).slice(11, 16))}`;
+function cuadroViejo(b, c){
+  if (!c) return null;
+  const tc = horaCuadro(c), sl = (((CUADROS_PROG || {}).sinLeer) || []).filter(x => horaCuadro(x) > tc).sort((x, y) => horaCuadro(y) - horaCuadro(x))[0];
+  if (sl) return {motivo: 'sinLeer', cuando: cuadroTxt(sl)};
+  const ta = new Date((b && (b.fechaCorreo || b.registrado)) || 0).getTime() || 0;
+  return ta && tc && ta - tc > 15 * 60e3 ? {motivo: 'posterior', cuando: cuadroTxt({fecha: fechaLocal(new Date(ta).toISOString())})} : null;
+}
+const avisoCuadroViejo = (c, viejo) => `<div style="margin:6px 0;padding:8px 10px;border:1px solid var(--bad);border-radius:8px;color:var(--bad)"><b>⚠ Esta comparación NO es con el cuadro de este correo.</b> `
+  + (viejo.motivo === 'sinLeer' ? `El cuadro más nuevo, del ${esc(viejo.cuando)}, no se pudo leer (lo que tengo es el del ${esc(cuadroTxt(c))}). <b>No se ofrece guardar:</b> abra el correo y aplique los cambios en cada viaje.`
+    : `Se hizo con el cuadro del ${esc(cuadroTxt(c))} y la acción es de un correo posterior (${esc(viejo.cuando)}). Abra el correo antes de guardar: nada queda marcado de antemano.`) + '</div>';
+// arriba de Acciones para hoy: hay un cuadro de programación más nuevo que no se pudo leer (aunque no haya una acción que lo diga)
+function avisoCuadrosSinLeer(){
+  if (window.MODO_CLIENTE || !CUADROS_PROG || !(CUADROS_PROG.sinLeer || []).length) return '';
+  const ultimo = Math.max(0, ...CUADROS_PROG.correos.map(horaCuadro)), S = CUADROS_PROG.sinLeer.filter(x => horaCuadro(x) > ultimo).sort((x, y) => horaCuadro(y) - horaCuadro(x));
+  if (!S.length) return '';
+  const c = CUADROS_PROG.correos.slice().sort((x, y) => horaCuadro(y) - horaCuadro(x))[0];
+  return `<div class="bj-ronda" style="border:1px solid var(--bad);border-radius:8px;padding:8px 12px;margin-bottom:8px;color:var(--bad)"><b>⚠ No pude leer el cuadro de programación del ${esc(cuadroTxt(S[0]))}</b>${S[0].firma ? ' (' + esc(S[0].firma) + ')' : ''}. `
+    + `<span style="color:var(--ink)">Las comparaciones de programación de esta lista usan el anterior${c ? ', del ' + esc(cuadroTxt(c)) : ''}: abra el correo para ver los cambios y las cancelaciones.</span></div>`;
 }
 // cuántos viajes por crear y cuántos con cambios (de fecha y de otro dato) trae el cuadro de esa acción; null si aún no se sabe
 function resumenProgramacion(b){
@@ -7309,6 +7335,8 @@ function resumenProgramacion(b){
 }
 function textoBotonProgramacion(b){
   const r = resumenProgramacion(b); if (!r) return '📋 Revisar programación';
+  const viejo = CUADROS_PROG && cuadroViejo(b, cuadroDeAccion(CUADROS_PROG.correos, b));
+  if (viejo && viejo.motivo === 'sinLeer') return '📋 Ver el cuadro anterior (no es el de este correo)';
   const p = [r.crear ? `${r.crear} ${r.crear === 1 ? 'viaje' : 'viajes'} por crear` : '', r.fechas ? `${r.fechas} ${r.fechas === 1 ? 'viaje' : 'viajes'} con cambios de fecha` : '',
     r.otros ? `${r.otros} con otros cambios` : '', r.cancelar ? `${r.cancelar} ${r.cancelar === 1 ? 'cancelado' : 'cancelados'} por Reckitt` : ''].filter(Boolean);
   return '📋 ' + (p.length ? p.join(' · ') : 'Programación ya aplicada: nada por crear ni cambiar');
@@ -8845,7 +8873,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '00cc14f67e';
+const VERSION_TABLERO = '78e6b4b1ce';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -10629,11 +10657,13 @@ function cambiosDeAccion(b){
   if (a[0] === 'programacion') {
     resumenProgramacion(b);   // pide los cuadros al servidor si aún no están y repinta la Bandeja cuando llegan
     const c = cuadroProgDe(b); if (!c) return null;
+    const viejo = cuadroViejo(b, c);   // programacion.js: el cuadro que se compara es anterior al correo de la acción
+    if (viejo && viejo.motivo === 'sinLeer') return {tipo: 'programacion', c, R: {filas: []}, filas: [], viejo};
     const R = compararProgramacion(c);
     const filas = R.filas.map((f, idx) => ({f, idx})).filter(({f}) => CAMBIOS_QH.includes(f.accion)).map(({f, idx}) => f.accion === 'crear'
       ? {idx, viaje: 'Nuevo', nombre: [f.r.pais, f.r.unidad].filter(Boolean).join(' '), campos: [['Se crea el viaje', null, 'llenado ' + fv(f.r.fechaCargue) + (f.r.mn ? ' · ' + f.r.mn : '')]]}
       : {idx, viaje: f.v.id, nombre: f.v.pais || '', campos: Object.entries(f.cambios || {}).filter(([k]) => k !== 'situacion').map(([k, x]) => [campoProg(k), verProg(k, f.v[k]), verProg(k, x)])});
-    return {tipo: 'programacion', c, R, filas};
+    return {tipo: 'programacion', c, R, filas, viejo};
   }
   return null;
 }
@@ -10642,8 +10672,11 @@ const textoCampo = ([k, a, n]) => a === null ? `${esc(k)}: <b class="qh-n">${esc
 const unidadesDeCambios = c => c.filas.map((f, i) => ({key: String(i), viaje: f.viaje === 'Nuevo' ? 'Viaje nuevo' : f.viaje, nombre: f.nombre,
   campos: f.campos.map(([k, a, n]) => [k, a, `<b class="qh-n">${esc(n)}</b>`])}));
 function htmlCambios(b){
-  const c = cambiosDeAccion(b); if (!c || !c.filas.length) return '';
-  return `<details class="qh" open><summary>🤖 LogxIA ya lo preparó · <b>${c.filas.length}</b> ${c.filas.length === 1 ? 'viaje' : 'viajes'} · marque los que quiere guardar</summary>${tablaElegir(b.id, unidadesDeCambios(c), true, 'prog', 'todas')}</details>`;
+  const c = cambiosDeAccion(b); if (!c) return '';
+  const aviso = c.viejo ? avisoCuadroViejo(c.c, c.viejo) : '';   // 23-nov: nunca una tabla vieja como si fuera la del correo
+  if (!c.filas.length) return aviso;
+  const deCuadro = c.tipo === 'programacion' && c.c ? ` · según el cuadro del ${esc(cuadroTxt(c.c))}` : '';
+  return aviso + `<details class="qh" open><summary>🤖 LogxIA ya lo preparó · <b>${c.filas.length}</b> ${c.filas.length === 1 ? 'viaje' : 'viajes'}${deCuadro} · marque los que quiere guardar</summary>${tablaElegir(b.id, unidadesDeCambios(c), true, 'prog', c.viejo ? 'ninguna' : 'todas')}</details>`;
 }
 const botonAplicar = b => { const c = cambiosDeAccion(b); return c && c.filas.length ? botonElegir(b.id) : ''; };
 async function guardarSeleccion(id){
@@ -11380,7 +11413,7 @@ function renderBandeja(){
     + [...CAN.entries()].map(([id, c]) => `<button type="button" class="link" data-b-abrir="${id}" title="Abre el viaje">${esc(id)} · ${esc(c.x.v.pais || '')}${c.x.conMovimiento ? ' ⚠' : ''}</button>`).join(' · ')
     + ` <span class="sub" style="color:var(--ink)">cada uno tiene su tarjeta abajo con "Cancelar el viaje"${sinMov > 1 ? ', o cancele todos de una vez:' : '.'}</span>`
     + (sinMov > 1 ? ` ${btnT(`✖ Cancelar los ${sinMov} viajes`, 'data-b-cancelartodos="1"', 'Cancela de una vez los que no tienen vehículo ni se ejecutaron, a su nombre')}` : '') + `</div>`;
-  cont.innerHTML = avisoCancelados + `<div class="bj-ronda sub">${ronda}${bloqueo}${llave}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}</div>` + bloqueGerencia(T) + bloqueCalifGerencia() + avisoAuto + resumenRespondidas() + resumenCierre() + barraOp
+  cont.innerHTML = avisoCancelados + avisoCuadrosSinLeer() + `<div class="bj-ronda sub">${ronda}${bloqueo}${llave}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}</div>` + bloqueGerencia(T) + bloqueCalifGerencia() + avisoAuto + resumenRespondidas() + resumenCierre() + barraOp
     + `<div class="bj-resumen"><div><b>Para hoy: ${R.L.filter(t => t.hoy).length}</b>${(n => n ? ` · <span style="color:var(--bad)">${n} atrasado${n === 1 ? '' : 's'}</span>` : '')(R.L.filter(t => t.hoy && t.fecha && diffDias(t.fecha) < 0).length)} · próximos días: ${R.L.filter(t => !t.hoy).length}
       · <label class="sub">Área <select class="bj-area" data-b-areasel="1">${[['', 'Todas'], ...AREAS.map(a => [a, a])].map(([a, t]) => `<option value="${a}" ${bandejaArea === a ? 'selected' : ''}>${t} (${porArea(a)})</option>`).join('')}</select></label></div>
       <div class="chips">${`<button type="button" class="chip ${!bandejaFiltro ? 'on' : ''}" data-b-filtro="">Todo · ${R.L.length}</button>`}${BLOQUES.map(([k, t]) => cuenta(k) ? `<button type="button" class="chip ${bandejaFiltro === k ? 'on' : ''}" data-b-filtro="${k}" title="${esc(BLOQUES.find(x => x[0] === k)[3])}">${t} · ${cuenta(k)}</button>` : '').join('')}</div></div>`
