@@ -1630,10 +1630,10 @@ function pendientesOps(v){
   }
   const hijos = hijosDe(v);
   if (hijos.some(x => !x.placa || !x.fechaUrbano || !x.bodega)) f.push('datos del subviaje');
-  if (!hijos.length && validar(v).some(e => e.campo==='Subviaje')) f.push('revisar si lleva subviaje');
+  if (!hijos.length && validar(v).some(e => e.regla==='subviaje.sospecha')) f.push('revisar si lleva subviaje');
   if (desviosPlan(v).some(d => d.causa==='Sin causa')) f.push('causa de la reprogramación');
   // los errores de la pestaña Errores (sin repetir lo anterior)
-  validar(v).forEach(e => { const t = e.campo.toLowerCase(); if (e.campo!=='Subviaje' && !f.some(x => x.includes(t) || t.includes(x))) f.push(t); });
+  validar(v).forEach(e => { const t = e.campo.toLowerCase(); if (e.regla!=='subviaje.sospecha' && !f.some(x => x.includes(t) || t.includes(x))) f.push(t); });
   return [...new Set(f)];
 }
 // lo que le falta para facturar un viaje terminado (lo completa facturación o el cliente)
@@ -2414,22 +2414,135 @@ function patioPareceBodega(patio, v, evidencia){
   return !!e && new RegExp('(descargue|entrega|descarga)[^.;]{0,40}' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(e);
 }
 
+/* ---------- catálogo de reglas de validar (22-nov, auditoría de acciones, errores y alertas) ----------
+ * Cada hallazgo de validar lleva el CÓDIGO de su regla (e.regla). Quien necesite saber qué alerta es pregunta por el código, nunca por la
+ * etiqueta visible ni por el texto del mensaje (antes: e.campo === 'Subviaje', /vehículo/.test(e.msg); al cambiar una palabra se rompía).
+ * Aquí cada regla declara de qué clase es y CÓMO SE RESUELVE, para que ninguna alerta mande a "abrir el viaje" sin decir qué hacer:
+ *   falta     · falta un dato: se llena en el viaje y la alerta se va sola;
+ *   corregir  · un dato está mal escrito o dos datos se contradicen: se corrige el que está mal;
+ *   paso      · una fecha llegó o venció: se confirma que se hizo o se pone la fecha nueva;
+ *   criterio  · el sistema sospecha y una persona sabe si es cierto. 'resolver' = qué hacer si es cierto; 'no' = cómo se le dice al sistema
+ *               que no aplica ('' = no hay forma: es una alerta sin salida, y la prueba no la deja pasar).
+ * Una regla nueva sin entrada aquí no pasa las pruebas (herramientas/pruebas_reglas.js). */
+const REGLAS_VALIDAR = {
+  'extracosto.nombre': {clase: 'corregir', resolver: 'Cambie el nombre del extracosto por uno de la lista'},
+  'contenedor.malEscrito': {clase: 'corregir', resolver: 'Escriba el contenedor en su casilla (4 letras y 7 números)'},
+  'placa.malEscrito': {clase: 'corregir', resolver: 'Escriba la placa en su casilla'},
+  'sub.vehiculo': {clase: 'falta', resolver: 'Asigne el vehículo del urbano en el subviaje'},
+  'sub.destino': {clase: 'falta', resolver: 'Ponga la bodega final en el subviaje'},
+  'sub.fechaUrbano': {clase: 'falta', resolver: 'Ponga la fecha del urbano en el subviaje'},
+  'tirillaEntrega.cerrado': {clase: 'falta', resolver: 'Suba la tirilla de entrega en puerto'},
+  'tirillaDevolucion.cerrado': {clase: 'falta', resolver: 'Suba la tirilla de devolución del vacío'},
+  'status.invalido': {clase: 'corregir', resolver: 'Ponga el STATUS en Abierto, Cerrado o Cancelado'},
+  'fechaCargue.falta': {clase: 'falta', resolver: 'Ponga la fecha de llenado (EXPO) o de entrega en bodega (IMPO)'},
+  'nac.fechaRecogida': {clase: 'falta', resolver: 'Ponga la fecha de recogida'},
+  'nac.origen': {clase: 'falta', resolver: 'Ponga el lugar de recogida'},
+  'nac.entrega': {clase: 'falta', resolver: 'Ponga el lugar de entrega'},
+  'vehiculo.falta': {clase: 'falta', resolver: 'Asigne vehículo y conductor'},
+  'conductor.falta': {clase: 'falta', resolver: 'Ponga el conductor de la placa'},
+  'fechas.retiroDespuesCargue': {clase: 'corregir', resolver: 'Corrija la fecha de retiro o la de llenado/entrega: una quedó mal escrita'},
+  'patioRetiro.falta': {clase: 'falta', resolver: 'Ponga el patio de retiro del vacío'},
+  'booking.falta': {clase: 'falta', resolver: 'Ponga el booking (EXPO) o el BL (carga suelta)'},
+  'motonave.falta': {clase: 'falta', resolver: 'Ponga la motonave'},
+  'cierreDoc.falta': {clase: 'falta', resolver: 'Ponga la fecha de cierre documental'},
+  'etd.llenadoDespues': {clase: 'corregir', resolver: 'Corrija la fecha de llenado o el ETD: el llenado va antes del zarpe'},
+  'cierreDoc.despuesEtd': {clase: 'corregir', resolver: 'Corrija el cierre documental o el ETD: el cierre va antes del zarpe'},
+  'etd.antesDeEntrega': {clase: 'corregir', resolver: 'Pida a la naviera la fecha nueva de zarpe y póngala en el ETD'},
+  'eta.antesDeEtd': {clase: 'corregir', resolver: 'Corrija la ETA o el ETD: la llegada va después del zarpe'},
+  'seguimiento.sinActualizar': {clase: 'paso', resolver: 'Confirme que el paso se hizo o ponga la fecha nueva con su causa'},
+  'citaIngreso.falta': {clase: 'falta', resolver: 'Pida la cita de ingreso a puerto y póngala en el viaje'},
+  'citaIngreso.despuesCierre': {clase: 'corregir', resolver: 'Pida una cita anterior al cierre documental o corrija la fecha'},
+  'citaIngreso.sinConfirmar': {clase: 'paso', resolver: 'Confirme la cita con el puerto y marque el estado de la cita'},
+  'tirillaEntrega.falta': {clase: 'falta', resolver: 'Suba la tirilla de entrega en puerto'},
+  'pedido.falta': {clase: 'falta', resolver: 'Ponga el número de pedido'},
+  'contenedor.falta': {clase: 'falta', resolver: 'Ponga el número de contenedor'},
+  'unidad.falta': {clase: 'falta', resolver: 'Ponga el tipo de contenedor (20 o 40)'},
+  'puerto.falta': {clase: 'falta', resolver: 'Ponga el puerto de llegada'},
+  'destino.falta': {clase: 'falta', resolver: 'Ponga el destino'},
+  'bodega.falta': {clase: 'falta', resolver: 'Ponga la bodega de entrega'},
+  'fechaLevante.falta': {clase: 'falta', resolver: 'Ponga la fecha de entrega de documentos'},
+  'fechaRetiro.antesDeEta': {clase: 'corregir', resolver: 'Corrija la fecha de retiro o la ETA: el retiro va después de la llegada'},
+  'patioDevolucion.falta': {clase: 'falta', resolver: 'Ponga el patio donde se devuelve el vacío'},
+  'ciudadDevolucion.falta': {clase: 'falta', resolver: 'Ponga la ciudad de devolución del vacío'},
+  'citaDevolucion.falta': {clase: 'falta', resolver: 'Tramite la cita de devolución y póngala en el viaje'},
+  'vacio.vencido': {clase: 'paso', resolver: 'Devuelva el vacío y registre la fecha de devolución'},
+  'vacio.porVencer': {clase: 'paso', resolver: 'Programe la devolución del vacío antes de la fecha límite'},
+  'tirillaDevolucion.falta': {clase: 'falta', resolver: 'Suba la tirilla de devolución del vacío'},
+  'devolucion.antesDelUrbano': {clase: 'corregir', resolver: 'Corrija la fecha de devolución o la del urbano del subviaje'},
+  'entregaPuerto.falta': {clase: 'falta', resolver: 'Ponga la fecha de entrega en puerto (está en la tirilla)'},
+  'observacion.falta': {clase: 'falta', resolver: 'Escriba la observación de status del viaje'},
+  // de criterio: el sistema sospecha. 'no' = cómo se dice que no aplica; '' = alerta sin salida hoy
+  'devolucion.mismoDiaLugar': {clase: 'criterio', resolver: 'Si el contenedor quedó lleno en la bodega: quite la fecha de devolución o cree el subviaje', no: 'Confirme el paso «Vacío devuelto» o suba la tirilla de devolución'},
+  'devolucion.mismoDia': {clase: 'criterio', resolver: 'Si el contenedor quedó lleno en la bodega: quite la fecha de devolución o cree el subviaje', no: 'Confirme el paso «Vacío devuelto» o suba la tirilla de devolución'},
+  // las que siguen se responden en el tablero (respuesta: true): pregunta = lo que se le pregunta a la persona; si / noTxt = los dos botones;
+  // motivos = los de la lista (siempre se puede escribir otro). La respuesta se guarda aparte (pestaña Respuestas), no en el viaje.
+  'subviaje.sospecha': {clase: 'criterio', resolver: 'Si el contenedor pasó por un patio intermedio: cree el subviaje con el botón + Subviaje', no: 'Responda «No lleva subviaje» con el motivo', respuesta: true,
+    pregunta: '¿Lleva subviaje?', si: 'Sí: crear el subviaje', noTxt: 'No lleva subviaje',
+    motivos: ['El contenedor fue directo a la bodega final', 'Quedó en patio, pero sin cambiar de vehículo ni cobrar urbano', 'La palabra de la observación habla de otra cosa']},
+  'patioDevolucion.pareceBodega': {clase: 'criterio', resolver: 'Si es la bodega: cambie el patio por el de la naviera o del puerto donde se devuelve el vacío', no: 'Responda «No: el patio está bien» con el motivo', respuesta: true,
+    pregunta: '¿El patio de devolución es en realidad la bodega?', si: 'Sí: corregir el patio', noTxt: 'No: el patio está bien',
+    motivos: ['El vacío sí se devuelve en ese lugar', 'El nombre se parece, pero es el patio de la naviera o del puerto']},
+  'vehiculo.repetido': {clase: 'criterio', resolver: 'Si la placa quedó en el viaje equivocado: corríjala en ese viaje', no: 'Responda «No: la placa está bien» con el motivo', respuesta: true,
+    pregunta: '¿La placa quedó en el viaje equivocado?', si: 'Sí: corregir la placa', noTxt: 'No: la placa está bien',
+    motivos: ['Es el mismo vehículo en viajes seguidos', 'Son viajes de fechas distintas']},
+  'peso.repetido': {clase: 'criterio', resolver: 'Si el peso quedó en el viaje equivocado: corríjalo con la planilla de cada viaje', no: 'Responda «No: el peso está bien» con el motivo', respuesta: true,
+    pregunta: '¿El peso quedó en el viaje equivocado?', si: 'Sí: corregir el peso', noTxt: 'No: el peso está bien',
+    motivos: ['Es el mismo producto y la misma carga', 'Se revisó la planilla de cada viaje y coincide']},
+};
+const reglaDe = e => REGLAS_VALIDAR[e && e.regla] || null;
+// las alertas de criterio sin forma de responder "no aplica": debe quedar en 0 (lo vigila herramientas/pruebas_reglas.js)
+const reglasSinSalida = () => Object.keys(REGLAS_VALIDAR).filter(k => REGLAS_VALIDAR[k].clase === 'criterio' && !REGLAS_VALIDAR[k].no);
+
+/* ---------- respuestas a las alertas de criterio (22-nov) ----------
+ * Una alerta de criterio es una pregunta: "¿lleva subviaje?". La persona responde y la pregunta se cierra, igual que una acción.
+ * Las respuestas van en una lista aparte, de solo agregar (pestaña Respuestas de la base: fecha, pendiente, regla, viaje, respuesta,
+ * motivo, usuario, huella); nunca se escribe en la fila del viaje ni se borra nada. Vale la última respuesta de cada pendiente:
+ * 'noAplica' la cierra; 'reabrir' ("Volver a preguntar") la deshace. La huella es lo que la regla vio al responder: si después cambia
+ * (otra palabra en la observación, otro viaje con la misma placa), la respuesta deja de valer y la alerta vuelve a preguntar.
+ * El tablero recibe la lista en window.RESPUESTAS; el backend la deja en RESPUESTAS antes de calcular (Dominio.gs calcularDominio_). */
+const respuestasGuardadas = () => typeof window !== 'undefined' ? (window.RESPUESTAS || []) : (typeof RESPUESTAS !== 'undefined' ? RESPUESTAS : []);
+const idPendiente = (regla, v) => regla + '|' + (v && v.id || '');
+const admiteNoAplica = regla => !!(REGLAS_VALIDAR[regla] && REGLAS_VALIDAR[regla].respuesta);
+// palabras de la observación que hacen sospechar un patio intermedio. En EXPO "en patio" es el retiro normal del vacío: allí solo cuentan
+// paro, bloqueo o almacenamiento (las marcadas IMPO no aplican)
+const PISTAS_SUBVIAJE = [['almacenamiento', /almacenamient/], ['en patio', /\ben patio\b/, 'IMPO'], ['patio donde se entrega o descarga', /\bpatio\b.*\bse (entrega|descarga)\b/, 'IMPO'],
+  ['paro', /\bparo\b/], ['bloqueo', /bloqueo/], ['sin cita', /sin cita/, 'IMPO'], ['problemas en bodega', /problemas en bodega/, 'IMPO']];
+const pistasSubviaje = v => { const t = sinTilde(v.observacion || '').toLowerCase(); return PISTAS_SUBVIAJE.filter(([, re, solo]) => (!solo || v.operacion === solo) && re.test(t)).map(p => p[0]); };
+// lo que la regla vio en el viaje (texto corto y estable)
+function huellaRegla(regla, v){
+  if (regla === 'subviaje.sospecha') return pistasSubviaje(v).join(',');
+  if (regla === 'patioDevolucion.pareceBodega') return compacto(v.patio) + '>' + compacto(v.bodega);
+  if (regla === 'vehiculo.repetido') return limpioId(v.placa) + '>' + vehiculoRepetido(v).map(o => o.id).sort().join(',');
+  if (regla === 'peso.repetido') return String(v.peso || '').replace(/[^\d.,]/g, '') + '>' + pesoRepetido(v).map(o => o.id).sort().join(',');
+  return '';
+}
+// la última respuesta guardada de esa pregunta en ese viaje (null = nadie ha respondido)
+function respuestaDe(regla, v){ const id = idPendiente(regla, v), L = respuestasGuardadas().filter(r => r.pendiente === id); return L.length ? L[L.length - 1] : null; }
+// respondida "no aplica" y lo que la regla vio no ha cambiado: la alerta no sale. Devuelve la respuesta (quién, cuándo, motivo) o null
+function noAplica(regla, v){ if (!admiteNoAplica(regla)) return null; const r = respuestaDe(regla, v); return r && r.respuesta === 'noAplica' && String(r.huella || '') === huellaRegla(regla, v) ? r : null; }
+// respondida "no aplica", pero lo que la regla vio cambió: la alerta vuelve y dice por qué
+function respuestaVencida(regla, v){ if (!admiteNoAplica(regla)) return null; const r = respuestaDe(regla, v); return r && r.respuesta === 'noAplica' && String(r.huella || '') !== huellaRegla(regla, v) ? r : null; }
+// lo que se muestra y se cuenta en todas partes (Bandeja, etiqueta de la tarjeta, Calidad de datos, correo): los hallazgos menos lo respondido
+function validar(v){ return hallazgos(v).filter(e => !noAplica(e.regla, e.v)); }
+// las preguntas ya respondidas "no aplica" de un viaje, con su respuesta (para mostrarlas y poder volver a preguntar)
+const descartadas = v => hallazgos(v).map(e => ({...e, respuesta: noAplica(e.regla, e.v)})).filter(e => e.respuesta);
+
 // cada hallazgo dice "por qué": qué fecha o qué hecho hace que haya que llenarlo ya
-function validar(v){
-  const e = [], add = (sev, campo, msg, tipo = 'Error', porque = '') => e.push({v, sev, campo, msg, tipo, porque});
+function hallazgos(v){
+  const e = [], add = (regla, sev, campo, msg, tipo = 'Error', porque = '') => e.push({v, regla, sev, campo, msg, tipo, porque});
   // extracostos con un nombre que no es de la lista estándar (10-nov): se cambian por el de la lista
   if (!['Cerrado', 'Cancelado'].includes(situacion(v))) { const F = [...new Set(conceptosFueraDeLista(v))];
-    if (F.length) add('Media', 'Extracostos', `Extracosto con un nombre fuera de la lista: ${F.map(c => '"' + c + '"').join(', ')}. Cámbielo por el de la lista`, 'Error', 'Con nombres distintos para el mismo cobro no se puede comparar ni sumar por concepto'); }
+    if (F.length) add('extracosto.nombre', 'Media', 'Extracostos', `Extracosto con un nombre fuera de la lista: ${F.map(c => '"' + c + '"').join(', ')}. Cámbielo por el de la lista`, 'Error', 'Con nombres distintos para el mismo cobro no se puede comparar ni sumar por concepto'); }
   // contenedor o placa escritos en el campo equivocado (pasó en EXPO-009: la placa SYL424 en Contenedor)
   [['contenedor', 'Contenedor'], ['placa', 'Placa']].forEach(([k, nombre]) => { const m = datoMalEscrito(k, v[k]);
-    if (m && !['Cancelado'].includes(situacion(v))) add('Alta', nombre, m, 'Error', 'Con el dato equivocado no se cruzan los correos ni las asignaciones del viaje'); });
+    if (m && !['Cancelado'].includes(situacion(v))) add(k + '.malEscrito', 'Alta', nombre, m, 'Error', 'Con el dato equivocado no se cruzan los correos ni las asignaciones del viaje'); });
   if (v.padre) {
     // subviaje (regla 4, igual que el reporte por correo): vehículo, destino final y fecha del urbano mientras esté abierto
     if (!['Cerrado','Cancelado'].includes(situacion(v))) {
       const p = `${vaciadoSub(v) ? 'El producto (contenedor vaciado)' : 'El contenedor'} está en la bodega de paso${v.patioSub ? ' ' + v.patioSub : ''}: falta programar el urbano al destino final`;
-      if (!v.placa) add('Media','Placa','Subviaje sin vehículo asignado', 'Error', p);
-      if (!v.bodega || v.bodega === v.patioSub) add('Media','Bodega','Subviaje sin destino final', 'Error', p);
-      if (!v.fechaUrbano) add('Media','Fecha urbano','Subviaje sin fecha del urbano', 'Error', p);
+      if (!v.placa) add('sub.vehiculo', 'Media','Placa','Subviaje sin vehículo asignado', 'Error', p);
+      if (!v.bodega || v.bodega === v.patioSub) add('sub.destino', 'Media','Bodega','Subviaje sin destino final', 'Error', p);
+      if (!v.fechaUrbano) add('sub.fechaUrbano', 'Media','Fecha urbano','Subviaje sin fecha del urbano', 'Error', p);
     }
     return e;
   }
@@ -2441,13 +2554,13 @@ function validar(v){
   // EXPO cierra con la tirilla de entrega en puerto; IMPO con la tirilla de devolución del vacío
   if (sit==='Cerrado'){
     if (seg && (v.fechaCargue||'') >= inicioSeguimiento() && !reemplazado(v)){
-      if (expo && !v.tirillaEntrega) add('Alta','Tirilla de entrega','Viaje CERRADO sin tirilla de entrega en puerto', 'Error', 'El viaje ya está cerrado: la tirilla es el soporte de la entrega en puerto');
-      if (impo && !esLCL(v) && !v.tirillaDevolucion) add('Alta','Tirilla de devolución','Viaje CERRADO sin tirilla de devolución del vacío', 'Error', 'El viaje ya está cerrado: la tirilla es el soporte de la devolución del vacío');
+      if (expo && !v.tirillaEntrega) add('tirillaEntrega.cerrado', 'Alta','Tirilla de entrega','Viaje CERRADO sin tirilla de entrega en puerto', 'Error', 'El viaje ya está cerrado: la tirilla es el soporte de la entrega en puerto');
+      if (impo && !esLCL(v) && !v.tirillaDevolucion) add('tirillaDevolucion.cerrado', 'Alta','Tirilla de devolución','Viaje CERRADO sin tirilla de devolución del vacío', 'Error', 'El viaje ya está cerrado: la tirilla es el soporte de la devolución del vacío');
     }
     return e;
   }
   // STATUS válidos: Abierto, Cerrado, Cancelado. "Pendiente confirmación" o vacío vienen de la hoja original y esconden el viaje
-  if (!['Abierto','Cerrado','Cancelado'].includes(sit)) add('Alta',C.status,`STATUS "${sit}": debe ser Abierto, Cerrado o Cancelado`, 'Error', 'Con otro STATUS el viaje no sale en la vista inicial ni en el total de abiertos');
+  if (!['Abierto','Cerrado','Cancelado'].includes(sit)) add('status.invalido', 'Alta',C.status,`STATUS "${sit}": debe ser Abierto, Cerrado o Cancelado`, 'Error', 'Con otro STATUS el viaje no sale en la vista inicial ni en el total de abiertos');
   // sin fecha del viaje: si ya se entregó (o devolvió) la fecha existe y solo falta registrarla; si no, no se puede programar nada
   if (!v.fechaCargue && !esNacional(v)) {
     const hecho = expo ? (v.fechaEntregaPuerto || v.tirillaEntrega) : esLCL(v) ? '' : (v.fechaDevolucion || v.tirillaDevolucion);
@@ -2457,7 +2570,7 @@ function validar(v){
               : `El vacío ya se devolvió${v.fechaDevolucion ? ' el ' + fd(v.fechaDevolucion) : ''}: la entrega ya ocurrió y falta registrarla para cerrar el viaje`)
       : (expo ? 'Sin esta fecha no se pueden programar el retiro del vacío, el vehículo ni la entrega en puerto'
               : 'Sin esta fecha no se pueden programar el retiro en puerto ni el vehículo');
-    add(hecho ? 'Media' : 'Alta', C.cargue, msg, 'Error', porque);
+    add('fechaCargue.falta', hecho ? 'Media' : 'Alta', C.cargue, msg, 'Error', porque);
   }
   // datos que se completan cerca de la fecha: alerta dentro de su ventana, error si la fecha ya pasó; antes no se piden.
   // Sin fecha del viaje no se piden (ya sale "Sin fecha"): todo lo demás depende de ella.
@@ -2466,65 +2579,65 @@ function validar(v){
   const evento = esNacional(v) ? 'la recogida' : v.fechaRetiro ? (expo ? 'el retiro del vacío' : 'el retiro en puerto') : (expo ? 'el llenado' : 'la entrega en bodega');
   const porqueEvento = dias === null ? '' : dias < 0 ? `${evento[0].toUpperCase() + evento.slice(1)} era el ${fd(primerEvento(v))} y el dato no quedó registrado`
     : `Se necesita para ${evento} del ${fd(primerEvento(v))}`;
-  const falta = (ventana, sev, campo, msg) => { if (dias === null || dias > ventana) return;
-    if (dias < 0) add('Alta', campo, msg + cuando, 'Error', porqueEvento); else add(sev, campo, msg + cuando, 'Alerta', porqueEvento); };
+  const falta = (regla, ventana, sev, campo, msg) => { if (dias === null || dias > ventana) return;
+    if (dias < 0) add(regla, 'Alta', campo, msg + cuando, 'Error', porqueEvento); else add(regla, sev, campo, msg + cuando, 'Alerta', porqueEvento); };
   // NACIONAL: lo que se necesita para programar la recogida (fecha, origen, destino) y el vehículo cerca de la fecha
   if (esNacional(v)) {
     const pq = 'Sin este dato no se puede programar la recogida ni el vehículo';
-    if (!v.fechaRetiro) add('Alta', 'Fecha de recogida', 'Sin fecha de recogida', 'Error', pq);
-    if (!v.origen) add('Media', 'Origen', 'Sin lugar de recogida', 'Error', pq);
-    if (!v.bodega && !v.destino) add('Media', 'Lugar de entrega', 'Sin lugar de entrega', 'Error', pq);
-    if (!tieneVehiculo(v)) falta(VENTANAS.placa, urge, 'Placa', 'Sin vehículo asignado');
-    if (tieneVehiculo(v) && !v.conductor) falta(VENTANAS.conductor, 'Media', 'Conductor', 'Placa sin conductor');
-    if (v.fechaRetiro && v.fechaCargue && v.fechaRetiro > v.fechaCargue) add('Alta', 'Fechas', `Recogida (${fd(v.fechaRetiro)}) después de la entrega (${fd(v.fechaCargue)})`, 'Error', 'Las dos fechas se contradicen: una de ellas quedó mal escrita');
+    if (!v.fechaRetiro) add('nac.fechaRecogida', 'Alta', 'Fecha de recogida', 'Sin fecha de recogida', 'Error', pq);
+    if (!v.origen) add('nac.origen', 'Media', 'Origen', 'Sin lugar de recogida', 'Error', pq);
+    if (!v.bodega && !v.destino) add('nac.entrega', 'Media', 'Lugar de entrega', 'Sin lugar de entrega', 'Error', pq);
+    if (!tieneVehiculo(v)) falta('vehiculo.falta', VENTANAS.placa, urge, 'Placa', 'Sin vehículo asignado');
+    if (tieneVehiculo(v) && !v.conductor) falta('conductor.falta', VENTANAS.conductor, 'Media', 'Conductor', 'Placa sin conductor');
+    if (v.fechaRetiro && v.fechaCargue && v.fechaRetiro > v.fechaCargue) add('fechas.retiroDespuesCargue', 'Alta', 'Fechas', `Recogida (${fd(v.fechaRetiro)}) después de la entrega (${fd(v.fechaCargue)})`, 'Error', 'Las dos fechas se contradicen: una de ellas quedó mal escrita');
     return e;
   }
-  if (expo && !v.patio && !pend) falta(VENTANAS.patio, urge, C.patio, 'Patio de retiro sin definir');
-  if (!tieneVehiculo(v) && !pend) falta(VENTANAS.placa, urge, 'Placa', 'Sin vehículo asignado');
-  if (tieneVehiculo(v) && !v.conductor) falta(VENTANAS.conductor, 'Media', 'Conductor', 'Placa sin conductor');
-  if (expo && !v.booking) falta(VENTANAS.booking, pend ? 'Media' : urge, C.booking, 'Sin booking');
-  if (expo && !v.mn) falta(VENTANAS.mn, 'Media', C.mn, 'Sin motonave');
-  if (expo && !pend && !v.cierreDoc) falta(VENTANAS.cierreDoc, 'Media', C.cierre, 'Sin fecha de cierre documental');
+  if (expo && !v.patio && !pend) falta('patioRetiro.falta', VENTANAS.patio, urge, C.patio, 'Patio de retiro sin definir');
+  if (!tieneVehiculo(v) && !pend) falta('vehiculo.falta', VENTANAS.placa, urge, 'Placa', 'Sin vehículo asignado');
+  if (tieneVehiculo(v) && !v.conductor) falta('conductor.falta', VENTANAS.conductor, 'Media', 'Conductor', 'Placa sin conductor');
+  if (expo && !v.booking) falta('booking.falta', VENTANAS.booking, pend ? 'Media' : urge, C.booking, 'Sin booking');
+  if (expo && !v.mn) falta('motonave.falta', VENTANAS.mn, 'Media', C.mn, 'Sin motonave');
+  if (expo && !pend && !v.cierreDoc) falta('cierreDoc.falta', VENTANAS.cierreDoc, 'Media', C.cierre, 'Sin fecha de cierre documental');
   const choque = 'Las dos fechas se contradicen: una de ellas quedó mal escrita';
-  if (v.fechaRetiro && v.fechaCargue && v.fechaRetiro > v.fechaCargue) add('Alta','Fechas',`Retiro (${fd(v.fechaRetiro)}) después del ${impo?'descargue':'llenado'} (${fd(v.fechaCargue)})`, 'Error', choque);
-  if (v.etd && v.fechaCargue && v.fechaCargue >= v.etd) add('Alta','ETD',`Llenado (${fd(v.fechaCargue)}) igual o posterior al ETD (${fd(v.etd)})`, 'Error', choque);
-  if (v.cierreDoc && v.etd && v.cierreDoc > v.etd) add('Media',C.cierre,'Cierre documental después del ETD', 'Error', choque);
+  if (v.fechaRetiro && v.fechaCargue && v.fechaRetiro > v.fechaCargue) add('fechas.retiroDespuesCargue', 'Alta','Fechas',`Retiro (${fd(v.fechaRetiro)}) después del ${impo?'descargue':'llenado'} (${fd(v.fechaCargue)})`, 'Error', choque);
+  if (v.etd && v.fechaCargue && v.fechaCargue >= v.etd) add('etd.llenadoDespues', 'Alta','ETD',`Llenado (${fd(v.fechaCargue)}) igual o posterior al ETD (${fd(v.etd)})`, 'Error', choque);
+  if (v.cierreDoc && v.etd && v.cierreDoc > v.etd) add('cierreDoc.despuesEtd', 'Media',C.cierre,'Cierre documental después del ETD', 'Error', choque);
   // 10-nov: se entregó en puerto después del zarpe estimado → esa fecha ya no puede ser la del zarpe (cambió la motonave o la fecha)
-  if (expo && v.etd && v.fechaEntregaPuerto && v.fechaEntregaPuerto > v.etd) add('Media','ETD',`El zarpe estimado (${fd(v.etd)}) quedó antes de la entrega en puerto (${fd(v.fechaEntregaPuerto)}): pida la fecha nueva de zarpe`, 'Error', 'El contenedor no pudo irse en esa motonave: la naviera cambió la fecha o la motonave');
-  if (v.eta && v.etd && v.eta < v.etd) add('Alta','ETA',`ETA (${fd(v.eta)}) antes del ETD (${fd(v.etd)})`, 'Error', choque);
+  if (expo && v.etd && v.fechaEntregaPuerto && v.fechaEntregaPuerto > v.etd) add('etd.antesDeEntrega', 'Media','ETD',`El zarpe estimado (${fd(v.etd)}) quedó antes de la entrega en puerto (${fd(v.fechaEntregaPuerto)}): pida la fecha nueva de zarpe`, 'Error', 'El contenedor no pudo irse en esa motonave: la naviera cambió la fecha o la motonave');
+  if (v.eta && v.etd && v.eta < v.etd) add('eta.antesDeEtd', 'Alta','ETA',`ETA (${fd(v.eta)}) antes del ETD (${fd(v.etd)})`, 'Error', choque);
   // viaje sin actualizar: se reporta una vez; las reglas que dirían lo mismo (sin cita con el cierre vencido, ETD vencido) se omiten
   const sa = sinActualizar(v);
-  sa.forEach(s => add(s.sev, 'Seguimiento', 'Sin actualizar: ' + s.msg, 'Error', s.porque));
+  sa.forEach(s => add('seguimiento.sinActualizar', s.sev, 'Seguimiento', 'Sin actualizar: ' + s.msg, 'Error', s.porque));
   if (seg && expo && !pend){
     // el contenedor entra a puerto con la cita más cercana, siempre antes del cierre documental
-    if (!sa.length && v.cierreDoc && !v.citaIngreso && !v.fechaEntregaPuerto && diffDias(v.cierreDoc) <= 3) add(diffDias(v.cierreDoc)<=1?'Alta':'Media','Cita de ingreso',`Sin cita de ingreso a puerto (cierre documental ${fd(v.cierreDoc)})`, diffDias(v.cierreDoc) < 0 ? 'Error' : 'Alerta',
+    if (!sa.length && v.cierreDoc && !v.citaIngreso && !v.fechaEntregaPuerto && diffDias(v.cierreDoc) <= 3) add('citaIngreso.falta', diffDias(v.cierreDoc)<=1?'Alta':'Media','Cita de ingreso',`Sin cita de ingreso a puerto (cierre documental ${fd(v.cierreDoc)})`, diffDias(v.cierreDoc) < 0 ? 'Error' : 'Alerta',
       diffDias(v.cierreDoc) < 0 ? `El cierre documental fue el ${fd(v.cierreDoc)}: si el contenedor entró, falta registrar la cita o la entrega` : `El contenedor debe entrar a puerto antes del cierre documental del ${fd(v.cierreDoc)}`);
-    if (v.citaIngreso && v.cierreDoc && v.citaIngreso > v.cierreDoc) add('Alta','Cita de ingreso',`Cita de ingreso (${fd(v.citaIngreso)}) después del cierre documental (${fd(v.cierreDoc)})`, 'Error', `El contenedor debe entrar antes del cierre documental del ${fd(v.cierreDoc)}`);
-    if (v.citaIngreso && !v.fechaEntregaPuerto && diffDias(v.citaIngreso) <= 1 && !/confirm|entreg/i.test(v.estadoCita||'')) add('Media','Estado de la cita',`Cita del ${fd(v.citaIngreso)} sin confirmar`, 'Alerta', `La cita es el ${fd(v.citaIngreso)}`);
-    if (v.fechaEntregaPuerto && !v.tirillaEntrega) add('Media','Tirilla de entrega','Entregado en puerto sin tirilla de entrega', 'Error', `Se entregó en puerto el ${fd(v.fechaEntregaPuerto)}: la tirilla es el soporte de esa entrega`);
+    if (v.citaIngreso && v.cierreDoc && v.citaIngreso > v.cierreDoc) add('citaIngreso.despuesCierre', 'Alta','Cita de ingreso',`Cita de ingreso (${fd(v.citaIngreso)}) después del cierre documental (${fd(v.cierreDoc)})`, 'Error', `El contenedor debe entrar antes del cierre documental del ${fd(v.cierreDoc)}`);
+    if (v.citaIngreso && !v.fechaEntregaPuerto && diffDias(v.citaIngreso) <= 1 && !/confirm|entreg/i.test(v.estadoCita||'')) add('citaIngreso.sinConfirmar', 'Media','Estado de la cita',`Cita del ${fd(v.citaIngreso)} sin confirmar`, 'Alerta', `La cita es el ${fd(v.citaIngreso)}`);
+    if (v.fechaEntregaPuerto && !v.tirillaEntrega) add('tirillaEntrega.falta', 'Media','Tirilla de entrega','Entregado en puerto sin tirilla de entrega', 'Error', `Se entregó en puerto el ${fd(v.fechaEntregaPuerto)}: la tirilla es el soporte de esa entrega`);
   }
   if (seg && impo && !pend){
     // lo que Reckitt pregunta de cada importación
     [['pedido','Pedido','Sin número de pedido'],esLCL(v) ? ['booking','Booking / BL','Sin BL (carga suelta)'] : ['contenedor','Contenedor','Sin número de contenedor'],['unidad','Unidad','Sin tipo de contenedor (20 o 40)'],
      ['puerto','Origen','Sin origen (puerto de llegada)'],['destino','Destino','Sin destino'],['bodega','Bodega','Sin bodega de entrega'],
-     ['fechaLevante','Fecha entrega documentos','Sin fecha de entrega de documentos']].forEach(([k,campo,msg])=>{ if(!v[k]) add('Media',campo,msg, 'Error', 'Reckitt pregunta este dato de cada importación; viene en la instrucción o en la orden de retiro'); });
-    if (v.fechaRetiro && v.eta && v.fechaRetiro < v.eta) add('Alta','Fecha de retiro',`Retiro del lleno (${fd(v.fechaRetiro)}) antes de la ETA (${fd(v.eta)})`, 'Error', choque);
+     ['fechaLevante','Fecha entrega documentos','Sin fecha de entrega de documentos']].forEach(([k,campo,msg])=>{ if(!v[k]) add(k + '.falta', 'Media',campo,msg, 'Error', 'Reckitt pregunta este dato de cada importación; viene en la instrucción o en la orden de retiro'); });
+    if (v.fechaRetiro && v.eta && v.fechaRetiro < v.eta) add('fechaRetiro.antesDeEta', 'Alta','Fecha de retiro',`Retiro del lleno (${fd(v.fechaRetiro)}) antes de la ETA (${fd(v.eta)})`, 'Error', choque);
     const descargado = v.fechaCargue && v.fechaCargue <= HOY;
-    if (!esLCL(v) && patioPareceBodega(v.patio, v)) add('Media','Patio de devolución',`"${v.patio}" parece la bodega de entrega, no el patio donde se devuelve el vacío`, 'Error',
+    if (!esLCL(v) && patioPareceBodega(v.patio, v)) add('patioDevolucion.pareceBodega', 'Media','Patio de devolución',`"${v.patio}" parece la bodega de entrega, no el patio donde se devuelve el vacío`, 'Error',
       'El vacío se devuelve en un patio de la naviera o del puerto; la bodega es donde se descarga la mercancía');
     if (esLCL(v)) { /* carga suelta: no hay vacío que devolver */ }
     else if (!v.fechaDevolucion){
       const yaDescargo = `Se descargó el ${fd(v.fechaCargue)}: el vacío hay que devolverlo`;
-      if (!v.patio && descargado) add('Alta','Patio de devolución','Sin patio de devolución del vacío', 'Error', yaDescargo);
-      else if (!v.patio && dias !== null && dias <= VENTANAS.patioDevolucion) add('Media','Patio de devolución','Sin patio de devolución del vacío' + cuando, 'Alerta', porqueEvento);
-      if (descargado && !v.ciudadDevolucion) add('Media','Ciudad de devolución','Sin ciudad de devolución: no se puede calcular la fecha límite', 'Error', yaDescargo + ' y su plazo depende de la ciudad');
-      if (descargado && !v.citaDevolucion) add('Media','Cita de devolución','Sin cita de devolución del vacío (tramitarla con anticipación)', 'Error', yaDescargo);
+      if (!v.patio && descargado) add('patioDevolucion.falta', 'Alta','Patio de devolución','Sin patio de devolución del vacío', 'Error', yaDescargo);
+      else if (!v.patio && dias !== null && dias <= VENTANAS.patioDevolucion) add('patioDevolucion.falta', 'Media','Patio de devolución','Sin patio de devolución del vacío' + cuando, 'Alerta', porqueEvento);
+      if (descargado && !v.ciudadDevolucion) add('ciudadDevolucion.falta', 'Media','Ciudad de devolución','Sin ciudad de devolución: no se puede calcular la fecha límite', 'Error', yaDescargo + ' y su plazo depende de la ciudad');
+      if (descargado && !v.citaDevolucion) add('citaDevolucion.falta', 'Media','Cita de devolución','Sin cita de devolución del vacío (tramitarla con anticipación)', 'Error', yaDescargo);
       if (v.fechaLimite){
         const d = diffDias(v.fechaLimite);
-        if (d < 0) add('Alta','Devolución del vacío',`Vacío sin devolver: el plazo venció el ${fd(v.fechaLimite)} (${-d} d de demora)`, 'Error', `El plazo venció el ${fd(v.fechaLimite)}: cada día suma demora`);
-        else if (d <= 1) add('Alta','Devolución del vacío',`La devolución del vacío vence ${d===0?'hoy':'mañana'} (${fd(v.fechaLimite)})`, 'Alerta', `El plazo vence el ${fd(v.fechaLimite)}`);
+        if (d < 0) add('vacio.vencido', 'Alta','Devolución del vacío',`Vacío sin devolver: el plazo venció el ${fd(v.fechaLimite)} (${-d} d de demora)`, 'Error', `El plazo venció el ${fd(v.fechaLimite)}: cada día suma demora`);
+        else if (d <= 1) add('vacio.porVencer', 'Alta','Devolución del vacío',`La devolución del vacío vence ${d===0?'hoy':'mañana'} (${fd(v.fechaLimite)})`, 'Alerta', `El plazo vence el ${fd(v.fechaLimite)}`);
       }
-    } else if (!v.tirillaDevolucion) add('Media','Tirilla de devolución','Vacío devuelto sin tirilla de devolución', 'Error', `Se devolvió el ${fd(v.fechaDevolucion)}: la tirilla es el soporte de esa devolución`);
+    } else if (!v.tirillaDevolucion) add('tirillaDevolucion.falta', 'Media','Tirilla de devolución','Vacío devuelto sin tirilla de devolución', 'Error', `Se devolvió el ${fd(v.fechaDevolucion)}: la tirilla es el soporte de esa devolución`);
   }
   // reglas de detección (REGLAS-DETECCION.md): devolución del vacío dudosa y patio intermedio sin subviaje
   const hijos = hijosDe(v), mismo = (a, b) => sinTilde(String(a||'')).toLowerCase().trim() === sinTilde(String(b||'')).toLowerCase().trim();
@@ -2532,27 +2645,26 @@ function validar(v){
     // la duda del mismo día se resuelve con la tirilla de devolución o con la confirmación del equipo de esa fecha
     const cDev = confirmacion(v, 'fechaDevolucion'), devConfirmada = cDev && cDev.fuente !== 'anterior';
     if (devConfirmada) { /* ya confirmada: no se vuelve a preguntar */ }
-    else if (v.fechaDevolucion === v.fechaCargue && v.patio && mismo(v.patio, v.bodega)) add('Alta','Fecha de devolución',`Devolución del vacío dudosa: mismo día y mismo lugar de la entrega (${v.bodega}). ¿El contenedor quedó almacenado lleno? Confirmar o crear subviaje`, 'Error', 'Si el contenedor sigue lleno en la bodega, el vacío no se ha devuelto y el plazo sigue corriendo');
-    else if (v.fechaDevolucion === v.fechaCargue) add('Media','Fecha de devolución',`Vacío devuelto el mismo día de la entrega en ${v.bodega||'bodega'}: confirmar que no quedó almacenado lleno`, 'Error', 'Si el contenedor sigue lleno en la bodega, el vacío no se ha devuelto y el plazo sigue corriendo');
+    else if (v.fechaDevolucion === v.fechaCargue && v.patio && mismo(v.patio, v.bodega)) add('devolucion.mismoDiaLugar', 'Alta','Fecha de devolución',`Devolución del vacío dudosa: mismo día y mismo lugar de la entrega (${v.bodega}). ¿El contenedor quedó almacenado lleno? Confirmar o crear subviaje`, 'Error', 'Si el contenedor sigue lleno en la bodega, el vacío no se ha devuelto y el plazo sigue corriendo');
+    else if (v.fechaDevolucion === v.fechaCargue) add('devolucion.mismoDia', 'Media','Fecha de devolución',`Vacío devuelto el mismo día de la entrega en ${v.bodega||'bodega'}: confirmar que no quedó almacenado lleno`, 'Error', 'Si el contenedor sigue lleno en la bodega, el vacío no se ha devuelto y el plazo sigue corriendo');
     // solo los subviajes con el contenedor lleno: si se vació en la bodega de paso, el vacío puede volver antes del urbano
     const llenos = hijos.filter(x => !vaciadoSub(x)), urbano = llenos.map(x=>x.fechaUrbano||'').filter(Boolean).sort().pop();
-    if (llenos.length && (!urbano || v.fechaDevolucion < urbano)) add('Alta','Fecha de devolución','Vacío marcado como devuelto antes del urbano del subviaje', 'Error', `El urbano del subviaje ${urbano ? 'es el ' + fd(urbano) : 'aún no tiene fecha'}: el vacío no puede devolverse antes`);
+    if (llenos.length && (!urbano || v.fechaDevolucion < urbano)) add('devolucion.antesDelUrbano', 'Alta','Fecha de devolución','Vacío marcado como devuelto antes del urbano del subviaje', 'Error', `El urbano del subviaje ${urbano ? 'es el ' + fd(urbano) : 'aún no tiene fecha'}: el vacío no puede devolverse antes`);
   }
   // en EXPO "en patio" es el retiro normal del vacío: allí solo cuentan paro, bloqueo o almacenamiento
-  const intermedio = impo ? /almacenamient|\ben patio\b|\bpatio\b.*\bse (entrega|descarga)\b|\bparo\b|bloqueo|sin cita|problemas en bodega/ : /almacenamient|\bparo\b|bloqueo/;
-  if (!hijos.length && intermedio.test(sinTilde(v.observacion||'').toLowerCase())) add('Media','Subviaje','La observación indica patio intermedio, paro o almacenamiento: crear subviaje si el contenedor no va directo al destino final', 'Error', 'La observación del viaje dice que el contenedor quedó en un patio intermedio');
+  if (!hijos.length && pistasSubviaje(v).length) add('subviaje.sospecha', 'Media','Subviaje','La observación indica patio intermedio, paro o almacenamiento: crear subviaje si el contenedor no va directo al destino final', 'Error', 'La observación del viaje dice que el contenedor quedó en un patio intermedio');
   // fechas que ya pasaron sin que se actualice el estado
   // cuenta la fecha, no la etapa: con la tirilla y sin la fecha el viaje figura como zarpado pero el dato sigue faltando
-  if (!sa.length && expo && v.etd && v.etd < HOY && !v.fechaEntregaPuerto && !['Cerrado','Cancelado'].includes(sit)) add('Media','Fecha de entrega en puerto',`ETD vencido (${fd(v.etd)}) y falta la fecha de entrega en puerto`, 'Error', `El buque zarpó el ${fd(v.etd)}: el contenedor ya debió entregarse en puerto${v.tirillaEntrega ? ' (hay tirilla: la fecha está en ella)' : ''}`);
+  if (!sa.length && expo && v.etd && v.etd < HOY && !v.fechaEntregaPuerto && !['Cerrado','Cancelado'].includes(sit)) add('entregaPuerto.falta', 'Media','Fecha de entrega en puerto',`ETD vencido (${fd(v.etd)}) y falta la fecha de entrega en puerto`, 'Error', `El buque zarpó el ${fd(v.etd)}: el contenedor ya debió entregarse en puerto${v.tirillaEntrega ? ' (hay tirilla: la fecha está en ella)' : ''}`);
   if (primerEvento(v) && primerEvento(v) <= HOY){
-    if (!v.observacion) add('Media',C.obs,'Viaje en curso sin observación de status', 'Error', `El viaje empezó el ${fd(primerEvento(v))}`);
+    if (!v.observacion) add('observacion.falta', 'Media',C.obs,'Viaje en curso sin observación de status', 'Error', `El viaje empezó el ${fd(primerEvento(v))}`);
   }
   // 14-nov (anticipación de errores): el mismo vehículo o el mismo peso exacto en dos viajes abiertos (dos viajes casi gemelos con la misma
   // placa; dos viajes con el mismo peso exacto). Puede ser cierto: por eso es una alerta para revisar, no un error
   if (!['Cerrado', 'Cancelado'].includes(sit)) {
     const rv = vehiculoRepetido(v), rp = pesoRepetido(v);
-    if (rv.length) add('Media', 'Placa', `Revise: el vehículo ${v.placa} está también en ${rv.map(o => o.id).join(' y ')} (abierto, fechas muy cercanas)`, 'Alerta', 'Un mismo vehículo no hace dos viajes abiertos el mismo día: puede ser un dato en el viaje equivocado');
-    if (rp.length) add('Media', 'Peso bruto', `Revise: el peso ${v.peso} kg es exactamente el mismo de ${rp.map(o => o.id).join(' y ')}`, 'Alerta', 'Dos cargas con el mismo peso exacto pueden ser dos viajes con los datos cruzados: confirme con la planilla de cada uno');
+    if (rv.length) add('vehiculo.repetido', 'Media', 'Placa', `Revise: el vehículo ${v.placa} está también en ${rv.map(o => o.id).join(' y ')} (abierto, fechas muy cercanas)`, 'Alerta', 'Un mismo vehículo no hace dos viajes abiertos el mismo día: puede ser un dato en el viaje equivocado');
+    if (rp.length) add('peso.repetido', 'Media', 'Peso bruto', `Revise: el peso ${v.peso} kg es exactamente el mismo de ${rp.map(o => o.id).join(' y ')}`, 'Alerta', 'Dos cargas con el mismo peso exacto pueden ser dos viajes con los datos cruzados: confirme con la planilla de cada uno');
   }
   return e;
 }
@@ -3849,6 +3961,7 @@ function aplicarDatos(j, clave, guardadoEn){
     window.MODO_CLIENTE = !j.interno;
     window.BITACORA = j.bitacora || [];
     window.TURNO = j.turno || [];
+    window.RESPUESTAS = j.respuestas || [];   // respuestas del equipo a las alertas de criterio (respuestas.js; dominio validar)
     window.CARGAS = j.cargas || [];   // la última carga confirmada de cada viaje EXPO, con su documento (controles.js)
     window.NOVEDADES = j.novedades || [];   // novedades de cada viaje, con hora y autor (novedades.js)
     window.PREGUNTAS = j.preguntas || [];   // preguntas al agente LogxIA (preguntas.js)
@@ -4429,7 +4542,7 @@ function menusTurno(r){
     {id: 'cob', filas: cob.map(v => ({k: 'cob|' + v.id, tipo: 'cob', v, roja: true}))},
     {id: 'cli', filas: (window.BITACORA || []).filter(b => b.estadoAccion !== 'Hecha' && areaDe(b) === 'Operaciones')
        .map(b => ({k: 'a' + b.id, tipo: 'accion', b, v: viajeDeAccion(b), roja: pedidoRojo(b)}))},
-    {id: 'dat', filas: V.map(v => ({k: 'd' + v.id, tipo: 'dato', v, e: validar(v).filter(e => e.tipo !== 'Alerta' && e.campo !== 'Seguimiento').sort((a, b) => SEV(a) - SEV(b))}))
+    {id: 'dat', filas: V.map(v => ({k: 'd' + v.id, tipo: 'dato', v, e: validar(v).filter(e => e.tipo !== 'Alerta' && e.regla !== 'seguimiento.sinActualizar').sort((a, b) => SEV(a) - SEV(b))}))
        .filter(x => x.e.length)},
     ...(CIERRE_DIA && r && r.n === RONDAS.length ? [{id: 'cie', filas: [...V.map(v => ({k: 'man|' + v.id, tipo: 'man', v, h: hitosDe(v).filter(h => diffDias(h.f) === 1 && h.que !== 'Cierre documental')})).filter(x => x.h.length),
        {k: 'nota', tipo: 'nota'}]}] : []),
@@ -5133,7 +5246,7 @@ function rutaPedido(v){
     <div class="cab"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
       ${tagNuevo(v)}<span class="op ${v.operacion}">${v.operacion}</span><b>${esc(v.empresa||'Empresa sin definir')} · ${esc(ref)}</b>
       <span class="sub">${esc([v.solicitante && 'Solicita '+v.solicitante, v.fwd].filter(Boolean).join(' · '))}</span></div>
-      <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahoraTxt)}</span>${etiquetaSinActualizar(v)}${etiquetaPorConfirmar(pend)}${!window.MODO_CLIENTE && pendientesOps(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)" title="Lo que operaciones debe completar">Falta (operaciones): ${esc(pendientesOps(v).join(' · '))}</span>` : ''}${!window.MODO_CLIENTE && pendientesFact(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--muted) 15%, transparent);color:var(--muted)" title="Para poder facturarlo">Falta (facturación): ${esc(pendientesFact(v).join(' · '))}</span>` : ''}${!window.MODO_CLIENTE && notaHermanos(v) ? `<span class="tg" style="background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)" title="Otro contenedor de la misma referencia ya tiene este dato; cada contenedor lleva el suyo">${esc(notaHermanos(v))}</span>` : ''}</div>
+      <span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${esc(ahoraTxt)}</span>${etiquetaSinActualizar(v)}${etiquetaPorConfirmar(pend)}${!window.MODO_CLIENTE && faltaOpsSinPreguntas(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)" title="Lo que operaciones debe completar">Falta (operaciones): ${esc(faltaOpsSinPreguntas(v).join(' · '))}</span>` : ''}${etiquetasPregunta(v)}${!window.MODO_CLIENTE && pendientesFact(v).length ? `<span class="tg" style="background:color-mix(in srgb, var(--muted) 15%, transparent);color:var(--muted)" title="Para poder facturarlo">Falta (facturación): ${esc(pendientesFact(v).join(' · '))}</span>` : ''}${!window.MODO_CLIENTE && notaHermanos(v) ? `<span class="tg" style="background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn)" title="Otro contenedor de la misma referencia ya tiene este dato; cada contenedor lleva el suyo">${esc(notaHermanos(v))}</span>` : ''}</div>
     ${lineaNovedad(v)}
     ${rutaMovil(v, P, n, Math.min(nIcono, P.length - 1), gG)}
     <div class="cuerpo"><div>
@@ -8679,7 +8792,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '0d98930571';
+const VERSION_TABLERO = '4b67b73303';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -10641,6 +10754,115 @@ async function guardarDatosMarcados(tid, rechazar){
   delete ELEC[tid];
   await aplicarDecision(v, area, rechazar ? [] : sel, rechazar ? sel : [], usuario);
 }
+/* ---------- respuestas.js · una pregunta, dos respuestas: las alertas de criterio se responden (22-nov-2026) ----------
+ * Capa: pantalla. Nació del pedido 11689: la tarjeta decía "revisar si lleva subviaje" y no había dónde decir que no lo llevaba.
+ * Una alerta de criterio (dominio.js REGLAS_VALIDAR, respuesta: true) es una pregunta: el sistema sospecha y la persona sabe. Sale en
+ * Acciones para hoy (bloque "¿Aplica?") y en la tarjeta del viaje, siempre con la MISMA ventana (abrirPregunta):
+ *   · "Sí" lleva a corregirlo (crear el subviaje, o abrir el viaje en la casilla);
+ *   · "No" pide el motivo, muestra lo que se va a guardar y lo guarda a nombre de quien responde (doPost 'responder', Respuestas.gs).
+ * La respuesta va a la pestaña Respuestas (solo se agregan filas; el viaje no se toca). Al responder, la pregunta se cierra en todas
+ * partes porque validar (dominio) ya no la devuelve: Bandeja, etiqueta de la tarjeta, Calidad de datos y correo. Vuelve sola si cambia
+ * lo que el sistema vio (otra palabra en la observación) y se puede deshacer con "Volver a preguntar". Las reglas, los textos de los
+ * botones y los motivos están en el catálogo del dominio: una regla nueva que se responda no necesita código aquí. */
+
+// preguntas abiertas de un viaje y las ya respondidas "no aplica" (dominio: validar, descartadas)
+const preguntasDe = v => window.MODO_CLIENTE || !v ? [] : validar(v).filter(e => admiteNoAplica(e.regla));
+const nombrePregunta = v => v ? `${refCorta(v)}${v.id ? ' · ' + v.id : ''}` : '';
+// lo que pendientesOps llama a cada pregunta, para no decir lo mismo dos veces en la etiqueta "Falta (operaciones)"
+const etiquetaOpsDe = e => e.regla === 'subviaje.sospecha' ? 'revisar si lleva subviaje' : String(e.campo || '').toLowerCase();
+const faltaOpsSinPreguntas = v => { const P = preguntasDe(v).map(etiquetaOpsDe); return pendientesOps(v).filter(x => !P.includes(x)); };
+
+// lo que el sistema vio: el mensaje de la regla y, en el subviaje, la observación con las palabras que la dispararon
+function evidenciaPregunta(e){
+  const v = e.v, venc = respuestaVencida(e.regla, v);
+  const obs = e.regla === 'subviaje.sospecha' && v.observacion ? `<div class="sub" style="margin-top:4px">Observación del viaje: «${esc(String(v.observacion).slice(0, 220))}» · palabras que lo hacen sospechar: <b>${esc(pistasSubviaje(v).join(', '))}</b></div>` : '';
+  const vuelve = venc ? `<div style="margin-top:6px;color:var(--warn)"><b>Por qué vuelve:</b> ${esc(venc.usuario)} respondió «no aplica» el ${esc(fd(String(venc.fecha).slice(0, 10)))} (${esc(venc.motivo)}), y después cambió lo que el sistema ve. Revise de nuevo.</div>` : '';
+  return `${esc(e.msg)}${obs}${vuelve}`;
+}
+// la línea de la Bandeja y sus dos botones (los mismos textos del catálogo)
+const htmlPregunta = e => `${e.v.padre ? `${esc(nombreSub(e.v))} · ` : ''}<b>${esc(reglaDe(e).pregunta)}</b><br><span class="sub">${evidenciaPregunta(e)}</span>`;
+const botonesPregunta = e => `<button type="button" class="link" onclick="siPregunta('${esc(e.v.id)}','${esc(e.regla)}')" title="${esc(reglaDe(e).resolver)}">${esc(reglaDe(e).si)}</button>`
+  + `<button type="button" class="link" onclick="abrirPregunta('${esc(e.v.id)}','${esc(e.regla)}',true)" title="Pide el motivo, muestra lo que se guarda y cierra la pregunta. Se puede deshacer">${esc(reglaDe(e).noTxt)}</button>`;
+// en la tarjeta del viaje: una etiqueta por pregunta abierta (abre la ventana) y una gris por cada respondida (muestra quién y deja deshacer)
+const etiquetasPregunta = v => window.MODO_CLIENTE ? '' : preguntasDe(v).map(e => `<button type="button" class="tg" style="border:1px solid var(--warn);background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn);cursor:pointer" onclick="event.stopPropagation();abrirPregunta('${esc(v.id)}','${esc(e.regla)}')" title="El sistema sospecha y usted sabe: responda sí o no">❓ ${esc(reglaDe(e).pregunta)} Responder</button>`).join('')
+  + descartadas(v).map(e => `<button type="button" class="tg" style="border:0;background:color-mix(in srgb, var(--muted) 15%, transparent);color:var(--muted);cursor:pointer" onclick="event.stopPropagation();abrirRespondida('${esc(v.id)}','${esc(e.regla)}')" title="Motivo: ${esc(e.respuesta.motivo)}. Clic para verla o volver a preguntar">${esc(reglaDe(e).noTxt)} · ${esc(String(e.respuesta.usuario).split(' ')[0])}</button>`).join('');
+
+// "Sí": lleva a corregirlo. El subviaje se crea con su ventana de siempre; lo demás abre el viaje en la casilla de la alerta
+function siPregunta(viajeId, regla){
+  $('#ovPregunta')?.remove();
+  const v = viajePorId(viajeId), e = v && preguntasDe(v).find(x => x.regla === regla); if (!e) return toast('Esa pregunta ya no está abierta');
+  if (regla === 'subviaje.sospecha') nuevoSubviaje(viajeId); else abrirEnCampo(viajeId, e.campo);
+}
+
+// la ventana única. directoNo = entra ya en el paso del motivo (botón "No…" de la Bandeja)
+function abrirPregunta(viajeId, regla, directoNo){
+  const v = viajePorId(viajeId), e = v && preguntasDe(v).find(x => x.regla === regla); if (!e) return toast('Esa pregunta ya no está abierta');
+  const R = reglaDe(e), usuario = usuarioActual() || 'quien ingrese';
+  const pintar = paso => {
+    $('#ovPregunta')?.remove();
+    const cuerpo = paso === 'no'
+      ? `<div class="sub" style="margin:12px 0 6px"><b>Motivo</b> · elija uno o escriba el suyo (obligatorio)</div>
+        ${R.motivos.map((m, i) => `<label style="display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer"><input type="radio" name="rpMotivo" value="${esc(m)}" style="margin-top:3px"> <span>${esc(m)}</span></label>`).join('')}
+        <label style="display:flex;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer"><input type="radio" name="rpMotivo" value=""> <span>Otro:</span> <input type="text" id="rpOtro" maxlength="160" placeholder="Escriba el motivo" style="flex:1;min-width:0"></label>
+        <div id="rpGuarda" style="margin-top:12px;padding:10px 12px;border-radius:8px;background:color-mix(in srgb, var(--muted) 12%, transparent)"></div>
+        <div class="sub" style="margin-top:8px"><b>Qué pasará:</b> la pregunta se cierra en la tarjeta, en Acciones para hoy y en el correo. El viaje no se modifica. Vuelve a salir si cambia lo que el sistema vio, y se puede deshacer con «Volver a preguntar».</div>
+        <div class="mfoot" style="margin-top:14px"><button type="button" class="btn" data-rp="volver">Cancelar: la pregunta sigue abierta</button><button type="button" class="btn primary" data-rp="guardar" disabled>Guardar: ${esc(R.noTxt)}</button></div>`
+      : `<div class="qh-ops"><button type="button" class="btn" data-rp="si">${esc(R.si)}<small>${esc(R.resolver)}</small></button>
+        <button type="button" class="btn" data-rp="no">${esc(R.noTxt)}<small>Pide el motivo y muestra lo que se guarda. Queda a su nombre y se puede deshacer.</small></button>
+        <button type="button" class="btn" data-rp="volver">Volver<small>No responde nada: la pregunta sigue abierta.</small></button></div>`;
+    document.body.insertAdjacentHTML('beforeend', `<div class="ov open" id="ovPregunta" style="z-index:75"><div class="modal" role="dialog" aria-modal="true" style="width:min(520px,100%)">
+      <h3>${esc(R.pregunta)}</h3><div class="sub">${esc(nombrePregunta(v))}</div>
+      <div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:color-mix(in srgb, var(--warn) 12%, transparent)"><div class="sub"><b>Lo que el sistema vio</b></div>${evidenciaPregunta(e)}</div>${cuerpo}</div></div>`);
+    const ov = $('#ovPregunta');
+    const motivo = () => { const r = ov.querySelector('input[name="rpMotivo"]:checked'); return r ? (r.value || ($('#rpOtro').value || '').replace(/\s+/g, ' ').trim()) : ''; };
+    const refrescar = () => { const m = motivo(), ok = m.length >= 3;
+      $('#rpGuarda').innerHTML = `<div class="sub"><b>Se guardará</b> (en la pestaña Respuestas; el viaje no se toca)</div><b>${esc(v.id)}</b> · ${esc(R.pregunta)} <b>${esc(R.noTxt)}</b><br>Motivo: ${ok ? '«' + esc(m) + '»' : '<span class="sub">falta elegirlo</span>'}<br>Por: <b>${esc(usuario)}</b> · hoy`;
+      ov.querySelector('[data-rp="guardar"]').disabled = !ok; };
+    if (paso === 'no') { refrescar(); ov.oninput = ev => { if (ev.target.id === 'rpOtro') { const o = ov.querySelector('input[name="rpMotivo"][value=""]'); if (o) o.checked = true; } refrescar(); }; ov.onchange = refrescar; }
+    ov.onclick = ev => { const x = ev.target.closest('[data-rp]'); if (!x) { if (ev.target.id === 'ovPregunta') ov.remove(); return; }
+      const q = x.dataset.rp;
+      if (q === 'si') siPregunta(viajeId, regla);
+      else if (q === 'no') pintar('no');
+      else if (q === 'guardar') { const m = motivo(); if (m.length >= 3) unaVez('resp|' + viajeId + regla, () => guardarRespuesta(viajeId, regla, 'noAplica', m)); }
+      else ov.remove(); };
+  };
+  pintar(directoNo ? 'no' : 'elegir');
+}
+
+// una pregunta ya respondida: quién, cuándo y por qué, con "Volver a preguntar"
+function abrirRespondida(viajeId, regla){
+  const v = viajePorId(viajeId), e = v && descartadas(v).find(x => x.regla === regla); if (!e) return;
+  const R = reglaDe(e), r = e.respuesta;
+  $('#ovPregunta')?.remove();
+  document.body.insertAdjacentHTML('beforeend', `<div class="ov open" id="ovPregunta" style="z-index:75"><div class="modal" role="dialog" aria-modal="true" style="width:min(480px,100%)">
+    <h3>${esc(R.pregunta)} ${esc(R.noTxt)}</h3><div class="sub">${esc(nombrePregunta(v))}</div>
+    <div style="margin-top:10px">Motivo: «${esc(r.motivo)}»<br><span class="sub">${esc(r.usuario)} · ${esc(r.fecha)}</span></div>
+    <div class="qh-ops"><button type="button" class="btn" data-rp="reabrir">↺ Volver a preguntar<small>Deshace la respuesta: la pregunta vuelve a salir como estaba. También queda anotado.</small></button>
+    <button type="button" class="btn" data-rp="volver">Volver<small>La deja como está.</small></button></div></div></div>`);
+  $('#ovPregunta').onclick = ev => { const x = ev.target.closest('[data-rp]'); if (!x && ev.target.id !== 'ovPregunta') return;
+    if (x && x.dataset.rp === 'reabrir') unaVez('resp|' + viajeId + regla, () => guardarRespuesta(viajeId, regla, 'reabrir', '')); else $('#ovPregunta').remove(); };
+}
+
+// guarda la respuesta (una fila nueva en Respuestas) y repinta: la pregunta desaparece o vuelve en todas las pantallas
+async function guardarRespuesta(viajeId, regla, respuesta, motivo){
+  const usuario = pedirUsuario(); if (!usuario) return;
+  try {
+    const j = await api('responder', {viaje: viajeId, regla, respuesta, motivo, usuario});
+    if (!j.ok) throw new Error(j.error || 'error');
+    window.RESPUESTAS = j.respuestas || [];
+    $('#ovPregunta')?.remove();
+    toast(respuesta === 'noAplica' ? `Guardado: ${REGLAS_VALIDAR[regla].noTxt} · ${viajeId}` : `La pregunta volvió a abrirse · ${viajeId}`, 4000);
+    render();
+  } catch(e) { toast('No se pudo guardar: ' + e.message, 5000); }
+}
+
+// control para que nadie descarte en silencio: lo respondido "no aplica" que sigue vigente, plegado en Acciones para hoy, con deshacer
+function resumenRespondidas(){
+  if (window.MODO_CLIENTE) return '';
+  const L = viajes.filter(v => situacion(v) !== 'Cancelado').flatMap(descartadas); if (!L.length) return '';
+  return `<details class="bj-auto"><summary>✔ ${L.length} pregunta${L.length === 1 ? '' : 's'} respondida${L.length === 1 ? '' : 's'} «no aplica» <span class="sub">· ver quién y por qué</span></summary>`
+    + L.map(e => `<div class="bj-auto-l"><div><b>${esc(e.v.id)}</b> ${esc(reglaDe(e).pregunta)} <b>${esc(reglaDe(e).noTxt)}</b><br><span class="sub">«${esc(e.respuesta.motivo)}» · ${esc(e.respuesta.usuario)} · ${esc(e.respuesta.fecha)}</span></div><button type="button" class="link" onclick="abrirRespondida('${esc(e.v.id)}','${esc(e.regla)}')" title="Ver la respuesta o deshacerla">↺ Volver a preguntar</button></div>`).join('') + '</details>';
+}
 /* ---------- bandeja.js · Bandeja (prueba, desde 6-nov): todo lo que pide trabajo, una tarjeta por viaje ----------
  * Capa: pantalla. No tiene reglas ni datos propios: junta lo que ya calculan Mi turno, Acciones, Llenar datos y Errores
  * (dominio.js: sinCobertura, pasosPorConfirmar, sinActualizar, validar, pareceHecha, yaCreado; acciones.js BITACORA;
@@ -10660,6 +10882,8 @@ const BLOQUES = [
   ['sinact', '⚠ Sin actualizar', 'p-bad', 'La fecha del paso ya pasó y el viaje no registra que se hizo (la misma alerta de la Torre de Control)'],
   ['gps', '📍 GPS', 'p-acc', 'El GPS ubica el vehículo en un lugar de su ruta o cerca (geozonas de 200 m; los puertos, más). Es un aviso: nada se marca solo'],
   ['paso', '¿Pasó?', 'p-warn', 'La fecha llegó y nadie confirmó si se hizo'],
+  // 22-nov (pedido 11689, "revisar si lleva subviaje" sin dónde responder): las alertas de criterio son preguntas con dos respuestas (respuestas.js)
+  ['pregunta', '¿Aplica?', 'p-warn', 'El sistema sospecha algo y solo una persona sabe si es cierto: se responde sí o no, con motivo, y la pregunta se cierra'],
   ['donde', '¿Dónde va?', 'p-acc', 'Vehículo en movimiento: confirmar en cada ronda dónde va (o "Sigue igual")'],
   ['hacer', 'Por hacer', 'p-warn', 'Algo que hay que pedir o conseguir antes de una fecha (la cita antes del cierre documental, el vehículo antes del retiro…)'],
   ['nocoincide', '⚠ No coincide', 'p-bad', 'La base dice una cosa y un correo o documento dice otra: alguien decide cuál vale'],
@@ -10673,7 +10897,7 @@ const BLOQUES = [
 // 10-nov ("que el equipo entienda qué debe hacer"): cada renglón empieza con la instrucción, en una frase con verbo. El nombre del
 // bloque (la etiqueta de color) dice de qué tipo es; esto dice qué hacer.
 const QUE_HACER = {gps: 'El GPS ubica el vehículo: confirme si es lo esperado', programacion: 'Revise lo que mandó Reckitt y aplíquelo en el tablero', crear: 'Cree el viaje que pide el correo', tomar: 'Tome este viaje nuevo: ábralo y revise sus datos', vehiculo: 'Asigne vehículo y conductor',
-  sinact: 'Actualice el viaje: ¿se hizo o cambió la fecha?', paso: 'Confirme si este paso ya se hizo', donde: 'Confirme dónde va el vehículo',
+  sinact: 'Actualice el viaje: ¿se hizo o cambió la fecha?', pregunta: 'Responda sí o no: el sistema sospecha y usted sabe', paso: 'Confirme si este paso ya se hizo', donde: 'Confirme dónde va el vehículo',
   nocoincide: 'Marque los datos que quiere decidir: usar lo que llegó o dejar lo del viaje', datos: 'Guarde los datos nuevos del correo si son correctos', pedido: 'Haga lo que pide el correo y márquelo hecho',
   falta: 'Complete estos datos en el viaje', registro: 'Corrija los datos del conductor o del vehículo', cierre: 'Cierre el día y deje la nota de entrega de turno', manana: 'Deje listo lo de mañana'};
 const HORIZONTE_FALTA = 5;   // días: los faltantes de viajes que arrancan después quedan en Errores (revisión, no del día)
@@ -10919,11 +11143,14 @@ function armarBandeja(){
           html: (venc.length ? `${desdeCuando(vieja)}<b>Sin decidir: ${venc.map(p => esc(p.etiqueta)).join(', ')}</b> <span class="sub">el correo ya lo trae; guárdelo en el viaje o descártelo</span><br>` : '') + htmlDatosNuevos(nuevos, tid) + vienen,
           acc: botonesDatosNuevos(tid)}); }
     });
+    // 22-nov · ¿Aplica?: las alertas de criterio (¿lleva subviaje?, ¿la placa quedó en el viaje equivocado?…) salen como pregunta con sus dos
+    // respuestas, no como un dato que falta; al responder se cierran aquí, en la tarjeta y en el correo (dominio validar)
+    todos.forEach(x => preguntasDe(x).forEach(e => add(v, {b: 'pregunta', k: 'preg|' + idPendiente(e.regla, x), html: htmlPregunta(e), acc: botonesPregunta(e)})));
     // 7 · Falta (errores del viaje y de sus subviajes; sin los que ya salen arriba), solo si arranca en ≤ HORIZONTE_FALTA días o ya arrancó
     const pe = primerEvento(v), cerca = !pe || diffDias(pe) <= HORIZONTE_FALTA;
     if (cerca) {
-      const E = todos.flatMap(x => validar(x).map(e => ({...e, x}))).filter(e => e.tipo !== 'Alerta' && e.campo !== 'Seguimiento'
-        && !(sinCobertura(v) && e.x === v && /veh[ií]culo/i.test(e.msg)));
+      const E = todos.flatMap(x => validar(x).map(e => ({...e, x}))).filter(e => e.tipo !== 'Alerta' && e.regla !== 'seguimiento.sinActualizar' && !admiteNoAplica(e.regla)
+        && !(sinCobertura(v) && e.x === v && e.regla === 'vehiculo.falta'));
       if (E.length) add(v, {b: 'falta', html: E.map(e => `${e.x.padre ? `${esc(nombreSub(e.x))} · ` : ''}${esc(e.msg)}`).join('<br>'),
         acc: btnT('Abrir el viaje y completar', `data-b-abrir="${v.id}"`)});
     }
@@ -10932,8 +11159,8 @@ function armarBandeja(){
   // antes del cierre documental, asignar vehículo, conseguir booking o motonave) salían solo en la pantalla Errores. Ahora son acciones
   // de esta lista, cada una con su fecha: hay que hacerla, a más tardar, el día anterior (hoy = el límite es hoy o mañana).
   vivos.forEach(v => { const todos = [v, ...hijosDe(v)];
-    todos.flatMap(x => validar(x).map(e => ({...e, x}))).filter(e => e.tipo === 'Alerta' && e.campo !== 'Seguimiento'
-      && !(sinCobertura(v) && e.x === v && /veh[ií]culo/i.test(e.msg))).forEach(e => {
+    todos.flatMap(x => validar(x).map(e => ({...e, x}))).filter(e => e.tipo === 'Alerta' && e.regla !== 'seguimiento.sinActualizar' && !admiteNoAplica(e.regla)
+      && !(sinCobertura(v) && e.x === v && e.regla === 'vehiculo.falta')).forEach(e => {
         const limite = String((/cita de ingreso/i.test(e.campo) ? e.x.cierreDoc : primerEvento(e.x)) || '').slice(0, 10);
         add(v, {b: 'hacer', hoy: !limite || diffDias(limite) <= 1, html: `${e.x.padre ? `${esc(nombreSub(e.x))} · ` : ''}<b>${esc(textoHacer(e))}</b>${e.porque ? `<br><span class="sub">${esc(e.porque)}</span>` : ''}`,
           acc: btnT('Completar este dato en el viaje', `data-b-campo="${e.x.id}" data-campo="${esc(e.campo)}"`, 'Abre el viaje en esa casilla')}); }); });
@@ -10994,7 +11221,7 @@ function armarBandeja(){
   // 19-nov: "Ver correo" en TODAS las tarjetas de un viaje, no solo en las que vienen de una acción de la bitácora
   tarjetas.forEach(t => { if (t.v) t.items.forEach(i => { if (i.acc && !/Ver correo/.test(i.acc)) i.acc += verCorreoViaje(t.v, i.b === 'tomar'); }); });
   // lo que ya no tiene sentido pedirle a un viaje que Reckitt canceló (sin vehículo ni ejecución): vehículo, pasos, dónde va, faltantes…
-  const MOOT = ['tomar', 'vehiculo', 'sinact', 'gps', 'paso', 'donde', 'hacer', 'falta', 'manana', 'registro'];
+  const MOOT = ['tomar', 'vehiculo', 'sinact', 'gps', 'paso', 'pregunta', 'donde', 'hacer', 'falta', 'manana', 'registro'];
   tarjetas.forEach(t => { const c = t.v && CANCELA.get(t.v.id); if (c && !c.x.conMovimiento) t.items = t.items.filter(i => !MOOT.includes(i.b)); });
   // roja = la misma línea roja de Mi turno (bloquea el tablero mientras no tenga excepción vigente); su excepción, la misma
   // una línea que junta varias cosas (datos + sus acciones; sin vehículo + "asignar vehículo") lleva todas sus claves (ks):
@@ -11095,7 +11322,7 @@ function renderBandeja(){
     + [...CAN.entries()].map(([id, c]) => `<button type="button" class="link" data-b-abrir="${id}" title="Abre el viaje">${esc(id)} · ${esc(c.x.v.pais || '')}${c.x.conMovimiento ? ' ⚠' : ''}</button>`).join(' · ')
     + ` <span class="sub" style="color:var(--ink)">cada uno tiene su tarjeta abajo con "Cancelar el viaje"${sinMov > 1 ? ', o cancele todos de una vez:' : '.'}</span>`
     + (sinMov > 1 ? ` ${btnT(`✖ Cancelar los ${sinMov} viajes`, 'data-b-cancelartodos="1"', 'Cancela de una vez los que no tienen vehículo ni se ejecutaron, a su nombre')}` : '') + `</div>`;
-  cont.innerHTML = avisoCancelados + `<div class="bj-ronda sub">${ronda}${bloqueo}${llave}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}</div>` + bloqueGerencia(T) + bloqueCalifGerencia() + avisoAuto + resumenCierre() + barraOp
+  cont.innerHTML = avisoCancelados + `<div class="bj-ronda sub">${ronda}${bloqueo}${llave}${excAbierta.startsWith('ronda') ? selectorMotivo(excAbierta) : ''}</div>` + bloqueGerencia(T) + bloqueCalifGerencia() + avisoAuto + resumenRespondidas() + resumenCierre() + barraOp
     + `<div class="bj-resumen"><div><b>Para hoy: ${R.L.filter(t => t.hoy).length}</b>${(n => n ? ` · <span style="color:var(--bad)">${n} atrasado${n === 1 ? '' : 's'}</span>` : '')(R.L.filter(t => t.hoy && t.fecha && diffDias(t.fecha) < 0).length)} · próximos días: ${R.L.filter(t => !t.hoy).length}
       · <label class="sub">Área <select class="bj-area" data-b-areasel="1">${[['', 'Todas'], ...AREAS.map(a => [a, a])].map(([a, t]) => `<option value="${a}" ${bandejaArea === a ? 'selected' : ''}>${t} (${porArea(a)})</option>`).join('')}</select></label></div>
       <div class="chips">${`<button type="button" class="chip ${!bandejaFiltro ? 'on' : ''}" data-b-filtro="">Todo · ${R.L.length}</button>`}${BLOQUES.map(([k, t]) => cuenta(k) ? `<button type="button" class="chip ${bandejaFiltro === k ? 'on' : ''}" data-b-filtro="${k}" title="${esc(BLOQUES.find(x => x[0] === k)[3])}">${t} · ${cuenta(k)}</button>` : '').join('')}</div></div>`
