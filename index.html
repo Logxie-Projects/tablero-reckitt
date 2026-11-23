@@ -8845,7 +8845,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '6d7d0101d6';
+const VERSION_TABLERO = '00cc14f67e';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -10276,6 +10276,7 @@ function sugerencias(){
 }
 function tarjetaViaje(v){
   return `<div class="trip"><b>${v.placa?`<span class="placa">${esc(v.placa)}</span>`:'Sin vehículo'}</b> ${sitTag(v)} ${pill(v.estado)}${v.novedad?' '+pill('Novedad'):''}${celdaConductor(v) || '<br>'}
+    ${(r => r ? `<b>${esc(r)}</b><br>` : '')([v.operacion !== 'EXPO' && refCorta(v), v.contenedor && 'Contenedor ' + v.contenedor].filter(Boolean).join(' · '))}
     ${v.operacion} → ${esc(v.pais||'—')} · ${esc(v.conductor||'sin conductor')}<br>
     ${v.fechaRetiro?`Retiro patio ${fd(v.fechaRetiro)} (${esc(v.patio||'por definir')}) · `:''}${v.operacion==='EXPO'?'Llenado':'Cargue'} ${fd(v.fechaCargue)}<br>
     ${v.mn?`MN ${esc(v.mn)} · ETD ${fd(v.etd)} · Cierre doc ${fd(v.cierreDoc)}<br>`:''}${v.booking?`Booking ${esc(v.booking)}<br>`:''}
@@ -10283,12 +10284,13 @@ function tarjetaViaje(v){
     · <button class="link" onclick="abrir('${v.id}')">Actualizar</button></div>`;
 }
 const PALABRAS_VACIAS = new Set(['STATUS','ESTADO','COMO','VIAJE','VIAJES','PARA','HACIA','DESTINO','MOTONAVE','BARCO','BUQUE','CUANTOS','CUALES','TODOS','TIENE','HAY','DONDE','ESTA','ESTAN','DAME','INFO','SOBRE','CON','LOS','LAS','DEL','QUE','VAN','VA']);
-// Busca por placa, booking, conductor, destino (país), motonave, patio o FWD
+// Busca por placa, booking, conductor, destino (país), motonave, patio o FWD y, desde el 23-nov, por las referencias con que el cliente
+// nombra el viaje: pedido, DO, contenedor, RBHY y OBD ("11682" no encontraba el viaje del pedido 11682; el número interno IMPO-025 no es del cliente)
 function buscarViajes(q){
   const Q = sinTilde(q).replace(/[¿?¡!.,:;]/g,' ');
   const toks = Q.split(/\s+/).filter(t=>t.length>=4 && !PALABRAS_VACIAS.has(t));
   return viajes.filter(v=>{
-    const campos = [v.placa,v.booking,v.id,v.conductor,v.mn,v.pais,v.patio,v.fwd].map(sinTilde).filter(Boolean);
+    const campos = [v.placa,v.booking,v.pedido,v.do,v.contenedor,v.rbhy,v.obd,v.id,v.conductor,v.mn,v.pais,v.patio,v.fwd].map(sinTilde).filter(Boolean);
     const palabras = campos.flatMap(c=>c.split(/\s+/));
     return toks.some(t=> palabras.includes(t) || campos.some(c=> c===t || (t.length>=5 && c.includes(t)))) || campos.some(c=> c.length>=6 && Q.includes(c));
   });
@@ -10302,7 +10304,7 @@ function listaCorta(L, titulo){
   const ab = ultimaLista.filter(abierto).length;
   return `${titulo} <b>${ultimaLista.length} viajes</b>${ab && ab<ultimaLista.length ? ` (${ab} abiertos)` : ''}:<ol style="margin:6px 0 6px 18px;padding:0">${ultimaLista.map((v,i)=>
     `<li style="margin:3px 0"><button class="link" onclick="verDeLista(${i})">${v.placa?esc(v.placa):'Sin vehículo'}</button>
-     <span class="sub">· ${v.operacion} ${esc(v.pais||'')} · llenado ${fd(v.fechaCargue)}${v.placa?'':` · ${esc(v.booking||'sin booking')}`}</span> ${sitTag(v)}</li>`).join('')}</ol>
+     <span class="sub">· ${esc([refCorta(v) || (v.operacion === 'EXPO' ? 'sin booking' : ''), v.contenedor].filter(Boolean).join(' · '))} · ${v.operacion} ${esc(v.pais||'')} · ${v.operacion === 'EXPO' ? 'llenado' : 'entrega'} ${fd(v.fechaCargue)}</span> ${sitTag(v)}</li>`).join('')}</ol>
     ¿Cuál quieres ver? Escribe el número o tócalo.`;
 }
 /* ---------- chat-acciones.js · LogxIA en el chat: acciones y respuestas con reglas ---------- */
@@ -10520,7 +10522,7 @@ function respuestaLocal(q){
     return n.length ? `Hay ${n.length} viaje(s) con novedad:` + n.map(tarjetaViaje).join('') : 'No hay viajes con novedad en este momento.';
   }
   // lo que las reglas no responden lo contesta el agente LogxIA en su próxima revisión (preguntas.js)
-  return 'Eso no lo respondo con mis reglas. Pregúntame por <b>placa</b>, <b>booking</b>, <b>conductor</b>, <b>destino</b> o <b>motonave</b>, o por “retiros de hoy” y “qué falta por asignar”.' + botonPreguntaLogxia(q);
+  return 'Eso no lo respondo con mis reglas. Pregúntame por <b>pedido</b>, <b>booking</b>, <b>contenedor</b>, <b>placa</b>, <b>conductor</b>, <b>destino</b> o <b>motonave</b>, o por “retiros de hoy” y “qué falta por asignar”.' + botonPreguntaLogxia(q);
 }
 function burbuja(html, quien){
   const d = document.createElement('div'); d.className = 'msg ' + quien; d.innerHTML = html;
