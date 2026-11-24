@@ -2769,6 +2769,9 @@ function operacionAccion(b){
 const hoyISO = () => HOY || new Date(Date.now() - 5 * 36e5).toISOString().slice(0, 10);
 // mismo dato sin importar mayúsculas, tildes, espacios ni guiones ("MSKU 123456-7" = "msku1234567")
 const mismoDato = (a, b) => !!compacto(a) && compacto(a) === compacto(b);
+// el booking de una fila del cuadro de Reckitt o de un viaje, listo para comparar ("ABCD 1234-567" = "ABCD1234567"); '' si no hay o es un
+// "pendiente" (PTE, PEND…, SIN INFO). 23-nov (auditoría): esta regla estaba escrita de tres maneras (servidor, comparación y lector del cuadro)
+const bookingReal = x => { const s = String(x || '').trim(); return !s || /^(pte|pend|sin info)/i.test(s) ? '' : s.toUpperCase().replace(/[^A-Z0-9]/g, ''); };
 // una celda de pedido puede traer varios ("4512-4513", "4512 / 4513")
 const pedidosDe = s => String(s||'').split(/[-\s,;/]+/).map(compacto).filter(x => x.length >= 4);
 // datos que identifican un viaje sin dudas; la placa no (un mismo carro lleva varios viajes)
@@ -7289,7 +7292,11 @@ const CUADROS_PROG_MIN = 10;
 const guardarCuadrosProg = j => { CUADROS_PROG = {correos: j.correos, versiones: Array.isArray(j.versiones) ? j.versiones : j.correos, cancelaciones: Array.isArray(j.cancelaciones) ? j.cancelaciones : [], sinLeer: Array.isArray(j.sinLeer) ? j.sinLeer : [], t: Date.now()}; };
 const versionesProg = () => (CUADROS_PROG && (CUADROS_PROG.versiones || CUADROS_PROG.correos)) || [];
 const claveCuadro = c => c.clave || 'PROG|' + String(((c.programacion || [])[0] || {}).fechaCargue || '').slice(0, 7);   // el mes del cuadro
-const mesDeCuadro = c => MES[Number(claveCuadro(c).slice(-2)) - 1] || '';   // "noviembre"
+const mesIso = c => claveCuadro(c).slice(5);                                // "2026-11": el mes de la programación (el servidor lo saca del asunto del hilo)
+const mesDeCuadro = c => MES[Number(claveCuadro(c).slice(-2)) - 1] || '';   // "nov"
+// la bodega de cargue de una fila del cuadro y de un viaje, comparables ("planta" si no dice otra): distingue dos contenedores del mismo booking
+const bodegaFilaProg = r => r.bodega && !/planta/i.test(r.bodega) ? r.bodega : 'planta';
+const bodegaViajeProg = v => bodegaCargue(v) || 'planta';   // viaje.js
 const esVigente = c => (((CUADROS_PROG || {}).correos) || []).some(x => claveCuadro(x) === claveCuadro(c) && horaCuadro(x) === horaCuadro(c));
 // ya ejecutado (o cerrado sin ser una reprogramación): la programación solo le anota el mes; y no se cancela sin confirmar
 const progTerminado = v => terminoTransporte(v) || situacion(v) === 'Cerrado' && !/reprogram/i.test(v.observacion || '');
@@ -7298,10 +7305,16 @@ const progTerminado = v => terminoTransporte(v) || situacion(v) === 'Cerrado' &&
  * 9:55, nadie los había cancelado en el tablero y el aviso desapareció. Ahora la cancelación de un cuadro anterior (el servidor las manda en
  * `cancelaciones`, solo con booking) sigue saliendo mientras el viaje de ese booking esté abierto, hasta que pase una de tres cosas: el viaje se
  * cancela; un cuadro posterior vuelve a traer el booking con fecha; o alguien responde «No cancelar: sigue vigente» con el motivo (almacén de
- * respuestas, regla externa 'programacion.cancelado'; la respuesta vale para ESE correo: si Reckitt lo vuelve a cancelar en otro, se pregunta otra vez). */
+ * respuestas, regla externa 'programacion.cancelado').
+ * 23-nov (noche, auditoría): la respuesta vale para esa RACHA de cancelación (`desde`, que calcula el servidor: el primer cuadro que lo canceló sin
+ * que después volviera con fecha), no para un correo: si Jhonier manda otro cuadro que sigue trayendo la misma fila CANCELADO, la respuesta sigue
+ * valiendo; si el contenedor vuelve con fecha y después lo cancela otra vez, se pregunta de nuevo. Un booking puede tener varios contenedores: el
+ * servidor dice cuántos están cancelados (`cuantos`) y la bodega de la fila dice cuál es. */
 const REGLA_CANCELADO = 'programacion.cancelado';
-const huellaCancelado = (v, cuadro) => huellaRegla(REGLA_CANCELADO, v) + '@' + String((cuadro || {}).fecha || '');
-const sigueVigente = (v, cuadro) => { const r = respuestaDe(REGLA_CANCELADO, v); return r && r.respuesta === 'noAplica' && String(r.huella || '') === huellaCancelado(v, cuadro) ? r : null; };
+// desde cuándo está cancelado: la racha (fila con `desde`) o, en una fila sin booking o con un servidor anterior, el correo que lo dice
+const desdeCancelado = (x, c) => String((x.r && x.r.desde) || ((x.de || c) || {}).fecha || '');
+const huellaCancelado = (v, desde) => huellaRegla(REGLA_CANCELADO, v) + '@' + desde;
+const sigueVigente = (v, desde) => { const r = respuestaDe(REGLA_CANCELADO, v); return r && r.respuesta === 'noAplica' && String(r.huella || '') === huellaCancelado(v, desde) ? r : null; };
 /* 23-nov (Jhonier mandó a las 9:55 el cuadro completo, con Salvador CANCELADO, y a las 11:15 "Adjunto reserva de Guatemala" con una tabla de 2
  * filas; las tres tarjetas de programación mostraron Guatemala y los cancelados dejaron de verse): cada acción se compara con el cuadro de SU correo.
  *   suCuadro        el cuadro que trajo el correo de la acción: por el id del mensaje y, si no, por la hora del correo (15 minutos);
@@ -7319,6 +7332,18 @@ function cuadroDeAccion(b){
   return (suyo && correos.find(c => claveCuadro(c) === claveCuadro(suyo))) || correos.find(c => Number(claveCuadro(c).slice(-2)) === nMes + 1) || correos[0];
 }
 const posteriores = c => versionesProg().filter(x => (x.programacion || []).length && claveCuadro(x) === claveCuadro(c) && horaCuadro(x) > horaCuadro(c)).sort((x, y) => horaCuadro(x) - horaCuadro(y));
+// La fila "por crear" (sin viaje) del cuadro que se mira a la que corresponde una fila sin viaje de un cuadro posterior `n`: la del MISMO booking;
+// si esa fila aún no tenía booking, la del mismo destino y unidad (primero la misma bodega, la misma nave y la fecha más cercana). Nunca una
+// fila con OTRO booking: es otro contenedor. 23-nov (auditoría): solo se miraba destino y unidad; con dos Guatemala por crear, la tabla parcial
+// de uno reemplazaba al otro y quedaban dos filas con el mismo booking (un viaje repetido y otro sin crear).
+function filaPorCrearDe(R, f, n){
+  const b = bookingReal(f.r.booking), dia = x => new Date(x.r.fechaCargue).getTime() || 0, igual = (x, y) => compacto(x) === compacto(y);
+  const cand = R.filas.map((x, i) => ({x, i})).filter(({x}) => !x.v && x.de !== n && igual(x.r.pais, f.r.pais) && igual(x.r.unidad, f.r.unidad)
+    && (!b || !bookingReal(x.r.booking) || bookingReal(x.r.booking) === b));
+  const puntos = ({x}) => (b && bookingReal(x.r.booking) === b ? 16 : 0) + (!bookingReal(x.r.booking) === !b ? 8 : 0) + (igual(bodegaFilaProg(x.r), bodegaFilaProg(f.r)) ? 4 : 0) + (x.r.mn && igual(x.r.mn, f.r.mn) ? 2 : 0);
+  cand.sort((p, q) => puntos(q) - puntos(p) || Math.abs(dia(p.x) - dia(f)) - Math.abs(dia(q.x) - dia(f)));
+  return cand.length ? cand[0].i : -1;
+}
 function compararVigente(c){
   const R = compararProgramacion(c), n0 = R.filas.length;
   const iFila = id => R.filas.findIndex(f => f.v && f.v.id === id), iCan = id => R.cancelados.findIndex(x => x.v && x.v.id === id);
@@ -7327,7 +7352,7 @@ function compararVigente(c){
     let N, toco = false; try { N = compararProgramacion(n); } catch(e) { return; }
     // en un cuadro parcial solo entra lo que el posterior dice de SUS viajes; en el completo entra todo (es la programación del mes)
     N.filas.forEach(f => {
-      const g = {...f, de: n}, i = f.v ? iFila(f.v.id) : R.filas.findIndex(x => !x.v && x.de !== n && compacto(x.r.pais) === compacto(f.r.pais) && compacto(x.r.unidad) === compacto(f.r.unidad));
+      const g = {...f, de: n}, i = f.v ? iFila(f.v.id) : filaPorCrearDe(R, f, n);
       const j = f.v ? iCan(f.v.id) : -1;
       if (i >= 0) R.filas[i] = {...g, r: {...g.r, n: R.filas[i].r.n}};   // conserva el número de fila del cuadro que se está mirando
       else if (j >= 0) { R.cancelados.splice(j, 1); R.filas.push(g); } else if (!c.parcial) R.filas.push(g); else return;
@@ -7343,13 +7368,17 @@ function compararVigente(c){
   });
   // en el cuadro vigente del mes: las cancelaciones de cuadros anteriores que este ya no trae (ni CANCELADO ni con fecha)
   if (!c.parcial && esVigente(c)) (CUADROS_PROG.cancelaciones || []).filter(k => k.clave === claveCuadro(c) && horaCuadro(k) < horaCuadro(c)).forEach(k => {
-    const v = viajes.find(x => x.operacion === 'EXPO' && !x.padre && situacion(x) !== 'Cancelado' && compacto(x.booking) === compacto(k.booking));
-    if (!v || iFila(v.id) >= 0 || iCan(v.id) >= 0) return;
-    R.cancelados.push({r: {n: '', fecha: 'CANCELADO', pais: k.pais, unidad: k.unidad, booking: k.booking}, v, conMovimiento: progTerminado(v) || !!v.placa, de: {...k, programacion: [], programacionSinFecha: []}, anterior: true});
+    // los viajes abiertos de ese booking que el cuadro no trae vivos ni cancelados: tantos como contenedores diga el servidor (un booking puede
+    // tener dos) y, si hay más, primero el de la misma bodega de la fila cancelada
+    const fila = {n: '', fecha: 'CANCELADO', pais: k.pais, unidad: k.unidad, bodega: k.bodega || '', mn: k.mn || '', booking: k.booking, desde: k.desde || k.fecha};
+    const misma = v => compacto(bodegaViajeProg(v)) === compacto(bodegaFilaProg(fila));
+    viajes.filter(x => x.operacion === 'EXPO' && !x.padre && situacion(x) !== 'Cancelado' && !!bookingReal(k.booking) && bookingReal(x.booking) === bookingReal(k.booking) && iFila(x.id) < 0 && iCan(x.id) < 0)
+      .sort((a, b) => misma(b) - misma(a)).slice(0, k.cuantos || 1)
+      .forEach(v => R.cancelados.push({r: fila, v, conMovimiento: progTerminado(v) || !!v.placa, de: {...k, programacion: [], programacionSinFecha: []}, anterior: true}));
   });
   // lo que alguien respondió «No cancelar: sigue vigente» (para ese mismo correo) no se ofrece cancelar; queda aparte, con quién y por qué
   R.siguenVigentes = [];
-  R.cancelados = R.cancelados.filter(x => { const r = x.v && sigueVigente(x.v, x.de || c); if (r) R.siguenVigentes.push({...x, de: x.de || c, respuesta: r}); return !r; });
+  R.cancelados = R.cancelados.filter(x => { const r = x.v && sigueVigente(x.v, desdeCancelado(x, c)); if (r) R.siguenVigentes.push({...x, de: x.de || c, respuesta: r}); return !r; });
   R.fuera = R.fuera.filter(v => iFila(v.id) < 0 && iCan(v.id) < 0);
   if (R.con.length) {
     R.cuadre = {...R.cuadre, filas: R.filas.length === n0 ? R.cuadre.filas : R.filas.length, contenedores: R.filas.length, enBase: R.filas.filter(f => f.v && f.accion !== 'anulado').length,
@@ -7368,12 +7397,13 @@ function pedirCuadrosProg(){
   cuadrosProgPidiendo = true;
   return cuadrosProgPromesa = pedirCuadrosProgYa();
 }
+// llegaron cuadros nuevos: la Bandeja se repinta cuando no haya una ventana abierta (19-nov: con "¿Quién eres?" abierta no se repintaba y los
+// cancelados no salían hasta el siguiente cambio). 23-nov (auditoría): también cuando los trae el botón de la acción; las casillas de la tarjeta van
+// por posición y no pueden quedar pintadas con los cuadros de antes.
+function repintarConCuadros(n){ if (typeof renderBandeja !== 'function' || typeof document === 'undefined') return; if (!document.querySelector('.ov.open')) renderBandeja(); else if (n < 40) setTimeout(() => repintarConCuadros(n + 1), 3000); }
 async function pedirCuadrosProgYa(){
   try { const j = await traerCuadrosProg();
-    if (j && j.ok && Array.isArray(j.correos) && j.correos.every(x => x.programacion && x.programacion.length)) { guardarCuadrosProg(j);
-      // se repinta la Bandeja cuando no haya una ventana abierta (19-nov: con "¿Quién eres?" abierta no se repintaba y los cancelados no salían hasta el siguiente cambio)
-      const repintar = n => { if (typeof renderBandeja !== 'function') return; if (!document.querySelector('.ov.open')) renderBandeja(); else if (n < 40) setTimeout(() => repintar(n + 1), 3000); };
-      repintar(0); } } catch(x) {}
+    if (j && j.ok && Array.isArray(j.correos) && j.correos.every(x => x.programacion && x.programacion.length)) { guardarCuadrosProg(j); repintarConCuadros(0); } } catch(x) {}
   setTimeout(() => { cuadrosProgPidiendo = false; }, CUADROS_PROG_MIN * 60e3);   // no más de una consulta cada 10 minutos
 }
 /* 23-nov (LX-0651: la tarjeta mostró "EXPO-037 llenado 23-nov → 2-dic" y «Guardar», con el cuadro del 20-nov, aunque la acción era del correo
@@ -7481,7 +7511,7 @@ const abrirCuadroDeViaje = id => { const can = canceladosEnCuadro().get(id); if 
 // programación mensual: busca el cuadro del mes en los correos; si ya está aplicado, ofrece cerrar la acción
 async function atajoProgramacion(b){
   // si el tablero ya trajo los cuadros hace poco (para el texto del botón), abre con esos, sin esperar al servidor
-  if (CUADROS_PROG && Date.now() - CUADROS_PROG.t < CUADROS_PROG_MIN * 60e3) { const c = cuadroDeAccion(b); if (c) return abrirCuadroProgramacion(c); }
+  if (CUADROS_PROG && Date.now() - CUADROS_PROG.t < CUADROS_PROG_MIN * 60e3) { const c = cuadroDeAccion(b); if (c) return abrirCuadroProgramacion(c, cuadroViejo(b, c)); }
   toast('Buscando el cuadro de programación en los correos…');
   try {
     // 10-nov ("tarda mucho en cargar el cuadro"): antes barría SIEMPRE los últimos 20 días del buzón. Ahora solo desde el día del
@@ -7489,20 +7519,24 @@ async function atajoProgramacion(b){
     const f = new Date(b.fechaCorreo || b.registrado || 0), dias = isNaN(f) || !f.getTime() ? 20 : Math.min(20, Math.max(2, Math.ceil((Date.now() - f) / 864e5) + 1));
     const nMes = MESES_LARGO.findIndex(m => minus(b.asunto + ' ' + b.accion).includes(m));
     const buscar = async d => { const j = await (await fetch(CFG.SHEETS_API_URL + '?formato=json&que=correos&dias=' + d + '&clave=' + encodeURIComponent(claveActual()))).json();
+      if (j.programacion && Array.isArray(j.programacion.correos)) { guardarCuadrosProg(j.programacion); repintarConCuadros(0); return cuadroDeAccion(b); }   // las mismas versiones que la consulta liviana
       const progs = (j.correos||[]).filter(c => c.programacion && c.programacion.length);
-      return progs.find(p => Number(p.programacion[0].fechaCargue.slice(5, 7)) === nMes + 1) || progs[0]; };
+      return progs.find(p => Number(mesIso(p).slice(5, 7)) === nMes + 1) || progs[0]; };
     // primero la consulta liviana del servidor (solo los cuadros de programación, v197); si el servidor aún no la tiene, la de antes
     let c = null, liviana = false;
     try { const j = await traerCuadrosProg();
-      if (j && j.ok && Array.isArray(j.correos) && j.correos.every(x => x.programacion)) { liviana = true; guardarCuadrosProg(j); c = cuadroDeAccion(b); } } catch(x) {}
+      if (j && j.ok && Array.isArray(j.correos) && j.correos.every(x => x.programacion)) { liviana = true; guardarCuadrosProg(j); repintarConCuadros(0); c = cuadroDeAccion(b); } } catch(x) {}
     if (!liviana) c = await buscar(dias);
     if (!c && !liviana && dias < 20) { toast('No está en los correos recientes: busco en los últimos 20 días, tarda más…'); c = await buscar(20); }
     if (!c) { accionEnCurso = null; return toast('No encontré el cuadro de programación en los correos de los últimos 20 días'); }
-    abrirCuadroProgramacion(c);
+    abrirCuadroProgramacion(c, cuadroViejo(b, c));
   } catch(e) { accionEnCurso = null; toast('No se pudo leer el buzón: ' + e.message); }
 }
-function abrirCuadroProgramacion(c){
-  const R = compararVigente(c), mes = nombreMes(c.programacion[0].fechaCargue.slice(0, 7));
+// viejo (cuadroViejo): el cuadro que se abre no es el del correo de la acción. 23-nov (auditoría): la ventana no lo miraba; con un cuadro más nuevo
+// sin leer proponía "ya está aplicada, ¿marcar hecha?" o abría el cuadro viejo con las casillas marcadas y «Aplicar» activo.
+function abrirCuadroProgramacion(c, viejo){
+  if (viejo) return abrirProgramacion(c, viejo);
+  const R = compararVigente(c), mes = nombreMes(mesIso(c));
   if (R.filas.every(f => ['igual', 'documento'].includes(f.accion)) &&!(R.fuera||[]).length && !(R.cancelados || []).some(x => x.v)) {
     if (confirm(`La programación de ${mes} ya está aplicada en el tablero (${R.filas.length} de ${R.filas.length} iguales).\n\n¿Marcar la acción como hecha?`))
       cerrarAccionEnCurso('programacion', `programación de ${mes} ya aplicada en el tablero`);
@@ -7541,17 +7575,16 @@ function deDocumento(v, k){
 
 function compararProgramacion(c){
   const prog = contenedoresDe(c.programacion);
-  const mes = c.programacion[0].fechaCargue.slice(0, 7), eq = (a, b) => compacto(a) === compacto(b);
+  const mes = mesIso(c), eq = (a, b) => compacto(a) === compacto(b);
   const expo = viajes.filter(v => v.operacion==='EXPO' && !v.padre && situacion(v)!=='Cancelado'), usados = new Set();
   const libres = () => expo.filter(v => !usados.has(v.id));
   const enMes = v => [v.fechaCargue, v.planCargue].some(f => String(f||'').slice(0, 7) === mes);
   const terminado = progTerminado;
   // primero se emparejan las filas que traen un booking que ya está en un viaje (así una fila sin booking no se lleva ese viaje)
   // varios contenedores con el mismo booking: primero el de la misma bodega de cargue (planta o DHL…), luego el de fecha más cercana
-  const bodegaDe = x => bodegaCargue(x) || 'planta';   // viaje.js
-  const bodegaFila = r => r.bodega && !/planta/i.test(r.bodega) ? r.bodega : 'planta';
+  const bodegaDe = bodegaViajeProg, bodegaFila = bodegaFilaProg;
   const cerca = (x, r) => Math.abs(new Date(x.fechaCargue) - new Date(r.fechaCargue));
-  const sinBk = x => !x || /^(pte|sin info|pend)/i.test(String(x).trim());
+  const sinBk = x => !bookingReal(x);   // dominio: la misma regla del servidor
   const anuladoDe = r => !sinBk(r.booking) && viajes.find(v => v.operacion==='EXPO' && situacion(v)==='Cancelado' && eq(v.booking, r.booking) && eq(bodegaDe(v), bodegaFila(r)));
   // dos vueltas: primero cada fila con el viaje de su misma bodega, después las que queden con el más cercano en fecha
   const porBooking = prog.map(() => null);
@@ -7620,7 +7653,7 @@ function compararProgramacion(c){
   const cancelados = contenedoresDe((c.programacionSinFecha || []).filter(esCancelada)).map(r => {
     const bk = sinBk(r.booking) ? '' : r.booking;
     const v = libres().filter(x => eq(x.pais, r.pais) && (!bk || sinBk(x.booking) || eq(x.booking, bk)))
-      .sort((a, b) => ((bk && eq(b.booking, bk)) - (bk && eq(a.booking, bk))) || (enMes(b) - enMes(a)))[0] || null;
+      .sort((a, b) => ((bk && eq(b.booking, bk)) - (bk && eq(a.booking, bk))) || (r.bodega ? eq(bodegaDe(b), bodegaFila(r)) - eq(bodegaDe(a), bodegaFila(r)) : 0) || (enMes(b) - enMes(a)))[0] || null;   // de dos contenedores del mismo booking, el de la bodega de la fila
     if (v) usados.add(v.id);
     return {r, v, conMovimiento: !!v && (terminado(v) || !!v.placa)};
   });
@@ -7632,11 +7665,12 @@ function compararProgramacion(c){
   return {filas, fuera, cuadre, cancelados};
 }
 
-function abrirProgramacion(c){
-  PROG = {c, ...compararVigente(c)};
+function abrirProgramacion(c, viejo){
+  PROG = {c, viejo: viejo || null, ...compararVigente(c)};
   $('#progUsuario').value = usuarioGuardado() || $('#barridoUsuario').value || '';
   $('#progTitulo').textContent = `Programación de cargues · ${c.asunto.replace(/^(RE|RV|FW|FWD)\s*:\s*/i, '').replace(/\[EXTERNAL\]\s*/i, '')}`;
   $('#progSub').innerHTML = `Versión del ${esc(c.fecha.replace('T', ' '))}${c.parcial ? ' <b>(tabla parcial: no es el cuadro completo del mes)</b>' : ''}${PROG.con.length ? `, <b>con lo que cambió el del ${esc(PROG.con.map(cuadroTxt).join(' y el del '))}</b>` : ''} · ${esc(c.firma || c.remitente.replace(/<.*>/, ''))} · ${PROG.cuadre.contenedores} contenedores. Se crean los viajes que faltan y se proponen los cambios de esta versión; los cambios de fecha quedan como reprogramación con su causa. Nada se guarda sin “Aplicar”.`;
+  if (PROG.viejo) $('#progSub').innerHTML = avisoCuadroViejo(c, PROG.viejo) + $('#progSub').innerHTML;
   pintarProgramacion();
   $('#ovProg').classList.add('open');
 }
@@ -7656,7 +7690,7 @@ function pintarProgramacion(){
       : `<b>${esc(f.v.id)}</b> ${f.v.placa ? `<span class="sub">${esc(f.v.placa)}</span>` : ''}${f.accion==='reusar' ? ' <span class="sub">(esperaba fecha: se reabre)</span>' : ''}<br>`
         + Object.entries(f.cambios||{}).filter(([k]) => k!=='situacion').map(([k, x]) => `<span class="sub">${esc((CAMPOS_PROG.find(c => c[0]===k)||[k,k])[1])}: ${esc(k==='mesProg' ? (f.v[k] ? nombreMes(String(f.v[k]).slice(0, 7)) : '—') : fv(f.v[k]))} → <b>${esc(k==='mesProg' ? nombreMes(x) : fv(x))}</b></span>`).join('<br>') + notaDoc(f, i);
     // "Manda el documento": la fila se puede marcar (sin marcar por defecto); marcarla usa lo del cuadro en todos sus datos
-    return `<tr><td><input type="checkbox" data-pi="${i}" ${['igual', 'anulado'].includes(f.accion) ? 'disabled' : f.accion==='documento' ? `onchange="marcarFilaDocProg(${i}, this.checked)"` : 'checked'}></td><td>${f.r.n}</td><td style="white-space:nowrap">${fd(f.r.fechaCargue)}</td>
+    return `<tr><td><input type="checkbox" data-pi="${i}" ${['igual', 'anulado'].includes(f.accion) ? 'disabled' : f.accion==='documento' ? `onchange="marcarFilaDocProg(${i}, this.checked)"` : PROG.viejo ? '' : 'checked'}></td><td>${f.r.n}</td><td style="white-space:nowrap">${fd(f.r.fechaCargue)}</td>
       <td>${esc(f.r.pais)}<br><span class="sub">${esc(f.r.unidad)}</span></td><td>${esc(f.r.mn||'—')}<br><span class="sub">cierre ${fd(f.r.cierreDoc)} · ETD ${fd(f.r.etd)}</span></td>
       <td>${esc(f.r.booking || 'PTE')}<br><span class="sub">${esc(f.r.fwd)} · ${esc(f.r.puerto)}</span></td>
       <td><span class="tg" style="background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${txt}</span>${f.de ? ` <span class="sub">↻ según el cuadro del ${esc(cuadroTxt(f.de))}</span>` : ''}<br>${det}
@@ -7672,7 +7706,7 @@ function pintarProgramacion(){
   // 19-nov: lo que Jhonier canceló en este envío (la fecha del cuadro dice CANCELADO), con su viaje y una casilla para cancelarlo
   const canc = PROG.cancelados || [];
   const cancHtml = canc.length ? `<div style="margin:0 0 10px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px"><p style="margin:0 0 6px;color:var(--bad)"><b>✖ Reckitt canceló ${canc.length} contenedor${canc.length===1 ? '' : 'es'}</b> <span class="sub">(en el cuadro, la fecha de cargue dice CANCELADO)</span></p>
-    <table class="prop prog"><tr><th></th><th>Destino</th><th>Motonave · booking</th><th>En la base · qué se hará</th></tr>${canc.map((x, i) => `<tr><td><input type="checkbox" data-pcan="${i}" ${x.v && !x.conMovimiento ? 'checked' : x.v ? '' : 'disabled'} aria-label="Cancelar ${x.v ? esc(x.v.id) : 'sin viaje'}"></td>
+    <table class="prop prog"><tr><th></th><th>Destino</th><th>Motonave · booking</th><th>En la base · qué se hará</th></tr>${canc.map((x, i) => `<tr><td><input type="checkbox" data-pcan="${i}" ${x.v && !x.conMovimiento && !PROG.viejo ? 'checked' : x.v ? '' : 'disabled'} aria-label="Cancelar ${x.v ? esc(x.v.id) : 'sin viaje'}"></td>
       <td>${esc(x.r.pais)}<br><span class="sub">${esc(x.r.unidad)}</span></td><td>${esc(x.r.mn || '—')}<br><span class="sub">${esc(x.r.booking || 'PTE')}</span></td>
       <td>${x.v ? `<b>${esc(x.v.id)}</b> <span class="sub">${esc([x.v.placa, x.v.fechaCargue && 'llenado ' + fd(x.v.fechaCargue), x.v.estado].filter(Boolean).join(' · '))}</span><br><span class="tg" style="background:color-mix(in srgb, var(--bad) 15%, transparent);color:var(--bad)">Se cancela el viaje</span>${x.de ? `<br><span class="sub">↻ lo canceló el cuadro del ${esc(cuadroTxt(x.de))}${x.anterior ? '; este cuadro ya no lo trae' : ''}</span>` : ''}${x.conMovimiento ? `<br><span class="sub" style="color:var(--warn)">⚠ ${x.v.placa ? 'ya tiene vehículo (' + esc(x.v.placa) + ')' : 'ya se ejecutó'}: confirme con Reckitt antes de cancelar</span>` : ''}` : '<span class="sub">No hay viaje en la base: nada que cancelar</span>'}</td></tr>`).join('')}</table></div>` : '';
   $('#progLista').innerHTML = cuadreHtml + cancHtml + `<p class="sub">${n('crear')} nuevos · ${n('cambiar')} con cambios · ${n('reusar')} por reutilizar · ${n('igual')} al día</p>
@@ -7690,6 +7724,7 @@ function marcarDocProg(i){
 // op = {rapido, usuario}: "✓ Aplicar" desde la tarjeta de la acción (quien.js) aplica lo que la ventana trae marcado por defecto, sin abrirla
 async function aplicarProgramacion(op){
   const rapido = !!(op && op.rapido);
+  if (!rapido && PROG.viejo && PROG.viejo.motivo === 'sinLeer') return toast('Hay un cuadro más nuevo de Reckitt que no se pudo leer: desde aquí no se aplica nada. Abra el correo y actualice cada viaje.', 7000);
   const usuario = rapido ? op.usuario : $('#progUsuario').value.trim();
   if (!usuario) { $('#progUsuario').focus(); return toast('Escriba su nombre: queda en el Historial'); }
   guardarUsuario(usuario);
@@ -7703,7 +7738,7 @@ async function aplicarProgramacion(op){
   const canSel = rapido ? [] : [...document.querySelectorAll('#progLista [data-pcan]:checked')].map(x => (PROG.cancelados || [])[+x.dataset.pcan]).filter(x => x && x.v);
   if (!sel.length && !canSel.length) return toast('No hay filas seleccionadas');
   const quedan = rapido ? PROG.filas.filter((f, i) => ['crear', 'cambiar', 'reusar'].includes(f.accion) && !marcadas.has(String(i))).length : 0;   // sin aplicar: la acción sigue pendiente
-  const c = PROG.c, mesTxt = MES[Number(c.programacion[0].fechaCargue.slice(5, 7)) - 1], quien = `${usuario} (programación ${mesTxt}, correo ${c.fecha.slice(0, 10)})`;
+  const c = PROG.c, viejo = PROG.viejo, mesTxt = mesDeCuadro(c), quien = `${usuario} (programación ${mesTxt}, correo ${c.fecha.slice(0, 10)})`;
   const post = b => api(b.action, {...b, usuario: quien});
   const btnAplicar = $('#progAplicar'); if (btnAplicar) btnAplicar.disabled = true;
   let omitidas = 0;   // filas que la persona dejó sin aplicar al volver en la revisión de números
@@ -7711,7 +7746,7 @@ async function aplicarProgramacion(op){
     const crear = sel.filter(f => f.accion==='crear');
     if (crear.length) {
       toast(`Creando ${crear.length} viajes…`);
-      const lista = crear.map(f => ({...datosProg(f.r), mesProg: c.programacion[0].fechaCargue.slice(0, 7), situacion:'Abierto', empresa:'Reckitt Hygiene', solicitante:'Jhonier Gómez',
+      const lista = crear.map(f => ({...datosProg(f.r), mesProg: mesIso(c), situacion:'Abierto', empresa:'Reckitt Hygiene', solicitante:'Jhonier Gómez',
         planCargue: f.r.fechaCargue, planRetiro: addDias(f.r.fechaCargue, -1),
         observacion: `Programación ${mesTxt} (correo de ${c.firma || 'Reckitt'} ${c.fecha.slice(0, 10)})${f.r.bodega && !/planta/i.test(f.r.bodega) ? ' · cargue en '+f.r.bodega : ''}`}));
       const j = await post({action:'nuevos', operacion:'EXPO', lista});
@@ -7742,12 +7777,12 @@ async function aplicarProgramacion(op){
     await cargar(); render();
     if (quedan + omitidas) { accionEnCurso = null; toast(`Quedan ${quedan + omitidas} ${quedan + omitidas === 1 ? 'viaje' : 'viajes'} por actualizar: la acción sigue pendiente`, 6000); }
     else cerrarAccionEnCurso('programacion', `${rapido ? 'LogxIA aplicó la programación' : 'programación aplicada en el tablero'} (${crear.length} creados, ${sel.length - crear.length} actualizados)`);
-    PROG = {c, ...compararVigente(c)}; pintarProgramacion();
+    PROG = {c, viejo, ...compararVigente(c)}; pintarProgramacion();
   } catch(e) {
     toast('No se pudo aplicar: ' + e.message + '. Se recargó el tablero: revise qué quedó pendiente.', 7000);
     // 19-nov (revisión): si ya se habían creado viajes y falló un update, la ventana seguía con esas filas como "crear" y al reintentar se
     // creaban otra vez. Se recarga y se vuelve a comparar con lo que quedó guardado.
-    try { await cargar(); render(); PROG = {c, ...compararVigente(c)}; pintarProgramacion(); } catch (e2) {}
+    try { await cargar(); render(); PROG = {c, viejo, ...compararVigente(c)}; pintarProgramacion(); } catch (e2) {}
   }
   if (btnAplicar) btnAplicar.disabled = false;
 }
@@ -7784,6 +7819,8 @@ async function abrirBarrido(opt){
     let j; try { j = JSON.parse(t); } catch(e) { throw new Error('el servidor aún no tiene permiso para leer el buzón de calidad@'); }
     if (!j.ok) throw new Error(j.error || 'error');
     BARRIDO = j.correos || []; enlazarBarrido();
+    // los cuadros de programación con sus versiones y cancelaciones (programacion.js): la ventana "Revisar programación" que se abre desde aquí ve lo mismo que las tarjetas
+    if (j.programacion && Array.isArray(j.programacion.correos) && j.programacion.correos.every(x => (x.programacion || []).length)) { guardarCuadrosProg(j.programacion); repintarConCuadros(0); }
     if (BARRIDO_PED) BARRIDO.sort((a, b) => focoBarrido(b) - focoBarrido(a));   // el correo del pedido que se busca, arriba
   } catch(e) { $('#barridoLista').innerHTML = `<div class="sub" style="padding:20px;text-align:center">No se pudo leer el buzón: ${esc(e.message)}.</div>`; return; }
   pintarBarrido();
@@ -8962,7 +8999,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '008bbcfcd7';
+const VERSION_TABLERO = '082b859d8a';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
@@ -10818,6 +10855,11 @@ async function confirmarHecha(id){
   // 19-nov (revisión): si no llegaron, no se cierra "a ciegas" una acción que pide verificar contra el cuadro de Reckitt
   if (a && a[0] === 'programacion' && !CUADROS_PROG && !window.MODO_CLIENTE) return toast('No pude traer el cuadro de Reckitt para verificar. Intente en un momento o use "Revisar programación".', 6000);
   const c = cambiosDeAccion(b);
+  // 23-nov (auditoría): con un cuadro más nuevo sin leer no hay filas que comparar y la acción se cerraba sin preguntar ni dejar nota
+  if (c && c.viejo && c.viejo.motivo === 'sinLeer') {
+    if (!await preguntarSiNo(`No pude leer el cuadro más nuevo de Reckitt (${c.viejo.cuando}): no puedo comprobar que los viajes tengan lo que pedía esta acción.\n\n¿Cerrarla de todas formas?`, 'Sí, cerrarla sin verificar')) return;
+    return marcarHecha(id, false, 'cerrada sin verificar: el cuadro más nuevo de Reckitt no se pudo leer');
+  }
   if (!c || !c.filas.length) return marcarHecha(id);
   const q = await preguntarQuien(c);
   if (q === 'aplicar') { document.querySelector(`[data-b-guardar="${id}"]`)?.scrollIntoView({block: 'center', behavior: 'smooth'}); return; }
@@ -10942,7 +10984,7 @@ async function guardarDatosMarcados(tid, rechazar){
  * Una alerta de criterio (dominio.js REGLAS_VALIDAR, respuesta: true) es una pregunta: el sistema sospecha y la persona sabe. Sale en
  * Acciones para hoy (bloque "¿Aplica?") y en la tarjeta del viaje, siempre con la MISMA ventana (abrirPregunta):
  *   · "Sí" lleva a corregirlo (crear el subviaje, o abrir el viaje en la casilla);
- *   · "No" pide el motivo, muestra lo que se va a guardar y lo guarda a nombre de quien responde (doPost 'responder', Respuestas.gs).
+ *   · "No" pide el motivo, muestra lo que se va a guardar y lo guarda a nombre de quien responde (doPost 'responderAlerta', Respuestas.gs).
  * La respuesta va a la pestaña Respuestas (solo se agregan filas; el viaje no se toca). Al responder, la pregunta se cierra en todas
  * partes porque validar (dominio) ya no la devuelve: Bandeja, etiqueta de la tarjeta, Calidad de datos y correo. Vuelve sola si cambia
  * lo que el sistema vio (otra palabra en la observación) y se puede deshacer con "Volver a preguntar". Las reglas, los textos de los
@@ -10956,11 +10998,11 @@ const etiquetaOpsDe = e => e.regla === 'subviaje.sospecha' ? 'revisar si lleva s
 const faltaOpsSinPreguntas = v => { const P = preguntasDe(v).map(etiquetaOpsDe); return pendientesOps(v).filter(x => !P.includes(x)); };
 
 // 23-nov · pregunta EXTERNA: su evidencia no está en el viaje sino en el cuadro de Reckitt (programacion.js). "¿Se cancela este viaje?" sale de
-// canceladosEnCuadro y se responde con esta misma ventana; `evidencia` (la fecha del correo que lo canceló) viaja con la respuesta.
+// canceladosEnCuadro y se responde con esta misma ventana; `evidencia` (desde cuándo está cancelado: programacion.js desdeCancelado) viaja con la respuesta.
 function preguntaExterna(v, regla){
   if (regla !== REGLA_CANCELADO || window.MODO_CLIENTE) return null;
   const can = canceladosEnCuadro().get(v.id); if (!can) return null;
-  return {regla, v, campo: '', sev: 'Alta', msg: textoCancelado(can) + '.', evidencia: cuadroQueCancela(can).fecha};
+  return {regla, v, campo: '', sev: 'Alta', msg: textoCancelado(can) + '.', evidencia: desdeCancelado(can.x, can.c)};
 }
 const respondidaExterna = (v, regla) => { const x = regla === REGLA_CANCELADO && siguenVigentes().find(s => s.v.id === v.id); return x ? {regla, v, campo: '', respuesta: x.respuesta} : null; };
 const preguntaAbierta = (v, regla) => preguntasDe(v).find(x => x.regla === regla) || preguntaExterna(v, regla);
@@ -11039,7 +11081,7 @@ function abrirRespondida(viajeId, regla){
 async function guardarRespuesta(viajeId, regla, respuesta, motivo, evidencia){
   const usuario = pedirUsuario(); if (!usuario) return;
   try {
-    const j = await api('responder', {viaje: viajeId, regla, respuesta, motivo, usuario, evidencia: evidencia || ''});
+    const j = await api('responderAlerta', {viaje: viajeId, regla, respuesta, motivo, usuario, evidencia: evidencia || ''});
     if (!j.ok) throw new Error(j.error || 'error');
     window.RESPUESTAS = j.respuestas || [];
     $('#ovPregunta')?.remove();
