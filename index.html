@@ -3892,6 +3892,14 @@ async function api(action, datos = {}){
     body: JSON.stringify({action, clave: claveActual(), ...datos})});
   return r.json();
 }
+// 27-nov (LX-0677: «Crear viaje» presionado tres veces mientras el servidor respondía creó tres viajes iguales; ese botón no pasaba por
+// unaVez). Identificador de UN envío de creación: el servidor lo recuerda y, si le llega otra vez (reintento, doble clic que se escapó,
+// respuesta que se perdió), devuelve el viaje que ya creó en vez de crear otro (Base.gs viajeYaCreado_)
+const uidNuevo = () => Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12);
+// el mismo identificador para el mismo contenido (la programación: el cuadro y las filas que se crean): si el envío se repite porque la
+// respuesta se perdió, el servidor lo reconoce; si se crean otras filas, es otro envío
+const uidDe = texto => { let a = 0, b = 5381; for (const ch of String(texto)) { const k = ch.codePointAt(0); a = (a * 31 + k) >>> 0; b = (b * 33 ^ k) >>> 0; }
+  return 'c-' + a.toString(36) + '-' + b.toString(36) + '-' + String(texto).length.toString(36); };
 // INGRESAR COMO: al abrir el tablero (solo el equipo) cada persona elige quién es de la lista EQUIPO; ese nombre queda en todo lo
 // que guarda, aprueba o cierra (Historial, registro, calificaciones…) y no se escribe a mano. Vale mientras la pestaña esté abierta
 // (sessionStorage): cada vez que se entra se vuelve a elegir; se recuerda el último para tenerlo a un clic. Todavía sin clave
@@ -4398,7 +4406,7 @@ function cerrarAccionEnCurso(tipo, nota){
   const a = accionEnCurso;
   if (!a || a.tipo !== tipo || Date.now() - a.desde > 30*60e3) return;
   accionEnCurso = null;
-  marcarHecha(a.id, false, nota);
+  return marcarHecha(a.id, false, nota);   // quien la llama puede esperarla (nacional.js: cerrar la acción antes de releer la base)
 }
 // el correo de una acción, en el buzón de calidad@ (7-nov: "debe permitir abrir el correo"). Se busca por el asunto: el id que guarda
 // LogxIA es el de la copia reenviada (otra cuenta), que el equipo no puede abrir
@@ -7076,20 +7084,30 @@ function datosNacionalDe(b){
 }
 // la recogida es el día de la semana que va con la hora ("el miércoles a las 10:00"), el primero después del correo; la fecha que
 // se pide a ERCOL ("lunes 09/11") es otra cosa y no se usa (pedido del usuario, 5-nov). Sin día con hora, no se adivina.
-const DIAS_SEMANA = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+// 27-nov (LX-0677: "el lun 30-nov 10:00" dejó el viaje sin fecha): el día puede venir abreviado y traer su fecha entre el día y la hora
+// ("lun 30-nov 10:00", "lunes 30/11 a las 10:00"). Con fecha Y hora juntas se usa esa fecha, si cae después del correo y a menos de dos
+// meses; una fecha sin hora sigue sin usarse.
+const DIAS_SEMANA = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab'], MESES_3 = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 function diaRecogidaDe(t, fechaCorreo){
-  const m = minus(t).match(/\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+(?:a\s+las\s+)?\d{1,2}:\d{2}/);
-  const base = new Date(String(fechaCorreo || '').slice(0, 10) + 'T12:00:00');
+  const m = minus(t).match(/\b(lun|mar|mie|jue|vie|sab|dom)(?:es|tes|rcoles|ves|rnes|ado|ingo)?\.?\s+(?:(\d{1,2})\s*(?:[-\/]|\s+de\s+|\s+)\s*([a-z]{3,10}|\d{1,2})\.?\s+)?(?:a\s+las\s+)?\d{1,2}:\d{2}/);
+  const base = new Date(String(fechaCorreo || '').slice(0, 10) + 'T12:00:00Z');
   if (!m || isNaN(base)) return '';
-  const dif = (DIAS_SEMANA.indexOf(m[1]) - base.getDay() + 7) % 7 || 7;
-  base.setDate(base.getDate() + dif);
+  if (m[2]) {   // trae su fecha: día y mes (en letras o en número); el año, el del correo o el siguiente si ya pasó
+    const mes = /^\d+$/.test(m[3]) ? Number(m[3]) - 1 : MESES_3.indexOf(m[3].slice(0, 3));
+    for (const anio of mes < 0 || mes > 11 ? [] : [base.getUTCFullYear(), base.getUTCFullYear() + 1]) {
+      const f = new Date(Date.UTC(anio, mes, Number(m[2]), 12)), dias = (f - base) / 864e5;
+      if (f.getUTCMonth() === mes && dias >= 0 && dias <= 62) return f.toISOString().slice(0, 10);
+    }
+  }
+  const dif = (DIAS_SEMANA.indexOf(m[1]) - base.getUTCDay() + 7) % 7 || 7;
+  base.setUTCDate(base.getUTCDate() + dif);
   return base.toISOString().slice(0, 10);
 }
 const CAMPOS_NACIONAL = [['solicitante', 'Solicitante'], ['empresa', 'Empresa', EMPRESAS], ['carga', 'Qué se lleva', null, 'Ej.: 120 estibas'],
   ['origen', 'Origen (dónde se recoge)', null, 'Ej.: ERCOL Cali'], ['destino', 'Ciudad de destino', null, 'Ej.: Cali'], ['bodega', 'Lugar de entrega', null, 'Ej.: Planta Reckitt'],
   ['fechaRetiro', 'Fecha de recogida', 'fecha'], ['horaRecogida', 'Hora de recogida', null, 'Ej.: 10:00'], ['pedido', 'Pedido (si tiene)']];
 function nuevoNacional(b){
-  const d = b ? datosNacionalDe(b) : {};
+  const d = b ? datosNacionalDe(b) : {}, uid = uidNuevo();   // uid: este formulario crea UN viaje, se presione las veces que se presione
   $('#ovNacional')?.remove();
   // en blanco (botón de arriba): si hay solicitudes nacionales de LogxIA sin viaje, se ofrecen para llenar el formulario con su correo
   const pendientes = b ? [] : (window.BITACORA || []).filter(x => x.estadoAccion !== 'Hecha' && (atajoDe(x) || [])[0] === 'nacional');
@@ -7108,25 +7126,32 @@ function nuevoNacional(b){
   $('#ovNacional').onclick = e => { const sol = e.target.closest('[data-nac-accion]')?.dataset.nacAccion;
     if (sol) return hacerAqui(sol);   // abre el formulario con los datos de esa solicitud y la acción se cierra al crear el viaje
     const a = e.target.closest('[data-nac]')?.dataset.nac;
-    if (a === 'cerrar' || e.target.id === 'ovNacional') { $('#ovNacional').remove(); if (b) accionEnCurso = null; }
-    else if (a === 'crear') crearNacional(b); };
+    // si se cierra mientras el servidor crea el viaje, la acción sigue "en curso": al llegar la respuesta se cierra sola
+    if (a === 'cerrar' || e.target.id === 'ovNacional') { $('#ovNacional').remove(); if (b && !ENCURSO.has('nacional')) accionEnCurso = null; }
+    else if (a === 'crear') unaVez('nacional', () => crearNacional(b, uid)); };
 }
-async function crearNacional(b){
-  const est = (t, c) => { $('#nacEstado').textContent = t; $('#nacEstado').style.color = c || ''; };
+// 27-nov (LX-0677): el botón queda bloqueado mientras el servidor responde; "No se creó" solo sale si el servidor no lo creó (antes lo
+// decía también si fallaba la recarga de después, e invitaba a crearlo otra vez); y la acción se cierra aunque la ventana ya se haya cerrado.
+async function crearNacional(b, uid){
+  const est = (t, c) => { const e = $('#nacEstado'); if (e) { e.textContent = t; e.style.color = c || ''; } };
   const usuario = pedirUsuario(); if (!usuario) return est('Elija quién es (Ingresar como) y vuelva a presionar', 'var(--warn)');
   const campos = {situacion: 'Abierto', estado: 'Sin asignar'};
   document.querySelectorAll('#ovNacional [data-nk]').forEach(i => { const x = i.value.trim(); if (x) campos[i.dataset.nk] = x; });
   if (!campos.carga || !campos.origen) return est('Falta qué se lleva y dónde se recoge', 'var(--bad)');
   campos.observacion = b ? `Acción ${b.id} · correo de ${b.remitente || ''} ${String(b.fechaCorreo || '').slice(0, 10)}` : 'Creado en el tablero';
-  est('Creando…');
+  const boton = $('#ovNacional [data-nac="crear"]'), bloquear = si => { if (boton) { boton.disabled = si; boton.textContent = si ? 'Creando…' : 'Crear viaje'; } };
+  bloquear(true); est('Creando el viaje: el servidor tarda unos segundos…');
+  let j;
   try {
-    const j = await api('nuevo', {operacion: 'NACIONAL', campos, usuario});
-    if (!j.ok) throw new Error(j.error || 'error');
-    est(`✓ Viaje ${j.id} creado`, 'var(--ok)'); toast(`Viaje nacional ${j.id} creado: asigne placa y conductor`);
-    await cargar(); render();
-    if (b) cerrarAccionEnCurso('nacional', `viaje nacional ${j.id} creado en el tablero`);
-    setTimeout(() => { $('#ovNacional')?.remove(); if (j.id) abrir(j.id); }, 800);
-  } catch(e) { est('✖ No se creó: ' + e.message, 'var(--bad)'); }
+    j = await api('nuevo', {operacion: 'NACIONAL', campos, usuario, uid});
+    if (!j || !j.ok) throw new Error((j && j.error) || 'sin respuesta');
+  } catch(e) { bloquear(false); return est('✖ No se creó: ' + e.message + '. Puede presionar otra vez: si el servidor alcanzó a crearlo, no lo repite.', 'var(--bad)'); }
+  // el viaje ya existe: lo que sigue (cerrar la acción, releer la base) no puede decir que no se creó
+  const frase = j.repetido ? `Este viaje ya estaba creado: ${j.id}` : `Viaje nacional ${j.id} creado`;
+  est('✓ ' + frase, 'var(--ok)'); toast(`${frase}: asigne placa y conductor`, 5000);
+  if (b) await cerrarAccionEnCurso('nacional', `viaje nacional ${j.id} creado en el tablero`);
+  try { await cargar(); render(); } catch(e) { console.warn('Releer después de crear: ' + e); }
+  setTimeout(() => { $('#ovNacional')?.remove(); if (j.id) abrir(j.id); }, 800);
 }
 /* ---------- llenar datos desde correos (con revisión y aprobación) ---------- */
 let PROP = [];
@@ -7239,10 +7264,10 @@ $('#mTomar').onclick = () => {
 };
 
 /* ---------- subviajes ---------- */
-let subPadreId = null;
+let subPadreId = null, subUid = '';
 function nuevoSubviaje(id){
   const v = viajePorId(id); if (!v) return;
-  subPadreId = id;
+  subPadreId = id; subUid = uidNuevo();   // 27-nov: esta ventana crea UN subviaje, se presione las veces que se presione (Base.gs creadosPorEnvio_)
   $('#subPadre').textContent = `${v.operacion} · ${v.booking || v.pedido || v.id} · ${v.placa || 'sin placa'}`;
   $('#subMotivo').innerHTML = MOTIVOS_SUBVIAJE.map(m=>`<option>${esc(m)}</option>`).join('');
   $('#subPatio').value = ''; $('#subFecha').value = HOY;
@@ -7261,14 +7286,14 @@ $('#subCrear').onclick = async () => {
   guardarUsuario(usuario);
   $('#subCrear').disabled = true;
   try {
-    const j = await api('subviaje', {id:subPadreId, usuario, campos:{motivoSub:$('#subMotivo').value, patioSub:$('#subPatio').value.trim(), fechaDescargueSub:$('#subFecha').value,
+    const j = await api('subviaje', {id:subPadreId, usuario, uid: subUid, campos:{motivoSub:$('#subMotivo').value, patioSub:$('#subPatio').value.trim(), fechaDescargueSub:$('#subFecha').value,
       ...(viajePorId(subPadreId)?.operacion === 'IMPO' ? {contenedorSub:$('#subCont').value} : {})}});
     if (!j.ok) throw new Error(j.error || 'error');
     $('#ovSub').classList.remove('open');
-    toast('Subviaje creado: complete el vehículo y los costos');
-    await cargar(); render();
-    cerrarAccionEnCurso('subviaje', 'subviaje creado en el tablero');
-    if (j.id && viajes.some(x=>x.id===j.id)) abrir(j.id);
+    toast(j.repetido ? 'Este subviaje ya estaba creado' : 'Subviaje creado: complete el vehículo y los costos');
+    // 27-nov (auditoría): lo que sigue ya no puede decir "No se pudo crear" de un subviaje que sí se creó
+    try { await cargar(); render(); cerrarAccionEnCurso('subviaje', 'subviaje creado en el tablero'); if (j.id && viajes.some(x=>x.id===j.id)) abrir(j.id); }
+    catch(e) { console.warn('Después de crear el subviaje: ' + e); toast('Subviaje creado; el tablero no pudo recargar: recargue la página', 6000); }
   } catch(e) { toast('No se pudo crear el subviaje: ' + e.message); }
   $('#subCrear').disabled = false;
 };
@@ -7749,7 +7774,8 @@ async function aplicarProgramacion(op){
       const lista = crear.map(f => ({...datosProg(f.r), mesProg: mesIso(c), situacion:'Abierto', empresa:'Reckitt Hygiene', solicitante:'Jhonier Gómez',
         planCargue: f.r.fechaCargue, planRetiro: addDias(f.r.fechaCargue, -1),
         observacion: `Programación ${mesTxt} (correo de ${c.firma || 'Reckitt'} ${c.fecha.slice(0, 10)})${f.r.bodega && !/planta/i.test(f.r.bodega) ? ' · cargue en '+f.r.bodega : ''}`}));
-      const j = await post({action:'nuevos', operacion:'EXPO', lista});
+      // 27-nov: si la respuesta se pierde y se vuelve a aplicar lo mismo, el servidor devuelve los que ya creó (uid = este cuadro y estas filas)
+      const j = await post({action:'nuevos', operacion:'EXPO', lista, uid: uidDe(c.msgId + '|' + JSON.stringify(lista))});
       if (!j.ok) throw new Error(j.error || 'no se crearon');
     }
     for (const f of sel.filter(f => f.accion!=='crear')) {
@@ -7779,10 +7805,14 @@ async function aplicarProgramacion(op){
     else cerrarAccionEnCurso('programacion', `${rapido ? 'LogxIA aplicó la programación' : 'programación aplicada en el tablero'} (${crear.length} creados, ${sel.length - crear.length} actualizados)`);
     PROG = {c, viejo, ...compararVigente(c)}; pintarProgramacion();
   } catch(e) {
-    toast('No se pudo aplicar: ' + e.message + '. Se recargó el tablero: revise qué quedó pendiente.', 7000);
     // 19-nov (revisión): si ya se habían creado viajes y falló un update, la ventana seguía con esas filas como "crear" y al reintentar se
     // creaban otra vez. Se recarga y se vuelve a comparar con lo que quedó guardado.
-    try { await cargar(); render(); PROG = {c, viejo, ...compararVigente(c)}; pintarProgramacion(); } catch (e2) {}
+    // 27-nov (auditoría): si la recarga tampoco responde, la ventana se queda con datos viejos y las filas siguen diciendo "crear"; se dice
+    // tal cual (antes decía "se recargó" sin haberlo logrado). Aplicar de nuevo no repite los viajes: el servidor reconoce el envío (uid).
+    let recargo = false;
+    try { recargo = (await cargar()) !== false; render(); PROG = {c, viejo, ...compararVigente(c)}; pintarProgramacion(); } catch (e2) {}
+    toast('No se pudo aplicar: ' + e.message + (recargo ? '. Se recargó el tablero: revise qué quedó pendiente.'
+      : '. El tablero no pudo recargar: recargue la página antes de aplicar otra vez, para ver qué quedó guardado.'), 9000);
   }
   if (btnAplicar) btnAplicar.disabled = false;
 }
@@ -7893,6 +7923,9 @@ async function aplicarDesdeCorreo(c){
   if (ok === false) return;   // la revisión de números o la base no lo aceptaron: el correo sigue con sus cambios por aplicar
   Object.assign(c.enBase, ch); pintarBarrido();
 }
+// 27-nov: cada viaje que se crea desde un correo lleva su identificador de envío (uno por correo y contenedor mientras la ventana esté
+// abierta): si la respuesta se pierde y se vuelve a presionar, el servidor devuelve el que ya creó (Base.gs viajeYaCreado_)
+const uidDeCorreo = (c, cont) => { c.uids = c.uids || {}; return c.uids[cont || ''] || (c.uids[cont || ''] = uidNuevo()); };
 async function crearExpoDesdeCorreo(c){
   const usuario = $('#barridoUsuario').value.trim();
   if (!usuario) { $('#barridoUsuario').focus(); return toast('Escriba su nombre para crear la exportación'); }
@@ -7902,7 +7935,7 @@ async function crearExpoDesdeCorreo(c){
     rbhy: c.rbhy, empresa: c.rbhy ? 'Reckitt Hygiene' : c.empresa, solicitante: /jhonier/i.test(c.firma + c.remitente) ? 'Jhonier Gómez' : '',
     observacion: `Correo ${c.fecha.slice(0,10)}: nueva exportación ${[pais, c.rbhy, c.booking && 'BK '+c.booking].filter(Boolean).join(' · ')}`};
   try {
-    const j = await api('nuevo', {operacion:'EXPO', campos, usuario: usuario + ' (desde correo)'});
+    const j = await api('nuevo', {operacion:'EXPO', campos, usuario: usuario + ' (desde correo)', uid: uidDeCorreo(c, '')});
     if (!j.ok) throw new Error(j.error || 'error');
     c.viajeId = j.id; c.enBase = {operacion:'EXPO'}; pintarBarrido();
     toast(`Exportación ${j.id} creada: queda arriba como NUEVO; complete patio, fechas y vehículo`);
@@ -7931,7 +7964,7 @@ async function crearDesdeCorreo(c, cont){
       c.entregaEstimada && 'entrega estimada ' + c.entregaEstimada + ' (aún sin cita)'].filter(Boolean).join(' · ')}`};
   Object.keys(campos).forEach(k => { if (campos[k] === '') delete campos[k]; });
   try {
-    const j = await api('nuevo', {operacion:'IMPO', campos, usuario: usuario + ' (desde correo)'});
+    const j = await api('nuevo', {operacion:'IMPO', campos, usuario: usuario + ' (desde correo)', uid: uidDeCorreo(c, contenedor)});
     if (!j.ok) throw new Error(j.error || 'error');
     if (!extra) { c.viajeId = j.id; pintarBarrido(); }
     toast(`Viaje ${j.id} creado: queda arriba como NUEVO hasta que alguien lo tome${extra ? ` · falta su fecha de entrega: el correo trae una fecha por contenedor` : ''}`);
@@ -7957,11 +7990,13 @@ $('#ovBarrido').onclick = e => {
   if (b.dataset.act === 'ver') return window.open(`https://mail.google.com/mail/?authuser=calidad@stentrapetrol.com#all/${c.msgId}`, '_blank');
   if (b.dataset.act === 'abrir') { $('#ovBarrido').classList.remove('open'); return abrir(c.viajeId); }
   if (b.dataset.act === 'prog') return abrirProgramacion(c);
-  if (b.dataset.act === 'crearcont') { b.disabled = true; return crearDesdeCorreo(c, b.dataset.c).finally(() => { b.disabled = false; }); }
-  b.disabled = true;
-  if (b.dataset.act === 'aplicar') aplicarDesdeCorreo(c).finally(() => { b.disabled = false; });
-  else if (c.tipo === 'Nueva exportación') crearExpoDesdeCorreo(c);
-  else crearDesdeCorreo(c);
+  // 27-nov: una escritura a la vez por correo y contenedor (unaVez, base.js): el botón se bloquea, pero si la lista se repinta queda libre
+  // otra vez; y si la creación falla, el botón vuelve a servir (antes quedaba bloqueado hasta cerrar la ventana)
+  const una = fn => { b.disabled = true; return unaVez('correo|' + b.dataset.i + '|' + (b.dataset.c || '') + '|' + b.dataset.act, fn).finally(() => { b.disabled = false; }); };
+  if (b.dataset.act === 'crearcont') return una(() => crearDesdeCorreo(c, b.dataset.c));
+  if (b.dataset.act === 'aplicar') una(() => aplicarDesdeCorreo(c));
+  else if (c.tipo === 'Nueva exportación') una(() => crearExpoDesdeCorreo(c));
+  else una(() => crearDesdeCorreo(c));
 };
 // documentos.js · "Documentos de contenedores": los adjuntos de la programación de Jhonier (confirmación del booking, carta de
 // retiro…) que Apps Script archiva en Drive por mes (pestañas Documentos y Documentos por booking). Busca por booking, destino o
@@ -8999,7 +9034,7 @@ montarDevolucion();
 // Al recargar guarda la vista, el modo, los filtros y el punto de la página (sessionStorage rkt-estado) e inicio.js los devuelve:
 // se ve igual que antes. La dirección nueva (?v=<nueva>) evita la copia guardada del navegador y de GitHub Pages. La sesión
 // "Ingresar como" se conserva. En la copia local sin publicar (app/index.html) no hace nada.
-const VERSION_TABLERO = '082b859d8a';
+const VERSION_TABLERO = 'dc9935a33e';
 const REVISAR_VERSION_MIN = 5;
 const ocupado = () => !!document.querySelector('.ov.open, #chat.open') || !!($('#mNCambios') && $('#mNCambios').textContent);
 // lo que se ve ahora (vista, modo, filtros, punto de la página), para dejarlo igual después de recargar (inicio.js restaurarEstado)
